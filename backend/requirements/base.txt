@@ -1,0 +1,54 @@
+Django>=5.0,<5.1
+django-environ
+django-cors-headers
+whitenoise
+gunicorn
+uvicorn
+
+# Database
+psycopg2-binary
+dj-database-url
+django-model-utils
+django-extensions
+
+# Authentication & Security
+djangorestframework
+djangorestframework-simplejwt
+django-oauth-toolkit
+django-otp
+django-two-factor-auth
+django-csp
+django-axes
+django-ratelimit
+python-decouple
+cryptography
+pyjwt
+django-allow-cidr
+
+# API & Documentation
+drf-spectacular
+django-filter
+djangorestframework-camel-case
+markdown
+
+# Logging & Monitoring
+structlog
+python-json-logger
+sentry-sdk
+
+# Celery & Async
+celery
+django-celery-beat
+django-celery-results
+redis
+flower
+
+# Admin Interface
+django-unfold
+django-import-export
+
+# Utils
+phonenumbers
+Pillow
+pyotp
+qrcode
