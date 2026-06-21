@@ -6,7 +6,7 @@ import logging
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.utils import timezone
-from django.core.validators import MinLengthValidator
+from django.core.validators import MinLengthValidator, MinValueValidator, MaxValueValidator
 from django.conf import settings
 
 from cryptography.fernet import Fernet
@@ -106,6 +106,24 @@ class User(AbstractBaseUser, PermissionsMixin):
     user_agent = models.CharField(max_length=500, blank=True)
     last_activity = models.DateTimeField(null=True, blank=True)
     date_joined = models.DateTimeField(default=timezone.now)
+
+    # Verification
+    email_verified = models.BooleanField(default=False)
+    email_verified_at = models.DateTimeField(null=True, blank=True)
+    phone_verified = models.BooleanField(default=False)
+    phone_verified_at = models.DateTimeField(null=True, blank=True)
+
+    # Profile
+    avatar = models.TextField(blank=True, default='')
+    date_of_birth = models.DateField(null=True, blank=True)
+    department = models.CharField(max_length=200, blank=True, default='')
+    job_title = models.CharField(max_length=200, blank=True, default='')
+    employee_id = models.CharField(max_length=50, blank=True, default='')
+
+    # Compliance
+    terms_accepted_at = models.DateTimeField(null=True, blank=True)
+    last_password_change_reminded = models.DateTimeField(null=True, blank=True)
+
     groups = models.ManyToManyField(
         'users.UserGroup',
         related_name='users',
@@ -126,6 +144,9 @@ class User(AbstractBaseUser, PermissionsMixin):
             models.Index(fields=['username']),
             models.Index(fields=['is_active']),
             models.Index(fields=['user_type']),
+            models.Index(fields=['email_verified']),
+            models.Index(fields=['department']),
+            models.Index(fields=['employee_id']),
         ]
 
     def __str__(self):
@@ -155,6 +176,21 @@ class User(AbstractBaseUser, PermissionsMixin):
     @property
     def active_sessions_count(self):
         return self.sessions.filter(is_active=True).count()
+
+    @property
+    def is_password_expired(self):
+        if not self.password_changed_at:
+            return True
+        expiry_days = getattr(settings, 'PASSWORD_EXPIRY_DAYS', 90)
+        return timezone.now() > self.password_changed_at + timezone.timedelta(days=expiry_days)
+
+    @property
+    def is_email_verified(self):
+        return self.email_verified
+
+    @property
+    def is_phone_verified(self):
+        return self.phone_verified
 
     def has_module_permission(self, module_code, action='READ'):
         if self.is_superuser:
@@ -411,3 +447,24 @@ class TwoFactorAuth(models.Model):
             self.save(update_fields=['backup_codes'])
             return True
         return False
+
+
+class NotificationPreference(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.OneToOneField(
+        User, on_delete=models.CASCADE, related_name='notification_preferences'
+    )
+    email_notifications = models.BooleanField(default=True)
+    sms_notifications = models.BooleanField(default=True)
+    push_notifications = models.BooleanField(default=False)
+    login_alerts = models.BooleanField(default=True)
+    marketing_emails = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Notification Preference'
+        verbose_name_plural = 'Notification Preferences'
+
+    def __str__(self):
+        return f'{self.user.username} preferences'

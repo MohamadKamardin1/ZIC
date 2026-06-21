@@ -1,0 +1,1265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZIC AIMS - Partner On-boarding</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* ============================================
+           CSS CUSTOM PROPERTIES - MATERIAL 3 + VINTAGE
+           ============================================ */
+        :root {
+            --md-primary: #4F46E5;
+            --md-primary-container: #E0E7FF;
+            --md-on-primary: #FFFFFF;
+            --md-secondary: #7C3AED;
+            --md-secondary-container: #EDE9FE;
+            --md-tertiary: #DB2777;
+            --md-tertiary-container: #FCE7F3;
+            --md-surface: #FFFFFF;
+            --md-surface-variant: #F1F5F9;
+            --md-background: #F8FAFC;
+            --md-on-surface: #1E293B;
+            --md-on-surface-variant: #64748B;
+            --md-outline: #E2E8F0;
+            --md-outline-variant: #CBD5E1;
+            --vintage-gold: #D4AF37;
+            --vintage-copper: #B87333;
+            --vintage-cream: #FFFDD0;
+            --vintage-teal: #14B8A6;
+            --vintage-coral: #F97316;
+            --vintage-sage: #84CC16;
+            --vintage-rose: #FB7185;
+            --vintage-indigo: #312E81;
+            --vintage-navy: #1E1B4B;
+            --color-success: #059669;
+            --color-success-light: #D1FAE5;
+            --color-error: #DC2626;
+            --color-error-light: #FEE2E2;
+            --color-warning: #D97706;
+            --color-warning-light: #FEF3C7;
+            --color-info: #2563EB;
+            --color-info-light: #DBEAFE;
+            --font-display: 'Playfair Display', serif;
+            --font-body: 'Inter', sans-serif;
+            --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+            --shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.07), 0 2px 4px -2px rgba(15, 23, 42, 0.05);
+            --shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -4px rgba(15, 23, 42, 0.05);
+            --shadow-xl: 0 20px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.05);
+            --shadow-card: 0 1px 3px rgba(0,0,0,0.05), 0 4px 12px rgba(0,0,0,0.05);
+            --shadow-card-hover: 0 4px 6px rgba(0,0,0,0.07), 0 10px 20px rgba(0,0,0,0.06);
+            --sidebar-width: 260px;
+            --sidebar-collapsed: 72px;
+            --header-height: 64px;
+            --footer-height: 48px;
+            --border-radius-sm: 8px;
+            --border-radius-md: 12px;
+            --border-radius-lg: 16px;
+            --border-radius-xl: 24px;
+            --transition-fast: 0.15s ease;
+            --transition-base: 0.2s ease;
+            --transition-slow: 0.3s ease;
+        }
+
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        html { font-size: 16px; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+        body { font-family: var(--font-body); background: var(--md-background); color: var(--md-on-surface); line-height: 1.5; overflow-x: hidden; }
+
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--md-outline-variant); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--md-on-surface-variant); }
+
+        .app-shell { display: flex; min-height: 100vh; width: 100%; }
+
+        /* ============================================
+           SIDEBAR - SAME AS DASHBOARD
+           ============================================ */
+        .sidebar { width: var(--sidebar-width); background: var(--md-surface); border-right: 1px solid var(--md-outline); display: flex; flex-direction: column; position: fixed; left: 0; top: 0; bottom: 0; z-index: 100; transition: width var(--transition-slow); overflow: hidden; }
+        .sidebar-logo { padding: 24px 20px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--md-outline); }
+        .sidebar-logo .logo-icon { width: 40px; height: 40px; background: linear-gradient(135deg, var(--md-primary), var(--md-secondary)); border-radius: var(--border-radius-md); display: flex; align-items: center; justify-content: center; color: white; font-weight: 800; font-size: 18px; flex-shrink: 0; }
+        .sidebar-logo .logo-text { font-family: var(--font-display); font-size: 24px; font-weight: 700; color: var(--vintage-navy); letter-spacing: 1px; }
+        .sidebar-nav { flex: 1; padding: 12px 0; overflow-y: auto; overflow-x: hidden; }
+        .nav-section { padding: 0 12px; }
+        .nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: var(--border-radius-md); cursor: pointer; transition: all var(--transition-base); margin-bottom: 2px; position: relative; color: var(--md-on-surface-variant); font-size: 14px; font-weight: 500; text-decoration: none; }
+        .nav-item:hover { background: var(--md-surface-variant); color: var(--md-on-surface); }
+        .nav-item.active { background: var(--md-primary); color: var(--md-on-primary); box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3); }
+        .nav-item.active .nav-icon { color: var(--md-on-primary); }
+        .nav-icon { width: 20px; height: 20px; flex-shrink: 0; color: currentColor; opacity: 0.8; }
+        .nav-item.active .nav-icon { opacity: 1; }
+        .nav-label { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .nav-chevron { width: 16px; height: 16px; transition: transform var(--transition-base); opacity: 0.5; }
+        .nav-item.expanded .nav-chevron { transform: rotate(180deg); }
+        .nav-divider { height: 1px; background: var(--md-outline); margin: 8px 16px; }
+        .nav-footer { padding: 12px; border-top: 1px solid var(--md-outline); }
+        .nav-footer .nav-item { color: var(--md-on-surface-variant); font-size: 13px; }
+
+        /* ============================================
+           MAIN CONTENT
+           ============================================ */
+        .main-content { flex: 1; margin-left: var(--sidebar-width); display: flex; flex-direction: column; min-height: 100vh; transition: margin-left var(--transition-slow); }
+
+        /* ============================================
+           HEADER - SAME AS DASHBOARD
+           ============================================ */
+        .header { height: var(--header-height); background: var(--md-surface); border-bottom: 1px solid var(--md-outline); display: flex; align-items: center; justify-content: space-between; padding: 0 24px; position: sticky; top: 0; z-index: 50; }
+        .header-left { display: flex; align-items: center; gap: 16px; }
+        .header-menu-toggle { display: none; background: none; border: none; cursor: pointer; padding: 8px; border-radius: var(--border-radius-sm); color: var(--md-on-surface-variant); }
+        .header-menu-toggle:hover { background: var(--md-surface-variant); }
+        .header-period { display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 6px 12px; border-radius: var(--border-radius-md); transition: background var(--transition-base); }
+        .header-period:hover { background: var(--md-surface-variant); }
+        .period-icon { width: 20px; height: 20px; color: var(--md-primary); }
+        .period-text { display: flex; flex-direction: column; }
+        .period-title { font-size: 13px; font-weight: 600; color: var(--md-primary); }
+        .period-date { font-size: 11px; color: var(--md-on-surface-variant); }
+        .header-right { display: flex; align-items: center; gap: 8px; }
+        .header-btn { width: 40px; height: 40px; border-radius: var(--border-radius-md); border: none; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--md-on-surface-variant); transition: all var(--transition-base); position: relative; }
+        .header-btn:hover { background: var(--md-surface-variant); color: var(--md-on-surface); }
+        .header-btn svg { width: 20px; height: 20px; }
+        .header-btn .badge { position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; background: var(--color-error); border-radius: 50%; border: 2px solid var(--md-surface); }
+        .header-btn .badge-count { position: absolute; top: 2px; right: 2px; min-width: 16px; height: 16px; background: var(--color-error); color: white; font-size: 10px; font-weight: 700; border-radius: 8px; display: flex; align-items: center; justify-content: center; padding: 0 4px; border: 2px solid var(--md-surface); }
+        .header-profile { display: flex; align-items: center; gap: 10px; padding: 4px 8px 4px 4px; border-radius: var(--border-radius-lg); cursor: pointer; transition: background var(--transition-base); margin-left: 8px; }
+        .header-profile:hover { background: var(--md-surface-variant); }
+        .profile-avatar { width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, var(--md-primary), var(--md-secondary)); display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 14px; flex-shrink: 0; overflow: hidden; }
+        .profile-info { display: flex; flex-direction: column; }
+        .profile-name { font-size: 13px; font-weight: 600; color: var(--md-on-surface); }
+        .profile-role { font-size: 11px; color: var(--md-on-surface-variant); }
+
+        /* ============================================
+           PAGE CONTENT AREA
+           ============================================ */
+        .page-content { flex: 1; padding: 24px; overflow-y: auto; }
+
+        /* ============================================
+           BREADCRUMB
+           ============================================ */
+        .breadcrumb { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; font-size: 14px; }
+        .breadcrumb-item { color: var(--md-primary); font-weight: 500; cursor: pointer; text-decoration: none; transition: color var(--transition-base); }
+        .breadcrumb-item:hover { color: var(--md-secondary); text-decoration: underline; }
+        .breadcrumb-item.active { color: var(--md-on-surface-variant); cursor: default; }
+        .breadcrumb-item.active:hover { text-decoration: none; }
+        .breadcrumb-separator { color: var(--md-outline-variant); font-size: 12px; }
+
+        /* ============================================
+           PAGE CARD CONTAINER
+           ============================================ */
+        .page-card { background: var(--md-surface); border-radius: var(--border-radius-lg); box-shadow: var(--shadow-card); overflow: hidden; }
+
+        /* ============================================
+           TOOLBAR SECTION
+           ============================================ */
+        .toolbar { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--md-outline); gap: 16px; flex-wrap: wrap; }
+        .toolbar-left { display: flex; align-items: center; gap: 12px; }
+        .toolbar-right { display: flex; align-items: center; gap: 12px; }
+
+        /* Entries Dropdown */
+        .entries-dropdown { position: relative; }
+        .entries-select { appearance: none; -webkit-appearance: none; padding: 8px 32px 8px 14px; border: 1px solid var(--md-outline); border-radius: var(--border-radius-md); background: var(--md-surface); font-family: var(--font-body); font-size: 13px; font-weight: 500; color: var(--md-on-surface); cursor: pointer; transition: all var(--transition-base); }
+        .entries-select:hover { border-color: var(--md-primary); }
+        .entries-select:focus { outline: none; border-color: var(--md-primary); box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
+        .entries-dropdown::after { content: ''; position: absolute; right: 12px; top: 50%; transform: translateY(-50%); width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid var(--md-on-surface-variant); pointer-events: none; }
+
+        /* Search Input */
+        .search-wrapper { position: relative; }
+        .search-input { width: 220px; padding: 8px 14px 8px 36px; border: 1px solid var(--md-outline); border-radius: var(--border-radius-md); background: var(--md-surface); font-family: var(--font-body); font-size: 13px; color: var(--md-on-surface); transition: all var(--transition-base); }
+        .search-input::placeholder { color: var(--md-outline-variant); }
+        .search-input:hover { border-color: var(--md-primary); }
+        .search-input:focus { outline: none; border-color: var(--md-primary); box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); width: 280px; }
+        .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--md-outline-variant); pointer-events: none; }
+
+        /* Action Buttons */
+        .btn { display: inline-flex; align-items: center; gap: 8px; padding: 8px 18px; border-radius: var(--border-radius-md); font-family: var(--font-body); font-size: 13px; font-weight: 600; cursor: pointer; transition: all var(--transition-base); border: none; white-space: nowrap; }
+        .btn-primary { background: var(--md-primary); color: var(--md-on-primary); }
+        .btn-primary:hover { background: #4338CA; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3); }
+        .btn-secondary { background: var(--md-surface-variant); color: var(--md-on-surface); border: 1px solid var(--md-outline); }
+        .btn-secondary:hover { background: var(--md-outline); transform: translateY(-1px); }
+        .btn-success { background: var(--color-success); color: white; }
+        .btn-success:hover { background: #047857; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3); }
+        .btn-icon { width: 16px; height: 16px; }
+
+        /* ============================================
+           DATA TABLE
+           ============================================ */
+        .table-container { overflow-x: auto; }
+        .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .data-table thead { background: var(--md-surface-variant); }
+        .data-table th { padding: 12px 16px; text-align: left; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--md-on-surface-variant); white-space: nowrap; border-bottom: 1px solid var(--md-outline); cursor: pointer; user-select: none; transition: background var(--transition-base); }
+        .data-table th:hover { background: var(--md-outline); }
+        .data-table th .sort-icon { display: inline-flex; margin-left: 4px; opacity: 0.5; transition: opacity var(--transition-base); }
+        .data-table th:hover .sort-icon { opacity: 1; }
+        .data-table td { padding: 14px 16px; border-bottom: 1px solid var(--md-outline); color: var(--md-on-surface); font-weight: 500; }
+        .data-table tbody tr { transition: background var(--transition-base); }
+        .data-table tbody tr:hover { background: var(--md-surface-variant); }
+        .data-table tbody tr:last-child td { border-bottom: none; }
+
+        /* Status Badge */
+        .status-badge { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; }
+        .status-badge.active { background: var(--color-success-light); color: var(--color-success); }
+        .status-badge.inactive { background: var(--color-error-light); color: var(--color-error); }
+        .status-badge.pending { background: var(--color-warning-light); color: var(--color-warning); }
+        .status-dot { width: 6px; height: 6px; border-radius: 50%; }
+        .status-badge.active .status-dot { background: var(--color-success); }
+        .status-badge.inactive .status-dot { background: var(--color-error); }
+        .status-badge.pending .status-dot { background: var(--color-warning); }
+
+        /* ============================================
+           PAGINATION
+           ============================================ */
+        .pagination-wrapper { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-top: 1px solid var(--md-outline); }
+        .pagination-info { font-size: 13px; color: var(--md-on-surface-variant); font-weight: 500; }
+        .pagination-info span { color: var(--md-primary); font-weight: 600; }
+        .pagination { display: flex; align-items: center; gap: 4px; }
+        .page-btn { min-width: 36px; height: 36px; padding: 0 10px; border-radius: var(--border-radius-sm); border: 1px solid var(--md-outline); background: var(--md-surface); font-family: var(--font-body); font-size: 13px; font-weight: 500; color: var(--md-on-surface-variant); cursor: pointer; transition: all var(--transition-base); display: flex; align-items: center; justify-content: center; }
+        .page-btn:hover:not(:disabled) { background: var(--md-surface-variant); border-color: var(--md-primary); color: var(--md-primary); }
+        .page-btn.active { background: var(--md-primary); color: var(--md-on-primary); border-color: var(--md-primary); }
+        .page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .page-btn.prev-next { padding: 0 14px; }
+
+        /* ============================================
+           EMPTY STATE
+           ============================================ */
+        .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; text-align: center; }
+        .empty-state-icon { width: 80px; height: 80px; background: linear-gradient(135deg, var(--md-primary-container), var(--md-secondary-container)); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-bottom: 20px; }
+        .empty-state-icon svg { width: 40px; height: 40px; color: var(--md-primary); }
+        .empty-state-title { font-family: var(--font-display); font-size: 20px; font-weight: 600; color: var(--md-on-surface); margin-bottom: 8px; }
+        .empty-state-desc { font-size: 14px; color: var(--md-on-surface-variant); max-width: 400px; margin-bottom: 24px; line-height: 1.6; }
+        .empty-state-actions { display: flex; gap: 12px; }
+
+        /* ============================================
+           FOOTER - SAME AS DASHBOARD
+           ============================================ */
+        .footer { height: var(--footer-height); background: var(--md-surface); border-top: 1px solid var(--md-outline); display: flex; align-items: center; justify-content: space-between; padding: 0 24px; position: sticky; bottom: 0; z-index: 50; }
+        .footer-left { display: flex; align-items: center; gap: 8px; }
+        .footer-task-btn { display: flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 20px; border: 1px solid var(--md-outline); background: var(--md-surface); font-size: 12px; font-weight: 500; color: var(--md-on-surface-variant); cursor: pointer; transition: all var(--transition-base); font-family: var(--font-body); }
+        .footer-task-btn:hover { background: var(--md-surface-variant); border-color: var(--md-primary); color: var(--md-primary); }
+        .footer-center { display: flex; align-items: center; gap: 16px; }
+        .footer-item { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; }
+        .footer-rate { color: var(--color-success); font-weight: 700; }
+        .footer-status { display: flex; align-items: center; gap: 6px; color: var(--color-success); }
+        .status-dot-pulse { width: 8px; height: 8px; background: var(--color-success); border-radius: 50%; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .footer-ai-badge { display: flex; align-items: center; gap: 4px; padding: 4px 10px; background: linear-gradient(135deg, var(--md-primary), var(--md-secondary)); color: white; border-radius: 12px; font-size: 11px; font-weight: 600; }
+        .footer-right { font-size: 11px; color: var(--md-on-surface-variant); display: flex; align-items: center; gap: 6px; }
+        .footer-logo-mini { width: 16px; height: 16px; background: linear-gradient(135deg, var(--md-primary), var(--md-secondary)); border-radius: 3px; display: flex; align-items: center; justify-content: center; color: white; font-size: 8px; font-weight: 800; }
+
+        /* ============================================
+           RESPONSIVE
+           ============================================ */
+        @media (max-width: 1024px) { .sidebar { width: var(--sidebar-collapsed); } .sidebar-logo .logo-text, .nav-label, .nav-chevron, .profile-info { display: none; } .main-content { margin-left: var(--sidebar-collapsed); } }
+        @media (max-width: 768px) { .sidebar { transform: translateX(-100%); } .sidebar.open { transform: translateX(0); width: var(--sidebar-width); } .sidebar.open .logo-text, .sidebar.open .nav-label, .sidebar.open .nav-chevron { display: block; } .main-content { margin-left: 0; } .header-menu-toggle { display: flex; } .toolbar { flex-direction: column; align-items: stretch; } .toolbar-left, .toolbar-right { width: 100%; justify-content: space-between; } .search-input { width: 100%; } .search-input:focus { width: 100%; } .data-table th, .data-table td { padding: 10px 12px; font-size: 12px; } .pagination-wrapper { flex-direction: column; gap: 12px; } .footer-center { display: none; } }
+    </style>
+</head>
+<body>
+    <div class="app-shell">
+
+        <!-- ============================================
+             SIDEBAR - Partner On-boarding is expanded with Partner active
+             ============================================ -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-logo">
+                <div class="logo-icon">Z</div>
+                <span class="logo-text">ZIC</span>
+            </div>
+
+            <nav class="sidebar-nav">
+                <div class="nav-section">
+                    <!-- Dashboard -->
+                    <a href="#" class="nav-item">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                        </svg>
+                        <span class="nav-label">Dashboard</span>
+                    </a>
+
+                    <!-- Partner On-boarding - EXPANDED with Partner active -->
+                    <a href="#" class="nav-item expanded">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="9" cy="7" r="4"></circle>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                        </svg>
+                        <span class="nav-label">Partner On-boarding</span>
+                        <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </a>
+                    <!-- Sub-menu item: Partner (ACTIVE) -->
+                    <a href="#" class="nav-item active" style="margin-left: 16px; padding-left: 12px; border-left: 2px solid var(--md-primary);">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M12 16v-4"></path>
+                            <path d="M12 8h.01"></path>
+                        </svg>
+                        <span class="nav-label">Partner</span>
+                    </a>
+
+                    <!-- Ordinary Life -->
+                    <a href="#" class="nav-item">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                        </svg>
+                        <span class="nav-label">Ordinary Life</span>
+                        <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </a>
+
+                    <!-- Group Life -->
+                    <a href="#" class="nav-item">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="9" cy="7" r="4"></circle>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                        </svg>
+                        <span class="nav-label">Group Life</span>
+                        <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </a>
+
+                    <!-- Group Credit -->
+                    <a href="#" class="nav-item">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect>
+                            <line x1="1" y1="10" x2="23" y2="10"></line>
+                        </svg>
+                        <span class="nav-label">Group Credit</span>
+                        <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </a>
+
+                    <!-- Front Office -->
+                    <a href="#" class="nav-item">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                        </svg>
+                        <span class="nav-label">Front Office</span>
+                        <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </a>
+
+                    <!-- Reports -->
+                    <a href="#" class="nav-item">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                            <line x1="16" y1="13" x2="8" y2="13"></line>
+                            <line x1="16" y1="17" x2="8" y2="17"></line>
+                            <polyline points="10 9 9 9 8 9"></polyline>
+                        </svg>
+                        <span class="nav-label">Reports</span>
+                        <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </a>
+
+                    <!-- System Parameters -->
+                    <a href="#" class="nav-item">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="3"></circle>
+                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                        </svg>
+                        <span class="nav-label">System Parameters</span>
+                        <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </a>
+
+                    <!-- User Management -->
+                    <a href="#" class="nav-item">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="12" cy="7" r="4"></circle>
+                        </svg>
+                        <span class="nav-label">User Management</span>
+                        <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </a>
+
+                    <!-- Approvals -->
+                    <a href="#" class="nav-item">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                        </svg>
+                        <span class="nav-label">Approvals</span>
+                        <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </a>
+                </div>
+            </nav>
+
+            <div class="nav-footer">
+                <a href="#" class="nav-item">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                    <span class="nav-label">Help & Support</span>
+                </a>
+            </div>
+        </aside>
+
+        <!-- ============================================
+             MAIN CONTENT
+             ============================================ -->
+        <main class="main-content">
+            <!-- HEADER -->
+            <header class="header">
+                <div class="header-left">
+                    <button class="header-menu-toggle" id="menuToggle">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="3" y1="12" x2="21" y2="12"></line>
+                            <line x1="3" y1="6" x2="21" y2="6"></line>
+                            <line x1="3" y1="18" x2="21" y2="18"></line>
+                        </svg>
+                    </button>
+
+                    <div class="header-period">
+                        <svg class="period-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="16" y1="2" x2="16" y2="6"></line>
+                            <line x1="8" y1="2" x2="8" y2="6"></line>
+                            <line x1="3" y1="10" x2="21" y2="10"></line>
+                        </svg>
+                        <div class="period-text">
+                            <span class="period-title">Account Period Feb 2026</span>
+                            <span class="period-date">12 Feb 2026 10:55:38</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="header-right">
+                    <button class="header-btn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                    </button>
+                    <button class="header-btn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="2" y1="12" x2="22" y2="12"></line>
+                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                        </svg>
+                    </button>
+                    <button class="header-btn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                            <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                        </svg>
+                        <span class="badge-count">3</span>
+                    </button>
+                    <button class="header-btn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="3"></circle>
+                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                        </svg>
+                    </button>
+                    <button class="header-btn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="5"></circle>
+                            <line x1="12" y1="1" x2="12" y2="3"></line>
+                            <line x1="12" y1="21" x2="12" y2="23"></line>
+                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                            <line x1="1" y1="12" x2="3" y2="12"></line>
+                            <line x1="21" y1="12" x2="23" y2="12"></line>
+                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                        </svg>
+                    </button>
+                    <div class="header-profile">
+                        <div class="profile-avatar">IS</div>
+                        <div class="profile-info">
+                            <span class="profile-name">Irvine Sunday</span>
+                            <span class="profile-role">Aims Group</span>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- ============================================
+                 PAGE CONTENT - Partner On-boarding
+                 ============================================ -->
+            <div class="page-content">
+                <!-- BREADCRUMB -->
+                <nav class="breadcrumb">
+                    <a href="#" class="breadcrumb-item">Home</a>
+                    <span class="breadcrumb-separator">&gt;</span>
+                    <span class="breadcrumb-item active">Partner</span>
+                </nav>
+
+                <!-- PAGE CARD -->
+                <div class="page-card">
+                    <!-- TOOLBAR -->
+                    <div class="toolbar">
+                        <div class="toolbar-left">
+                            <!-- Entries Dropdown -->
+                            <div class="entries-dropdown">
+                                <select class="entries-select" id="entriesSelect">
+                                    <option value="10">10 entries</option>
+                                    <option value="25">25 entries</option>
+                                    <option value="50">50 entries</option>
+                                    <option value="100">100 entries</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="toolbar-right">
+                            <!-- Search -->
+                            <div class="search-wrapper">
+                                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="11" cy="11" r="8"></circle>
+                                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                                </svg>
+                                <input type="text" class="search-input" placeholder="Search..." id="searchInput">
+                            </div>
+
+                            <!-- Add Partner Button -->
+                            <button class="btn btn-primary" id="addPartnerBtn">
+                                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="8" x2="12" y2="16"></line>
+                                    <line x1="8" y1="12" x2="16" y2="12"></line>
+                                </svg>
+                                Add Partner
+                            </button>
+
+                            <!-- Bulk Upload Partner Button -->
+                            <button class="btn btn-secondary" id="bulkUploadBtn">
+                                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="17 8 12 3 7 8"></polyline>
+                                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                                </svg>
+                                Bulk Upload Partner
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- DATA TABLE -->
+                    <div class="table-container">
+                        <table class="data-table" id="partnerTable">
+                            <thead>
+                                <tr>
+                                    <th>
+                                        NO.
+                                        <span class="sort-icon">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <polyline points="18 15 12 9 6 15"></polyline>
+                                            </svg>
+                                        </span>
+                                    </th>
+                                    <th>
+                                        PARTNER NUMBER
+                                        <span class="sort-icon">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <polyline points="18 15 12 9 6 15"></polyline>
+                                            </svg>
+                                        </span>
+                                    </th>
+                                    <th>
+                                        PARTNER
+                                        <span class="sort-icon">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <polyline points="18 15 12 9 6 15"></polyline>
+                                            </svg>
+                                        </span>
+                                    </th>
+                                    <th>
+                                        CLIENT TYPE
+                                        <span class="sort-icon">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <polyline points="18 15 12 9 6 15"></polyline>
+                                            </svg>
+                                        </span>
+                                    </th>
+                                    <th>
+                                        IDENTIFICATION TYPE
+                                        <span class="sort-icon">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <polyline points="18 15 12 9 6 15"></polyline>
+                                            </svg>
+                                        </span>
+                                    </th>
+                                    <th>
+                                        IDENTIFICATION NUMBER
+                                        <span class="sort-icon">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <polyline points="18 15 12 9 6 15"></polyline>
+                                            </svg>
+                                        </span>
+                                    </th>
+                                    <th>
+                                        TELEPHONE
+                                        <span class="sort-icon">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <polyline points="18 15 12 9 6 15"></polyline>
+                                            </svg>
+                                        </span>
+                                    </th>
+                                    <th>
+                                        STATUS
+                                        <span class="sort-icon">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <polyline points="18 15 12 9 6 15"></polyline>
+                                            </svg>
+                                        </span>
+                                    </th>
+                                    <th>
+                                        CREATED BY
+                                        <span class="sort-icon">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <polyline points="18 15 12 9 6 15"></polyline>
+                                            </svg>
+                                        </span>
+                                    </th>
+                                    <th>
+                                        UPDATED BY
+                                        <span class="sort-icon">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <polyline points="18 15 12 9 6 15"></polyline>
+                                            </svg>
+                                        </span>
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody id="tableBody">
+                                <!-- Row 1 -->
+                                <tr>
+                                    <td>1</td>
+                                    <td>CA0422</td>
+                                    <td>Kilimanjaro Fresh Produce Limited</td>
+                                    <td>Corporate</td>
+                                    <td>Certificate Of Incorporation</td>
+                                    <td>7483926150</td>
+                                    <td>+255-27-2234567</td>
+                                    <td>
+                                        <span class="status-badge active">
+                                            <span class="status-dot"></span>
+                                            Active
+                                        </span>
+                                    </td>
+                                    <td>Irvine Sunday</td>
+                                    <td>Irvine Sunday</td>
+                                </tr>
+                                <!-- Row 2 -->
+                                <tr>
+                                    <td>2</td>
+                                    <td>IA1165</td>
+                                    <td>Joseph Daniel Mwakalinga</td>
+                                    <td>Individual</td>
+                                    <td>National Identification Number</td>
+                                    <td>902345671</td>
+                                    <td>+263-4-2345686</td>
+                                    <td>
+                                        <span class="status-badge active">
+                                            <span class="status-dot"></span>
+                                            Active
+                                        </span>
+                                    </td>
+                                    <td>Irvine Sunday</td>
+                                    <td>Irvine Sunday</td>
+                                </tr>
+                                <!-- Row 3 -->
+                                <tr>
+                                    <td>3</td>
+                                    <td>CA0421</td>
+                                    <td>SBC Tanzania Ltd</td>
+                                    <td>Corporate</td>
+                                    <td>Certificate Of Incorporation</td>
+                                    <td>45789688769</td>
+                                    <td>365776475</td>
+                                    <td>
+                                        <span class="status-badge active">
+                                            <span class="status-dot"></span>
+                                            Active
+                                        </span>
+                                    </td>
+                                    <td>Irvine Sunday</td>
+                                    <td>Irvine Sunday</td>
+                                </tr>
+                                <!-- Row 4 -->
+                                <tr>
+                                    <td>4</td>
+                                    <td>IA1164</td>
+                                    <td>Martin Joshua Moses</td>
+                                    <td>Individual</td>
+                                    <td>National Identification Number</td>
+                                    <td>64365654654</td>
+                                    <td>497686875</td>
+                                    <td>
+                                        <span class="status-badge active">
+                                            <span class="status-dot"></span>
+                                            Active
+                                        </span>
+                                    </td>
+                                    <td>Irvine Sunday</td>
+                                    <td>Irvine Sunday</td>
+                                </tr>
+                                <!-- Row 5 -->
+                                <tr>
+                                    <td>5</td>
+                                    <td>CA0420</td>
+                                    <td>Unity Capital Bank</td>
+                                    <td>Corporate</td>
+                                    <td>Certificate Of Incorporation</td>
+                                    <td>0897298233</td>
+                                    <td>07862872632</td>
+                                    <td>
+                                        <span class="status-badge active">
+                                            <span class="status-dot"></span>
+                                            Active
+                                        </span>
+                                    </td>
+                                    <td>Daniel Karanja</td>
+                                    <td>Daniel Karanja</td>
+                                </tr>
+                                <!-- Row 6 -->
+                                <tr>
+                                    <td>6</td>
+                                    <td>IA1163</td>
+                                    <td>Mwangi Kevin Kamau</td>
+                                    <td>Individual</td>
+                                    <td>National Identification Number</td>
+                                    <td>0981082122</td>
+                                    <td>0786232332</td>
+                                    <td>
+                                        <span class="status-badge active">
+                                            <span class="status-dot"></span>
+                                            Active
+                                        </span>
+                                    </td>
+                                    <td>Daniel Karanja</td>
+                                    <td>Daniel Karanja</td>
+                                </tr>
+                                <!-- Row 7 -->
+                                <tr>
+                                    <td>7</td>
+                                    <td>CA0419</td>
+                                    <td>BlueWave Logistics</td>
+                                    <td>Corporate</td>
+                                    <td>Certificate Of Incorporation</td>
+                                    <td>9862978224</td>
+                                    <td>0768263782</td>
+                                    <td>
+                                        <span class="status-badge active">
+                                            <span class="status-dot"></span>
+                                            Active
+                                        </span>
+                                    </td>
+                                    <td>Daniel Karanja</td>
+                                    <td>Daniel Karanja</td>
+                                </tr>
+                                <!-- Row 8 -->
+                                <tr>
+                                    <td>8</td>
+                                    <td>CA0418</td>
+                                    <td>Yala Towers</td>
+                                    <td>Corporate</td>
+                                    <td>Certificate Of Incorporation</td>
+                                    <td>8762872323</td>
+                                    <td>07762862486</td>
+                                    <td>
+                                        <span class="status-badge active">
+                                            <span class="status-dot"></span>
+                                            Active
+                                        </span>
+                                    </td>
+                                    <td>Daniel Karanja</td>
+                                    <td>Daniel Karanja</td>
+                                </tr>
+                                <!-- Row 9 -->
+                                <tr>
+                                    <td>9</td>
+                                    <td>IA1161</td>
+                                    <td>Annette Wambui Crystal</td>
+                                    <td>Individual</td>
+                                    <td>National Identification Number</td>
+                                    <td>1239872424</td>
+                                    <td>0787826323</td>
+                                    <td>
+                                        <span class="status-badge active">
+                                            <span class="status-dot"></span>
+                                            Active
+                                        </span>
+                                    </td>
+                                    <td>Danielle Approver</td>
+                                    <td>Danielle Approver</td>
+                                </tr>
+                                <!-- Row 10 -->
+                                <tr>
+                                    <td>10</td>
+                                    <td>CA0417</td>
+                                    <td>Azania Bank</td>
+                                    <td>Corporate</td>
+                                    <td>Certificate Of Incorporation</td>
+                                    <td>7698856</td>
+                                    <td>0800 110 210</td>
+                                    <td>
+                                        <span class="status-badge active">
+                                            <span class="status-dot"></span>
+                                            Active
+                                        </span>
+                                    </td>
+                                    <td>Irvine Sunday</td>
+                                    <td>Irvine Sunday</td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <!-- EMPTY STATE (hidden by default, shown when no data) -->
+                        <div class="empty-state" id="emptyState" style="display: none;">
+                            <div class="empty-state-icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                                    <circle cx="9" cy="7" r="4"></circle>
+                                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                                </svg>
+                            </div>
+                            <h3 class="empty-state-title">No Partners Found</h3>
+                            <p class="empty-state-desc">There are no partners registered in the system yet. Add your first partner to get started with managing your insurance partnerships.</p>
+                            <div class="empty-state-actions">
+                                <button class="btn btn-primary" id="emptyAddPartnerBtn">
+                                    <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <line x1="12" y1="8" x2="12" y2="16"></line>
+                                        <line x1="8" y1="12" x2="16" y2="12"></line>
+                                    </svg>
+                                    Add Partner
+                                </button>
+                                <button class="btn btn-secondary" id="emptyBulkUploadBtn">
+                                    <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                        <polyline points="17 8 12 3 7 8"></polyline>
+                                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                                    </svg>
+                                    Bulk Upload
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PAGINATION -->
+                    <div class="pagination-wrapper" id="paginationWrapper">
+                        <div class="pagination-info">
+                            Showing Page <span>1</span> of <span>91</span>
+                        </div>
+                        <div class="pagination">
+                            <button class="page-btn prev-next" disabled>Previous</button>
+                            <button class="page-btn active">1</button>
+                            <button class="page-btn">2</button>
+                            <button class="page-btn">3</button>
+                            <button class="page-btn" disabled>...</button>
+                            <button class="page-btn prev-next">Next</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============================================
+                 FOOTER
+                 ============================================ -->
+            <footer class="footer">
+                <div class="footer-left">
+                    <button class="footer-task-btn">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="8" y1="6" x2="21" y2="6"></line>
+                            <line x1="8" y1="12" x2="21" y2="12"></line>
+                            <line x1="8" y1="18" x2="21" y2="18"></line>
+                            <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                            <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                            <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                        </svg>
+                        Task
+                    </button>
+                </div>
+
+                <div class="footer-center">
+                    <div class="footer-item">
+                        <span class="footer-rate">129.45 TZS/USD</span>
+                    </div>
+                    <div class="footer-item footer-status">
+                        <span class="status-dot-pulse"></span>
+                        <span>Connection Stable</span>
+                    </div>
+                    <div class="footer-ai-badge">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"></path>
+                            <path d="M12 6v6l4 2"></path>
+                        </svg>
+                        AI
+                    </div>
+                </div>
+
+                <div class="footer-right">
+                    <div class="footer-logo-mini">Z</div>
+                    <span>Powered by Aimsoft Limited Solutions</span>
+                </div>
+            </footer>
+        </main>
+    </div>
+
+    <!-- ============================================
+         JAVASCRIPT - Partner Page Interactions
+         ============================================ -->
+    <script>
+        (function() {
+            'use strict';
+
+            // ============================================
+            // MOBILE SIDEBAR TOGGLE
+            // ============================================
+            const menuToggle = document.getElementById('menuToggle');
+            const sidebar = document.getElementById('sidebar');
+
+            if (menuToggle && sidebar) {
+                menuToggle.addEventListener('click', function() {
+                    sidebar.classList.toggle('open');
+                });
+            }
+
+            // ============================================
+            // TABLE DATA & STATE
+            // ============================================
+            const allPartners = [
+                { no: 1, partnerNumber: 'CA0422', partner: 'Kilimanjaro Fresh Produce Limited', clientType: 'Corporate', idType: 'Certificate Of Incorporation', idNumber: '7483926150', telephone: '+255-27-2234567', status: 'Active', createdBy: 'Irvine Sunday', updatedBy: 'Irvine Sunday' },
+                { no: 2, partnerNumber: 'IA1165', partner: 'Joseph Daniel Mwakalinga', clientType: 'Individual', idType: 'National Identification Number', idNumber: '902345671', telephone: '+263-4-2345686', status: 'Active', createdBy: 'Irvine Sunday', updatedBy: 'Irvine Sunday' },
+                { no: 3, partnerNumber: 'CA0421', partner: 'SBC Tanzania Ltd', clientType: 'Corporate', idType: 'Certificate Of Incorporation', idNumber: '45789688769', telephone: '365776475', status: 'Active', createdBy: 'Irvine Sunday', updatedBy: 'Irvine Sunday' },
+                { no: 4, partnerNumber: 'IA1164', partner: 'Martin Joshua Moses', clientType: 'Individual', idType: 'National Identification Number', idNumber: '64365654654', telephone: '497686875', status: 'Active', createdBy: 'Irvine Sunday', updatedBy: 'Irvine Sunday' },
+                { no: 5, partnerNumber: 'CA0420', partner: 'Unity Capital Bank', clientType: 'Corporate', idType: 'Certificate Of Incorporation', idNumber: '0897298233', telephone: '07862872632', status: 'Active', createdBy: 'Daniel Karanja', updatedBy: 'Daniel Karanja' },
+                { no: 6, partnerNumber: 'IA1163', partner: 'Mwangi Kevin Kamau', clientType: 'Individual', idType: 'National Identification Number', idNumber: '0981082122', telephone: '0786232332', status: 'Active', createdBy: 'Daniel Karanja', updatedBy: 'Daniel Karanja' },
+                { no: 7, partnerNumber: 'CA0419', partner: 'BlueWave Logistics', clientType: 'Corporate', idType: 'Certificate Of Incorporation', idNumber: '9862978224', telephone: '0768263782', status: 'Active', createdBy: 'Daniel Karanja', updatedBy: 'Daniel Karanja' },
+                { no: 8, partnerNumber: 'CA0418', partner: 'Yala Towers', clientType: 'Corporate', idType: 'Certificate Of Incorporation', idNumber: '8762872323', telephone: '07762862486', status: 'Active', createdBy: 'Daniel Karanja', updatedBy: 'Daniel Karanja' },
+                { no: 9, partnerNumber: 'IA1161', partner: 'Annette Wambui Crystal', clientType: 'Individual', idType: 'National Identification Number', idNumber: '1239872424', telephone: '0787826323', status: 'Active', createdBy: 'Danielle Approver', updatedBy: 'Danielle Approver' },
+                { no: 10, partnerNumber: 'CA0417', partner: 'Azania Bank', clientType: 'Corporate', idType: 'Certificate Of Incorporation', idNumber: '7698856', telephone: '0800 110 210', status: 'Active', createdBy: 'Irvine Sunday', updatedBy: 'Irvine Sunday' }
+            ];
+
+            let currentPage = 1;
+            let entriesPerPage = 10;
+            let filteredData = [...allPartners];
+
+            // ============================================
+            // RENDER TABLE
+            // ============================================
+            function renderTable(data) {
+                const tableBody = document.getElementById('tableBody');
+                const emptyState = document.getElementById('emptyState');
+                const paginationWrapper = document.getElementById('paginationWrapper');
+                const table = document.getElementById('partnerTable');
+
+                if (data.length === 0) {
+                    // Show empty state
+                    table.style.display = 'none';
+                    paginationWrapper.style.display = 'none';
+                    emptyState.style.display = 'flex';
+                    return;
+                }
+
+                // Show table
+                table.style.display = 'table';
+                paginationWrapper.style.display = 'flex';
+                emptyState.style.display = 'none';
+
+                // Calculate pagination
+                const startIndex = (currentPage - 1) * entriesPerPage;
+                const endIndex = startIndex + entriesPerPage;
+                const pageData = data.slice(startIndex, endIndex);
+                const totalPages = Math.ceil(data.length / entriesPerPage);
+
+                // Render rows
+                tableBody.innerHTML = pageData.map(partner => `
+                    <tr>
+                        <td>${partner.no}</td>
+                        <td>${partner.partnerNumber}</td>
+                        <td>${partner.partner}</td>
+                        <td>${partner.clientType}</td>
+                        <td>${partner.idType}</td>
+                        <td>${partner.idNumber}</td>
+                        <td>${partner.telephone}</td>
+                        <td>
+                            <span class="status-badge ${partner.status.toLowerCase()}">
+                                <span class="status-dot"></span>
+                                ${partner.status}
+                            </span>
+                        </td>
+                        <td>${partner.createdBy}</td>
+                        <td>${partner.updatedBy}</td>
+                    </tr>
+                `).join('');
+
+                // Update pagination info
+                const paginationInfo = paginationWrapper.querySelector('.pagination-info');
+                paginationInfo.innerHTML = `Showing Page <span>${currentPage}</span> of <span>${totalPages}</span>`;
+
+                // Render pagination buttons
+                renderPaginationButtons(totalPages);
+            }
+
+            // ============================================
+            // RENDER PAGINATION BUTTONS
+            // ============================================
+            function renderPaginationButtons(totalPages) {
+                const pagination = document.querySelector('.pagination');
+                let buttons = '';
+
+                // Previous button
+                buttons += `<button class="page-btn prev-next" ${currentPage === 1 ? 'disabled' : ''} onclick="changePage(${currentPage - 1})">Previous</button>`;
+
+                // Page numbers
+                const maxVisible = 3;
+                let startPage = Math.max(1, currentPage - 1);
+                let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+
+                if (endPage - startPage < maxVisible - 1) {
+                    startPage = Math.max(1, endPage - maxVisible + 1);
+                }
+
+                for (let i = startPage; i <= endPage; i++) {
+                    buttons += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="changePage(${i})">${i}</button>`;
+                }
+
+                if (endPage < totalPages) {
+                    buttons += `<button class="page-btn" disabled>...</button>`;
+                }
+
+                // Next button
+                buttons += `<button class="page-btn prev-next" ${currentPage === totalPages ? 'disabled' : ''} onclick="changePage(${currentPage + 1})">Next</button>`;
+
+                pagination.innerHTML = buttons;
+            }
+
+            // Global function for pagination onclick
+            window.changePage = function(page) {
+                const totalPages = Math.ceil(filteredData.length / entriesPerPage);
+                if (page >= 1 && page <= totalPages) {
+                    currentPage = page;
+                    renderTable(filteredData);
+                }
+            };
+
+            // ============================================
+            // ENTRIES DROPDOWN
+            // ============================================
+            const entriesSelect = document.getElementById('entriesSelect');
+            if (entriesSelect) {
+                entriesSelect.addEventListener('change', function() {
+                    entriesPerPage = parseInt(this.value);
+                    currentPage = 1;
+                    renderTable(filteredData);
+                });
+            }
+
+            // ============================================
+            // SEARCH FUNCTIONALITY
+            // ============================================
+            const searchInput = document.getElementById('searchInput');
+            if (searchInput) {
+                let searchTimeout;
+                searchInput.addEventListener('input', function() {
+                    clearTimeout(searchTimeout);
+                    searchTimeout = setTimeout(() => {
+                        const query = this.value.toLowerCase().trim();
+
+                        if (query === '') {
+                            filteredData = [...allPartners];
+                        } else {
+                            filteredData = allPartners.filter(p => 
+                                p.partner.toLowerCase().includes(query) ||
+                                p.partnerNumber.toLowerCase().includes(query) ||
+                                p.clientType.toLowerCase().includes(query) ||
+                                p.idType.toLowerCase().includes(query) ||
+                                p.idNumber.toLowerCase().includes(query) ||
+                                p.telephone.toLowerCase().includes(query) ||
+                                p.createdBy.toLowerCase().includes(query)
+                            );
+                        }
+
+                        currentPage = 1;
+                        renderTable(filteredData);
+                    }, 300);
+                });
+            }
+
+            // ============================================
+            // SORTING
+            // ============================================
+            document.querySelectorAll('.data-table th').forEach((th, index) => {
+                th.addEventListener('click', function() {
+                    const sortKey = ['no', 'partnerNumber', 'partner', 'clientType', 'idType', 'idNumber', 'telephone', 'status', 'createdBy', 'updatedBy'][index];
+                    const isAscending = !this.classList.contains('sort-asc');
+
+                    // Remove sort classes from all headers
+                    document.querySelectorAll('.data-table th').forEach(h => {
+                        h.classList.remove('sort-asc', 'sort-desc');
+                    });
+
+                    this.classList.add(isAscending ? 'sort-asc' : 'sort-desc');
+
+                    filteredData.sort((a, b) => {
+                        let aVal = a[sortKey];
+                        let bVal = b[sortKey];
+
+                        if (typeof aVal === 'string') {
+                            aVal = aVal.toLowerCase();
+                            bVal = bVal.toLowerCase();
+                        }
+
+                        if (aVal < bVal) return isAscending ? -1 : 1;
+                        if (aVal > bVal) return isAscending ? 1 : -1;
+                        return 0;
+                    });
+
+                    renderTable(filteredData);
+                });
+            });
+
+            // ============================================
+            // ADD PARTNER BUTTON
+            // ============================================
+            const addPartnerBtn = document.getElementById('addPartnerBtn');
+            const emptyAddPartnerBtn = document.getElementById('emptyAddPartnerBtn');
+
+            function handleAddPartner() {
+                // Simulate adding a partner
+                const newPartner = {
+                    no: allPartners.length + 1,
+                    partnerNumber: 'CA04' + (17 + allPartners.length),
+                    partner: 'New Partner ' + (allPartners.length + 1),
+                    clientType: 'Corporate',
+                    idType: 'Certificate Of Incorporation',
+                    idNumber: String(Math.floor(Math.random() * 1000000000)),
+                    telephone: '+255-' + Math.floor(Math.random() * 1000000000),
+                    status: 'Active',
+                    createdBy: 'Irvine Sunday',
+                    updatedBy: 'Irvine Sunday'
+                };
+                allPartners.push(newPartner);
+                filteredData = [...allPartners];
+                currentPage = 1;
+                renderTable(filteredData);
+
+                // Show toast notification
+                showToast('Partner added successfully!', 'success');
+            }
+
+            if (addPartnerBtn) addPartnerBtn.addEventListener('click', handleAddPartner);
+            if (emptyAddPartnerBtn) emptyAddPartnerBtn.addEventListener('click', handleAddPartner);
+
+            // ============================================
+            // BULK UPLOAD BUTTON
+            // ============================================
+            const bulkUploadBtn = document.getElementById('bulkUploadBtn');
+            const emptyBulkUploadBtn = document.getElementById('emptyBulkUploadBtn');
+
+            function handleBulkUpload() {
+                showToast('Bulk upload feature coming soon!', 'info');
+            }
+
+            if (bulkUploadBtn) bulkUploadBtn.addEventListener('click', handleBulkUpload);
+            if (emptyBulkUploadBtn) emptyBulkUploadBtn.addEventListener('click', handleBulkUpload);
+
+            // ============================================
+            // TOAST NOTIFICATION
+            // ============================================
+            function showToast(message, type) {
+                const toast = document.createElement('div');
+                toast.style.cssText = `
+                    position: fixed;
+                    top: 80px;
+                    right: 24px;
+                    padding: 12px 20px;
+                    border-radius: 12px;
+                    font-size: 13px;
+                    font-weight: 600;
+                    z-index: 10000;
+                    animation: slideInRight 0.3s ease-out;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                `;
+
+                if (type === 'success') {
+                    toast.style.background = 'var(--color-success)';
+                    toast.style.color = 'white';
+                } else if (type === 'info') {
+                    toast.style.background = 'var(--md-primary)';
+                    toast.style.color = 'white';
+                } else {
+                    toast.style.background = 'var(--color-error)';
+                    toast.style.color = 'white';
+                }
+
+                toast.textContent = message;
+                document.body.appendChild(toast);
+
+                setTimeout(() => {
+                    toast.style.animation = 'fadeOut 0.3s ease-out forwards';
+                    setTimeout(() => toast.remove(), 300);
+                }, 3000);
+            }
+
+            // Add toast animations
+            const toastStyles = document.createElement('style');
+            toastStyles.textContent = `
+                @keyframes slideInRight { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+                @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+            `;
+            document.head.appendChild(toastStyles);
+
+            // ============================================
+            // REAL-TIME CLOCK
+            // ============================================
+            function updateClock() {
+                const periodDate = document.querySelector('.period-date');
+                if (periodDate) {
+                    const now = new Date();
+                    const day = String(now.getDate()).padStart(2, '0');
+                    const month = now.toLocaleString('en', { month: 'short' });
+                    const year = now.getFullYear();
+                    const hours = String(now.getHours()).padStart(2, '0');
+                    const minutes = String(now.getMinutes()).padStart(2, '0');
+                    const seconds = String(now.getSeconds()).padStart(2, '0');
+                    periodDate.textContent = `${day} ${month} ${year} ${hours}:${minutes}:${seconds}`;
+                }
+            }
+            setInterval(updateClock, 1000);
+            updateClock();
+
+            // ============================================
+            // NAV ITEM EXPAND/COLLAPSE
+            // ============================================
+            document.querySelectorAll('.nav-item').forEach(item => {
+                const chevron = item.querySelector('.nav-chevron');
+                if (chevron) {
+                    item.addEventListener('click', function(e) {
+                        if (e.target === chevron || chevron.contains(e.target)) {
+                            e.preventDefault();
+                            this.classList.toggle('expanded');
+                        }
+                    });
+                }
+            });
+
+            // ============================================
+            // INITIAL RENDER
+            // ============================================
+            renderTable(filteredData);
+
+            console.log('ZIC AIMS Partner On-boarding initialized successfully');
+        })();
+    </script>
+</body>
+</html>

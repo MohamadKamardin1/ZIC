@@ -2,6 +2,7 @@ from apps.users.models import User as BaseUser
 from apps.users.models import UserGroup as BaseUserGroup
 from apps.users.models import UserPermission as BaseUserPermission
 from apps.users.models import PermissionGroup as BasePermissionGroup
+from apps.users.models import NotificationPreference as BaseNotificationPreference
 
 
 class User(BaseUser):
@@ -34,3 +35,11 @@ class PermissionGroup(BasePermissionGroup):
         app_label = 'user_management'
         verbose_name = 'Permission Group'
         verbose_name_plural = 'Permission Groups'
+
+
+class NotificationPreference(BaseNotificationPreference):
+    class Meta:
+        proxy = True
+        app_label = 'user_management'
+        verbose_name = 'Notification Preference'
+        verbose_name_plural = 'Notification Preferences'

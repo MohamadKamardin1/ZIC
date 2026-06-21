@@ -16,6 +16,7 @@ api_v1_patterns = [
     path('auth/', include('apps.authentication.urls')),
     path('users/', include('apps.users.urls')),
     path('partners/', include('apps.partners.urls')),
+    path('onboarding/', include('apps.partner_onboarding.urls')),
     path('dashboard/', include('apps.dashboard.urls')),
 ]
 

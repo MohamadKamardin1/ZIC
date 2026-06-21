@@ -15,20 +15,26 @@ logger = logging.getLogger('apps.authentication.serializers')
 
 
 class LoginSerializer(serializers.Serializer):
-    username = serializers.CharField(required=True)
+    username = serializers.CharField(required=True, help_text='Username or email address')
     password = serializers.CharField(required=True, write_only=True)
     otp_code = serializers.CharField(required=False, allow_blank=True)
 
     def validate(self, attrs):
-        username = attrs.get('username')
+        username_or_email = attrs.get('username')
         password = attrs.get('password')
         otp_code = attrs.get('otp_code', '')
         request = self.context.get('request')
 
+        # Try to find user by username first, then by email
+        user = None
         try:
-            user = User.objects.get(username=username)
+            user = User.objects.get(username=username_or_email)
         except User.DoesNotExist:
-            raise serializers.ValidationError('Invalid credentials.')
+            # If username not found, try email
+            try:
+                user = User.objects.get(email=username_or_email)
+            except User.DoesNotExist:
+                raise serializers.ValidationError('Invalid credentials.')
 
         if not user.is_active:
             raise serializers.ValidationError('Account is disabled.')
@@ -38,7 +44,8 @@ class LoginSerializer(serializers.Serializer):
                 f'Account locked until {user.account_locked_until.strftime("%Y-%m-%d %H:%M")}.'
             )
 
-        auth_user = authenticate(request=request, username=username, password=password)
+        # Authenticate with the actual username
+        auth_user = authenticate(request=request, username=user.username, password=password)
         if auth_user is None:
             user.record_failed_login()
             raise serializers.ValidationError('Invalid credentials.')

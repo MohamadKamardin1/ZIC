@@ -1,0 +1,10 @@
+// Side-effect import: registers all custom elements.
+import "./policies-card"
+import "./claims-card"
+import "./partners-card"
+import "./debited-gauge"
+import "./quotations-chart"
+import "./notifications-panel"
+import "./todo-leads"
+import "./todo"
+import "./leads"

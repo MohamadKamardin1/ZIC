@@ -6,7 +6,7 @@ from django.core import exceptions as django_exceptions
 
 from .models import (
     User, UserGroup, UserPermission, PermissionGroup,
-    UserSession, UserActivityLog, UserOTP,
+    UserSession, UserActivityLog, UserOTP, NotificationPreference,
 )
 
 logger = logging.getLogger('apps.users.serializers')
@@ -21,7 +21,9 @@ class UserListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name', 'full_name',
             'phone_number', 'user_type', 'is_active', 'is_approved',
-            'is_2fa_enabled', 'last_login', 'last_activity', 'date_joined',
+            'is_2fa_enabled', 'email_verified', 'phone_verified',
+            'department', 'job_title', 'employee_id',
+            'last_login', 'last_activity', 'date_joined',
             'active_sessions_count',
         ]
 
@@ -29,6 +31,7 @@ class UserListSerializer(serializers.ModelSerializer):
 class UserDetailSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(read_only=True)
     is_account_locked = serializers.BooleanField(read_only=True)
+    is_password_expired = serializers.BooleanField(read_only=True)
     groups = serializers.StringRelatedField(many=True, read_only=True)
 
     class Meta:
@@ -37,8 +40,12 @@ class UserDetailSerializer(serializers.ModelSerializer):
             'id', 'username', 'email', 'first_name', 'last_name', 'full_name',
             'phone_number', 'user_type', 'is_active', 'is_approved',
             'is_2fa_enabled', 'otp_method', 'is_account_locked',
+            'is_password_expired', 'email_verified', 'email_verified_at',
+            'phone_verified', 'phone_verified_at',
             'failed_login_attempts', 'account_locked_until',
             'must_change_password', 'password_changed_at',
+            'avatar', 'date_of_birth', 'department', 'job_title',
+            'employee_id', 'terms_accepted_at',
             'last_login', 'last_activity', 'last_ip_address',
             'date_joined', 'groups',
         ]
@@ -54,7 +61,8 @@ class UserCreateSerializer(serializers.ModelSerializer):
         fields = [
             'username', 'email', 'password', 'password_confirm',
             'first_name', 'last_name', 'phone_number',
-            'user_type', 'group_ids',
+            'user_type', 'department', 'job_title', 'employee_id',
+            'date_of_birth', 'group_ids',
         ]
 
     def validate(self, attrs):
@@ -83,6 +91,8 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         fields = [
             'first_name', 'last_name', 'phone_number',
             'user_type', 'is_active', 'is_approved',
+            'department', 'job_title', 'employee_id',
+            'date_of_birth', 'avatar',
         ]
 
 
@@ -94,9 +104,12 @@ class UserProfileSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name', 'full_name',
             'phone_number', 'user_type', 'is_2fa_enabled', 'otp_method',
+            'email_verified', 'phone_verified',
+            'avatar', 'date_of_birth', 'department', 'job_title', 'employee_id',
             'last_login', 'last_activity', 'date_joined',
         ]
         read_only_fields = ['id', 'username', 'email', 'user_type',
+                             'email_verified', 'phone_verified',
                              'date_joined', 'last_login', 'last_activity']
 
     def update(self, instance, validated_data):
@@ -214,3 +227,14 @@ class ChangePasswordSerializer(serializers.Serializer):
         except django_exceptions.ValidationError as e:
             raise serializers.ValidationError({'new_password': list(e.messages)})
         return attrs
+
+
+class NotificationPreferenceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NotificationPreference
+        fields = [
+            'id', 'email_notifications', 'sms_notifications',
+            'push_notifications', 'login_alerts', 'marketing_emails',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']

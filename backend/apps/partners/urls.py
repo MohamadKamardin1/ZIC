@@ -1,3 +1,9 @@
-from django.urls import path
+from django.urls import include
+from rest_framework.routers import DefaultRouter
 
-urlpatterns = []
+from .views import PartnerViewSet
+
+router = DefaultRouter()
+router.register(r"", PartnerViewSet, basename="partners")
+
+urlpatterns = router.urls

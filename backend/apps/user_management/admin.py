@@ -3,7 +3,7 @@ from django.utils.translation import gettext_lazy as _
 from import_export.admin import ImportExportModelAdmin
 from import_export import resources
 
-from .models import User, UserGroup, UserPermission, PermissionGroup
+from .models import User, UserGroup, UserPermission, PermissionGroup, NotificationPreference
 
 
 class UserResource(resources.ModelResource):
@@ -86,3 +86,12 @@ class PermissionGroupAdmin(admin.ModelAdmin):
     list_filter = ['module_code']
     search_fields = ['name', 'module_code']
     filter_horizontal = ['permissions']
+
+
+@admin.register(NotificationPreference)
+class NotificationPreferenceAdmin(admin.ModelAdmin):
+    list_display = ['user', 'email_notifications', 'sms_notifications',
+                     'push_notifications', 'login_alerts', 'marketing_emails']
+    list_filter = ['email_notifications', 'sms_notifications', 'login_alerts', 'marketing_emails']
+    search_fields = ['user__username', 'user__email']
+    readonly_fields = ['id', 'created_at', 'updated_at']

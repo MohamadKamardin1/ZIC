@@ -1,0 +1,262 @@
+import uuid
+import logging
+
+from django.db import models
+from django.conf import settings
+from django.utils import timezone
+
+from apps.partners.models import (
+    IDENTIFICATION_TYPE_CHOICES,
+    TITLE_CHOICES,
+    GENDER_CHOICES,
+    MARITAL_STATUS_CHOICES,
+    POLITICAL_RISK_CHOICES,
+    AML_RISK_CHOICES,
+    INDUSTRY_CHOICES,
+    NATIONALITY_CHOICES,
+)
+
+logger = logging.getLogger(__name__)
+
+
+APPLICATION_STATUS_CHOICES = [
+    ("ACTIVE", "Active"),
+    ("DRAFT", "Draft"),
+    ("SUBMITTED", "Submitted"),
+    ("UNDER_REVIEW", "Under Review"),
+    ("PENDING_DOCUMENTS", "Pending Documents"),
+    ("COMPLIANCE_CHECK", "Compliance Check"),
+    ("APPROVED", "Approved"),
+    ("CONVERTED", "Converted to Partner"),
+    ("REJECTED", "Rejected"),
+    ("SUSPENDED", "Suspended"),
+]
+
+PARTNER_TYPE_CHOICES = [
+    ("INDIVIDUAL", "Individual"),
+    ("CORPORATE", "Corporate"),
+]
+
+DOCUMENT_TYPE_CHOICES = [
+    ("NID", "National ID"),
+    ("PASSPORT", "Passport"),
+    ("ZAN_ID", "Zanzibar ID"),
+    ("DRIVING_LICENSE", "Driving License"),
+    ("TIN_CERTIFICATE", "TIN Certificate"),
+    ("VOTER_ID", "Voter ID"),
+    ("RESIDENT_PERMIT", "Resident Permit"),
+    ("MILITARY_ID", "Military ID"),
+    ("INCORPORATION_CERT", "Certificate of Incorporation"),
+    ("MEMORANDUM", "Memorandum of Association"),
+    ("BOARD_RESOLUTION", "Board Resolution"),
+    ("OTHER", "Other"),
+]
+
+TASK_TYPE_CHOICES = [
+    ("DOCUMENT_REQUEST", "Document Request"),
+    ("COMPLIANCE_CHECK", "Compliance Check"),
+    ("REVIEW", "Review"),
+    ("APPROVAL", "Approval"),
+    ("OTHER", "Other"),
+]
+
+TASK_STATUS_CHOICES = [
+    ("PENDING", "Pending"),
+    ("IN_PROGRESS", "In Progress"),
+    ("COMPLETED", "Completed"),
+    ("CANCELLED", "Cancelled"),
+]
+
+TASK_PRIORITY_CHOICES = [
+    ("LOW", "Low"),
+    ("MEDIUM", "Medium"),
+    ("HIGH", "High"),
+    ("URGENT", "Urgent"),
+]
+
+
+class PartnerApplication(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application_number = models.CharField(max_length=50, unique=True, db_index=True)
+    partner_type = models.CharField(max_length=20, choices=PARTNER_TYPE_CHOICES)
+    status = models.CharField(max_length=30, choices=APPLICATION_STATUS_CHOICES, default="ACTIVE")
+
+    identification_type = models.CharField(max_length=30, choices=IDENTIFICATION_TYPE_CHOICES, blank=True)
+    identification_number = models.CharField(max_length=100, blank=True)
+    title = models.CharField(max_length=10, choices=TITLE_CHOICES, blank=True)
+    first_name = models.CharField(max_length=100, blank=True)
+    other_name = models.CharField(max_length=100, blank=True)
+    surname = models.CharField(max_length=100, blank=True)
+    gender = models.CharField(max_length=10, choices=GENDER_CHOICES, blank=True)
+    date_of_birth = models.DateField(null=True, blank=True)
+    marital_status = models.CharField(max_length=20, choices=MARITAL_STATUS_CHOICES, blank=True)
+    occupation = models.CharField(max_length=200, blank=True)
+    nationality = models.CharField(max_length=100, choices=NATIONALITY_CHOICES, blank=True)
+
+    company_name = models.CharField(max_length=255, blank=True)
+    tin_number = models.CharField(max_length=50, blank=True)
+    incorporation_date = models.DateField(null=True, blank=True)
+    industry = models.CharField(max_length=100, choices=INDUSTRY_CHOICES, blank=True)
+    contact_person = models.CharField(max_length=200, blank=True)
+    contact_person_phone = models.CharField(max_length=20, blank=True)
+    contact_person_email = models.EmailField(blank=True)
+    physical_address = models.TextField(blank=True)
+    postal_address = models.TextField(blank=True)
+
+    email = models.EmailField()
+    telephone_number = models.CharField(max_length=20, blank=True)
+    mobile_number = models.CharField(max_length=20)
+    political_risk = models.CharField(max_length=20, choices=POLITICAL_RISK_CHOICES, default="LOW")
+    aml_risk = models.CharField(max_length=20, choices=AML_RISK_CHOICES, default="LOW")
+
+    submitted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="submitted_applications",
+    )
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="reviewed_applications",
+    )
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="approved_applications",
+    )
+    rejection_reason = models.TextField(blank=True)
+    compliance_notes = models.TextField(blank=True)
+
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
+    converted_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    _previous_status = None
+
+    class Meta:
+        db_table = "onboarding_partner_application"
+        verbose_name = "Partner Application"
+        verbose_name_plural = "Partner Applications"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["application_number"]),
+            models.Index(fields=["status"]),
+            models.Index(fields=["partner_type", "status"]),
+            models.Index(fields=["submitted_by", "status"]),
+            models.Index(fields=["email"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(partner_type="INDIVIDUAL") | models.Q(partner_type="CORPORATE"),
+                name="valid_partner_type",
+            ),
+        ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._previous_status = self.status
+
+    def __str__(self):
+        return f"Application {self.application_number} - {self.get_status_display()}"
+
+    @property
+    def display_name(self):
+        if self.partner_type == "INDIVIDUAL":
+            return f"{self.first_name} {self.surname}".strip()
+        return self.company_name
+
+    @property
+    def previous_status(self):
+        return self._previous_status
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        self._previous_status = self.status
+
+
+class PartnerApplicationDocument(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(
+        PartnerApplication,
+        on_delete=models.CASCADE,
+        related_name="documents",
+    )
+    document_type = models.CharField(max_length=50, choices=DOCUMENT_TYPE_CHOICES)
+    document_name = models.CharField(max_length=255)
+    file = models.FileField(upload_to="partner_documents/%Y/%m/")
+    file_size = models.BigIntegerField(null=True, blank=True)
+    mime_type = models.CharField(max_length=100, blank=True)
+    is_verified = models.BooleanField(default=False)
+    verified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="verified_documents",
+    )
+    verified_at = models.DateTimeField(null=True, blank=True)
+    verification_notes = models.TextField(blank=True)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="uploaded_documents",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "onboarding_partner_application_document"
+        verbose_name = "Application Document"
+        verbose_name_plural = "Application Documents"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.get_document_type_display()} - {self.document_name}"
+
+
+class PartnerApplicationTask(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(
+        PartnerApplication,
+        on_delete=models.CASCADE,
+        related_name="tasks",
+    )
+    task_type = models.CharField(max_length=50, choices=TASK_TYPE_CHOICES)
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    assigned_to = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="assigned_onboarding_tasks",
+    )
+    status = models.CharField(max_length=20, choices=TASK_STATUS_CHOICES, default="PENDING")
+    priority = models.CharField(max_length=10, choices=TASK_PRIORITY_CHOICES, default="MEDIUM")
+    due_date = models.DateField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    completed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="completed_onboarding_tasks",
+    )
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "onboarding_partner_application_task"
+        verbose_name = "Application Task"
+        verbose_name_plural = "Application Tasks"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.get_task_type_display()} - {self.title}"

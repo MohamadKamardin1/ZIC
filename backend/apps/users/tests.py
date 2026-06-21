@@ -70,6 +70,193 @@ class UserModelTests(TestCase):
         self.assertEqual(self.user.failed_login_attempts, 0)
         self.assertIsNone(self.user.account_locked_until)
 
+    def test_email_verified_defaults(self):
+        self.assertFalse(self.user.email_verified)
+        self.assertIsNone(self.user.email_verified_at)
+
+    def test_phone_verified_defaults(self):
+        self.assertFalse(self.user.phone_verified)
+        self.assertIsNone(self.user.phone_verified_at)
+
+    def test_profile_fields_defaults(self):
+        self.assertEqual(self.user.avatar, '')
+        self.assertIsNone(self.user.date_of_birth)
+        self.assertEqual(self.user.department, '')
+        self.assertEqual(self.user.job_title, '')
+        self.assertEqual(self.user.employee_id, '')
+
+    def test_terms_accepted_defaults(self):
+        self.assertIsNone(self.user.terms_accepted_at)
+
+    def test_password_expiry_default(self):
+        self.assertTrue(self.user.is_password_expired)
+        self.user.password_changed_at = timezone.now()
+        self.user.save()
+        self.assertFalse(self.user.is_password_expired)
+
+    def test_verify_email(self):
+        self.user.email_verified = True
+        self.user.email_verified_at = timezone.now()
+        self.user.save()
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.email_verified)
+        self.assertIsNotNone(self.user.email_verified_at)
+
+    def test_verify_phone(self):
+        self.user.phone_verified = True
+        self.user.phone_verified_at = timezone.now()
+        self.user.save()
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.phone_verified)
+        self.assertIsNotNone(self.user.phone_verified_at)
+
+    def test_accept_terms(self):
+        self.user.terms_accepted_at = timezone.now()
+        self.user.save()
+        self.user.refresh_from_db()
+        self.assertIsNotNone(self.user.terms_accepted_at)
+
+    def test_profile_update(self):
+        self.user.department = 'Engineering'
+        self.user.job_title = 'Developer'
+        self.user.employee_id = 'EMP001'
+        self.user.date_of_birth = timezone.now().date() - timedelta(days=365*30)
+        self.user.avatar = 'https://example.com/avatar.jpg'
+        self.user.save()
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.department, 'Engineering')
+        self.assertEqual(self.user.job_title, 'Developer')
+        self.assertEqual(self.user.employee_id, 'EMP001')
+        self.assertEqual(self.user.avatar, 'https://example.com/avatar.jpg')
+
+    def test_is_email_verified_property(self):
+        self.assertFalse(self.user.is_email_verified)
+        self.user.email_verified = True
+        self.user.save()
+        self.assertTrue(self.user.is_email_verified)
+
+    def test_is_phone_verified_property(self):
+        self.assertFalse(self.user.is_phone_verified)
+        self.user.phone_verified = True
+        self.user.save()
+        self.assertTrue(self.user.is_phone_verified)
+
+
+class NotificationPreferenceModelTests(TestCase):
+    def setUp(self):
+        from apps.users.models import User
+        self.user = User.objects.create_user(
+            username='prefuser',
+            email='pref@example.com',
+            password='TestPass123!',
+        )
+
+    def test_auto_created_on_user_creation(self):
+        from apps.users.models import NotificationPreference
+        self.assertTrue(
+            NotificationPreference.objects.filter(user=self.user).exists()
+        )
+
+    def test_default_values(self):
+        from apps.users.models import NotificationPreference
+        prefs = self.user.notification_preferences
+        self.assertTrue(prefs.email_notifications)
+        self.assertTrue(prefs.sms_notifications)
+        self.assertFalse(prefs.push_notifications)
+        self.assertTrue(prefs.login_alerts)
+        self.assertFalse(prefs.marketing_emails)
+
+    def test_str_representation(self):
+        self.assertEqual(
+            str(self.user.notification_preferences),
+            'prefuser preferences'
+        )
+
+    def test_update_preferences(self):
+        prefs = self.user.notification_preferences
+        prefs.email_notifications = False
+        prefs.sms_notifications = False
+        prefs.push_notifications = True
+        prefs.marketing_emails = True
+        prefs.save()
+        prefs.refresh_from_db()
+        self.assertFalse(prefs.email_notifications)
+        self.assertFalse(prefs.sms_notifications)
+        self.assertTrue(prefs.push_notifications)
+        self.assertTrue(prefs.marketing_emails)
+
+    def test_unique_user_constraint(self):
+        from apps.users.models import NotificationPreference
+        with self.assertRaises(Exception):
+            NotificationPreference.objects.create(user=self.user)
+
+class SignalTests(TestCase):
+    def setUp(self):
+        from apps.users.models import User
+        self.user = User.objects.create_user(
+            username='signalbase',
+            email='signalbase@example.com',
+            password='TestPass123!',
+        )
+
+    def test_notification_prefs_created_on_user_create(self):
+        from apps.users.models import User, NotificationPreference
+        user = User.objects.create_user(
+            username='signaltest',
+            email='signaltest@example.com',
+            password='TestPass123!',
+        )
+        self.assertTrue(
+            NotificationPreference.objects.filter(user=user).exists()
+        )
+
+    def test_notification_prefs_not_duplicated_on_save(self):
+        from apps.users.models import NotificationPreference
+        count_before = NotificationPreference.objects.count()
+        self.user.save()
+        count_after = NotificationPreference.objects.count()
+        self.assertEqual(count_before, count_after)
+
+    def test_2fa_record_auto_created_when_enabled(self):
+        from apps.users.models import TwoFactorAuth
+        self.user.is_2fa_enabled = True
+        self.user.save()
+        self.assertTrue(
+            TwoFactorAuth.objects.filter(user=self.user).exists()
+        )
+
+
+class TaskTests(TestCase):
+    def test_send_otp_email_task(self):
+        from apps.users.tasks import send_otp_email
+        result = send_otp_email.delay('test@example.com', '123456', 'LOGIN')
+        self.assertIsNotNone(result.id)
+
+    def test_send_otp_sms_task(self):
+        from apps.users.tasks import send_otp_sms
+        result = send_otp_sms.delay('+255712345678', '123456', 'LOGIN')
+        self.assertIsNotNone(result.id)
+
+    def test_cleanup_expired_sessions_task(self):
+        from apps.users.tasks import cleanup_expired_sessions
+        result = cleanup_expired_sessions.delay()
+        self.assertIsNotNone(result.id)
+
+    def test_cleanup_expired_otps_task(self):
+        from apps.users.tasks import cleanup_expired_otps
+        result = cleanup_expired_otps.delay()
+        self.assertIsNotNone(result.id)
+
+    def test_password_expiry_reminder_task(self):
+        from apps.users.tasks import password_expiry_reminder
+        result = password_expiry_reminder.delay()
+        self.assertIsNotNone(result.id)
+
+    def test_send_welcome_email_task(self):
+        from apps.users.tasks import send_welcome_email
+        result = send_welcome_email.delay('test@example.com', 'testuser')
+        self.assertIsNotNone(result.id)
+
 
 class UserGroupModelTests(TestCase):
     def setUp(self):
