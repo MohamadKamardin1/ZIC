@@ -7,24 +7,125 @@ from apps.partner_onboarding.models import (
     PartnerApplication,
     PartnerApplicationDocument,
     PartnerApplicationTask,
-    APPLICATION_STATUS_CHOICES,
-    DOCUMENT_TYPE_CHOICES,
-    TASK_TYPE_CHOICES,
-    TASK_STATUS_CHOICES,
-    TASK_PRIORITY_CHOICES,
+    ApplicationPartnerType,
+    ApplicationContact,
+    ApplicationBankAccount,
+    ApplicationFieldValue,
+    Branch,
+    Location,
 )
-from apps.partners.models import (
-    IDENTIFICATION_TYPE_CHOICES,
-    TITLE_CHOICES,
-    GENDER_CHOICES,
-    MARITAL_STATUS_CHOICES,
-    POLITICAL_RISK_CHOICES,
-    AML_RISK_CHOICES,
-    INDUSTRY_CHOICES,
-    NATIONALITY_CHOICES,
-)
+from apps.system_parameters.services.config_service import ConfigurationService, ConfigurationError
+from apps.system_parameters.services.validation_config_service import ValidationConfigService
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Branch / Location / Application Partner Type / Contact / Bank Serializers
+# ---------------------------------------------------------------------------
+
+
+class BranchSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Branch
+        fields = ["id", "code", "name", "is_active"]
+
+
+class LocationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Location
+        fields = ["id", "branch_id", "code", "name", "is_active"]
+
+
+class ApplicationPartnerTypeSerializer(serializers.ModelSerializer):
+    partner_type_name = serializers.ReadOnlyField(source="partner_type.name")
+    branch_name = serializers.ReadOnlyField(source="branch.name")
+    location_name = serializers.ReadOnlyField(source="location.name")
+
+    class Meta:
+        model = ApplicationPartnerType
+        fields = [
+            "id", "application", "partner_type", "partner_type_name",
+            "branch", "branch_name", "location", "location_name",
+            "share_data_externally", "created_at",
+        ]
+
+
+class ApplicationPartnerTypeCreateSerializer(serializers.Serializer):
+    partner_type = serializers.UUIDField()
+    branches = serializers.ListField(child=serializers.UUIDField(), required=False, default=list)
+    location = serializers.UUIDField(required=False, allow_null=True, default=None)
+    share_data_externally = serializers.BooleanField(default=False)
+
+    def validate_partner_type(self, value):
+        from apps.partners.models import PartnerType
+        try:
+            return PartnerType.objects.get(id=value, is_active=True)
+        except PartnerType.DoesNotExist:
+            raise serializers.ValidationError("Invalid or inactive partner type.")
+
+    def validate_branches(self, value):
+        if not value:
+            return []
+        existing = Branch.objects.filter(id__in=value, is_active=True)
+        if len(existing) != len(value):
+            raise serializers.ValidationError("One or more branches are invalid.")
+        return list(existing)
+
+    def validate_location(self, value):
+        if not value:
+            return None
+        try:
+            return Location.objects.get(id=value, is_active=True)
+        except Location.DoesNotExist:
+            raise serializers.ValidationError("Invalid location.")
+
+    def create(self, validated_data):
+        application = self.context["application"]
+        partner_type = validated_data["partner_type"]
+        branches = validated_data.get("branches", [])
+        location = validated_data.get("location")
+        share = validated_data.get("share_data_externally", False)
+
+        instances = []
+        if branches:
+            for branch in branches:
+                apt = ApplicationPartnerType.objects.create(
+                    application=application,
+                    partner_type=partner_type,
+                    branch=branch,
+                    location=location if branch == branches[-1] else None,
+                    share_data_externally=share,
+                )
+                instances.append(apt)
+        else:
+            apt = ApplicationPartnerType.objects.create(
+                application=application,
+                partner_type=partner_type,
+                location=location,
+                share_data_externally=share,
+            )
+            instances.append(apt)
+        return instances
+
+    def to_representation(self, instance):
+        if isinstance(instance, list):
+            return ApplicationPartnerTypeSerializer(instance, many=True).data
+        return ApplicationPartnerTypeSerializer(instance).data
+
+
+class ApplicationContactSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ApplicationContact
+        exclude = ["application"]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class ApplicationBankAccountSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ApplicationBankAccount
+        exclude = ["application"]
+        read_only_fields = ["id", "is_verified", "created_at", "updated_at"]
 
 
 # ---------------------------------------------------------------------------
@@ -47,29 +148,27 @@ class PartnerApplicationDocumentSerializer(serializers.ModelSerializer):
 
 
 class PartnerApplicationDocumentUploadSerializer(serializers.ModelSerializer):
-    ALLOWED_MIME_TYPES = [
-        "application/pdf",
-        "image/jpeg",
-        "image/png",
-        "image/jpg",
-        "application/msword",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ]
-    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+    document_type = serializers.CharField(max_length=50)
 
     class Meta:
         model = PartnerApplicationDocument
         fields = ["id", "document_type", "document_name", "file"]
 
     def validate_file(self, value):
-        if value.size > self.MAX_FILE_SIZE:
+        from apps.system_parameters.services.document_config_service import DocumentConfigService
+
+        max_bytes = DocumentConfigService.get_max_file_size_bytes()
+        if value.size > max_bytes:
+            max_mb = DocumentConfigService.get_max_file_size_mb()
             raise serializers.ValidationError(
-                "File size must not exceed 10 MB."
+                f"File size must not exceed {max_mb} MB."
             )
-        if value.content_type not in self.ALLOWED_MIME_TYPES:
+
+        allowed_mimes = DocumentConfigService.get_allowed_mime_types()
+        if value.content_type not in allowed_mimes:
             raise serializers.ValidationError(
                 f"File type '{value.content_type}' is not allowed. "
-                f"Accepted types: PDF, JPEG, PNG, DOC, DOCX."
+                f"Accepted types: {', '.join(allowed_mimes)}."
             )
         return value
 
@@ -179,18 +278,8 @@ class PartnerApplicationDetailSerializer(serializers.ModelSerializer):
 # Application Create Serializer (write — partner-type routing + validation)
 # ---------------------------------------------------------------------------
 
-INDIVIDUAL_REQUIRED_FIELDS = [
-    "identification_type", "identification_number",
-    "first_name", "surname", "email", "mobile_number",
-    "date_of_birth", "nationality", "gender",
-]
-
-CORPORATE_REQUIRED_FIELDS = [
-    "company_name", "tin_number", "incorporation_date",
-    "industry", "email", "mobile_number",
-    "contact_person", "contact_person_phone",
-    "contact_person_email", "physical_address",
-]
+INDIVIDUAL_REQUIRED_FIELDS = ValidationConfigService.get_individual_required_fields()
+CORPORATE_REQUIRED_FIELDS = ValidationConfigService.get_corporate_required_fields()
 
 
 class PartnerApplicationCreateSerializer(serializers.ModelSerializer):
@@ -365,6 +454,7 @@ class PartnerConvertSerializer(serializers.Serializer):
 
 class ChoicesSerializer(serializers.Serializer):
     partner_types = serializers.SerializerMethodField()
+    partner_categories = serializers.SerializerMethodField()
     identification_types = serializers.SerializerMethodField()
     titles = serializers.SerializerMethodField()
     genders = serializers.SerializerMethodField()
@@ -378,49 +468,122 @@ class ChoicesSerializer(serializers.Serializer):
     task_types = serializers.SerializerMethodField()
     task_statuses = serializers.SerializerMethodField()
     task_priorities = serializers.SerializerMethodField()
+    system_partner_types = serializers.SerializerMethodField()
+    branches = serializers.SerializerMethodField()
+    locations = serializers.SerializerMethodField()
 
-    def _format(self, choices):
-        return [{"value": c[0], "label": c[1]} for c in choices]
+    CHOICE_LIST_MAP = {
+        "partner_types": "PARTNER_TYPE_CHOICES",
+        "identification_types": "IDENTIFICATION_TYPE_CHOICES",
+        "titles": "TITLE_CHOICES",
+        "genders": "GENDER_CHOICES",
+        "marital_statuses": "MARITAL_STATUS_CHOICES",
+        "political_risks": "POLITICAL_RISK_CHOICES",
+        "aml_risks": "AML_RISK_CHOICES",
+        "industries": "INDUSTRY_CHOICES",
+        "nationalities": "NATIONALITY_CHOICES",
+        "application_statuses": "APPLICATION_STATUS_CHOICES",
+        "document_types": "DOCUMENT_TYPE_CHOICES",
+        "task_types": "TASK_TYPE_CHOICES",
+        "task_statuses": "TASK_STATUS_CHOICES",
+        "task_priorities": "TASK_PRIORITY_CHOICES",
+    }
+
+    def _get_choice_list(self, code):
+        try:
+            return ConfigurationService.get_choice_list(code)
+        except ConfigurationError:
+            return []
 
     def get_partner_types(self, obj):
-        from apps.partners.models import PARTNER_TYPE_CHOICES
-        return self._format(PARTNER_TYPE_CHOICES)
+        return self._get_choice_list("PARTNER_TYPE_CHOICES")
+
+    def get_partner_categories(self, obj):
+        return self._get_choice_list("PARTNER_CATEGORY_CHOICES")
 
     def get_identification_types(self, obj):
-        return self._format(IDENTIFICATION_TYPE_CHOICES)
+        return self._get_choice_list("IDENTIFICATION_TYPE_CHOICES")
 
     def get_titles(self, obj):
-        return self._format(TITLE_CHOICES)
+        return self._get_choice_list("TITLE_CHOICES")
 
     def get_genders(self, obj):
-        return self._format(GENDER_CHOICES)
+        return self._get_choice_list("GENDER_CHOICES")
 
     def get_marital_statuses(self, obj):
-        return self._format(MARITAL_STATUS_CHOICES)
+        return self._get_choice_list("MARITAL_STATUS_CHOICES")
 
     def get_political_risks(self, obj):
-        return self._format(POLITICAL_RISK_CHOICES)
+        return self._get_choice_list("POLITICAL_RISK_CHOICES")
 
     def get_aml_risks(self, obj):
-        return self._format(AML_RISK_CHOICES)
+        return self._get_choice_list("AML_RISK_CHOICES")
 
     def get_industries(self, obj):
-        return self._format(INDUSTRY_CHOICES)
+        return self._get_choice_list("INDUSTRY_CHOICES")
 
     def get_nationalities(self, obj):
-        return self._format(NATIONALITY_CHOICES)
+        return self._get_choice_list("NATIONALITY_CHOICES")
 
     def get_application_statuses(self, obj):
-        return self._format(APPLICATION_STATUS_CHOICES)
+        return self._get_choice_list("APPLICATION_STATUS_CHOICES")
 
     def get_document_types(self, obj):
-        return self._format(DOCUMENT_TYPE_CHOICES)
+        return self._get_choice_list("DOCUMENT_TYPE_CHOICES")
 
     def get_task_types(self, obj):
-        return self._format(TASK_TYPE_CHOICES)
+        return self._get_choice_list("TASK_TYPE_CHOICES")
 
     def get_task_statuses(self, obj):
-        return self._format(TASK_STATUS_CHOICES)
+        return self._get_choice_list("TASK_STATUS_CHOICES")
 
     def get_task_priorities(self, obj):
-        return self._format(TASK_PRIORITY_CHOICES)
+        return self._get_choice_list("TASK_PRIORITY_CHOICES")
+
+    def get_system_partner_types(self, obj):
+        from apps.partners.models import PartnerType
+        return [
+            {"value": str(pt.id), "label": pt.name}
+            for pt in PartnerType.objects.filter(is_active=True).order_by("name")
+        ]
+
+    def get_branches(self, obj):
+        from apps.partner_onboarding.models import Branch
+        return [
+            {"value": str(b.id), "label": b.name}
+            for b in Branch.objects.filter(is_active=True).order_by("name")
+        ]
+
+    def get_locations(self, obj):
+        from apps.partner_onboarding.models import Location
+        return [
+            {"value": str(l.id), "label": l.name, "branch_id": str(l.branch_id)}
+            for l in Location.objects.filter(is_active=True).order_by("name")
+        ]
+
+
+# ---------------------------------------------------------------------------
+# Field Value Serializers
+# ---------------------------------------------------------------------------
+
+
+class ApplicationFieldValueSerializer(serializers.ModelSerializer):
+    field_code = serializers.ReadOnlyField(source="field_config.field_code")
+    field_name = serializers.ReadOnlyField(source="field_config.field_name")
+    field_type = serializers.ReadOnlyField(source="field_config.field_type")
+
+    class Meta:
+        model = ApplicationFieldValue
+        exclude = ["application"]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class ApplicationFieldValueBatchSerializer(serializers.Serializer):
+    field_config = serializers.UUIDField()
+    value_json = serializers.JSONField(allow_null=True, default=dict)
+
+    def validate_field_config(self, value):
+        from apps.partners.models import PartnerTypeFieldConfiguration
+        if not PartnerTypeFieldConfiguration.objects.filter(id=value).exists():
+            raise serializers.ValidationError("Invalid field_config ID")
+        return value

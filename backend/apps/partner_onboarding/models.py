@@ -14,6 +14,7 @@ from apps.partners.models import (
     AML_RISK_CHOICES,
     INDUSTRY_CHOICES,
     NATIONALITY_CHOICES,
+    PartnerTypeFieldConfiguration,
 )
 
 logger = logging.getLogger(__name__)
@@ -260,3 +261,154 @@ class PartnerApplicationTask(models.Model):
 
     def __str__(self):
         return f"{self.get_task_type_display()} - {self.title}"
+
+
+class Branch(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    code = models.CharField(max_length=20, unique=True)
+    name = models.CharField(max_length=200)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "onboarding_branch"
+        verbose_name = "Branch"
+        verbose_name_plural = "Branches"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class Location(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    branch = models.ForeignKey(Branch, on_delete=models.CASCADE, related_name="locations")
+    code = models.CharField(max_length=20)
+    name = models.CharField(max_length=200)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "onboarding_location"
+        verbose_name = "Location"
+        verbose_name_plural = "Locations"
+        ordering = ["name"]
+        unique_together = [["branch", "code"]]
+
+    def __str__(self):
+        return f"{self.branch.name} - {self.name}"
+
+
+class ApplicationPartnerType(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(
+        PartnerApplication, on_delete=models.CASCADE, related_name="partner_types"
+    )
+    partner_type = models.ForeignKey(
+        "partners.PartnerType", on_delete=models.CASCADE
+    )
+    branch = models.ForeignKey(
+        Branch, on_delete=models.SET_NULL, null=True, blank=True
+    )
+    location = models.ForeignKey(
+        Location, on_delete=models.SET_NULL, null=True, blank=True
+    )
+    share_data_externally = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "onboarding_application_partner_type"
+        verbose_name = "Application Partner Type"
+        verbose_name_plural = "Application Partner Types"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.application.application_number} - {self.partner_type.name}"
+
+
+class ApplicationContact(models.Model):
+    CONTACT_TYPE_CHOICES = [
+        ("PRIMARY", "Primary"),
+        ("SECONDARY", "Secondary"),
+        ("BILLING", "Billing"),
+        ("TECHNICAL", "Technical"),
+        ("OTHER", "Other"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(
+        PartnerApplication, on_delete=models.CASCADE, related_name="contacts"
+    )
+    contact_type = models.CharField(max_length=20, choices=CONTACT_TYPE_CHOICES, default="SECONDARY")
+    first_name = models.CharField(max_length=100)
+    last_name = models.CharField(max_length=100)
+    email = models.EmailField(blank=True)
+    phone = models.CharField(max_length=20, blank=True)
+    mobile = models.CharField(max_length=20, blank=True)
+    designation = models.CharField(max_length=200, blank=True)
+    is_primary = models.BooleanField(default=False)
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "onboarding_application_contact"
+        verbose_name = "Application Contact"
+        verbose_name_plural = "Application Contacts"
+        ordering = ["-is_primary", "last_name"]
+
+    def __str__(self):
+        return f"{self.first_name} {self.last_name}"
+
+
+class ApplicationBankAccount(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(
+        PartnerApplication, on_delete=models.CASCADE, related_name="bank_accounts"
+    )
+    bank_name = models.CharField(max_length=200)
+    branch_name = models.CharField(max_length=200, blank=True)
+    account_name = models.CharField(max_length=200)
+    account_number = models.CharField(max_length=50)
+    swift_code = models.CharField(max_length=20, blank=True)
+    iban = models.CharField(max_length=50, blank=True)
+    currency = models.CharField(max_length=3, default="TZS")
+    is_primary = models.BooleanField(default=False)
+    is_verified = models.BooleanField(default=False)
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "onboarding_application_bank_account"
+        verbose_name = "Application Bank Account"
+        verbose_name_plural = "Application Bank Accounts"
+        ordering = ["-is_primary"]
+
+    def __str__(self):
+        return f"{self.account_name} - {self.bank_name}"
+
+
+class ApplicationFieldValue(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(
+        PartnerApplication, on_delete=models.CASCADE, related_name="field_values"
+    )
+    field_config = models.ForeignKey(
+        PartnerTypeFieldConfiguration, on_delete=models.CASCADE, related_name="application_field_values"
+    )
+    value_json = models.JSONField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "onboarding_application_field_value"
+        verbose_name = "Application Field Value"
+        verbose_name_plural = "Application Field Values"
+        unique_together = [("application", "field_config")]
+        ordering = ["field_config__display_order", "field_config__field_code"]
+
+    def __str__(self):
+        return f"{self.field_config.field_code}: {self.value_json}"

@@ -9,8 +9,8 @@ export class ClaimsCard extends LitElement {
     cardStyles,
     css`
       .card {
-        background: linear-gradient(160deg, #f0fdf4 0%, #ecfdf5 100%);
-        border-color: #d1fae5;
+        background: var(--card);
+        border-color: var(--border);
       }
       .grid {
         display: grid;
@@ -57,7 +57,7 @@ export class ClaimsCard extends LitElement {
     const dash = (c.percent / 100) * circ
     return svg`
       <svg width="64" height="64" viewBox="0 0 64 64">
-        <circle cx="32" cy="32" r="${r}" fill="none" stroke="#e2e8f0" stroke-width="6" stroke-dasharray="2 4" stroke-linecap="round" />
+        <circle cx="32" cy="32" r="${r}" fill="none" stroke-width="6" stroke-dasharray="2 4" stroke-linecap="round" style="stroke:var(--color-stroke-neutral)" />
         <circle cx="32" cy="32" r="${r}" fill="none" stroke="${c.color}" stroke-width="6"
           stroke-dasharray="${dash} ${circ}" stroke-linecap="round"
           transform="rotate(-90 32 32)" />
@@ -71,7 +71,7 @@ export class ClaimsCard extends LitElement {
       <div class="card">
         <div class="head">
           <h3 class="title">Claims Processed</h3>
-          <div class="icon-badge" style="background:#fef3c7;color:#d97706">
+          <div class="icon-badge" style="background:var(--accent);color:var(--primary)">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /><path d="m9 15 2 2 4-4" />
             </svg>

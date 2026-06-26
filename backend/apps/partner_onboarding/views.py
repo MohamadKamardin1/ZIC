@@ -16,6 +16,12 @@ from apps.partner_onboarding.models import (
     PartnerApplication,
     PartnerApplicationDocument,
     PartnerApplicationTask,
+    ApplicationPartnerType,
+    ApplicationContact,
+    ApplicationBankAccount,
+    ApplicationFieldValue,
+    Branch,
+    Location,
 )
 from apps.partner_onboarding.serializers import (
     PartnerApplicationListSerializer,
@@ -30,6 +36,14 @@ from apps.partner_onboarding.serializers import (
     PartnerApplicationDocumentUploadSerializer,
     PartnerApplicationTaskSerializer,
     ChoicesSerializer,
+    BranchSerializer,
+    LocationSerializer,
+    ApplicationPartnerTypeSerializer,
+    ApplicationPartnerTypeCreateSerializer,
+    ApplicationContactSerializer,
+    ApplicationBankAccountSerializer,
+    ApplicationFieldValueSerializer,
+    ApplicationFieldValueBatchSerializer,
 )
 from apps.partner_onboarding.services import ApplicationService, ComplianceService
 from apps.partner_onboarding.exceptions import (
@@ -458,6 +472,134 @@ TEMPLATE_FILES = {
     "INDIVIDUAL": "Individual_Partners_Template.xlsx",
     "CORPORATE": "Corporate_Partners_Template.xlsx",
 }
+
+
+@api_view(["GET"])
+def choices(request):
+    """Return all dropdown choices for the frontend."""
+    serializer = ChoicesSerializer({})
+    return _response(data=serializer.data, message="Choices retrieved successfully.")
+
+
+# ---------------------------------------------------------------------------
+# Branch / Location / Partner Type / Contact / Bank Viewsets
+# ---------------------------------------------------------------------------
+
+
+class BranchViewSet(viewsets.ModelViewSet):
+    queryset = Branch.objects.all().order_by("name")
+    serializer_class = BranchSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardPagination
+    search_fields = ["code", "name"]
+    ordering_fields = ["name", "code", "created_at"]
+    ordering = ["name"]
+
+
+class LocationViewSet(viewsets.ModelViewSet):
+    queryset = Location.objects.all().order_by("name")
+    serializer_class = LocationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardPagination
+    search_fields = ["code", "name"]
+    ordering_fields = ["name", "code", "created_at", "branch"]
+    ordering = ["name"]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        branch_id = self.request.query_params.get("branch_id")
+        if branch_id:
+            qs = qs.filter(branch_id=branch_id)
+        return qs
+
+
+class ApplicationPartnerTypeViewSet(viewsets.ModelViewSet):
+    serializer_class = ApplicationPartnerTypeSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return ApplicationPartnerType.objects.filter(
+            application_id=self.kwargs.get("application_pk")
+        ).order_by("-created_at")
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return ApplicationPartnerTypeCreateSerializer
+        return ApplicationPartnerTypeSerializer
+
+    def perform_create(self, serializer):
+        serializer.save(application_id=self.kwargs.get("application_pk"))
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        instances = serializer.instance
+        if isinstance(instances, list):
+            result = ApplicationPartnerTypeSerializer(instances, many=True, context=self.get_serializer_context()).data
+        else:
+            result = ApplicationPartnerTypeSerializer(instances, context=self.get_serializer_context()).data
+        return _response(data=result, message="Partner type added successfully.", status_code=status.HTTP_201_CREATED)
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx["application"] = get_object_or_404(
+            PartnerApplication, id=self.kwargs.get("application_pk")
+        )
+        return ctx
+
+
+class ApplicationContactViewSet(viewsets.ModelViewSet):
+    serializer_class = ApplicationContactSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return ApplicationContact.objects.filter(
+            application_id=self.kwargs.get("application_pk")
+        ).order_by("-is_primary", "last_name")
+
+    def perform_create(self, serializer):
+        serializer.save(application_id=self.kwargs.get("application_pk"))
+
+
+class ApplicationBankAccountViewSet(viewsets.ModelViewSet):
+    serializer_class = ApplicationBankAccountSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return ApplicationBankAccount.objects.filter(
+            application_id=self.kwargs.get("application_pk")
+        ).order_by("-is_primary")
+
+    def perform_create(self, serializer):
+        serializer.save(application_id=self.kwargs.get("application_pk"))
+
+
+class ApplicationFieldValueViewSet(viewsets.ModelViewSet):
+    serializer_class = ApplicationFieldValueSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return ApplicationFieldValue.objects.filter(
+            application_id=self.kwargs.get("application_pk")
+        ).select_related("field_config")
+
+    def perform_create(self, serializer):
+        serializer.save(application_id=self.kwargs.get("application_pk"))
+
+    @action(detail=False, methods=["patch"], url_path="batch")
+    def batch_update(self, request, application_pk=None):
+        serializer = ApplicationFieldValueBatchSerializer(data=request.data, many=True)
+        serializer.is_valid(raise_exception=True)
+        results = []
+        for item in serializer.validated_data:
+            fv, _ = ApplicationFieldValue.objects.update_or_create(
+                application_id=application_pk,
+                field_config_id=item["field_config"],
+                defaults={"value_json": item.get("value_json", {})},
+            )
+            results.append(ApplicationFieldValueSerializer(fv).data)
+        return _response(data=results, message="Field values updated.")
 
 
 @api_view(["GET"])

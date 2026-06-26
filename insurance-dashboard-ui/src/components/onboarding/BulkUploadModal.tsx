@@ -91,12 +91,12 @@ export default function BulkUploadModal({ open, onClose, onSuccess }: Props) {
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="mx-4 w-full max-w-lg rounded-xl bg-white shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "var(--color-bg-overlay)" }}>
+      <div className="mx-4 w-full max-w-lg rounded-xl bg-card shadow-xl">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-          <h2 className="text-lg font-semibold text-gray-900">Bulk Upload Partner</h2>
-          <button onClick={handleClose} className="rounded p-1 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600">
+        <div className="flex items-center justify-between border-b border-border px-6 py-4">
+          <h2 className="text-lg font-semibold text-foreground">Bulk Upload Partner</h2>
+          <button onClick={handleClose} className="rounded p-1 text-muted-foreground transition hover:bg-secondary hover:text-foreground">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -108,11 +108,11 @@ export default function BulkUploadModal({ open, onClose, onSuccess }: Props) {
               {/* Client type + Download row */}
               <div className="flex items-end gap-4">
                 <div className="flex-1">
-                  <label className="mb-1.5 block text-sm font-medium text-gray-700">Client Type</label>
+                  <label className="mb-1.5 block text-sm font-medium text-foreground">Client Type</label>
                   <select
                     value={clientType}
                     onChange={(e) => setClientType(e.target.value as "INDIVIDUAL" | "CORPORATE")}
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 transition hover:border-indigo-500 focus:border-indigo-500 focus:outline-none focus:ring-3 focus:ring-indigo-100"
+                    className="w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground transition focus:border-ring focus:outline-none focus:ring-3 focus:ring-ring/40"
                   >
                     <option value="">Select client type</option>
                     <option value="INDIVIDUAL">Individual</option>
@@ -122,7 +122,7 @@ export default function BulkUploadModal({ open, onClose, onSuccess }: Props) {
                 <button
                   onClick={handleDownload}
                   disabled={!clientType || downloading}
-                  className="inline-flex h-[38px] items-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white transition hover:bg-indigo-700 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex h-[38px] items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition hover:brightness-110 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {downloading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -139,28 +139,34 @@ export default function BulkUploadModal({ open, onClose, onSuccess }: Props) {
                 onDragLeave={() => setDragOver(false)}
                 onDrop={handleFileDrop}
                 onClick={() => inputRef.current?.click()}
-                className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-6 py-10 transition ${
-                  dragOver
-                    ? "border-indigo-500 bg-indigo-50"
+                style={{
+                  borderColor: dragOver
+                    ? "var(--color-brand-primary)"
                     : file
-                      ? "border-green-400 bg-green-50"
-                      : "border-gray-300 bg-gray-50 hover:border-indigo-400 hover:bg-indigo-50/50"
-                }`}
+                      ? "var(--color-feedback-success)"
+                      : "var(--color-border-input)",
+                  backgroundColor: dragOver
+                    ? "var(--color-bg-info-soft)"
+                    : file
+                      ? "var(--color-bg-success-soft)"
+                      : "var(--color-bg-muted)",
+                }}
+                className="flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-6 py-10 transition hover:border-primary/50"
               >
                 {file ? (
                   <>
-                    <FileSpreadsheet className="mb-2 h-10 w-10 text-green-600" />
-                    <p className="text-sm font-medium text-gray-900">{file.name}</p>
-                    <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(1)} KB</p>
-                    <p className="mt-2 text-xs text-gray-400">Click or drag to replace</p>
+                    <FileSpreadsheet className="mb-2 h-10 w-10" style={{ color: "var(--color-feedback-success)" }} />
+                    <p className="text-sm font-medium text-foreground">{file.name}</p>
+                    <p className="text-xs text-muted-foreground">{(file.size / 1024).toFixed(1)} KB</p>
+                    <p className="mt-2 text-xs text-muted-foreground">Click or drag to replace</p>
                   </>
                 ) : (
                   <>
-                    <Upload className="mb-3 h-10 w-10 text-gray-400" />
-                    <p className="text-sm font-medium text-gray-700">
-                      Drop your Excel file here, or <span className="text-indigo-600">browse</span>
+                    <Upload className="mb-3 h-10 w-10 text-muted-foreground" />
+                    <p className="text-sm font-medium text-foreground">
+                      Drop your Excel file here, or <span className="text-primary">browse</span>
                     </p>
-                    <p className="mt-1 text-xs text-gray-400">Supports .xlsx and .xls files</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Supports .xlsx and .xls files</p>
                   </>
                 )}
                 <input
@@ -177,7 +183,7 @@ export default function BulkUploadModal({ open, onClose, onSuccess }: Props) {
                 <button
                   onClick={handleUpload}
                   disabled={!file}
-                  className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-6 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-lg bg-primary px-6 py-2 text-sm font-semibold text-primary-foreground transition hover:brightness-110 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Upload className="h-4 w-4" />
                   Upload
@@ -188,35 +194,35 @@ export default function BulkUploadModal({ open, onClose, onSuccess }: Props) {
 
           {step === "uploading" && (
             <div className="flex flex-col items-center py-10">
-              <Loader2 className="mb-4 h-10 w-10 animate-spin text-indigo-600" />
-              <p className="text-sm font-medium text-gray-700">Uploading and processing file...</p>
-              <p className="mt-1 text-xs text-gray-400">Please wait while partners are being imported</p>
+              <Loader2 className="mb-4 h-10 w-10 animate-spin text-primary" />
+              <p className="text-sm font-medium text-foreground">Uploading and processing file...</p>
+              <p className="mt-1 text-xs text-muted-foreground">Please wait while partners are being imported</p>
             </div>
           )}
 
           {step === "result" && result && (
             <div className="space-y-4 py-2">
               {result.errors.length === 0 ? (
-                <div className="flex flex-col items-center rounded-lg bg-green-50 px-4 py-6 text-center">
-                  <CheckCircle2 className="mb-3 h-12 w-12 text-green-600" />
-                  <p className="text-lg font-semibold text-green-800">Upload Complete</p>
-                  <p className="mt-1 text-sm text-green-700">
+                <div className="flex flex-col items-center rounded-lg px-4 py-6 text-center" style={{ backgroundColor: "var(--color-bg-success-soft)" }}>
+                  <CheckCircle2 className="mb-3 h-12 w-12" style={{ color: "var(--color-feedback-success)" }} />
+                  <p className="text-lg font-semibold" style={{ color: "var(--color-text-success-soft)" }}>Upload Complete</p>
+                  <p className="mt-1 text-sm" style={{ color: "var(--color-text-success-soft)" }}>
                     {result.imported} partner{result.imported !== 1 ? "s" : ""} imported successfully.
                     {result.skipped > 0 && ` ${result.skipped} skipped.`}
                   </p>
                 </div>
               ) : (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-4">
+                <div className="rounded-lg border px-4 py-4" style={{ borderColor: "var(--color-bg-warning-soft)", backgroundColor: "var(--color-bg-warning-soft)" }}>
                   <div className="flex items-center gap-2">
-                    <AlertCircle className="h-5 w-5 text-amber-600" />
-                    <p className="text-sm font-semibold text-amber-800">
+                    <AlertCircle className="h-5 w-5" style={{ color: "var(--color-feedback-warning)" }} />
+                    <p className="text-sm font-semibold" style={{ color: "var(--color-text-warning-soft)" }}>
                       {result.imported} imported, {result.skipped} skipped, {result.errors.length} error{result.errors.length !== 1 ? "s" : ""}
                     </p>
                   </div>
                   {result.errors.length > 0 && (
                     <div className="mt-3 max-h-32 space-y-1 overflow-y-auto">
                       {result.errors.map((err, i) => (
-                        <p key={i} className="text-xs text-amber-700">
+                        <p key={i} className="text-xs" style={{ color: "var(--color-text-warning-soft)" }}>
                           Row {err.row}: {err.message}
                         </p>
                       ))}
@@ -227,7 +233,7 @@ export default function BulkUploadModal({ open, onClose, onSuccess }: Props) {
               <div className="flex justify-end">
                 <button
                   onClick={handleClose}
-                  className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700"
+                  className="rounded-lg bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition hover:brightness-110"
                 >
                   Done
                 </button>
@@ -237,7 +243,7 @@ export default function BulkUploadModal({ open, onClose, onSuccess }: Props) {
 
           {/* Inline error */}
           {error && step === "form" && (
-            <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div className="flex items-center gap-2 rounded-lg px-4 py-3 text-sm" style={{ borderColor: "var(--color-bg-destructive-soft)", backgroundColor: "var(--color-bg-destructive-soft)", color: "var(--color-text-destructive-soft)" }}>
               <AlertCircle className="h-4 w-4 shrink-0" />
               {error}
             </div>

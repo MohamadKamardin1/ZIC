@@ -3,6 +3,8 @@ import { Outlet } from "react-router-dom"
 import { Sidebar } from "./Sidebar"
 import { Topbar } from "./Topbar"
 import { Footer } from "./Footer"
+import { AIAssistantPanel } from "../ai/AIAssistantPanel"
+import { aiAnalyzePrompt, aiExecutePartnerCreation, aiClarify } from "../../lib/api"
 
 export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -23,7 +25,7 @@ export default function DashboardLayout() {
 
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-20 bg-black/40 md:hidden"
+          className="fixed inset-0 z-20 md:hidden" style={{ backgroundColor: "var(--color-bg-overlay)" }}
           onClick={() => setSidebarOpen(false)}
         />
       )}
@@ -41,6 +43,46 @@ export default function DashboardLayout() {
           <Footer />
         </div>
       </div>
+
+      <AIAssistantPanel
+        onAnalyze={async (prompt) => {
+          const result = await aiAnalyzePrompt(prompt)
+          const apiData = result.data as Record<string, unknown>
+          return {
+            success: result.success,
+            message: result.message,
+            data: {
+              status: apiData.status as "ready" | "needs_clarification",
+              partnerType: apiData.partnerType as string | undefined,
+              partnerData: apiData.partnerData as Record<string, unknown> | undefined,
+              missingRequired: apiData.missingRequired as string[] | undefined,
+              missingOptional: apiData.missingOptional as string[] | undefined,
+              explanation: apiData.explanation as string | undefined,
+            },
+          }
+        }}
+        onCreate={async (partnerType, partnerData) => {
+          return (await aiExecutePartnerCreation(
+            partnerType as "INDIVIDUAL" | "CORPORATE",
+            partnerData,
+          )) as Record<string, unknown>
+        }}
+        onClarify={async (prompt, missingFields, partialData) => {
+          const result = await aiClarify(prompt, missingFields, partialData)
+          const data = result.data as Record<string, unknown>
+          return {
+            success: true,
+            data: {
+              status: data.status as "ready" | "needs_clarification",
+              partnerType: data.partnerType as string | undefined,
+              partnerData: data.partnerData as Record<string, unknown> | undefined,
+              missingRequired: data.missingRequired as string[] | undefined,
+              missingOptional: data.missingOptional as string[] | undefined,
+              explanation: data.explanation as string | undefined,
+            },
+          }
+        }}
+      />
     </div>
   )
 }

@@ -2,7 +2,6 @@ import logging
 from datetime import date
 
 from django.db import transaction
-from django.db.models import Max
 from django.utils import timezone
 
 from apps.partner_onboarding.exceptions import (
@@ -11,62 +10,36 @@ from apps.partner_onboarding.exceptions import (
     PartnerConversionError,
 )
 from apps.partner_onboarding.models import PartnerApplication
+from apps.system_parameters.services.workflow_service import WorkflowEngine
+from apps.system_parameters.services.numbering_service import NumberingEngine
+from apps.system_parameters.services.validation_config_service import ValidationConfigService
+from apps.system_parameters.services.config_service import (
+    ConfigurationService,
+    ConfigurationError,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class ApplicationService:
 
-    STATE_MACHINE = {
-        "ACTIVE": ["DRAFT", "SUBMITTED"],
-        "DRAFT": ["SUBMITTED"],
-        "SUBMITTED": ["UNDER_REVIEW", "DRAFT"],
-        "UNDER_REVIEW": ["PENDING_DOCUMENTS", "COMPLIANCE_CHECK", "REJECTED"],
-        "PENDING_DOCUMENTS": ["UNDER_REVIEW", "COMPLIANCE_CHECK", "REJECTED"],
-        "COMPLIANCE_CHECK": ["APPROVED", "REJECTED", "SUSPENDED"],
-        "APPROVED": ["CONVERTED"],
-        "SUSPENDED": ["COMPLIANCE_CHECK", "REJECTED"],
-        "REJECTED": [],
-        "CONVERTED": [],
-    }
-
     @staticmethod
     def _validate_transition(application, target_status):
-        allowed = ApplicationService.STATE_MACHINE.get(
-            application.status, []
-        )
-        if target_status not in allowed:
+        try:
+            WorkflowEngine.validate_transition(application.status, target_status)
+        except ConfigurationError as e:
             raise ApplicationTransitionError(
-                message=(
-                    f"Cannot transition from '{application.status}' "
-                    f"to '{target_status}'."
-                ),
+                message=str(e),
                 details={
                     "current_status": application.status,
                     "requested_status": target_status,
-                    "allowed_transitions": allowed,
+                    "allowed_transitions": WorkflowEngine.get_allowed_transitions(application.status),
                 },
             )
 
     @staticmethod
     def generate_application_number(partner_type="INDIVIDUAL"):
-        today = date.today()
-        year = today.year
-        code = "PA" if partner_type == "INDIVIDUAL" else "CO"
-        prefix = f"{code}-{year}-"
-        last = (
-            PartnerApplication.objects
-            .filter(application_number__startswith=prefix)
-            .aggregate(last_num=Max("application_number"))
-        )["last_num"]
-        if last:
-            try:
-                num = int(last.split("-")[-1]) + 1
-            except (ValueError, IndexError):
-                num = 1
-        else:
-            num = 1
-        return f"{prefix}{num:06d}"
+        return NumberingEngine.generate_application_number(partner_type)
 
     @staticmethod
     def deduplicate_drafts(email):
@@ -98,12 +71,7 @@ class ApplicationService:
         ApplicationService._validate_transition(application, "SUBMITTED")
         partner_type = application.partner_type
         if partner_type == "INDIVIDUAL":
-            required = [
-                "identification_type", "identification_number",
-                "first_name", "surname", "email",
-                "mobile_number", "date_of_birth",
-                "nationality", "gender",
-            ]
+            required = ValidationConfigService.get_individual_required_fields()
             for field in required:
                 if not getattr(application, field, None):
                     raise ApplicationValidationError(
@@ -111,12 +79,7 @@ class ApplicationService:
                         details={"missing_field": field},
                     )
         elif partner_type == "CORPORATE":
-            required = [
-                "company_name", "tin_number", "incorporation_date",
-                "industry", "email", "mobile_number",
-                "contact_person", "contact_person_phone",
-                "contact_person_email", "physical_address",
-            ]
+            required = ValidationConfigService.get_corporate_required_fields()
             for field in required:
                 if not getattr(application, field, None):
                     raise ApplicationValidationError(
@@ -246,7 +209,7 @@ class ApplicationService:
     def convert_to_partner(application, user):
         ApplicationService._validate_transition(application, "CONVERTED")
 
-        from apps.partners.models import Partner
+        from apps.partners.models import Partner, IndividualProfile, CorporateProfile
 
         if Partner.objects.filter(email=application.email).exists():
             raise PartnerConversionError(
@@ -255,26 +218,12 @@ class ApplicationService:
             )
 
         with transaction.atomic():
-            today = date.today()
-            year = today.year
-            prefix = f"PN-{year}-"
-            last = (
-                Partner.objects
-                .filter(partner_number__startswith=prefix)
-                .aggregate(last_num=Max("partner_number"))
-            )["last_num"]
-            if last:
-                try:
-                    num = int(last.split("-")[-1]) + 1
-                except (ValueError, IndexError):
-                    num = 1
-            else:
-                num = 1
-            partner_number = f"{prefix}{num:06d}"
+            partner_number = NumberingEngine.generate_partner_number()
 
             partner = Partner.objects.create(
                 partner_number=partner_number,
                 partner_type=application.partner_type,
+                partner_category=application.partner_type,
                 status="ACTIVE",
                 identification_type=application.identification_type,
                 identification_number=application.identification_number,
@@ -304,6 +253,33 @@ class ApplicationService:
                 created_from_application=application,
                 activated_at=timezone.now(),
             )
+
+            if application.partner_type == "INDIVIDUAL":
+                IndividualProfile.objects.create(
+                    partner=partner,
+                    identification_type=application.identification_type,
+                    identification_number=application.identification_number,
+                    title=application.title,
+                    first_name=application.first_name,
+                    other_name=application.other_name,
+                    surname=application.surname,
+                    gender=application.gender,
+                    date_of_birth=application.date_of_birth,
+                    marital_status=application.marital_status,
+                    occupation=application.occupation,
+                    nationality=application.nationality,
+                )
+            elif application.partner_type == "CORPORATE":
+                CorporateProfile.objects.create(
+                    partner=partner,
+                    company_name=application.company_name,
+                    tin_number=application.tin_number,
+                    incorporation_date=application.incorporation_date,
+                    industry=application.industry,
+                    contact_person=application.contact_person,
+                    contact_person_phone=application.contact_person_phone,
+                    contact_person_email=application.contact_person_email,
+                )
 
             application.status = "CONVERTED"
             application.converted_at = timezone.now()

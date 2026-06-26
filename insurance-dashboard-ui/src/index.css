@@ -1,4 +1,5 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+@import "./theme/tokens.css";
 @import "tailwindcss";
 
 @theme inline {
@@ -44,63 +45,12 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-:root {
-  --radius: 0.75rem;
-
-  --background: #f6f8fb;
-  --foreground: #1e293b;
-
-  --card: #ffffff;
-  --card-foreground: #1e293b;
-
-  --popover: #ffffff;
-  --popover-foreground: #1e293b;
-
-  /* Modern Minimal: blue primary accent */
-  --primary: #2563eb;
-  --primary-foreground: #ffffff;
-
-  --secondary: #f1f5f9;
-  --secondary-foreground: #334155;
-
-  --muted: #f1f5f9;
-  --muted-foreground: #64748b;
-
-  --accent: #eff6ff;
-  --accent-foreground: #1d4ed8;
-
-  --destructive: #ef4444;
-  --destructive-foreground: #ffffff;
-
-  --success: #10b981;
-  --success-foreground: #ffffff;
-
-  --warning: #f59e0b;
-  --warning-foreground: #ffffff;
-
-  --border: #e2e8f0;
-  --input: #e2e8f0;
-  --ring: #2563eb;
-
-  --sidebar: #ffffff;
-  --sidebar-foreground: #475569;
-  --sidebar-accent: #eff6ff;
-  --sidebar-accent-foreground: #1d4ed8;
-
-  /* Harmonized chart palette (Modern Minimal) */
-  --chart-1: #2563eb;
-  --chart-2: #10b981;
-  --chart-3: #f59e0b;
-  --chart-4: #ef4444;
-  --chart-5: #6366f1;
-
-  /* Hero gradient (minimal blue, replaces screenshot purple) */
-  --hero-from: #3b5bdb;
-  --hero-to: #2545b8;
-}
-
 * {
   border-color: var(--border);
+}
+
+html {
+  transition: background-color 0.2s ease;
 }
 
 html,
@@ -116,6 +66,7 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
 
 ::-webkit-scrollbar {

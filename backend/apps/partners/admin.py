@@ -1,7 +1,18 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
-from .models import Partner, PartnerType, PartnerContact, PartnerBankAccount
+from .models import (
+    Partner, PartnerType, PartnerContact, PartnerBankAccount,
+    IndividualProfile, CorporateProfile, PartnerTypeAssignment,
+    PartnerTypeFieldConfiguration,
+    PartnerTypeContactRequirement,
+    PartnerTypeBankRequirement,
+    PartnerDocument,
+    PartnerDynamicFieldValue,
+    PartnerAssignmentContact,
+    PartnerAssignmentBankAccount,
+    PartnerKYCProfile,
+)
 
 
 class PartnerContactInline(admin.TabularInline):
@@ -16,6 +27,35 @@ class PartnerBankAccountInline(admin.TabularInline):
     model = PartnerBankAccount
     extra = 0
     fields = ('bank_name', 'account_name', 'account_number', 'swift_code', 'currency')
+
+
+class IndividualProfileInline(admin.StackedInline):
+    model = IndividualProfile
+    extra = 0
+    can_delete = False
+    fields = (
+        'identification_type', 'identification_number',
+        'title', 'first_name', 'other_name', 'surname',
+        'gender', 'date_of_birth', 'marital_status',
+        'occupation', 'nationality',
+    )
+
+
+class CorporateProfileInline(admin.StackedInline):
+    model = CorporateProfile
+    extra = 0
+    can_delete = False
+    fields = (
+        'company_name', 'tin_number', 'incorporation_date',
+        'industry', 'contact_person', 'contact_person_phone',
+        'contact_person_email',
+    )
+
+
+class PartnerTypeAssignmentInline(admin.TabularInline):
+    model = PartnerTypeAssignment
+    extra = 0
+    fields = ('partner_type', 'branch', 'location', 'status', 'effective_date')
 
 
 @admin.register(PartnerType)
@@ -46,6 +86,7 @@ class PartnerAdmin(admin.ModelAdmin):
     list_display = [
         'partner_number',
         'partner_type',
+        'partner_category',
         'display_name',
         'email',
         'mobile_number',
@@ -59,6 +100,7 @@ class PartnerAdmin(admin.ModelAdmin):
     list_filter = [
         'status',
         'partner_type',
+        'partner_category',
         'political_risk',
         'aml_risk',
         'created_at',
@@ -83,6 +125,7 @@ class PartnerAdmin(admin.ModelAdmin):
         'id',
         'partner_number',
         'status',
+        'partner_category',
         'created_from_application',
         'activated_at',
         'deactivated_at',
@@ -91,7 +134,13 @@ class PartnerAdmin(admin.ModelAdmin):
         'updated_at',
     ]
 
-    inlines = [PartnerContactInline, PartnerBankAccountInline]
+    inlines = [
+        IndividualProfileInline,
+        CorporateProfileInline,
+        PartnerTypeAssignmentInline,
+        PartnerContactInline,
+        PartnerBankAccountInline,
+    ]
     ordering = ['-created_at']
     date_hierarchy = 'created_at'
 
@@ -102,7 +151,7 @@ class PartnerAdmin(admin.ModelAdmin):
 
     fieldsets = (
         ('Partner Information', {
-            'fields': ('partner_number', 'partner_type', 'status'),
+            'fields': ('partner_number', 'partner_type', 'partner_category', 'status'),
             'classes': ('wide',),
         }),
         ('Individual Partner Details', {
@@ -221,3 +270,114 @@ class PartnerAdmin(admin.ModelAdmin):
             count += 1
         self.message_user(request, f"{count} partner(s) deactivated.")
     deactivate_partners.short_description = "Deactivate selected partners"
+
+
+class PartnerDocumentInline(admin.TabularInline):
+    model = PartnerDocument
+    extra = 0
+    fields = ('document_requirement', 'document_number', 'status', 'expiry_date')
+    readonly_fields = ('document_requirement', 'document_number', 'status')
+
+
+class PartnerDynamicFieldValueInline(admin.TabularInline):
+    model = PartnerDynamicFieldValue
+    extra = 0
+    fields = ('field_config', 'value_json')
+    readonly_fields = ('field_config',)
+
+
+class PartnerAssignmentContactInline(admin.TabularInline):
+    model = PartnerAssignmentContact
+    extra = 0
+    fields = ('contact_requirement', 'first_name', 'last_name', 'email', 'phone', 'is_primary')
+    readonly_fields = ('contact_requirement',)
+
+
+class PartnerAssignmentBankAccountInline(admin.TabularInline):
+    model = PartnerAssignmentBankAccount
+    extra = 0
+    fields = ('bank_requirement', 'bank_name', 'account_name', 'account_number', 'is_primary')
+    readonly_fields = ('bank_requirement',)
+
+
+class PartnerKYCProfileInline(admin.StackedInline):
+    model = PartnerKYCProfile
+    extra = 0
+    can_delete = False
+    fields = ('kyc_status', 'last_review_date', 'risk_score', 'risk_level', 'notes')
+
+
+@admin.register(PartnerTypeFieldConfiguration)
+class PartnerTypeFieldConfigurationAdmin(admin.ModelAdmin):
+    list_display = ('field_name', 'field_code', 'field_type', 'partner_type', 'is_required', 'is_active', 'display_order')
+    list_filter = ('field_type', 'is_required', 'is_active', 'partner_type')
+    search_fields = ('field_name', 'field_code')
+    ordering = ('partner_type', 'display_order', 'field_name')
+
+
+@admin.register(PartnerTypeContactRequirement)
+class PartnerTypeContactRequirementAdmin(admin.ModelAdmin):
+    list_display = ('contact_type', 'partner_type', 'is_required', 'multiple_allowed', 'is_active', 'display_order')
+    list_filter = ('is_required', 'is_active', 'partner_type')
+    search_fields = ('contact_type',)
+    ordering = ('partner_type', 'display_order', 'contact_type')
+
+
+@admin.register(PartnerTypeBankRequirement)
+class PartnerTypeBankRequirementAdmin(admin.ModelAdmin):
+    list_display = ('bank_type', 'partner_type', 'is_required', 'multiple_allowed', 'is_active', 'display_order')
+    list_filter = ('is_required', 'is_active', 'partner_type')
+    search_fields = ('bank_type',)
+    ordering = ('partner_type', 'display_order', 'bank_type')
+
+
+@admin.register(PartnerDocument)
+class PartnerDocumentAdmin(admin.ModelAdmin):
+    list_display = ('document_requirement', 'assignment', 'document_number', 'status', 'expiry_date', 'created_at')
+    list_filter = ('status',)
+    search_fields = ('document_number', 'verification_notes')
+    readonly_fields = ('file', 'document_number', 'uploaded_at', 'created_at', 'updated_at')
+
+
+@admin.register(PartnerDynamicFieldValue)
+class PartnerDynamicFieldValueAdmin(admin.ModelAdmin):
+    list_display = ('field_config', 'assignment', 'created_at')
+    search_fields = ('field_config__field_name', 'field_config__field_code')
+    readonly_fields = ('created_at', 'updated_at')
+
+
+@admin.register(PartnerAssignmentContact)
+class PartnerAssignmentContactAdmin(admin.ModelAdmin):
+    list_display = ('first_name', 'last_name', 'email', 'phone', 'contact_requirement', 'is_primary', 'assignment')
+    search_fields = ('first_name', 'last_name', 'email')
+    list_filter = ('is_primary',)
+
+
+@admin.register(PartnerAssignmentBankAccount)
+class PartnerAssignmentBankAccountAdmin(admin.ModelAdmin):
+    list_display = ('bank_name', 'account_name', 'account_number', 'bank_requirement', 'is_primary', 'assignment')
+    search_fields = ('bank_name', 'account_name', 'account_number')
+    list_filter = ('is_primary', 'currency')
+
+
+@admin.register(PartnerKYCProfile)
+class PartnerKYCProfileAdmin(admin.ModelAdmin):
+    list_display = ('assignment', 'kyc_status', 'last_review_date', 'risk_score', 'risk_level', 'created_at')
+    list_filter = ('kyc_status', 'risk_level')
+    search_fields = ('notes',)
+    readonly_fields = ('assignment', 'kyc_status', 'risk_score', 'risk_level', 'created_at', 'updated_at')
+
+
+@admin.register(PartnerTypeAssignment)
+class PartnerTypeAssignmentAdmin(admin.ModelAdmin):
+    list_display = ('partner', 'partner_type', 'status', 'effective_date', 'created_at')
+    list_filter = ('status', 'partner_type')
+    search_fields = ('partner__partner_number', 'partner__first_name', 'partner__surname', 'partner__company_name')
+    readonly_fields = ('created_at', 'updated_at')
+    inlines = [
+        PartnerDocumentInline,
+        PartnerDynamicFieldValueInline,
+        PartnerAssignmentContactInline,
+        PartnerAssignmentBankAccountInline,
+        PartnerKYCProfileInline,
+    ]

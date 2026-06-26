@@ -8,6 +8,7 @@ from apps.users.models import User
 from apps.partners.models import Partner
 from apps.partner_onboarding.models import PartnerApplication, PartnerApplicationDocument
 from apps.partner_onboarding.services import ApplicationService, ComplianceService
+from apps.system_parameters.services.workflow_service import WorkflowEngine
 from apps.partner_onboarding.exceptions import (
     ApplicationTransitionError,
     ApplicationValidationError,
@@ -296,14 +297,10 @@ class StateTransitionTest(TestCase):
         ApplicationService.start_review(app, self.user)
         ApplicationService.send_to_compliance(app, self.user)
         ApplicationService.reject(app, self.user)
-        self.assertEqual(
-            ApplicationService.STATE_MACHINE["REJECTED"], []
-        )
+        self.assertTrue(WorkflowEngine.is_terminal("REJECTED"))
 
     def test_converted_is_terminal(self):
-        self.assertEqual(
-            ApplicationService.STATE_MACHINE["CONVERTED"], []
-        )
+        self.assertTrue(WorkflowEngine.is_terminal("CONVERTED"))
 
 
 class ConvertToPartnerTest(TestCase):

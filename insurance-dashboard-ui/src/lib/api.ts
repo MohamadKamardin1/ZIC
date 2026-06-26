@@ -5,6 +5,25 @@ import type {
   LoginTokens,
   Setup2FAResult,
   DashboardData,
+  PartnerTypeRecord,
+  BranchRecord,
+  LocationRecord,
+  ParameterGroup,
+  SystemParameter,
+  ChoiceList,
+  ChoiceOption,
+  PartnerTypeDocumentRequirement,
+  PartnerTypeFieldConfiguration,
+  PartnerTypeContactRequirement,
+  PartnerTypeBankRequirement,
+  PartnerDocument,
+  PartnerDynamicFieldValue,
+  PartnerAssignmentContact,
+  PartnerAssignmentBankAccount,
+  PartnerKYCProfile,
+  ApplicationContact,
+  ApplicationBankAccount,
+  ApplicationFieldValue,
 } from "./types"
 
 export const API_BASE = import.meta.env.VITE_API_BASE ?? ""
@@ -464,6 +483,9 @@ import type {
   ChoicesResponse,
   PaginatedResponse,
   ApplicationStatus,
+  PartnerListItem,
+  PartnerDetail,
+  SetupSummary,
 } from "./types"
 
 const ONBOARDING = "/api/v1/onboarding"
@@ -522,6 +544,105 @@ export async function listApplications(
   const body = await res.json()
   // Backend returns { data: [...], pagination: { total, ... } }
   // Frontend expects { results: [...], count: N }
+  return {
+    results: body.data ?? body,
+    count: body.pagination?.total ?? (Array.isArray(body.data) ? body.data.length : 0),
+    next: null,
+    previous: null,
+  }
+}
+
+export async function getPartner(id: string): Promise<PartnerDetail> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/${id}/`)
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const json = await res.json()
+  return json.data ?? json
+}
+
+export async function getAssignmentSetupSummary(assignmentId: string): Promise<SetupSummary> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/assignments/${assignmentId}/setup/summary/`)
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const json = await res.json()
+  return json.data ?? json
+}
+
+export async function updatePartner(id: string, data: Record<string, unknown>): Promise<PartnerDetail> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const json = await res.json()
+  return json.data ?? json
+}
+
+export async function updateIndividualProfile(id: string, data: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/${id}/individual-profile/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const json = await res.json()
+  return json.data ?? json
+}
+
+export async function updateCorporateProfile(id: string, data: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/${id}/corporate-profile/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const json = await res.json()
+  return json.data ?? json
+}
+
+export async function assignPartnerType(id: string, data: {
+  partner_type: string
+  branches?: string[]
+  location?: string | null
+  share_data_externally?: boolean
+  effective_date?: string | null
+}): Promise<Record<string, unknown>> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/${id}/assign-type/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const json = await res.json()
+  return json.data ?? json
+}
+
+export async function listPartners(
+  params: { page?: number; per_page?: number; search?: string } = {},
+): Promise<PaginatedResponse<PartnerListItem>> {
+  const q = new URLSearchParams()
+  if (params.page) q.set("page", String(params.page))
+  if (params.per_page) q.set("per_page", String(params.per_page))
+  if (params.search) q.set("search", params.search)
+  const res = await apiFetchAuth(`${PARTNERS_API}/?${q}`)
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const body = await res.json()
   return {
     results: body.data ?? body,
     count: body.pagination?.total ?? (Array.isArray(body.data) ? body.data.length : 0),
@@ -843,4 +964,899 @@ export async function getChoices(): Promise<ChoicesResponse> {
     throw new Error(extractError(res, body))
   }
   return (await res.json()).data
+}
+
+// --- Application Partner Types ---
+
+export async function listPartnerTypes(applicationId: string): Promise<ApplicationPartnerType[]> {
+  const res = await apiFetchAuth(`${ONBOARDING}/applications/${applicationId}/partner-types/`)
+  if (!res.ok) throw new Error("Failed to load partner types")
+  return (await res.json()).data
+}
+
+export async function createPartnerType(
+  applicationId: string,
+  data: { partner_type: string; branches?: string[]; location?: string | null; share_data_externally?: boolean }
+): Promise<ApplicationPartnerType[]> {
+  const res = await apiFetchAuth(`${ONBOARDING}/applications/${applicationId}/partner-types/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error("Failed to add partner type")
+  return (await res.json()).data
+}
+
+export async function deletePartnerType(applicationId: string, id: string): Promise<void> {
+  const res = await apiFetchAuth(`${ONBOARDING}/applications/${applicationId}/partner-types/${id}/`, {
+    method: "DELETE",
+  })
+  if (!res.ok) throw new Error("Failed to delete partner type")
+}
+
+// --- Application Contacts ---
+
+export async function listContacts(applicationId: string): Promise<ApplicationContact[]> {
+  const res = await apiFetchAuth(`${ONBOARDING}/applications/${applicationId}/contacts/`)
+  if (!res.ok) throw new Error("Failed to load contacts")
+  const json = await res.json()
+  return json.data ?? json
+}
+
+export async function createContact(
+  applicationId: string,
+  data: Partial<ApplicationContact>
+): Promise<ApplicationContact> {
+  const res = await apiFetchAuth(`${ONBOARDING}/applications/${applicationId}/contacts/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error("Failed to create contact")
+  const json = await res.json()
+  return json.data ?? json
+}
+
+export async function deleteContact(applicationId: string, id: string): Promise<void> {
+  const res = await apiFetchAuth(`${ONBOARDING}/applications/${applicationId}/contacts/${id}/`, {
+    method: "DELETE",
+  })
+  if (!res.ok) throw new Error("Failed to delete contact")
+}
+
+// --- Application Bank Accounts ---
+
+export async function listBankAccounts(applicationId: string): Promise<ApplicationBankAccount[]> {
+  const res = await apiFetchAuth(`${ONBOARDING}/applications/${applicationId}/bank-accounts/`)
+  if (!res.ok) throw new Error("Failed to load bank accounts")
+  const json = await res.json()
+  return json.data ?? json
+}
+
+export async function createBankAccount(
+  applicationId: string,
+  data: Partial<ApplicationBankAccount>
+): Promise<ApplicationBankAccount> {
+  const res = await apiFetchAuth(`${ONBOARDING}/applications/${applicationId}/bank-accounts/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error("Failed to create bank account")
+  const json = await res.json()
+  return json.data ?? json
+}
+
+export async function deleteBankAccount(applicationId: string, id: string): Promise<void> {
+  const res = await apiFetchAuth(`${ONBOARDING}/applications/${applicationId}/bank-accounts/${id}/`, {
+    method: "DELETE",
+  })
+  if (!res.ok) throw new Error("Failed to delete bank account")
+}
+
+// ---------------------------------------------------------------------------
+// Application Field Values API
+// ---------------------------------------------------------------------------
+
+export async function listFieldValues(applicationId: string): Promise<ApplicationFieldValue[]> {
+  const res = await apiFetchAuth(`${ONBOARDING}/applications/${applicationId}/field-values/`)
+  if (!res.ok) throw new Error("Failed to load field values")
+  return (await res.json()).data
+}
+
+export async function batchUpdateFieldValues(
+  applicationId: string,
+  data: { field_config: string; value_json: Record<string, unknown> }[]
+): Promise<ApplicationFieldValue[]> {
+  const res = await apiFetchAuth(`${ONBOARDING}/applications/${applicationId}/field-values/batch/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error("Failed to save field values")
+  return (await res.json()).data
+}
+
+// ---------------------------------------------------------------------------
+// Partner Types / Branches / Locations CRUD API
+// ---------------------------------------------------------------------------
+
+const PARTNERS_API = "/api/v1/partners"
+const ONBOARDING_API = "/api/v1/onboarding"
+
+export async function fetchPartnerTypes(): Promise<PartnerTypeRecord[]> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/types/`)
+  if (!res.ok) throw new Error("Failed to fetch partner types")
+  return extractList<PartnerTypeRecord>(res)
+}
+
+export async function fetchPartnerType(id: string): Promise<PartnerTypeRecord> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/types/${id}/`)
+  if (!res.ok) throw new Error("Failed to fetch partner type")
+  return extractOne<PartnerTypeRecord>(res)
+}
+
+export async function createPartnerTypeRecord(data: Partial<PartnerTypeRecord>): Promise<PartnerTypeRecord> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/types/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  return res.json()
+}
+
+export async function updatePartnerTypeRecord(id: string, data: Partial<PartnerTypeRecord>): Promise<PartnerTypeRecord> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/types/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  return res.json()
+}
+
+export async function deletePartnerTypeRecord(id: string): Promise<void> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/types/${id}/`, { method: "DELETE" })
+  if (!res.ok) throw new Error("Failed to delete partner type")
+}
+
+// --- Partner Type Document Requirements ---
+
+export async function fetchDocumentRequirements(partnerTypeId: string): Promise<PartnerTypeDocumentRequirement[]> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/types/${partnerTypeId}/documents/`)
+  if (!res.ok) throw new Error("Failed to fetch document requirements")
+  return extractList<PartnerTypeDocumentRequirement>(res)
+}
+
+export async function fetchAllDocumentRequirements(): Promise<PartnerTypeDocumentRequirement[]> {
+  const types = await fetchPartnerTypes()
+  const results = await Promise.all(
+    types.map((t) => fetchDocumentRequirements(t.id).catch(() => [] as PartnerTypeDocumentRequirement[])),
+  )
+  return results.flat()
+}
+
+export async function createDocumentRequirement(
+  partnerTypeId: string,
+  data: Partial<PartnerTypeDocumentRequirement>,
+): Promise<PartnerTypeDocumentRequirement> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/types/${partnerTypeId}/documents/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  return res.json()
+}
+
+export async function updateDocumentRequirement(
+  partnerTypeId: string,
+  id: string,
+  data: Partial<PartnerTypeDocumentRequirement>,
+): Promise<PartnerTypeDocumentRequirement> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/types/${partnerTypeId}/documents/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  return res.json()
+}
+
+export async function deleteDocumentRequirement(partnerTypeId: string, id: string): Promise<void> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/types/${partnerTypeId}/documents/${id}/`, { method: "DELETE" })
+  if (!res.ok) throw new Error("Failed to delete document requirement")
+}
+
+// --- Partner Type Config Requirements (fields, contacts, banks) ---
+
+export async function fetchFieldConfigurations(partnerTypeId: string): Promise<PartnerTypeFieldConfiguration[]> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/types/${partnerTypeId}/fields/`)
+  if (!res.ok) throw new Error("Failed to fetch field configurations")
+  return extractList<PartnerTypeFieldConfiguration>(res)
+}
+
+export async function createFieldConfiguration(
+  partnerTypeId: string,
+  data: Partial<PartnerTypeFieldConfiguration>,
+): Promise<PartnerTypeFieldConfiguration> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/types/${partnerTypeId}/fields/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  return res.json()
+}
+
+export async function updateFieldConfiguration(
+  partnerTypeId: string,
+  id: string,
+  data: Partial<PartnerTypeFieldConfiguration>,
+): Promise<PartnerTypeFieldConfiguration> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/types/${partnerTypeId}/fields/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  return res.json()
+}
+
+export async function deleteFieldConfiguration(partnerTypeId: string, id: string): Promise<void> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/types/${partnerTypeId}/fields/${id}/`, { method: "DELETE" })
+  if (!res.ok) throw new Error("Failed to delete field configuration")
+}
+
+export async function fetchAllFieldConfigurations(): Promise<PartnerTypeFieldConfiguration[]> {
+  const types = await fetchPartnerTypes()
+  const results = await Promise.all(
+    types.map((t) => fetchFieldConfigurations(t.id).catch(() => [] as PartnerTypeFieldConfiguration[])),
+  )
+  return results.flat()
+}
+
+// --- Contact Requirements ---
+
+export async function fetchContactRequirements(partnerTypeId: string): Promise<PartnerTypeContactRequirement[]> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/types/${partnerTypeId}/contacts/`)
+  if (!res.ok) throw new Error("Failed to fetch contact requirements")
+  return extractList<PartnerTypeContactRequirement>(res)
+}
+
+export async function createContactRequirement(
+  partnerTypeId: string,
+  data: Partial<PartnerTypeContactRequirement>,
+): Promise<PartnerTypeContactRequirement> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/types/${partnerTypeId}/contacts/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  return res.json()
+}
+
+export async function updateContactRequirement(
+  partnerTypeId: string,
+  id: string,
+  data: Partial<PartnerTypeContactRequirement>,
+): Promise<PartnerTypeContactRequirement> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/types/${partnerTypeId}/contacts/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  return res.json()
+}
+
+export async function deleteContactRequirement(partnerTypeId: string, id: string): Promise<void> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/types/${partnerTypeId}/contacts/${id}/`, { method: "DELETE" })
+  if (!res.ok) throw new Error("Failed to delete contact requirement")
+}
+
+export async function fetchAllContactRequirements(): Promise<PartnerTypeContactRequirement[]> {
+  const types = await fetchPartnerTypes()
+  const results = await Promise.all(
+    types.map((t) => fetchContactRequirements(t.id).catch(() => [] as PartnerTypeContactRequirement[])),
+  )
+  return results.flat()
+}
+
+// --- Bank Requirements ---
+
+export async function fetchBankRequirements(partnerTypeId: string): Promise<PartnerTypeBankRequirement[]> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/types/${partnerTypeId}/banks/`)
+  if (!res.ok) throw new Error("Failed to fetch bank requirements")
+  return extractList<PartnerTypeBankRequirement>(res)
+}
+
+export async function createBankRequirement(
+  partnerTypeId: string,
+  data: Partial<PartnerTypeBankRequirement>,
+): Promise<PartnerTypeBankRequirement> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/types/${partnerTypeId}/banks/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  return res.json()
+}
+
+export async function updateBankRequirement(
+  partnerTypeId: string,
+  id: string,
+  data: Partial<PartnerTypeBankRequirement>,
+): Promise<PartnerTypeBankRequirement> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/types/${partnerTypeId}/banks/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  return res.json()
+}
+
+export async function deleteBankRequirement(partnerTypeId: string, id: string): Promise<void> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/types/${partnerTypeId}/banks/${id}/`, { method: "DELETE" })
+  if (!res.ok) throw new Error("Failed to delete bank requirement")
+}
+
+export async function fetchAllBankRequirements(): Promise<PartnerTypeBankRequirement[]> {
+  const types = await fetchPartnerTypes()
+  const results = await Promise.all(
+    types.map((t) => fetchBankRequirements(t.id).catch(() => [] as PartnerTypeBankRequirement[])),
+  )
+  return results.flat()
+}
+
+// ============================================================================
+// Partner Assignment Setup CRUD
+// ============================================================================
+
+// --- Documents ---
+
+export async function getAssignmentDocuments(assignmentId: string): Promise<PartnerDocument[]> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/assignments/${assignmentId}/setup/documents/`)
+  if (!res.ok) throw new Error("Failed to fetch documents")
+  return extractList<PartnerDocument>(res)
+}
+
+export async function createAssignmentDocument(
+  assignmentId: string,
+  data: Record<string, unknown>,
+): Promise<PartnerDocument> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/assignments/${assignmentId}/setup/documents/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const json = await res.json()
+  return json.data ?? json
+}
+
+export async function uploadAssignmentDocumentFile(
+  assignmentId: string,
+  documentRequirementId: string,
+  file: File,
+): Promise<PartnerDocument> {
+  const formData = new FormData()
+  formData.append("document_requirement", documentRequirementId)
+  formData.append("file", file)
+  const headers = new Headers()
+  const token = sessionStorage.getItem("aims_access_token")
+  if (token) headers.set("Authorization", `Bearer ${token}`)
+  const res = await fetch(`${API_BASE}${PARTNERS_API}/assignments/${assignmentId}/setup/documents/`, {
+    method: "POST",
+    headers,
+    body: formData,
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const json = await res.json()
+  return json.data ?? json
+}
+
+export async function updateAssignmentDocument(
+  assignmentId: string,
+  docId: string,
+  data: Record<string, unknown>,
+): Promise<PartnerDocument> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/assignments/${assignmentId}/setup/documents/${docId}/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const json = await res.json()
+  return json.data ?? json
+}
+
+// --- Field Values ---
+
+export async function getAssignmentFieldValues(assignmentId: string): Promise<PartnerDynamicFieldValue[]> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/assignments/${assignmentId}/setup/field-values/`)
+  if (!res.ok) throw new Error("Failed to fetch field values")
+  return extractList<PartnerDynamicFieldValue>(res)
+}
+
+export async function updateAssignmentFieldValues(
+  assignmentId: string,
+  data: Record<string, unknown>[],
+): Promise<PartnerDynamicFieldValue[]> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/assignments/${assignmentId}/setup/field-values/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const json = await res.json()
+  return json.data ?? json
+}
+
+// --- Contacts ---
+
+export async function getAssignmentContacts(assignmentId: string): Promise<PartnerAssignmentContact[]> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/assignments/${assignmentId}/setup/contacts/`)
+  if (!res.ok) throw new Error("Failed to fetch contacts")
+  return extractList<PartnerAssignmentContact>(res)
+}
+
+export async function createAssignmentContact(
+  assignmentId: string,
+  data: Record<string, unknown>,
+): Promise<PartnerAssignmentContact> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/assignments/${assignmentId}/setup/contacts/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const json = await res.json()
+  return json.data ?? json
+}
+
+export async function deleteAssignmentContact(assignmentId: string, contactId: string): Promise<void> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/assignments/${assignmentId}/setup/contacts/${contactId}/`, {
+    method: "DELETE",
+  })
+  if (!res.ok) throw new Error("Failed to delete contact")
+}
+
+// --- Bank Accounts ---
+
+export async function getAssignmentBankAccounts(assignmentId: string): Promise<PartnerAssignmentBankAccount[]> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/assignments/${assignmentId}/setup/bank-accounts/`)
+  if (!res.ok) throw new Error("Failed to fetch bank accounts")
+  return extractList<PartnerAssignmentBankAccount>(res)
+}
+
+export async function createAssignmentBankAccount(
+  assignmentId: string,
+  data: Record<string, unknown>,
+): Promise<PartnerAssignmentBankAccount> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/assignments/${assignmentId}/setup/bank-accounts/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const json = await res.json()
+  return json.data ?? json
+}
+
+export async function deleteAssignmentBankAccount(assignmentId: string, bankId: string): Promise<void> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/assignments/${assignmentId}/setup/bank-accounts/${bankId}/`, {
+    method: "DELETE",
+  })
+  if (!res.ok) throw new Error("Failed to delete bank account")
+}
+
+// --- KYC Profile ---
+
+export async function getAssignmentKYC(assignmentId: string): Promise<PartnerKYCProfile> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/assignments/${assignmentId}/setup/kyc/`)
+  if (!res.ok) throw new Error("Failed to fetch KYC profile")
+  const json = await res.json()
+  return json.data ?? json
+}
+
+export async function updateAssignmentKYC(
+  assignmentId: string,
+  data: Record<string, unknown>,
+): Promise<PartnerKYCProfile> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/assignments/${assignmentId}/setup/kyc/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const json = await res.json()
+  return json.data ?? json
+}
+
+export async function fetchBranches(): Promise<BranchRecord[]> {
+  const res = await apiFetchAuth(`${ONBOARDING_API}/branches/`)
+  if (!res.ok) throw new Error("Failed to fetch branches")
+  return extractList<BranchRecord>(res)
+}
+
+export async function fetchBranch(id: string): Promise<BranchRecord> {
+  const res = await apiFetchAuth(`${ONBOARDING_API}/branches/${id}/`)
+  if (!res.ok) throw new Error("Failed to fetch branch")
+  return extractOne<BranchRecord>(res)
+}
+
+export async function createBranchRecord(data: Partial<BranchRecord>): Promise<BranchRecord> {
+  const res = await apiFetchAuth(`${ONBOARDING_API}/branches/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  return res.json()
+}
+
+export async function updateBranchRecord(id: string, data: Partial<BranchRecord>): Promise<BranchRecord> {
+  const res = await apiFetchAuth(`${ONBOARDING_API}/branches/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  return res.json()
+}
+
+export async function deleteBranchRecord(id: string): Promise<void> {
+  const res = await apiFetchAuth(`${ONBOARDING_API}/branches/${id}/`, { method: "DELETE" })
+  if (!res.ok) throw new Error("Failed to delete branch")
+}
+
+export async function fetchLocations(branchId?: string): Promise<LocationRecord[]> {
+  const url = branchId ? `${ONBOARDING_API}/locations/?branch_id=${branchId}` : `${ONBOARDING_API}/locations/`
+  const res = await apiFetchAuth(url)
+  if (!res.ok) throw new Error("Failed to fetch locations")
+  return extractList<LocationRecord>(res)
+}
+
+export async function fetchLocation(id: string): Promise<LocationRecord> {
+  const res = await apiFetchAuth(`${ONBOARDING_API}/locations/${id}/`)
+  if (!res.ok) throw new Error("Failed to fetch location")
+  return extractOne<LocationRecord>(res)
+}
+
+export async function createLocationRecord(data: Partial<LocationRecord>): Promise<LocationRecord> {
+  const res = await apiFetchAuth(`${ONBOARDING_API}/locations/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  return res.json()
+}
+
+export async function updateLocationRecord(id: string, data: Partial<LocationRecord>): Promise<LocationRecord> {
+  const res = await apiFetchAuth(`${ONBOARDING_API}/locations/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  return res.json()
+}
+
+export async function deleteLocationRecord(id: string): Promise<void> {
+  const res = await apiFetchAuth(`${ONBOARDING_API}/locations/${id}/`, { method: "DELETE" })
+  if (!res.ok) throw new Error("Failed to delete location")
+}
+
+// ============================================================================
+// System Parameters API
+// ============================================================================
+
+const SYSTEM_PARAMS = "/api/v1/system-parameters"
+
+async function extractList<T>(res: Response): Promise<T[]> {
+  const json = await res.json()
+  return (json as { data: T[] }).data ?? json.results ?? json
+}
+
+async function extractOne<T>(res: Response): Promise<T> {
+  const json = await res.json()
+  return (json as { data: T }).data ?? json
+}
+
+export async function listParameterGroups(): Promise<ParameterGroup[]> {
+  const res = await apiFetchAuth(`${SYSTEM_PARAMS}/groups/`)
+  if (!res.ok) throw new Error("Failed to load parameter groups")
+  return extractList<ParameterGroup>(res)
+}
+
+export async function getParameterGroup(id: string): Promise<ParameterGroup> {
+  const res = await apiFetchAuth(`${SYSTEM_PARAMS}/groups/${id}/`)
+  if (!res.ok) throw new Error("Failed to load parameter group")
+  return extractOne<ParameterGroup>(res)
+}
+
+export async function listSystemParameters(groupId?: string): Promise<SystemParameter[]> {
+  const query = groupId ? `?group=${groupId}&per_page=200` : "?per_page=200"
+  const res = await apiFetchAuth(`${SYSTEM_PARAMS}/parameters/${query}`)
+  if (!res.ok) throw new Error("Failed to load system parameters")
+  return extractList<SystemParameter>(res)
+}
+
+export async function createSystemParameter(data: Record<string, unknown>): Promise<SystemParameter> {
+  const res = await apiFetchAuth(`${SYSTEM_PARAMS}/parameters/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  return extractOne<SystemParameter>(res)
+}
+
+export async function updateSystemParameter(id: string, data: Record<string, unknown>): Promise<SystemParameter> {
+  const res = await apiFetchAuth(`${SYSTEM_PARAMS}/parameters/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  return extractOne<SystemParameter>(res)
+}
+
+export async function deleteSystemParameter(id: string): Promise<void> {
+  const res = await apiFetchAuth(`${SYSTEM_PARAMS}/parameters/${id}/`, {
+    method: "DELETE",
+  })
+  if (!res.ok) throw new Error("Failed to delete system parameter")
+}
+
+export async function listChoiceLists(): Promise<ChoiceList[]> {
+  const res = await apiFetchAuth(`${SYSTEM_PARAMS}/choice-lists/?per_page=200`)
+  if (!res.ok) throw new Error("Failed to load choice lists")
+  return extractList<ChoiceList>(res)
+}
+
+export async function createChoiceList(data: Record<string, unknown>): Promise<ChoiceList> {
+  const res = await apiFetchAuth(`${SYSTEM_PARAMS}/choice-lists/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  return extractOne<ChoiceList>(res)
+}
+
+export async function updateChoiceList(id: string, data: Record<string, unknown>): Promise<ChoiceList> {
+  const res = await apiFetchAuth(`${SYSTEM_PARAMS}/choice-lists/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  return extractOne<ChoiceList>(res)
+}
+
+export async function deleteChoiceList(id: string): Promise<void> {
+  const res = await apiFetchAuth(`${SYSTEM_PARAMS}/choice-lists/${id}/`, {
+    method: "DELETE",
+  })
+  if (!res.ok) throw new Error("Failed to delete choice list")
+}
+
+export async function listChoiceOptions(choiceListId: string): Promise<ChoiceOption[]> {
+  const res = await apiFetchAuth(`${SYSTEM_PARAMS}/choice-options/?choice_list=${choiceListId}&per_page=200`)
+  if (!res.ok) throw new Error("Failed to load choice options")
+  return extractList<ChoiceOption>(res)
+}
+
+export async function createChoiceOption(data: Record<string, unknown>): Promise<ChoiceOption> {
+  const res = await apiFetchAuth(`${SYSTEM_PARAMS}/choice-options/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  return extractOne<ChoiceOption>(res)
+}
+
+export async function updateChoiceOption(id: string, data: Record<string, unknown>): Promise<ChoiceOption> {
+  const res = await apiFetchAuth(`${SYSTEM_PARAMS}/choice-options/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  return extractOne<ChoiceOption>(res)
+}
+
+export async function deleteChoiceOption(id: string): Promise<void> {
+  const res = await apiFetchAuth(`${SYSTEM_PARAMS}/choice-options/${id}/`, {
+    method: "DELETE",
+  })
+  if (!res.ok) throw new Error("Failed to delete choice option")
+}
+
+// Helper to resolve group code → ID via cache
+let _groupCache: ParameterGroup[] | null = null
+
+export async function resolveGroupId(code: string): Promise<string> {
+  if (!_groupCache) {
+    _groupCache = await listParameterGroups()
+  }
+  const g = _groupCache.find((g) => g.code === code)
+  if (!g) throw new Error(`Parameter group "${code}" not found`)
+  return g.id
+}
+
+export function clearGroupCache() {
+  _groupCache = null
+}
+
+// ============================================================================
+// AI Assistant API
+// ============================================================================
+
+export async function aiAnalyzePrompt(prompt: string): Promise<{
+  success: boolean
+  message: string
+  data: {
+    status: "ready" | "needs_clarification"
+    partnerType?: "INDIVIDUAL" | "CORPORATE"
+    partnerData: Record<string, unknown>
+    missingFields?: string[]
+    explanation?: string
+  }
+}> {
+  const res = await apiFetchAuth("/api/v1/ai/analyze-prompt/", {
+    method: "POST",
+    body: JSON.stringify({ prompt }),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.message ?? "AI analysis failed")
+  return json
+}
+
+export async function aiExecutePartnerCreation(
+  partnerType: "INDIVIDUAL" | "CORPORATE",
+  partnerData: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const res = await apiFetchAuth("/api/v1/ai/execute/", {
+    method: "POST",
+    body: JSON.stringify({ partner_type: partnerType, partner_data: partnerData }),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.message ?? "Partner creation failed")
+  return json.data as Record<string, unknown>
+}
+
+export async function aiClarify(
+  prompt: string,
+  missingFields: string[],
+  partialData?: Record<string, unknown>,
+): Promise<{
+  success: boolean
+  data: {
+    status: "ready" | "needs_clarification"
+    partnerType?: string
+    partnerData?: Record<string, unknown>
+    missingRequired?: string[]
+    missingOptional?: string[]
+    explanation?: string
+  }
+}> {
+  const res = await apiFetchAuth("/api/v1/ai/clarify/", {
+    method: "POST",
+    body: JSON.stringify({
+      prompt,
+      missing_fields: missingFields,
+      partial_data: partialData ?? {},
+    }),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.message ?? "Clarification failed")
+  return json
+}
+
+// ============================================================================
+// AI Assistant API
+// ============================================================================
+
+const AI_API = "/api/v1/ai"
+
+export async function analyzePartnerPrompt(prompt: string): Promise<unknown> {
+  const res = await apiFetchAuth(`${AI_API}/analyze-prompt/`, {
+    method: "POST",
+    body: JSON.stringify({ prompt }),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  return res.json()
+}
+
+export async function executePartnerCreation(
+  partnerType: string,
+  partnerData: Record<string, unknown>,
+): Promise<unknown> {
+  const res = await apiFetchAuth(`${AI_API}/execute/`, {
+    method: "POST",
+    body: JSON.stringify({ partner_type: partnerType, partner_data: partnerData }),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  return res.json()
+}
+
+export async function clarifyPartnerPrompt(
+  prompt: string,
+  missingFields: string[],
+): Promise<unknown> {
+  const res = await apiFetchAuth(`${AI_API}/clarify/`, {
+    method: "POST",
+    body: JSON.stringify({ prompt, missing_fields: missingFields }),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  return res.json()
 }

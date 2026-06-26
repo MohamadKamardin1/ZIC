@@ -18,6 +18,9 @@ api_v1_patterns = [
     path('partners/', include('apps.partners.urls')),
     path('onboarding/', include('apps.partner_onboarding.urls')),
     path('dashboard/', include('apps.dashboard.urls')),
+    path('system-parameters/', include('apps.system_parameters.urls')),
+    path('governance/', include('apps.governance.urls')),
+    path('ai/', include('apps.ai_assistant.urls')),
 ]
 
 urlpatterns = [

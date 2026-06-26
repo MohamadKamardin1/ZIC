@@ -1,59 +1,25 @@
 import logging
 
 from apps.partner_onboarding.models import PartnerApplication
+from apps.system_parameters.services.compliance_config_service import (
+    ComplianceConfigService,
+)
 
 logger = logging.getLogger(__name__)
-
-RISK_WEIGHTS = {
-    "political_risk": {"LOW": 0, "MEDIUM": 10, "HIGH": 25, "PEP": 40},
-    "aml_risk": {"LOW": 0, "MEDIUM": 10, "HIGH": 25},
-}
-
-HIGH_RISK_THRESHOLDS = {
-    "INDIVIDUAL": 50,
-    "CORPORATE": 60,
-}
-
-HIGH_RISK_INDUSTRIES = [
-    "FINANCIAL_SERVICES",
-    "OIL_GAS",
-    "MINING",
-    "CHEMICALS",
-    "REAL_ESTATE",
-]
 
 
 class ComplianceService:
 
     @staticmethod
     def calculate_risk_score(application):
-        score = 0
-
-        political_weight = RISK_WEIGHTS["political_risk"].get(
-            application.political_risk, 0
-        )
-        score += political_weight
-
-        aml_weight = RISK_WEIGHTS["aml_risk"].get(
-            application.aml_risk, 0
-        )
-        score += aml_weight
-
-        if application.industry in HIGH_RISK_INDUSTRIES:
-            score += 15
-
-        if (
-            application.political_risk == "PEP"
-            and application.partner_type == "INDIVIDUAL"
-        ):
-            score += 10
-
-        return min(score, 100)
+        return ComplianceConfigService.calculate_risk_score(application)
 
     @staticmethod
     def flag_high_risk(application):
         score = ComplianceService.calculate_risk_score(application)
-        threshold = HIGH_RISK_THRESHOLDS.get(application.partner_type, 50)
+        threshold = ComplianceConfigService.get_risk_threshold_for(
+            application.partner_type
+        )
         is_high_risk = score >= threshold
 
         if is_high_risk:

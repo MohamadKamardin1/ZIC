@@ -1,0 +1,142 @@
+[1m[2026-06-26 10:21:12][0m [32m[INFO][0m [35m[axes.apps][0m [32mAXES: BEGIN version 8.3.1, blocking by ip_address[0m
+Traceback (most recent call last):
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/db/backends/utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/db/backends/sqlite3/base.py", line 329, in execute
+    return super().execute(query, params)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+sqlite3.OperationalError: no such table: system_parameter
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/phantomx/Desktop/ZIC/backend/manage.py", line 20, in <module>
+    main()
+    ~~~~^^
+  File "/Users/phantomx/Desktop/ZIC/backend/manage.py", line 16, in main
+    execute_from_command_line(sys.argv)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/core/management/__init__.py", line 442, in execute_from_command_line
+    utility.execute()
+    ~~~~~~~~~~~~~~~^^
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/core/management/__init__.py", line 436, in execute
+    self.fetch_command(subcommand).run_from_argv(self.argv)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/core/management/base.py", line 413, in run_from_argv
+    self.execute(*args, **cmd_options)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/core/management/base.py", line 454, in execute
+    self.check()
+    ~~~~~~~~~~^^
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/core/management/base.py", line 486, in check
+    all_issues = checks.run_checks(
+        app_configs=app_configs,
+    ...<2 lines>...
+        databases=databases,
+    )
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/core/checks/registry.py", line 88, in run_checks
+    new_errors = check(app_configs=app_configs, databases=databases)
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/core/checks/urls.py", line 14, in check_url_config
+    return check_resolver(resolver)
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/core/checks/urls.py", line 24, in check_resolver
+    return check_method()
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/urls/resolvers.py", line 519, in check
+    for pattern in self.url_patterns:
+                   ^^^^^^^^^^^^^^^^^
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/utils/functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/urls/resolvers.py", line 738, in url_patterns
+    patterns = getattr(self.urlconf_module, "urlpatterns", self.urlconf_module)
+                       ^^^^^^^^^^^^^^^^^^^
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/utils/functional.py", line 47, in __get__
+    res = instance.__dict__[self.name] = self.func(instance)
+                                         ~~~~~~~~~^^^^^^^^^^
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/urls/resolvers.py", line 731, in urlconf_module
+    return import_module(self.urlconf_name)
+  File "/usr/local/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/importlib/__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1406, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1371, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1342, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 938, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 759, in exec_module
+  File "<frozen importlib._bootstrap>", line 491, in _call_with_frames_removed
+  File "/Users/phantomx/Desktop/ZIC/backend/config/urls.py", line 19, in <module>
+    path('onboarding/', include('apps.partner_onboarding.urls')),
+                        ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/urls/conf.py", line 39, in include
+    urlconf_module = import_module(urlconf_module)
+  File "/usr/local/Cellar/python@3.14/3.14.5/Frameworks/Python.framework/Versions/3.14/lib/python3.14/importlib/__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1406, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1371, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1342, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 938, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 759, in exec_module
+  File "<frozen importlib._bootstrap>", line 491, in _call_with_frames_removed
+  File "/Users/phantomx/Desktop/ZIC/backend/apps/partner_onboarding/urls.py", line 4, in <module>
+    from .views import (
+    ...<12 lines>...
+    )
+  File "/Users/phantomx/Desktop/ZIC/backend/apps/partner_onboarding/views.py", line 26, in <module>
+    from apps.partner_onboarding.serializers import (
+    ...<20 lines>...
+    )
+  File "/Users/phantomx/Desktop/ZIC/backend/apps/partner_onboarding/serializers.py", line 281, in <module>
+    INDIVIDUAL_REQUIRED_FIELDS = ValidationConfigService.get_individual_required_fields()
+  File "/Users/phantomx/Desktop/ZIC/backend/apps/system_parameters/services/validation_config_service.py", line 26, in get_individual_required_fields
+    return ValidationConfigService.get_required_fields("INDIVIDUAL")
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "/Users/phantomx/Desktop/ZIC/backend/apps/system_parameters/services/validation_config_service.py", line 22, in get_required_fields
+    return ConfigurationService.get_json_parameter(param_code, [])
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "/Users/phantomx/Desktop/ZIC/backend/apps/system_parameters/services/config_service.py", line 151, in get_json_parameter
+    val = ConfigurationService.get_parameter(code, default)
+  File "/Users/phantomx/Desktop/ZIC/backend/apps/system_parameters/services/config_service.py", line 128, in get_parameter
+    param = SystemParameter.objects.get(code=code, is_active=True)
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/db/models/manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/db/models/query.py", line 645, in get
+    num = len(clone)
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/db/models/query.py", line 382, in __len__
+    self._fetch_all()
+    ~~~~~~~~~~~~~~~^^
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/db/models/query.py", line 1928, in _fetch_all
+    self._result_cache = list(self._iterable_class(self))
+                         ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/db/models/query.py", line 91, in __iter__
+    results = compiler.execute_sql(
+        chunked_fetch=self.chunked_fetch, chunk_size=self.chunk_size
+    )
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/db/models/sql/compiler.py", line 1562, in execute_sql
+    cursor.execute(sql, params)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/db/backends/utils.py", line 122, in execute
+    return super().execute(sql, params)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/db/backends/utils.py", line 79, in execute
+    return self._execute_with_wrappers(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        sql, params, many=False, executor=self._execute
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/db/backends/utils.py", line 92, in _execute_with_wrappers
+    return executor(sql, params, many, context)
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/db/backends/utils.py", line 100, in _execute
+    with self.db.wrap_database_errors:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/db/utils.py", line 91, in __exit__
+    raise dj_exc_value.with_traceback(traceback) from exc_value
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/db/backends/utils.py", line 105, in _execute
+    return self.cursor.execute(sql, params)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "/Users/phantomx/Library/Python/3.14/lib/python/site-packages/django/db/backends/sqlite3/base.py", line 329, in execute
+    return super().execute(query, params)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+django.db.utils.OperationalError: no such table: system_parameter

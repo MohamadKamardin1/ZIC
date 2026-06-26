@@ -12,15 +12,19 @@ import {
   Loader2,
   Filter,
   X,
+  Users,
 } from "lucide-react"
 import BulkUploadModal from "../../components/onboarding/BulkUploadModal"
 import ConfirmDialog from "../../components/shared/ConfirmDialog"
+import { SkeletonTable } from "../../components/shared/Skeleton"
 import {
   listApplications,
   deleteApplication,
+  listPartners,
 } from "../../lib/api"
-import type { PartnerApplicationList, ApplicationStatus } from "../../lib/types"
-import { STATUS_LABELS } from "../../lib/types"
+import { useDataRefresh } from "../../lib/useDataRefresh"
+import type { PartnerApplicationList, ApplicationStatus, PartnerListItem } from "../../lib/types"
+import { useWorkflowConfig } from "../../config/ConfigurationHooks"
 
 const STATUSES: { value: ApplicationStatus | ""; label: string }[] = [
   { value: "", label: "All Statuses" },
@@ -42,9 +46,9 @@ const PARTNER_TYPES = [
 ]
 
 function statusVariant(status: ApplicationStatus): { bg: string; text: string; dot: string } {
-  const active = { bg: "bg-green-50", text: "text-green-700", dot: "bg-green-500" }
-  const pending = { bg: "bg-amber-50", text: "text-amber-700", dot: "bg-amber-500" }
-  const inactive = { bg: "bg-red-50", text: "text-red-700", dot: "bg-red-500" }
+  const active = { bg: "bg-[var(--color-bg-success-soft)]", text: "text-[var(--color-text-success-soft)]", dot: "bg-[var(--color-feedback-success)]" }
+  const pending = { bg: "bg-[var(--color-bg-warning-soft)]", text: "text-[var(--color-text-warning-soft)]", dot: "bg-[var(--color-feedback-warning)]" }
+  const inactive = { bg: "bg-[var(--color-bg-destructive-soft)]", text: "text-[var(--color-text-destructive-soft)]", dot: "bg-[var(--color-feedback-destructive)]" }
   switch (status) {
     case "ACTIVE":
     case "APPROVED":
@@ -81,11 +85,25 @@ export default function OnboardingList() {
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<ApplicationStatus | "">("")
   const [typeFilter, setTypeFilter] = useState("")
+  const workflowConfig = useWorkflowConfig()
+  const statusLabels = workflowConfig?.status_labels ?? {
+    ACTIVE: "Active", DRAFT: "Draft", SUBMITTED: "Submitted",
+    UNDER_REVIEW: "Under Review", PENDING_DOCUMENTS: "Pending Docs",
+    COMPLIANCE_CHECK: "Compliance", APPROVED: "Approved",
+    CONVERTED: "Converted", REJECTED: "Rejected", SUSPENDED: "Suspended",
+  }
   const [deleting, setDeleting] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   const [searchValue, setSearchValue] = useState("")
   const [showBulkUpload, setShowBulkUpload] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
+  const refreshKey = useDataRefresh("partners")
+
+  const [viewMode, setViewMode] = useState<"applications" | "partners">("applications")
+  const [partnerItems, setPartnerItems] = useState<PartnerListItem[]>([])
+  const [partnerCount, setPartnerCount] = useState(0)
+  const [partnerPage, setPartnerPage] = useState(1)
+  const partnerPageSize = 20
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -106,11 +124,32 @@ export default function OnboardingList() {
     } finally {
       setLoading(false)
     }
-  }, [page, pageSize, search, statusFilter, typeFilter])
+  }, [page, pageSize, search, statusFilter, typeFilter, refreshKey])
 
   useEffect(() => {
     load()
   }, [load])
+
+  useEffect(() => {
+    if (viewMode !== "partners") return
+    let cancelled = false
+    ;(async () => {
+      setLoading(true)
+      setError("")
+      try {
+        const result = await listPartners({ page: partnerPage, per_page: partnerPageSize, search: search || undefined })
+        if (!cancelled) {
+          setPartnerItems(result.results ?? [])
+          setPartnerCount(result.count ?? 0)
+        }
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load partners")
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [viewMode, partnerPage, search, refreshKey])
 
   function handleSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter") {
@@ -161,36 +200,58 @@ export default function OnboardingList() {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Breadcrumb */}
-      <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
-        <span className="cursor-pointer font-medium text-primary hover:underline">Home</span>
-        <span>/</span>
-        <span>Partner Onboarding</span>
-      </nav>
+      {/* View Toggle */}
+      <div className="flex gap-1 border-b border-border">
+        <button
+          onClick={() => { setViewMode("applications"); setPage(1) }}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            viewMode === "applications"
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Applications
+        </button>
+        <button
+          onClick={() => { setViewMode("partners"); setPartnerPage(1) }}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            viewMode === "partners"
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Users className="h-3.5 w-3.5 inline mr-1.5" />
+          Partners
+        </button>
+      </div>
 
       {/* Page header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-foreground">Partner Onboarding</h1>
           <p className="text-sm text-muted-foreground">
-            {count} application{count !== 1 ? "s" : ""} ·{" "}
-            {items.length} shown{hasActiveFilters() ? " (filtered)" : ""}
+            {viewMode === "applications"
+              ? `${count} application${count !== 1 ? "s" : ""} · ${items.length} shown${hasActiveFilters() ? " (filtered)" : ""}`
+              : `${partnerCount} partner${partnerCount !== 1 ? "s" : ""} · ${partnerItems.length} shown`
+            }
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {viewMode === "applications" && (
+            <button
+              onClick={() => setShowBulkUpload(true)}
+              className="inline-flex items-center gap-2 rounded-lg border border-input bg-card px-3 py-2 text-sm font-medium text-foreground transition hover:bg-secondary"
+            >
+              <Upload className="h-4 w-4" />
+              <span className="hidden sm:inline">Bulk Upload</span>
+            </button>
+          )}
           <button
-            onClick={() => setShowBulkUpload(true)}
-            className="inline-flex items-center gap-2 rounded-lg border border-input bg-card px-3 py-2 text-sm font-medium text-foreground transition hover:bg-secondary"
-          >
-            <Upload className="h-4 w-4" />
-            <span className="hidden sm:inline">Bulk Upload</span>
-          </button>
-          <button
-            onClick={() => navigate("/onboarding/new")}
+            onClick={() => viewMode === "applications" ? navigate("/onboarding/new") : navigate("/partners/new")}
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 active:scale-[0.98]"
           >
             <Plus className="h-4 w-4" />
-            Add Partner
+            {viewMode === "applications" ? "Add Partner" : "New Partner"}
           </button>
         </div>
       </div>
@@ -201,7 +262,120 @@ export default function OnboardingList() {
         </div>
       )}
 
-      {/* Main card */}
+      {viewMode === "partners" ? (
+        /* ---- Partners Table ---- */
+        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+          <div className="flex flex-col gap-3 border-b border-border p-3 sm:flex-row sm:items-center sm:justify-between">
+            <div />
+            <div className="relative flex-1 sm:flex-none sm:w-60">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Search partners..."
+                value={searchValue}
+                onChange={(e) => setSearchValue(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
+                className="w-full rounded-lg border border-input bg-card py-1.5 pl-9 pr-8 text-sm text-foreground outline-none transition placeholder:text-muted-foreground focus:ring-2 focus:ring-ring/40"
+              />
+              {searchValue && (
+                <button
+                  onClick={handleClearSearch}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {loading ? (
+            <SkeletonTable rows={6} cols={7} />
+          ) : partnerItems.length === 0 ? (
+            <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
+              <h3 className="text-lg font-semibold text-foreground">No Partners Found</h3>
+              <p className="mt-1 text-sm text-muted-foreground">{search ? "Try a different search." : "No partners yet."}</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-muted/30">
+                    <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Partner #</th>
+                    <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Name</th>
+                    <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Type</th>
+                    <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Email</th>
+                    <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Mobile</th>
+                    <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Status</th>
+                    <th className="w-24 px-2 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {partnerItems.map((partner) => (
+                    <tr key={partner.id} className="border-b border-border/50 transition last:border-b-0 hover:bg-secondary/40">
+                      <td className="whitespace-nowrap px-3 py-3 font-medium text-foreground">{partner.partnerNumber}</td>
+                      <td className="whitespace-nowrap px-3 py-3 text-foreground">{partner.displayName}</td>
+                      <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">{partner.partnerCategory || partner.partnerType}</td>
+                      <td className="px-3 py-3 text-muted-foreground">{partner.email}</td>
+                      <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">{partner.mobileNumber}</td>
+                      <td className="whitespace-nowrap px-3 py-3">
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          partner.status === "ACTIVE"
+                            ? "bg-[var(--color-bg-success-soft)] text-[var(--color-text-success-soft)]"
+                            : "bg-[var(--color-bg-destructive-soft)] text-[var(--color-text-destructive-soft)]"
+                        }`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${
+                            partner.status === "ACTIVE" ? "bg-[var(--color-feedback-success)]" : "bg-[var(--color-feedback-destructive)]"
+                          }`} />
+                          {partner.status}
+                        </span>
+                      </td>
+                      <td className="px-2 py-3 text-right">
+                        <div className="flex items-center justify-end gap-0.5">
+                          <button
+                            onClick={() => navigate(`/partners/${partner.id}/edit?from=onboarding`)}
+                            className="rounded p-1.5 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                            title="Edit"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => navigate(`/partners/${partner.id}?from=onboarding`)}
+                            className="rounded p-1.5 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                            title="View"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {Math.ceil(partnerCount / partnerPageSize) > 1 && (
+            <div className="flex items-center justify-center gap-2 border-t border-border px-3 py-3">
+              <button
+                onClick={() => setPartnerPage((p) => Math.max(1, p - 1))}
+                disabled={partnerPage <= 1}
+                className="p-2 rounded-lg hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span className="text-sm text-muted-foreground">Page {partnerPage} of {Math.ceil(partnerCount / partnerPageSize)}</span>
+              <button
+                onClick={() => setPartnerPage((p) => Math.min(Math.ceil(partnerCount / partnerPageSize), p + 1))}
+                disabled={partnerPage >= Math.ceil(partnerCount / partnerPageSize)}
+                className="p-2 rounded-lg hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+        </div>
+      ) : (
+      /* ---- Applications Table ---- */
       <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
         {/* Toolbar */}
         <div className="flex flex-col gap-3 border-b border-border p-3 sm:flex-row sm:items-center sm:justify-between">
@@ -311,9 +485,7 @@ export default function OnboardingList() {
 
         {/* Table / loading / empty */}
         {loading ? (
-          <div className="flex items-center justify-center py-24">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
+          <SkeletonTable rows={6} cols={14} />
         ) : items.length === 0 ? (
           <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
             <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
@@ -450,7 +622,7 @@ export default function OnboardingList() {
                             <span
                               className={`h-1.5 w-1.5 shrink-0 rounded-full ${sv.dot}`}
                             />
-                            {STATUS_LABELS[app.status]}
+                            {statusLabels[app.status]}
                           </span>
                         </td>
                         <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">
@@ -529,7 +701,7 @@ export default function OnboardingList() {
                           <span
                             className={`inline-flex items-center gap-1 rounded-full px-2 py-0 text-[10px] font-semibold ${sv.bg} ${sv.text}`}
                           >
-                            {STATUS_LABELS[app.status]}
+                            {statusLabels[app.status]}
                           </span>
                         </div>
                         <div className="mt-0.5 text-xs text-muted-foreground">
@@ -680,6 +852,7 @@ export default function OnboardingList() {
           </div>
         )}
       </div>
+      )}
 
       <BulkUploadModal
         open={showBulkUpload}

@@ -1,6 +1,7 @@
-import { Bell, Calendar, Globe, LogOut, PanelLeft, Search, Sun } from "lucide-react"
+import { Bell, Calendar, Globe, LogOut, PanelLeft, Search, Sun, Moon } from "lucide-react"
 import { useAuth } from "../../lib/auth"
 import { useEffect, useState } from "react"
+import { useTheme } from "../../theme/ThemeProvider"
 
 interface TopbarProps {
   onToggleSidebar: () => void
@@ -19,7 +20,9 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 
 export function Topbar({ onToggleSidebar }: TopbarProps) {
   const { user, signOut } = useAuth()
+  const { theme, setTheme } = useTheme()
   const now = useClock()
+  const nextTheme = theme === "dark" ? "light" : "dark"
   const d = now.getDate()
   const m = now.getMonth()
   const y = now.getFullYear()
@@ -65,8 +68,8 @@ export function Topbar({ onToggleSidebar }: TopbarProps) {
             13
           </span>
         </div>
-        <IconButton label="Toggle theme">
-          <Sun className="h-[18px] w-[18px]" />
+        <IconButton label={`Switch to ${nextTheme} mode`} onClick={() => setTheme(nextTheme)}>
+          {theme === "dark" ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
         </IconButton>
 
         <div className="mx-1 hidden h-8 w-px bg-border sm:block" />

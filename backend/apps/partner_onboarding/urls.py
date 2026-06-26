@@ -5,12 +5,21 @@ from .views import (
     PartnerApplicationViewSet,
     PartnerApplicationDocumentViewSet,
     PartnerApplicationTaskViewSet,
+    BranchViewSet,
+    LocationViewSet,
+    ApplicationPartnerTypeViewSet,
+    ApplicationContactViewSet,
+    ApplicationBankAccountViewSet,
+    ApplicationFieldValueViewSet,
     download_template,
     bulk_upload,
+    choices,
 )
 
 router = DefaultRouter()
 router.register(r"applications", PartnerApplicationViewSet, basename="partner-applications")
+router.register(r"branches", BranchViewSet, basename="branches")
+router.register(r"locations", LocationViewSet, basename="locations")
 
 application_documents = PartnerApplicationDocumentViewSet.as_view({
     "get": "list",
@@ -38,6 +47,7 @@ application_task_complete = PartnerApplicationTaskViewSet.as_view({
 })
 
 urlpatterns = [
+    path("choices/", choices, name="choices"),
     path("applications/bulk-upload/template/", download_template, name="bulk-upload-template"),
     path("applications/bulk-upload/", bulk_upload, name="bulk-upload"),
     path("", include(router.urls)),
@@ -70,5 +80,50 @@ urlpatterns = [
         "applications/<uuid:application_pk>/tasks/<uuid:pk>/complete/",
         application_task_complete,
         name="application-task-complete",
+    ),
+    path(
+        "applications/<uuid:application_pk>/partner-types/",
+        ApplicationPartnerTypeViewSet.as_view({"get": "list", "post": "create"}),
+        name="application-partner-types",
+    ),
+    path(
+        "applications/<uuid:application_pk>/partner-types/<uuid:pk>/",
+        ApplicationPartnerTypeViewSet.as_view({"delete": "destroy"}),
+        name="application-partner-type-detail",
+    ),
+    path(
+        "applications/<uuid:application_pk>/contacts/",
+        ApplicationContactViewSet.as_view({"get": "list", "post": "create"}),
+        name="application-contacts",
+    ),
+    path(
+        "applications/<uuid:application_pk>/contacts/<uuid:pk>/",
+        ApplicationContactViewSet.as_view({"delete": "destroy"}),
+        name="application-contact-detail",
+    ),
+    path(
+        "applications/<uuid:application_pk>/bank-accounts/",
+        ApplicationBankAccountViewSet.as_view({"get": "list", "post": "create"}),
+        name="application-bank-accounts",
+    ),
+    path(
+        "applications/<uuid:application_pk>/bank-accounts/<uuid:pk>/",
+        ApplicationBankAccountViewSet.as_view({"delete": "destroy"}),
+        name="application-bank-account-detail",
+    ),
+    path(
+        "applications/<uuid:application_pk>/field-values/",
+        ApplicationFieldValueViewSet.as_view({"get": "list", "post": "create"}),
+        name="application-field-values",
+    ),
+    path(
+        "applications/<uuid:application_pk>/field-values/batch/",
+        ApplicationFieldValueViewSet.as_view({"patch": "batch_update"}),
+        name="application-field-values-batch",
+    ),
+    path(
+        "applications/<uuid:application_pk>/field-values/<uuid:pk>/",
+        ApplicationFieldValueViewSet.as_view({"delete": "destroy"}),
+        name="application-field-value-detail",
     ),
 ]

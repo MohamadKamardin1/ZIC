@@ -11,6 +11,10 @@ class PartnerFilter(django_filters.FilterSet):
         ("AGENT", "Agent"),
         ("BROKER", "Broker"),
     ])
+    partner_category = django_filters.ChoiceFilter(choices=[
+        ("INDIVIDUAL", "Individual"),
+        ("CORPORATE", "Corporate"),
+    ])
     status = django_filters.ChoiceFilter(choices=[
         ("ACTIVE", "Active"),
         ("INACTIVE", "Inactive"),
@@ -35,6 +39,7 @@ class PartnerFilter(django_filters.FilterSet):
         model = Partner
         fields = [
             "partner_type",
+            "partner_category",
             "status",
             "political_risk",
             "aml_risk",

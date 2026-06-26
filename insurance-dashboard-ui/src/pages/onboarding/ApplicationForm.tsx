@@ -12,71 +12,7 @@ import {
   getChoices,
 } from "../../lib/api"
 import type { PartnerApplicationDetail, ApplicationDocument, ChoicesResponse } from "../../lib/types"
-
-const FALLBACK_CHOICES: ChoicesResponse = {
-  partnerTypes: [{ value: "INDIVIDUAL", label: "Individual" }, { value: "CORPORATE", label: "Corporate" }],
-  identificationTypes: [
-    { value: "NIN", label: "National ID" }, { value: "ZAN_ID", label: "Zanzibar ID" },
-    { value: "PASSPORT", label: "Passport" }, { value: "DRIVING_LICENSE", label: "Driving License" },
-    { value: "TIN", label: "TIN" }, { value: "VOTER_ID", label: "Voter ID" },
-    { value: "RESIDENT_PERMIT", label: "Resident Permit" }, { value: "MILITARY_ID", label: "Military ID" },
-  ],
-  titles: [
-    { value: "Mr", label: "Mr" }, { value: "Mrs", label: "Mrs" }, { value: "Miss", label: "Miss" },
-    { value: "Ms", label: "Ms" }, { value: "Dr", label: "Dr" }, { value: "Prof", label: "Prof" },
-    { value: "Hon", label: "Hon" }, { value: "Eng", label: "Eng" }, { value: "Rev", label: "Rev" },
-  ],
-  genders: [{ value: "MALE", label: "Male" }, { value: "FEMALE", label: "Female" }],
-  maritalStatuses: [
-    { value: "SINGLE", label: "Single" }, { value: "MARRIED", label: "Married" },
-    { value: "DIVORCED", label: "Divorced" }, { value: "WIDOWED", label: "Widowed" },
-    { value: "SEPARATED", label: "Separated" },
-  ],
-  nationalities: [
-    { value: "Tanzanian", label: "Tanzanian" }, { value: "Kenyan", label: "Kenyan" },
-    { value: "Ugandan", label: "Ugandan" }, { value: "Rwandan", label: "Rwandan" },
-    { value: "Burundian", label: "Burundian" }, { value: "Congolese", label: "Congolese" },
-    { value: "South African", label: "South African" }, { value: "Nigerian", label: "Nigerian" },
-    { value: "Ghanaian", label: "Ghanaian" }, { value: "Ethiopian", label: "Ethiopian" },
-    { value: "Somali", label: "Somali" }, { value: "Mozambican", label: "Mozambican" },
-    { value: "Malawian", label: "Malawian" }, { value: "Zambian", label: "Zambian" },
-    { value: "Zimbabwean", label: "Zimbabwean" }, { value: "Indian", label: "Indian" },
-    { value: "Chinese", label: "Chinese" }, { value: "British", label: "British" },
-    { value: "American", label: "American" }, { value: "Other", label: "Other" },
-  ],
-  politicalRisks: [
-    { value: "LOW", label: "Low" }, { value: "MEDIUM", label: "Medium" },
-    { value: "HIGH", label: "High" }, { value: "PEP", label: "PEP" },
-  ],
-  amlRisks: [
-    { value: "LOW", label: "Low" }, { value: "MEDIUM", label: "Medium" }, { value: "HIGH", label: "High" },
-  ],
-  industries: [
-    { value: "TECHNOLOGY", label: "Technology" }, { value: "HEALTHCARE", label: "Healthcare & Pharmaceuticals" },
-    { value: "FINANCIAL_SERVICES", label: "Financial Services & Banking" },
-    { value: "CONSUMER_GOODS", label: "Consumer Goods & Retail" },
-    { value: "ENERGY", label: "Energy & Utilities" }, { value: "MANUFACTURING", label: "Manufacturing" },
-    { value: "TELECOMMUNICATIONS", label: "Telecommunications" },
-    { value: "TRANSPORTATION", label: "Transportation & Logistics" },
-    { value: "REAL_ESTATE", label: "Real Estate & Construction" },
-    { value: "MEDIA", label: "Media & Entertainment" }, { value: "AEROSPACE", label: "Aerospace & Defense" },
-    { value: "AUTOMOTIVE", label: "Automotive" }, { value: "AGRICULTURE", label: "Agriculture" },
-    { value: "HOSPITALITY", label: "Hospitality & Tourism" }, { value: "EDUCATION", label: "Education & Training" },
-    { value: "PROFESSIONAL_SERVICES", label: "Professional Services" }, { value: "INSURANCE", label: "Insurance" },
-    { value: "MINING", label: "Mining & Metals" }, { value: "CHEMICALS", label: "Chemicals" },
-    { value: "TEXTILES", label: "Textiles & Apparel" }, { value: "ENVIRONMENTAL", label: "Environmental Services" },
-    { value: "BIOTECHNOLOGY", label: "Biotechnology" }, { value: "E_COMMERCE", label: "E-commerce" },
-    { value: "RENEWABLE_ENERGY", label: "Renewable Energy" }, { value: "CYBERSECURITY", label: "Cybersecurity" },
-    { value: "AI_ML", label: "AI & Machine Learning" }, { value: "FINTECH", label: "Fintech" },
-    { value: "LIFE_SCIENCES", label: "Life Sciences" }, { value: "OIL_GAS", label: "Oil & Gas" },
-    { value: "CONSUMER_ELECTRONICS", label: "Consumer Electronics" },
-  ],
-  applicationStatuses: [],
-  documentTypes: [],
-  taskTypes: [],
-  taskStatuses: [],
-  taskPriorities: [],
-}
+import { useChoices } from "../../config/ConfigurationHooks"
 
 interface FormState {
   partnerType: "INDIVIDUAL" | "CORPORATE" | ""
@@ -145,15 +81,15 @@ export default function ApplicationForm() {
   const navigate = useNavigate()
 
   const [form, setForm] = useState<FormState>(INITIAL)
-  const [choices, setChoices] = useState<ChoicesResponse>(FALLBACK_CHOICES)
   const [saving, setSaving] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState("")
   const [docs, setDocs] = useState<ApplicationDocument[]>([])
+  const choices = useChoices()
 
-  // Load choices
+  // Load choices from API (legacy path — hook handles config endpoint)
   useEffect(() => {
-    getChoices().then(setChoices).catch(() => {})
+    getChoices().catch(() => {})
   }, [])
 
   // Edit mode: load application
@@ -291,47 +227,63 @@ export default function ApplicationForm() {
       <div className="flex items-center gap-3">
         <button
           onClick={() => navigate(isEdit ? `/onboarding/${id}` : "/onboarding")}
-          className="rounded-lg p-2 text-gray-500 transition hover:bg-gray-100 hover:text-gray-700"
+          className="rounded-lg p-2 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
-        <h1 className="text-xl font-bold text-gray-900">
+        <h1 className="text-xl font-bold text-foreground">
           {isEdit ? "Edit Application" : "Add Partner"}
         </h1>
       </div>
 
       {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+        <div className="rounded-xl border px-4 py-3 text-sm font-medium" style={{ borderColor: "var(--color-bg-destructive-soft)", backgroundColor: "var(--color-bg-destructive-soft)", color: "var(--color-text-destructive-soft)" }}>
           {error}
         </div>
       )}
 
       {/* Type selector */}
       <div className="flex gap-3">
-        {(["INDIVIDUAL", "CORPORATE"] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            disabled={isEdit}
-            onClick={() => setForm((f) => ({ ...f, partnerType: t }))}
-            className={`flex-1 rounded-xl border-2 py-4 text-center text-sm font-semibold transition ${
-              form.partnerType === t
-                ? "border-indigo-600 bg-indigo-50 text-indigo-700"
-                : "border-gray-200 bg-white text-gray-600 hover:border-indigo-300"
-            } ${isEdit ? "cursor-not-allowed opacity-60" : ""}`}
-          >
-            {t === "INDIVIDUAL" ? "Individual" : "Corporate"}
-          </button>
-        ))}
+        {(choices?.partnerTypes ?? []).length > 0
+          ? (choices!.partnerTypes).map((t) => (
+              <button
+                key={t.value}
+                type="button"
+                disabled={isEdit}
+                onClick={() => setForm((f) => ({ ...f, partnerType: t.value as "INDIVIDUAL" | "CORPORATE" }))}
+                className={`flex-1 rounded-xl border-2 py-4 text-center text-sm font-semibold transition ${
+                  form.partnerType === t.value
+                    ? "border-primary bg-accent text-accent-foreground"
+                    : "border-border bg-card text-muted-foreground hover:border-primary/50"
+                } ${isEdit ? "cursor-not-allowed opacity-60" : ""}`}
+              >
+                {t.label}
+              </button>
+            ))
+          : (["INDIVIDUAL", "CORPORATE"] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                disabled={isEdit}
+                onClick={() => setForm((f) => ({ ...f, partnerType: t }))}
+                className={`flex-1 rounded-xl border-2 py-4 text-center text-sm font-semibold transition ${
+                  form.partnerType === t
+                    ? "border-primary bg-accent text-accent-foreground"
+                    : "border-border bg-card text-muted-foreground hover:border-primary/50"
+                } ${isEdit ? "cursor-not-allowed opacity-60" : ""}`}
+              >
+                {t === "INDIVIDUAL" ? "Individual" : "Corporate"}
+              </button>
+            ))}
       </div>
 
       {/* Form */}
-      <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+      <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
         <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2">
           {isCorporate ? (
             <>
               <SelectField label="Industry" value={form.industry} onChange={(v) => update("industry", v)}
-                options={choices.industries} placeholder="Select industry" colSpan={2} />
+                options={choices?.industries ?? []} placeholder="Select industry" colSpan={2} />
               <InputField label="Company Name *" value={form.companyName} onChange={(v) => update("companyName", v)} colSpan={2} />
               <InputField label="TIN Number *" value={form.tinNumber} onChange={(v) => update("tinNumber", v)} />
               <InputField type="date" label="Incorporation Date" value={form.incorporationDate} onChange={(v) => update("incorporationDate", v)} />
@@ -341,21 +293,21 @@ export default function ApplicationForm() {
             </>
           ) : (
             <>
-              <SelectField label="Title" value={form.title} onChange={(v) => update("title", v)} options={choices.titles} />
+              <SelectField label="Title" value={form.title} onChange={(v) => update("title", v)} options={choices?.titles ?? []} />
               <InputField label="First Name *" value={form.firstName} onChange={(v) => update("firstName", v)} />
               <InputField label="Other Name" value={form.otherName} onChange={(v) => update("otherName", v)} />
               <InputField label="Surname *" value={form.surname} onChange={(v) => update("surname", v)} />
               <SelectField label="ID Type" value={form.identificationType} onChange={(v) => update("identificationType", v)}
-                options={choices.identificationTypes} placeholder="Select ID type" />
+                options={choices?.identificationTypes ?? []} placeholder="Select ID type" />
               <InputField label="ID Number" value={form.identificationNumber} onChange={(v) => update("identificationNumber", v)} />
               <SelectField label="Gender" value={form.gender} onChange={(v) => update("gender", v)}
-                options={choices.genders} placeholder="Select gender" />
+                options={choices?.genders ?? []} placeholder="Select gender" />
               <InputField type="date" label="Date of Birth" value={form.dateOfBirth} onChange={(v) => update("dateOfBirth", v)} />
               <SelectField label="Marital Status" value={form.maritalStatus} onChange={(v) => update("maritalStatus", v)}
-                options={choices.maritalStatuses} placeholder="Select" />
+                options={choices?.maritalStatuses ?? []} placeholder="Select" />
               <InputField label="Occupation" value={form.occupation} onChange={(v) => update("occupation", v)} />
               <SelectField label="Nationality" value={form.nationality} onChange={(v) => update("nationality", v)}
-                options={choices.nationalities} placeholder="Select nationality" />
+                options={choices?.nationalities ?? []} placeholder="Select nationality" />
             </>
           )}
 
@@ -364,9 +316,9 @@ export default function ApplicationForm() {
           <InputField label="Mobile Number *" value={form.mobileNumber} onChange={(v) => update("mobileNumber", v)} />
           <InputField label="Telephone" value={form.telephoneNumber} onChange={(v) => update("telephoneNumber", v)} />
           <SelectField label="Political Risk" value={form.politicalRisk} onChange={(v) => update("politicalRisk", v)}
-            options={choices.politicalRisks} />
+            options={choices?.politicalRisks ?? []} />
           <SelectField label="AML Risk" value={form.amlRisk} onChange={(v) => update("amlRisk", v)}
-            options={choices.amlRisks} />
+            options={choices?.amlRisks ?? []} />
           <TextAreaField label="Physical Address" value={form.physicalAddress} onChange={(v) => update("physicalAddress", v)} />
           <TextAreaField label="Postal Address" value={form.postalAddress} onChange={(v) => update("postalAddress", v)} />
         </div>
@@ -374,18 +326,18 @@ export default function ApplicationForm() {
 
       {/* Documents (edit mode only) */}
       {isEdit && (
-        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="mb-3 text-base font-semibold text-gray-900">Documents</h2>
+      <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+          <h2 className="mb-3 text-base font-semibold text-foreground">Documents</h2>
           <div className="mb-4 flex gap-3">
             <select
               id="docType"
-              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"
+              className="rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground"
             >
-              {FALLBACK_CHOICES.documentTypes.map((d) => (
+              {(choices?.documentTypes ?? []).map((d) => (
                 <option key={d.value} value={d.value}>{d.label}</option>
               ))}
             </select>
-            <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50">
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-input bg-card px-4 py-2 text-sm font-medium text-foreground transition hover:bg-secondary">
               <Upload className="h-4 w-4" />
               Upload
               <input
@@ -401,20 +353,20 @@ export default function ApplicationForm() {
             </label>
           </div>
           {docs.length > 0 && (
-            <ul className="divide-y divide-gray-100">
+            <ul className="divide-y divide-border">
               {docs.map((d) => (
                 <li key={d.id} className="flex items-center gap-3 py-3">
-                  <FileText className="h-4 w-4 shrink-0 text-gray-400" />
+                  <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium text-gray-900">{d.documentName}</div>
-                    <div className="text-xs text-gray-500">
-                      {FALLBACK_CHOICES.documentTypes.find((t) => t.value === d.documentType)?.label ?? d.documentType}
+                    <div className="truncate text-sm font-medium text-foreground">{d.documentName}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {(choices?.documentTypes ?? []).find((t) => t.value === d.documentType)?.label ?? d.documentType}
                       {d.fileSize ? ` · ${(d.fileSize / 1024).toFixed(0)} KB` : ""}
                     </div>
                   </div>
-                  {d.isVerified && <CheckCircle2 className="h-4 w-4 shrink-0 text-green-500" />}
+                  {d.isVerified && <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: "var(--color-feedback-success)" }} />}
                   <button onClick={() => handleDeleteDoc(d.id)}
-                    className="rounded p-1 text-gray-400 hover:text-red-600">
+                    className="rounded p-1 text-muted-foreground hover:text-destructive">
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </li>
@@ -429,7 +381,7 @@ export default function ApplicationForm() {
         <button
           onClick={handleSave}
           disabled={busy}
-          className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-5 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-lg border border-border px-5 py-2.5 text-sm font-semibold text-foreground transition hover:bg-secondary disabled:opacity-50"
         >
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           Save as Draft
@@ -437,7 +389,7 @@ export default function ApplicationForm() {
         <button
           onClick={handleSaveAndSubmit}
           disabled={busy}
-          className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition hover:brightness-110 disabled:opacity-50"
         >
           {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           Save & Submit
@@ -456,12 +408,12 @@ function InputField({ label, value, onChange, type = "text", colSpan }: {
 }) {
   return (
     <div className={colSpan === 2 ? "sm:col-span-2" : ""}>
-      <label className="mb-1 block text-sm font-medium text-gray-700">{label}</label>
+      <label className="mb-1 block text-sm font-medium text-foreground">{label}</label>
       <input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+        className="w-full rounded-lg border border-input bg-card px-3 py-2.5 text-sm text-foreground outline-none transition placeholder:text-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring/40"
       />
     </div>
   )
@@ -473,11 +425,11 @@ function SelectField({ label, value, onChange, options, placeholder, colSpan }: 
 }) {
   return (
     <div className={colSpan === 2 ? "sm:col-span-2" : ""}>
-      <label className="mb-1 block text-sm font-medium text-gray-700">{label}</label>
+      <label className="mb-1 block text-sm font-medium text-foreground">{label}</label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+        className="w-full rounded-lg border border-input bg-card px-3 py-2.5 text-sm text-foreground outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/40"
       >
         {placeholder && <option value="">{placeholder}</option>}
         {options.map((o) => (
@@ -493,12 +445,12 @@ function TextAreaField({ label, value, onChange }: {
 }) {
   return (
     <div className="sm:col-span-2">
-      <label className="mb-1 block text-sm font-medium text-gray-700">{label}</label>
+      <label className="mb-1 block text-sm font-medium text-foreground">{label}</label>
       <textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
         rows={2}
-        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+        className="w-full rounded-lg border border-input bg-card px-3 py-2.5 text-sm text-foreground outline-none transition placeholder:text-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring/40"
       />
     </div>
   )

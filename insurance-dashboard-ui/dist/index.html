@@ -10,8 +10,19 @@
       content="AIMS Life — ZIC insurance administration dashboard for policies, claims, partners and quotations."
     />
     <title>AIMS Life | ZIC Insurance Dashboard</title>
-    <script type="module" crossorigin src="/assets/index-9ZB-YDV7.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-hn_ChD4l.css">
+    <script>
+      (function () {
+        try {
+          var theme = localStorage.getItem("zic-theme-mode") || "system";
+          var resolved = theme === "system"
+            ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+            : theme;
+          if (resolved === "dark") document.documentElement.setAttribute("data-theme", "dark");
+        } catch (e) {}
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index-DZVNHpzG.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-BlueuVGG.css">
   </head>
   <body>
     <div id="root"></div>

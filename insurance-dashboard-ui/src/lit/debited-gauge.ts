@@ -77,7 +77,7 @@ export class DebitedGauge extends LitElement {
     const p1 = this.polar(cx, cy, r, a1)
     const p2 = this.polar(cx, cy, r, a2)
     return svg`<path d="M ${p1.x} ${p1.y} A ${r} ${r} 0 0 1 ${p2.x} ${p2.y}"
-      fill="none" stroke="${color}" stroke-width="14" stroke-linecap="round" />`
+      fill="none" stroke-width="14" stroke-linecap="round" style="stroke:${color}" />`
   }
 
   private gauge() {
@@ -86,10 +86,10 @@ export class DebitedGauge extends LitElement {
     const tip = this.polar(90, 88, 54, needleAngle)
     return svg`
       <svg width="180" height="100" viewBox="0 0 180 100">
-        ${this.arc(180, 137, "#10b981")}
-        ${this.arc(135, 92, "#f59e0b")}
-        ${this.arc(90, 47, "#f97316")}
-        ${this.arc(45, 2, "#ef4444")}
+        ${this.arc(180, 137, "var(--color-chart-2)")}
+        ${this.arc(135, 92, "var(--color-chart-3)")}
+        ${this.arc(90, 47, "var(--color-chart-5)")}
+        ${this.arc(45, 2, "var(--color-chart-4)")}
         <line x1="90" y1="88" x2="${tip.x}" y2="${tip.y}" stroke="var(--foreground)" stroke-width="3" stroke-linecap="round" />
         <circle cx="90" cy="88" r="6" fill="var(--foreground)" />
       </svg>

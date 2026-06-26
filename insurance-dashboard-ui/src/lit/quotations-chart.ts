@@ -26,8 +26,8 @@ export class QuotationsChart extends LitElement {
         border-radius: 9px;
         display: grid;
         place-items: center;
-        background: #fee2e2;
-        color: #dc2626;
+        background: var(--color-bg-icon-destructive);
+        color: var(--color-text-icon-destructive);
       }
       .total {
         margin-top: 8px;

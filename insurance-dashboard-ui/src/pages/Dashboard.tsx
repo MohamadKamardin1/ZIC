@@ -11,6 +11,7 @@ import {
   TodoWidget,
   LeadsWidget,
 } from "../components/dashboard/widgets"
+import { DashboardSkeleton } from "../components/shared/Skeleton"
 import { getDashboard } from "../lib/api"
 import { useAuth } from "../lib/auth"
 import type { DashboardData } from "../lib/types"
@@ -77,23 +78,4 @@ export default function Dashboard() {
   )
 }
 
-function DashboardSkeleton() {
-  return (
-    <div className="flex flex-col gap-5">
-      <div className="h-28 animate-pulse rounded-2xl bg-muted" />
-      <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="h-64 animate-pulse rounded-xl bg-muted" />
-        ))}
-      </div>
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-4">
-        <div className="h-96 animate-pulse rounded-xl bg-muted xl:col-span-2" />
-        <div className="h-96 animate-pulse rounded-xl bg-muted" />
-        <div className="flex flex-col gap-5">
-          <div className="h-44 animate-pulse rounded-xl bg-muted" />
-          <div className="h-44 animate-pulse rounded-xl bg-muted" />
-        </div>
-      </div>
-    </div>
-  )
-}
+

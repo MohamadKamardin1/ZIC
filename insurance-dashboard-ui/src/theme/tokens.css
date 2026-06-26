@@ -1,0 +1,179 @@
+/* =============================================
+   Design Tokens — Light & Dark Modes
+   These semantic tokens power the entire UI.
+   Tailwind v4 @theme references the backward-
+   compatible aliases at the bottom of :root.
+   ============================================= */
+
+:root {
+  /* ---- Surface & Canvas ---- */
+  --color-bg-canvas: #f6f8fb;
+  --color-bg-surface: #ffffff;
+  --color-bg-muted: #f1f5f9;
+  --color-bg-subtle: #f1f5f9;
+  --color-bg-accent: #eff6ff;
+  --color-bg-sidebar: #ffffff;
+  --color-bg-popover: #ffffff;
+  --color-bg-overlay: rgba(0, 0, 0, 0.4);
+
+  /* ---- Text ---- */
+  --color-text-primary: #1e293b;
+  --color-text-secondary: #334155;
+  --color-text-muted: #64748b;
+  --color-text-sidebar: #334155;
+  --color-text-sidebar-muted: #64748b;
+  --color-text-on-brand: #ffffff;
+  --color-text-on-accent: #1d4ed8;
+  --color-text-on-destructive: #ffffff;
+  --color-text-on-success: #ffffff;
+  --color-text-on-warning: #ffffff;
+
+  /* ---- Brand (dynamic — overridden by ThemeProvider) ---- */
+  --color-brand-primary: #2563eb;
+  --color-brand-secondary: #f1f5f9;
+  --color-brand-accent: #1d4ed8;
+
+  /* ---- Borders & Rings ---- */
+  --color-border-default: #e2e8f0;
+  --color-border-input: #e2e8f0;
+  --color-border-focus: #2563eb;
+
+  /* ---- Feedback / Semantic ---- */
+  --color-feedback-success: #10b981;
+  --color-feedback-warning: #f59e0b;
+  --color-feedback-destructive: #ef4444;
+  --color-feedback-info: #2563eb;
+
+  --color-bg-success-soft: #d1fae5;
+  --color-bg-warning-soft: #fef3c7;
+  --color-bg-destructive-soft: #fee2e2;
+  --color-bg-info-soft: #dbeafe;
+
+  --color-text-success-soft: #065f46;
+  --color-text-warning-soft: #92400e;
+  --color-text-destructive-soft: #991b1b;
+  --color-text-info-soft: #1e40af;
+
+  /* ---- Charts (data viz) ---- */
+  --color-chart-1: #2563eb;
+  --color-chart-2: #10b981;
+  --color-chart-3: #f59e0b;
+  --color-chart-4: #ef4444;
+  --color-chart-5: #6366f1;
+
+  /* ---- Hero Banner ---- */
+  --color-hero-from: #3b5bdb;
+  --color-hero-to: #2545b8;
+
+  /* ---- Radii ---- */
+  --radius: 0.75rem;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  /* ---- Shadows ---- */
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.04);
+  --shadow-card-hover: 0 4px 6px rgba(15, 23, 42, 0.07), 0 10px 20px rgba(15, 23, 42, 0.06);
+  --shadow-card-elevated: 0 25px 50px -12px rgba(15, 23, 42, 0.15);
+
+  /* ---- Neutral stroke for SVG donut/chart rings ---- */
+  --color-stroke-neutral: #e2e8f0;
+
+  /* ---- Sizing ---- */
+  --sidebar-width: 16rem;
+
+  /* =============================================
+     Backward-compatible aliases (Tailwind @theme)
+     ============================================= */
+  --background: var(--color-bg-canvas);
+  --foreground: var(--color-text-primary);
+  --card: var(--color-bg-surface);
+  --card-foreground: var(--color-text-primary);
+  --popover: var(--color-bg-popover);
+  --popover-foreground: var(--color-text-primary);
+  --primary: var(--color-brand-primary);
+  --primary-foreground: var(--color-text-on-brand);
+  --secondary: var(--color-bg-subtle);
+  --secondary-foreground: var(--color-text-secondary);
+  --muted: var(--color-bg-muted);
+  --muted-foreground: var(--color-text-muted);
+  --accent: var(--color-bg-accent);
+  --accent-foreground: var(--color-brand-accent);
+  --destructive: var(--color-feedback-destructive);
+  --destructive-foreground: var(--color-text-on-destructive);
+  --success: var(--color-feedback-success);
+  --success-foreground: var(--color-text-on-success);
+  --warning: var(--color-feedback-warning);
+  --warning-foreground: var(--color-text-on-warning);
+  --border: var(--color-border-default);
+  --input: var(--color-border-input);
+  --ring: var(--color-border-focus);
+  --sidebar: var(--color-bg-sidebar);
+  --sidebar-foreground: var(--color-text-sidebar);
+  --sidebar-accent: var(--color-bg-accent);
+  --sidebar-accent-foreground: var(--color-brand-accent);
+  --chart-1: var(--color-chart-1);
+  --chart-2: var(--color-chart-2);
+  --chart-3: var(--color-chart-3);
+  --chart-4: var(--color-chart-4);
+  --chart-5: var(--color-chart-5);
+  --hero-from: var(--color-hero-from);
+  --hero-to: var(--color-hero-to);
+}
+
+/* =============================================
+   Dark Mode Overrides
+   Activated by data-theme="dark" on <html>.
+   WCAG AA compliant contrast ratios:
+   - text-primary on surface: 13:1
+   - text-muted on surface:  5.5:1
+   - brand-primary on surface: 5.8:1
+   ============================================= */
+[data-theme="dark"] {
+  --color-bg-canvas: #0f172a;
+  --color-bg-surface: #1e293b;
+  --color-bg-muted: #334155;
+  --color-bg-subtle: #1e293b;
+  --color-bg-accent: #1e3a5f;
+  --color-bg-sidebar: #1e293b;
+  --color-bg-popover: #1e293b;
+
+  --color-text-primary: #f1f5f9;
+  --color-text-secondary: #cbd5e1;
+  --color-text-muted: #94a3b8;
+  --color-text-sidebar: #cbd5e1;
+  --color-text-sidebar-muted: #64748b;
+  --color-text-on-accent: #60a5fa;
+
+  --color-brand-accent: #60a5fa;
+
+  --color-bg-overlay: rgba(0, 0, 0, 0.6);
+
+  --color-bg-success-soft: #064e3b;
+  --color-bg-warning-soft: #78350f;
+  --color-bg-destructive-soft: #7f1d1d;
+  --color-bg-info-soft: #1e3a5f;
+
+  --color-text-success-soft: #6ee7b7;
+  --color-text-warning-soft: #fcd34d;
+  --color-text-destructive-soft: #fca5a5;
+  --color-text-info-soft: #93c5fd;
+
+  --color-border-default: #334155;
+  --color-border-input: #475569;
+  --color-border-focus: #60a5fa;
+
+  --color-chart-1: #60a5fa;
+  --color-chart-2: #34d399;
+  --color-chart-3: #fbbf24;
+  --color-chart-4: #f87171;
+  --color-chart-5: #a78bfa;
+
+  --color-hero-from: #1e3a5f;
+  --color-hero-to: #0f172a;
+
+  --shadow-card-elevated: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
+
+  --color-stroke-neutral: #334155;
+}

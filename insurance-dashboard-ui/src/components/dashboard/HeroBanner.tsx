@@ -33,11 +33,11 @@ export function HeroBanner({ stats }: { stats: HeroStat[] }) {
 
   return (
     <section
-      className="flex flex-col gap-6 rounded-2xl px-6 py-6 text-white shadow-lg shadow-primary/20 lg:flex-row lg:items-center"
+      className="flex flex-col gap-6 rounded-2xl px-6 py-6 text-white lg:flex-row lg:items-center"
       style={{ background: "linear-gradient(110deg, var(--hero-from), var(--hero-to))" }}
     >
       <div className="flex items-center gap-4">
-        <div className="flex h-16 w-16 flex-none flex-col items-center justify-center rounded-full bg-white/15 leading-none backdrop-blur">
+        <div className="flex h-16 w-16 flex-none flex-col items-center justify-center rounded-full bg-white/15 leading-none">
           <span className="text-2xl font-extrabold">
             {now.getDate()}<sup className="text-xs">{formatOrdinal(now.getDate()).match(/\D+$/)?.[0]}</sup>
           </span>
@@ -54,7 +54,7 @@ export function HeroBanner({ stats }: { stats: HeroStat[] }) {
           return (
             <div
               key={s.label}
-              className="flex items-center gap-3 rounded-xl bg-white/10 px-4 py-3 backdrop-blur transition hover:bg-white/15"
+              className="flex items-center gap-3 rounded-xl bg-white/10 px-4 py-3 backdrop-blur"
             >
               <span className="flex h-11 w-11 flex-none items-center justify-center rounded-lg bg-white/15">
                 <Icon className="h-5 w-5" />

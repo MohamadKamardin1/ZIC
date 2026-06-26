@@ -9,8 +9,8 @@ export class PartnersCard extends LitElement {
     cardStyles,
     css`
       .card {
-        background: linear-gradient(160deg, #fff7ed 0%, #fffbeb 100%);
-        border-color: #fed7aa;
+        background: var(--card);
+        border-color: var(--border);
       }
       .total {
         display: flex;
@@ -54,7 +54,7 @@ export class PartnersCard extends LitElement {
         border-radius: 9999px;
         overflow: hidden;
         display: flex;
-        background: #fde9d3;
+        background: var(--secondary);
       }
       .bar .left {
         background: var(--chart-2);
@@ -81,7 +81,7 @@ export class PartnersCard extends LitElement {
       <div class="card">
         <div class="head">
           <h3 class="title">Partners Onboarded</h3>
-          <div class="icon-badge" style="background:#ffedd5;color:#ea580c">
+          <div class="icon-badge" style="background:var(--accent);color:var(--primary)">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M17 11l2 2 4-4" /><path d="M11 19H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h11" /><circle cx="9" cy="7" r="4" />
             </svg>

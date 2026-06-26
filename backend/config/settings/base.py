@@ -53,6 +53,9 @@ INSTALLED_APPS = [
     'apps.partner_onboarding',
     'apps.dashboard',
     'apps.common',
+    'apps.system_parameters',
+    'apps.ai_assistant',
+    'apps.governance',
 ]
 
 MIDDLEWARE = [
@@ -70,6 +73,7 @@ MIDDLEWARE = [
     'apps.core.middleware.RequestLoggingMiddleware',
     'apps.core.middleware.UniqueRequestIDMiddleware',
     'apps.core.middleware.UserActivityMiddleware',
+    'apps.governance.middleware.AuditContextMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -258,6 +262,8 @@ AXES_FAILURE_LIMIT = 5
 AXES_COOLOFF_TIME = timedelta(minutes=15)
 AXES_ENABLE_ADMIN = True
 AXES_RESET_ON_SUCCESS = True
+
+DEEPSEEK_API_KEY = env('DEEPSEEK_API_KEY', default='')
 
 CELERY_BROKER_URL = env('CELERY_BROKER_URL', default='redis://localhost:6379/1')
 CELERY_RESULT_BACKEND = env('CELERY_RESULT_BACKEND', default='redis://localhost:6379/2')

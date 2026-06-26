@@ -1,96 +1,67 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import {
   ArrowLeft,
-  Edit3,
-  Send,
-  Eye,
-  CheckCircle,
-  XCircle,
-  PauseCircle,
-  PlayCircle,
-  FileUp,
-  CheckSquare,
   Plus,
+  Trash2,
   Loader2,
-  Shield,
-  FileText,
-  ClipboardList,
-  AlertTriangle,
-  Download,
+  X,
+  Search,
+  User,
+  Building2,
+  Landmark,
+  Phone,
+  Mail,
+  MapPin,
 } from "lucide-react"
 import {
   getApplication,
-  submitApplication,
-  startReview,
-  sendToCompliance,
-  approveApplication,
-  rejectApplication,
-  suspendApplication,
-  resumeApplication,
-  convertApplication,
-  runCompliance,
-  requestDocuments,
-  verifyDocument,
-  completeTask,
-  createTask,
-  uploadDocument,
-  deleteDocument,
-  listDocuments,
-  listTasks,
+  listPartnerTypes,
+  createPartnerType,
+  deletePartnerType,
+  listContacts,
+  listBankAccounts,
+  getChoices,
 } from "../../lib/api"
 import type {
   PartnerApplicationDetail,
-  ApplicationDocument,
-  ApplicationTask,
-  ApplicationStatus,
+  ApplicationPartnerType,
+  ApplicationContact,
+  ApplicationBankAccount,
+  ChoicesResponse,
 } from "../../lib/types"
-import { STATUS_LABELS, STATUS_COLORS } from "../../lib/types"
-
-const STATUS_FLOW: ApplicationStatus[] = [
-  "DRAFT",
-  "SUBMITTED",
-  "UNDER_REVIEW",
-  "PENDING_DOCUMENTS",
-  "COMPLIANCE_CHECK",
-  "APPROVED",
-  "CONVERTED",
-]
-
-const TERMINAL_STATUSES: ApplicationStatus[] = ["CONVERTED", "REJECTED"]
+import { useStatusLabel, useStatusColor } from "../../config/ConfigurationHooks"
 
 export default function ApplicationDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
   const [app, setApp] = useState<PartnerApplicationDetail | null>(null)
-  const [docs, setDocs] = useState<ApplicationDocument[]>([])
-  const [tasks, setTasks] = useState<ApplicationTask[]>([])
-  const [loading, setLoading] = useState(false)
-  const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [partnerTypes, setPartnerTypes] = useState<ApplicationPartnerType[]>([])
+  const [contacts, setContacts] = useState<ApplicationContact[]>([])
+  const [bankAccounts, setBankAccounts] = useState<ApplicationBankAccount[]>([])
+  const [choices, setChoices] = useState<ChoicesResponse | null>(null)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
-  const [tab, setTab] = useState<"details" | "documents" | "tasks">("details")
-  const [showRejectModal, setShowRejectModal] = useState(false)
-  const [rejectReason, setRejectReason] = useState("")
-  const [complianceResult, setComplianceResult] = useState<{
-    riskScore: number
-    threshold: number
-    isHighRisk: boolean
-  } | null>(null)
+  const [subTab, setSubTab] = useState<"types" | "contacts" | "banks">("types")
 
   const load = useCallback(async () => {
     if (!id) return
     setLoading(true)
     setError("")
     try {
-      const [appData, docsData, tasksData] = await Promise.all([
+      const [appData, pts, cts, bks, chs] = await Promise.all([
         getApplication(id),
-        listDocuments(id),
-        listTasks(id),
+        listPartnerTypes(id),
+        listContacts(id),
+        listBankAccounts(id),
+        getChoices(),
       ])
       setApp(appData)
-      setDocs(docsData)
-      setTasks(tasksData)
+      setPartnerTypes(pts)
+      setContacts(cts)
+      setBankAccounts(bks)
+      setChoices(chs)
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load")
     } finally {
@@ -102,16 +73,13 @@ export default function ApplicationDetail() {
     load()
   }, [load])
 
-  async function doAction(action: string, fn: () => Promise<unknown>) {
-    setActionLoading(action)
-    setError("")
+  async function handleDeletePartnerType(ptId: string) {
+    if (!id) return
     try {
-      await fn()
-      load()
+      await deletePartnerType(id, ptId)
+      setPartnerTypes((prev) => prev.filter((p) => p.id !== ptId))
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Action failed")
-    } finally {
-      setActionLoading(null)
+      setError(e instanceof Error ? e.message : "Failed to delete partner type")
     }
   }
 
@@ -131,146 +99,16 @@ export default function ApplicationDetail() {
     )
   }
 
-  const statusIdx = STATUS_FLOW.indexOf(app.status)
-  const isTerminal = TERMINAL_STATUSES.includes(app.status)
-
-  /* ---- Action buttons per status ---- */
-  const actions: { label: string; icon: React.ReactNode; fn: () => void; variant?: string }[] = []
-
-  if (app.status === "DRAFT") {
-    actions.push({
-      label: "Submit",
-      icon: <Send className="h-4 w-4" />,
-      fn: () => doAction("submit", () => submitApplication(app.id)),
-      variant: "bg-green-600 hover:bg-green-700 text-white",
-    })
-    actions.push({
-      label: "Edit",
-      icon: <Edit3 className="h-4 w-4" />,
-      fn: () => navigate(`/onboarding/${app.id}/edit`),
-    })
-  }
-  if (app.status === "SUBMITTED") {
-    actions.push({
-      label: "Start Review",
-      icon: <Eye className="h-4 w-4" />,
-      fn: () => doAction("start-review", () => startReview(app.id)),
-      variant: "bg-primary hover:bg-primary/90 text-white",
-    })
-  }
-  if (app.status === "UNDER_REVIEW") {
-    actions.push({
-      label: "Request Docs",
-      icon: <FileUp className="h-4 w-4" />,
-      fn: () => doAction("request-docs", () => requestDocuments(app.id, ["NID"])),
-    })
-    actions.push({
-      label: "Send to Compliance",
-      icon: <Shield className="h-4 w-4" />,
-      fn: () => doAction("compliance", () => sendToCompliance(app.id)),
-      variant: "bg-orange-500 hover:bg-orange-600 text-white",
-    })
-  }
-  if (app.status === "PENDING_DOCUMENTS") {
-    actions.push({
-      label: "Re-review",
-      icon: <Eye className="h-4 w-4" />,
-      fn: () => doAction("re-review", () => startReview(app.id)),
-    })
-  }
-  if (app.status === "COMPLIANCE_CHECK") {
-    actions.push({
-      label: "Approve",
-      icon: <CheckCircle className="h-4 w-4" />,
-      fn: () => doAction("approve", () => approveApplication(app.id)),
-      variant: "bg-green-600 hover:bg-green-700 text-white",
-    })
-    actions.push({
-      label: "Reject",
-      icon: <XCircle className="h-4 w-4" />,
-      fn: () => setShowRejectModal(true),
-      variant: "bg-destructive hover:bg-destructive/90 text-white",
-    })
-    actions.push({
-      label: "Suspend",
-      icon: <PauseCircle className="h-4 w-4" />,
-      fn: () => doAction("suspend", () => suspendApplication(app.id)),
-    })
-    actions.push({
-      label: "Run Compliance",
-      icon: <Shield className="h-4 w-4" />,
-      fn: () =>
-        doAction("compliance-check", () =>
-          runCompliance(app.id).then((r) => setComplianceResult(r)),
-        ),
-    })
-  }
-  if (app.status === "SUSPENDED") {
-    actions.push({
-      label: "Resume",
-      icon: <PlayCircle className="h-4 w-4" />,
-      fn: () => doAction("resume", () => resumeApplication(app.id)),
-      variant: "bg-primary hover:bg-primary/90 text-white",
-    })
-    actions.push({
-      label: "Reject",
-      icon: <XCircle className="h-4 w-4" />,
-      fn: () => setShowRejectModal(true),
-      variant: "bg-destructive hover:bg-destructive/90 text-white",
-    })
-  }
-  if (app.status === "APPROVED") {
-    actions.push({
-      label: "Convert to Partner",
-      icon: <CheckSquare className="h-4 w-4" />,
-      fn: () => doAction("convert", () => convertApplication(app.id)),
-      variant: "bg-emerald-600 hover:bg-emerald-700 text-white",
-    })
-  }
-
   return (
     <div className="flex flex-col gap-5">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate("/onboarding")}
-            className="rounded-lg p-2 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-          <div>
-            <h1 className="text-xl font-bold text-foreground">{app.displayName}</h1>
-            <p className="text-sm text-muted-foreground">
-              {app.applicationNumber} · {app.partnerType === "INDIVIDUAL" ? "Individual" : "Corporate"}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <span
-            className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${STATUS_COLORS[app.status]}`}
-          >
-            {STATUS_LABELS[app.status]}
-          </span>
-          {actions.map((a) => (
-            <button
-              key={a.label}
-              onClick={a.fn}
-              disabled={!!actionLoading}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition disabled:opacity-50 ${
-                a.variant ?? "border border-input bg-card text-foreground hover:bg-secondary"
-              }`}
-            >
-              {actionLoading === a.label.toLowerCase().replace(/\s/g, "-") ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                a.icon
-              )}
-              {a.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* Breadcrumb */}
+      <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
+        <button onClick={() => navigate("/")} className="font-medium text-primary hover:underline">Home</button>
+        <span>/</span>
+        <button onClick={() => navigate("/onboarding")} className="font-medium text-primary hover:underline">Partner</button>
+        <span>/</span>
+        <span className="text-foreground">View Partner</span>
+      </nav>
 
       {error && (
         <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm font-medium text-destructive">
@@ -278,468 +116,558 @@ export default function ApplicationDetail() {
         </div>
       )}
 
-      {/* Compliance result */}
-      {complianceResult && (
-        <div
-          className={`rounded-xl border px-4 py-3 text-sm font-medium ${
-            complianceResult.isHighRisk
-              ? "border-red-300 bg-red-50 text-red-700"
-              : "border-green-300 bg-green-50 text-green-700"
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4" />
-            Risk Score: {complianceResult.riskScore} / {complianceResult.threshold} —{" "}
-            {complianceResult.isHighRisk ? "HIGH RISK" : "OK"}
-          </div>
+      {/* ===== TABLE 1: User Info ===== */}
+      <div className="rounded-xl border border-border bg-card">
+        <div className="flex items-center gap-3 border-b border-border px-5 py-3">
+          <button
+            onClick={() => navigate("/onboarding")}
+            className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+          <User className="h-5 w-5 text-muted-foreground" />
+          <h2 className="text-base font-semibold text-foreground">Partner Information</h2>
+          <StatusBadge status={app.status} />
         </div>
-      )}
-
-      {/* Status timeline */}
-      <div className="rounded-xl border border-border bg-card p-4">
-        <div className="flex items-center gap-1 overflow-x-auto">
-          {STATUS_FLOW.map((s, i) => {
-            const done = i < statusIdx
-            const current = s === app.status
-            return (
-              <div key={s} className="flex items-center">
-                <div
-                  className={`flex h-8 min-w-24 items-center justify-center rounded-full px-3 text-xs font-semibold ${
-                    current
-                      ? "bg-primary text-primary-foreground"
-                      : done
-                        ? "bg-green-100 text-green-700"
-                        : "bg-muted text-muted-foreground"
-                  }`}
-                >
-                  {STATUS_LABELS[s]}
-                </div>
-                {i < STATUS_FLOW.length - 1 && (
-                  <div
-                    className={`mx-1 h-0.5 w-6 flex-none ${done ? "bg-green-300" : "bg-border"}`}
-                  />
-                )}
-              </div>
-            )
-          })}
-          {isTerminal && app.status === "REJECTED" && (
-            <>
-              <div className="mx-1 h-0.5 w-6 flex-none bg-red-300" />
-              <div className="flex h-8 min-w-24 items-center justify-center rounded-full bg-red-100 px-3 text-xs font-semibold text-red-700">
-                Rejected
-              </div>
-            </>
+        <div className="p-5">
+          {app.partnerType === "INDIVIDUAL" ? (
+            <InfoTable
+              rows={[
+                { label: "Application No", value: app.applicationNumber },
+                { label: "Full Name", value: `${app.title} ${app.firstName} ${app.otherName} ${app.surname}`.trim() },
+                { label: "Partner Type", value: "Individual" },
+                { label: "ID Type", value: app.identificationType || "—" },
+                { label: "ID Number", value: app.identificationNumber || "—" },
+                { label: "Gender", value: app.gender || "—" },
+                { label: "Date of Birth", value: app.dateOfBirth || "—" },
+                { label: "Marital Status", value: app.maritalStatus || "—" },
+                { label: "Occupation", value: app.occupation || "—" },
+                { label: "Nationality", value: app.nationality || "—" },
+                { label: "Email", value: app.email },
+                { label: "Mobile", value: app.mobileNumber },
+                { label: "Telephone", value: app.telephoneNumber || "—" },
+                { label: "Physical Address", value: app.physicalAddress || "—" },
+                { label: "Postal Address", value: app.postalAddress || "—" },
+              ]}
+            />
+          ) : (
+            <InfoTable
+              rows={[
+                { label: "Application No", value: app.applicationNumber },
+                { label: "Company Name", value: app.companyName || "—" },
+                { label: "Partner Type", value: "Corporate" },
+                { label: "TIN", value: app.tinNumber || "—" },
+                { label: "Incorporation Date", value: app.incorporationDate || "—" },
+                { label: "Industry", value: app.industry || "—" },
+                { label: "Contact Person", value: app.contactPerson || "—" },
+                { label: "Contact Phone", value: app.contactPersonPhone || "—" },
+                { label: "Contact Email", value: app.contactPersonEmail || "—" },
+                { label: "Email", value: app.email },
+                { label: "Mobile", value: app.mobileNumber },
+                { label: "Telephone", value: app.telephoneNumber || "—" },
+                { label: "Physical Address", value: app.physicalAddress || "—" },
+                { label: "Postal Address", value: app.postalAddress || "—" },
+              ]}
+            />
           )}
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 rounded-lg bg-muted p-1 w-fit">
-        {[
-          { key: "details" as const, label: "Details", icon: <FileText className="h-4 w-4" /> },
-          { key: "documents" as const, label: `Docs (${docs.length})`, icon: <ClipboardList className="h-4 w-4" /> },
-          { key: "tasks" as const, label: `Tasks (${tasks.length})`, icon: <Plus className="h-4 w-4" /> },
-        ].map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition ${
-              tab === t.key ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {t.icon}
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Tab content */}
-      {tab === "details" && <DetailsTab app={app} />}
-      {tab === "documents" && <DocumentsTab docs={docs} applicationId={app.id} status={app.status} onRefresh={() => load()} />}
-      {tab === "tasks" && <TasksTab tasks={tasks} applicationId={app.id} onRefresh={() => load()} />}
-
-      {/* Reject modal */}
-      {showRejectModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-md rounded-xl bg-card p-6 shadow-xl">
-            <h3 className="text-lg font-semibold text-foreground">Reject Application</h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Provide a reason for rejection.
-            </p>
-            <textarea
-              value={rejectReason}
-              onChange={(e) => setRejectReason(e.target.value)}
-              rows={4}
-              className="mt-4 w-full rounded-lg border border-input bg-secondary/60 px-3 py-2.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring/40"
-              placeholder="Rejection reason..."
-              autoFocus
-            />
-            <div className="mt-4 flex gap-3">
-              <button
-                onClick={() => {
-                  setShowRejectModal(false)
-                  setRejectReason("")
-                }}
-                className="flex-1 rounded-lg border border-input py-2.5 text-sm font-medium text-foreground transition hover:bg-secondary"
-              >
-                Cancel
-              </button>
-              <button
-                disabled={!rejectReason.trim() || !!actionLoading}
-                onClick={() => {
-                  setShowRejectModal(false)
-                  doAction("reject", () => rejectApplication(app.id, rejectReason))
-                  setRejectReason("")
-                }}
-                className="flex-1 rounded-lg bg-destructive py-2.5 text-sm font-semibold text-white transition hover:bg-destructive/90 disabled:opacity-50"
-              >
-                Reject
-              </button>
-            </div>
-          </div>
+      {/* ===== TABLE 2: Tabbed (Partner Types / Contacts / Banks) ===== */}
+      <div className="rounded-xl border border-border bg-card">
+        {/* Tabs */}
+        <div className="flex items-center gap-1 border-b border-border px-5 py-2">
+          {[
+            { key: "types" as const, label: "Partner Type", icon: <Building2 className="h-4 w-4" /> },
+            { key: "contacts" as const, label: "Partner Contact", icon: <Phone className="h-4 w-4" /> },
+            { key: "banks" as const, label: "Partner Banks", icon: <Landmark className="h-4 w-4" /> },
+          ].map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setSubTab(t.key)}
+              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                subTab === t.key
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t.icon}
+              {t.label}
+            </button>
+          ))}
         </div>
-      )}
-    </div>
-  )
-}
 
-/* -------------------------------------------------------------------------- */
-/*  DetailsTab                                                                 */
-/* -------------------------------------------------------------------------- */
-
-function DetailsTab({ app }: { app: PartnerApplicationDetail }) {
-  const rows: { label: string; value: string }[] = [
-    { label: "Application Number", value: app.applicationNumber },
-    { label: "Partner Type", value: app.partnerType === "INDIVIDUAL" ? "Individual" : "Corporate" },
-    { label: "Status", value: STATUS_LABELS[app.status] },
-  ]
-
-  if (app.partnerType === "INDIVIDUAL") {
-    rows.push(
-      { label: "Name", value: `${app.title} ${app.firstName} ${app.otherName} ${app.surname}`.trim() },
-      { label: "ID Type", value: app.identificationType || "—" },
-      { label: "ID Number", value: app.identificationNumber || "—" },
-      { label: "Gender", value: app.gender || "—" },
-      { label: "Date of Birth", value: app.dateOfBirth || "—" },
-      { label: "Marital Status", value: app.maritalStatus || "—" },
-      { label: "Occupation", value: app.occupation || "—" },
-      { label: "Nationality", value: app.nationality || "—" },
-    )
-  } else {
-    rows.push(
-      { label: "Company", value: app.companyName || "—" },
-      { label: "TIN", value: app.tinNumber || "—" },
-      { label: "Incorporation Date", value: app.incorporationDate || "—" },
-      { label: "Industry", value: app.industry || "—" },
-      { label: "Contact Person", value: app.contactPerson || "—" },
-      { label: "Contact Phone", value: app.contactPersonPhone || "—" },
-      { label: "Contact Email", value: app.contactPersonEmail || "—" },
-    )
-  }
-
-  rows.push(
-    { label: "Email", value: app.email },
-    { label: "Mobile", value: app.mobileNumber },
-    { label: "Telephone", value: app.telephoneNumber || "—" },
-    { label: "Physical Address", value: app.physicalAddress || "—" },
-    { label: "Postal Address", value: app.postalAddress || "—" },
-    { label: "Political Risk", value: app.politicalRisk },
-    { label: "AML Risk", value: app.amlRisk },
-  )
-
-  if (app.rejectionReason) rows.push({ label: "Rejection Reason", value: app.rejectionReason })
-  if (app.complianceNotes) rows.push({ label: "Compliance Notes", value: app.complianceNotes })
-
-  return (
-    <div className="max-w-3xl rounded-xl border border-border bg-card p-6">
-      <dl className="space-y-3 text-sm">
-        {rows.map((r) => (
-          <div key={r.label} className="flex justify-between border-b border-border/50 pb-2">
-            <dt className="text-muted-foreground">{r.label}</dt>
-            <dd className="font-medium text-foreground">{r.value}</dd>
-          </div>
-        ))}
-      </dl>
-    </div>
-  )
-}
-
-/* -------------------------------------------------------------------------- */
-/*  DocumentsTab                                                               */
-/* -------------------------------------------------------------------------- */
-
-function DocumentsTab({
-  docs,
-  applicationId,
-  status,
-  onRefresh,
-}: {
-  docs: ApplicationDocument[]
-  applicationId: string
-  status: ApplicationStatus
-  onRefresh: () => void
-}) {
-  const [uploading, setUploading] = useState(false)
-  const [docType, setDocType] = useState("NID")
-  const [verifying, setVerifying] = useState<string | null>(null)
-
-  const DOC_TYPES = [
-    { value: "NID", label: "National ID" },
-    { value: "PASSPORT", label: "Passport" },
-    { value: "TIN_CERTIFICATE", label: "TIN Certificate" },
-    { value: "INCORPORATION_CERT", label: "Incorporation Cert" },
-    { value: "MEMORANDUM", label: "Memorandum" },
-    { value: "BOARD_RESOLUTION", label: "Board Resolution" },
-    { value: "DRIVING_LICENSE", label: "Driving License" },
-    { value: "OTHER", label: "Other" },
-  ]
-
-  async function handleUpload(file: File) {
-    setUploading(true)
-    try {
-      await uploadDocument(applicationId, file, docType)
-      onRefresh()
-    } catch {}
-    finally {
-      setUploading(false)
-    }
-  }
-
-  async function handleVerify(docId: string) {
-    setVerifying(docId)
-    try {
-      await verifyDocument(applicationId, docId)
-      onRefresh()
-    } catch {}
-    finally {
-      setVerifying(null)
-    }
-  }
-
-  async function handleDelete(docId: string) {
-    if (!confirm("Delete this document?")) return
-    try {
-      await deleteDocument(applicationId, docId)
-      onRefresh()
-    } catch {}
-  }
-
-  return (
-    <div className="rounded-xl border border-border bg-card p-6">
-      {/* Upload row */}
-      <div className="flex flex-wrap items-center gap-3">
-        <select
-          value={docType}
-          onChange={(e) => setDocType(e.target.value)}
-          className="rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground"
-        >
-          {DOC_TYPES.map((d) => (
-            <option key={d.value} value={d.value}>
-              {d.label}
-            </option>
-          ))}
-        </select>
-        <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-input bg-card px-4 py-2 text-sm font-medium text-foreground transition hover:bg-secondary">
-          <FileUp className="h-4 w-4" />
-          Upload
-          <input
-            type="file"
-            accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0]
-              if (file) handleUpload(file)
-            }}
-            disabled={uploading}
-          />
-        </label>
-        {uploading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+        <div className="p-5">
+          {subTab === "types" && (
+            <PartnerTypeTab
+              partnerTypes={partnerTypes}
+              applicationId={id!}
+              choices={choices}
+              onAdd={(pts) => setPartnerTypes((prev) => [...prev, ...pts])}
+              onDelete={handleDeletePartnerType}
+            />
+          )}
+          {subTab === "contacts" && (
+            <ContactsTab contacts={contacts} applicationId={id!} onRefresh={load} />
+          )}
+          {subTab === "banks" && (
+            <BanksTab bankAccounts={bankAccounts} applicationId={id!} onRefresh={load} />
+          )}
+        </div>
       </div>
-
-      {docs.length === 0 ? (
-        <p className="mt-6 text-center text-sm text-muted-foreground">No documents uploaded.</p>
-      ) : (
-        <ul className="mt-4 divide-y divide-border">
-          {docs.map((d) => (
-            <li key={d.id} className="flex items-center gap-3 py-3">
-              <FileText className="h-4 w-4 text-muted-foreground" />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium text-foreground">{d.documentName}</div>
-                <div className="text-xs text-muted-foreground">
-                  {DOC_TYPES.find((t) => t.value === d.documentType)?.label ?? d.documentType}
-                  {d.fileSize ? ` · ${(d.fileSize / 1024).toFixed(0)} KB` : ""}
-                </div>
-              </div>
-              {d.isVerified ? (
-                <span className="text-xs font-semibold text-green-600">Verified</span>
-              ) : (
-                <button
-                  onClick={() => handleVerify(d.id)}
-                  disabled={verifying === d.id}
-                  className="rounded px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50"
-                >
-                  {verifying === d.id ? <Loader2 className="h-3 w-3 animate-spin" /> : "Verify"}
-                </button>
-              )}
-              {status === "DRAFT" && (
-                <button
-                  onClick={() => handleDelete(d.id)}
-                  className="rounded p-1 text-muted-foreground hover:text-destructive"
-                >
-                  <FileText className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
     </div>
   )
 }
 
 /* -------------------------------------------------------------------------- */
-/*  TasksTab                                                                   */
+/*  InfoTable                                                                  */
 /* -------------------------------------------------------------------------- */
 
-function TasksTab({
-  tasks,
+function InfoTable({ rows }: { rows: { label: string; value: string }[] }) {
+  return (
+    <dl className="grid grid-cols-1 gap-x-8 gap-y-2.5 sm:grid-cols-2">
+      {rows.map((r) => (
+        <div key={r.label} className="flex gap-2 text-sm">
+          <dt className="w-36 shrink-0 font-medium text-muted-foreground">{r.label}</dt>
+          <dd className="text-foreground">{r.value || "—"}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+/*  PartnerTypeTab                                                             */
+/* -------------------------------------------------------------------------- */
+
+function PartnerTypeTab({
+  partnerTypes,
   applicationId,
-  onRefresh,
+  choices,
+  onAdd,
+  onDelete,
 }: {
-  tasks: ApplicationTask[]
+  partnerTypes: ApplicationPartnerType[]
   applicationId: string
-  onRefresh: () => void
+  choices: ChoicesResponse | null
+  onAdd: (pts: ApplicationPartnerType[]) => void
+  onDelete: (id: string) => void
 }) {
-  const [showNew, setShowNew] = useState(false)
-  const [newTitle, setNewTitle] = useState("")
-  const [newType, setNewType] = useState("REVIEW")
-  const [newPriority, setNewPriority] = useState("MEDIUM")
-  const [newDue, setNewDue] = useState("")
-
-  const PRIORITY_COLORS: Record<string, string> = {
-    URGENT: "text-red-600",
-    HIGH: "text-orange-600",
-    MEDIUM: "text-amber-600",
-    LOW: "text-muted-foreground",
-  }
-
-  async function handleCreate() {
-    if (!newTitle.trim()) return
-    try {
-      await createTask(applicationId, {
-        taskType: newType,
-        title: newTitle,
-        priority: newPriority,
-        dueDate: newDue || undefined,
-      })
-      setShowNew(false)
-      setNewTitle("")
-      onRefresh()
-    } catch {}
-  }
-
-  async function handleComplete(taskId: string) {
-    try {
-      await completeTask(applicationId, taskId)
-      onRefresh()
-    } catch {}
-  }
+  const [showPopup, setShowPopup] = useState(false)
+  const [adding, setAdding] = useState(false)
+  const navigateSetup = useNavigate()
 
   return (
-    <div className="rounded-xl border border-border bg-card p-6">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-foreground">Tasks</h3>
+    <div>
+      <div className="mb-4 flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          {partnerTypes.length} partner type{partnerTypes.length !== 1 ? "s" : ""} assigned
+        </p>
         <button
-          onClick={() => setShowNew((s) => !s)}
-          className="inline-flex items-center gap-1 rounded-lg border border-input px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-secondary"
+          onClick={() => setShowPopup(true)}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition hover:bg-primary/90"
         >
-          <Plus className="h-3 w-3" />
-          New Task
+          <Plus className="h-4 w-4" />
+          Add Partner Type
         </button>
       </div>
 
-      {showNew && (
-        <div className="mt-4 flex flex-wrap gap-2 rounded-lg bg-secondary/40 p-3">
-          <input
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            placeholder="Task title..."
-            className="flex-1 rounded-lg border border-input bg-card px-3 py-1.5 text-sm text-foreground"
-          />
-          <select
-            value={newType}
-            onChange={(e) => setNewType(e.target.value)}
-            className="rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground"
-          >
-            <option value="REVIEW">Review</option>
-            <option value="DOCUMENT_REQUEST">Doc Request</option>
-            <option value="COMPLIANCE_CHECK">Compliance</option>
-            <option value="APPROVAL">Approval</option>
-            <option value="OTHER">Other</option>
-          </select>
-          <select
-            value={newPriority}
-            onChange={(e) => setNewPriority(e.target.value)}
-            className="rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground"
-          >
-            <option value="LOW">Low</option>
-            <option value="MEDIUM">Medium</option>
-            <option value="HIGH">High</option>
-            <option value="URGENT">Urgent</option>
-          </select>
-          <input
-            type="date"
-            value={newDue}
-            onChange={(e) => setNewDue(e.target.value)}
-            className="rounded-lg border border-input bg-card px-2 py-1.5 text-sm text-foreground"
-          />
-          <button
-            onClick={handleCreate}
-            className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
-          >
-            Create
-          </button>
+      {partnerTypes.length === 0 ? (
+        <p className="py-6 text-center text-sm text-muted-foreground">No partner types assigned yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <th className="px-3 py-2">Partner Type</th>
+                <th className="px-3 py-2">Branch</th>
+                <th className="px-3 py-2">Location</th>
+                <th className="px-3 py-2">Share Data</th>
+                <th className="w-14 px-2 py-2 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {partnerTypes.map((pt) => (
+                <tr key={pt.id} className="border-b border-border/50 last:border-b-0">
+                  <td className="px-3 py-2.5 font-medium text-foreground">{pt.partnerTypeName}</td>
+                  <td className="px-3 py-2.5 text-muted-foreground">{pt.branchName || "—"}</td>
+                  <td className="px-3 py-2.5 text-muted-foreground">{pt.locationName || "—"}</td>
+                  <td className="px-3 py-2.5 text-muted-foreground">{pt.shareDataExternally ? "Yes" : "No"}</td>
+                  <td className="px-2 py-2.5 text-right">
+                    <button
+                      onClick={() => onDelete(pt.id)}
+                      className="rounded p-1 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
+                      title="Remove"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
-      {tasks.length === 0 ? (
-        <p className="mt-4 text-center text-sm text-muted-foreground">No tasks yet.</p>
-      ) : (
-        <ul className="mt-4 divide-y divide-border">
-          {tasks.map((t) => (
-            <li key={t.id} className="flex items-center gap-3 py-3">
-              <div className="flex-1">
-                <div className="text-sm font-medium text-foreground">{t.title}</div>
-                <div className="text-xs text-muted-foreground">
-                  {t.taskType} · {PRIORITY_COLORS[t.priority]} {t.priority}
-                  {t.dueDate ? ` · Due ${t.dueDate}` : ""}
-                </div>
-              </div>
-              <span
-                className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                  t.status === "COMPLETED"
-                    ? "bg-green-100 text-green-700"
-                    : t.status === "IN_PROGRESS"
-                      ? "bg-blue-100 text-blue-700"
-                      : t.status === "CANCELLED"
-                        ? "bg-gray-100 text-gray-600"
-                        : "bg-amber-100 text-amber-700"
-                }`}
-              >
-                {t.status.replace("_", " ")}
-              </span>
-              {t.status !== "COMPLETED" && t.status !== "CANCELLED" && (
-                <button
-                  onClick={() => handleComplete(t.id)}
-                  className="rounded px-2 py-1 text-xs font-medium text-green-600 hover:bg-green-50"
-                >
-                  Complete
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+      <AddPartnerTypePopup
+        open={showPopup}
+        onClose={() => setShowPopup(false)}
+        onConfirm={async (data) => {
+          setAdding(true)
+          try {
+            const result = await createPartnerType(applicationId, data)
+            onAdd(result)
+            setShowPopup(false)
+            navigateSetup(`/system-parameters/partner/partner-types/${data.partner_type}/setup?applicationId=${applicationId}`)
+          } catch (e) {
+            throw e
+          } finally {
+            setAdding(false)
+          }
+        }}
+        choices={choices}
+        loading={adding}
+      />
     </div>
   )
+}
+
+/* -------------------------------------------------------------------------- */
+/*  AddPartnerTypePopup                                                        */
+/* -------------------------------------------------------------------------- */
+
+function AddPartnerTypePopup({
+  open,
+  onClose,
+  onConfirm,
+  choices,
+  loading,
+}: {
+  open: boolean
+  onClose: () => void
+  onConfirm: (data: {
+    partner_type: string
+    branches?: string[]
+    location?: string | null
+    share_data_externally?: boolean
+  }) => Promise<void>
+  choices: ChoicesResponse | null
+  loading: boolean
+}) {
+  const [partnerType, setPartnerType] = useState("")
+  const [selectedBranches, setSelectedBranches] = useState<string[]>([])
+  const [branchQuery, setBranchQuery] = useState("")
+  const [branchOpen, setBranchOpen] = useState(false)
+  const branchRef = useRef<HTMLDivElement>(null)
+  const [location, setLocation] = useState("")
+  const [shareData, setShareData] = useState("no")
+  const [error, setError] = useState("")
+
+  const systemTypes = choices?.systemPartnerTypes ?? []
+  const branchOptions = choices?.branches ?? []
+  const locationOptions = (choices?.locations ?? []).filter(
+    (l) => selectedBranches.length === 0 || selectedBranches.includes(l.branchId),
+  )
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (branchRef.current && !branchRef.current.contains(e.target as Node)) {
+        setBranchOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
+  }, [])
+
+  const branchSearchResults = branchQuery
+    ? branchOptions.filter((b) => !selectedBranches.includes(b.value) && b.label.toLowerCase().includes(branchQuery.toLowerCase()))
+    : branchOptions.filter((b) => !selectedBranches.includes(b.value))
+
+  function handleBranchToggle(value: string) {
+    setSelectedBranches((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
+    )
+    setBranchQuery("")
+    setBranchOpen(false)
+  }
+
+  if (!open) return null
+
+  async function handleSubmit() {
+    setError("")
+    if (!partnerType) {
+      setError("Please select a partner type.")
+      return
+    }
+    try {
+      await onConfirm({
+        partner_type: partnerType,
+        branches: selectedBranches.length > 0 ? selectedBranches : undefined,
+        location: location || null,
+        share_data_externally: shareData === "yes",
+      })
+      setPartnerType("")
+      setSelectedBranches([])
+      setLocation("")
+      setShareData("no")
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to add partner type")
+    }
+  }
+
+  function handleClose() {
+    setPartnerType("")
+    setSelectedBranches([])
+    setLocation("")
+    setShareData("no")
+    setError("")
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: "var(--color-bg-overlay)" }}>
+      <div className="mx-4 w-full max-w-md rounded-xl bg-card shadow-xl">
+        <div className="flex items-center justify-between border-b px-5 py-4">
+          <h2 className="text-base font-semibold">Add Partner Type</h2>
+          <button onClick={handleClose} className="rounded p-1 text-muted-foreground hover:bg-accent">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="space-y-4 px-5 py-4">
+          <div>
+            <label className="mb-1 block text-sm font-medium">Partner Type</label>
+            <select
+              value={partnerType}
+              onChange={(e) => setPartnerType(e.target.value)}
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
+            >
+              <option value="">Select partner type</option>
+              {systemTypes.map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div ref={branchRef} className="relative">
+            <label className="mb-1 block text-sm font-medium">Branches</label>
+            {selectedBranches.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-1.5">
+                {selectedBranches.map((id) => {
+                  const b = branchOptions.find((o) => o.value === id)
+                  return (
+                    <span key={id} className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2.5 py-0.5 text-xs font-medium">
+                      {b?.label ?? id}
+                      <button onClick={() => { setSelectedBranches((prev) => prev.filter((v) => v !== id)); setLocation("") }} className="hover:text-destructive">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  )
+                })}
+              </div>
+            )}
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Search branches..."
+                value={branchQuery}
+                onChange={(e) => { setBranchQuery(e.target.value); setBranchOpen(true) }}
+                onFocus={() => setBranchOpen(true)}
+                className="w-full rounded-lg border border-input bg-background text-foreground pl-9 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
+              />
+            </div>
+            {branchOpen && branchSearchResults.length > 0 && (
+              <div className="absolute z-20 mt-1 w-full rounded-lg border border-border bg-card shadow-lg max-h-48 overflow-y-auto">
+                {branchSearchResults.map((b) => (
+                  <button
+                    key={b.value}
+                    onClick={() => handleBranchToggle(b.value)}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors"
+                  >
+                    {b.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium">Location</label>
+            <select
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              disabled={selectedBranches.length === 0 || locationOptions.length === 0}
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-50"
+            >
+              <option value="">{selectedBranches.length === 0 ? "Select a branch first" : "Select location"}</option>
+              {locationOptions.map((l) => (
+                <option key={l.value} value={l.value}>{l.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium">Share Data Externally</label>
+            <select
+              value={shareData}
+              onChange={(e) => setShareData(e.target.value)}
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
+            >
+              <option value="no">No</option>
+              <option value="yes">Yes</option>
+            </select>
+          </div>
+
+          {error && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</div>
+          )}
+        </div>
+        <div className="flex justify-end gap-2 border-t px-5 py-3">
+          <button onClick={handleClose} disabled={loading} className="rounded-lg border border-input px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50">
+            Cancel
+          </button>
+          <button onClick={handleSubmit} disabled={loading} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+            {loading ? "Adding..." : "Add"}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+/*  ContactsTab                                                                */
+/* -------------------------------------------------------------------------- */
+
+function ContactsTab({
+  contacts,
+  applicationId,
+  onRefresh,
+}: {
+  contacts: ApplicationContact[]
+  applicationId: string
+  onRefresh: () => void
+}) {
+  if (contacts.length === 0) {
+    return (
+      <div className="flex flex-col items-center py-8 text-center">
+        <Phone className="mb-2 h-8 w-8 text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">No contacts yet.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <th className="px-3 py-2">Name</th>
+            <th className="px-3 py-2">Type</th>
+            <th className="px-3 py-2">Email</th>
+            <th className="px-3 py-2">Phone</th>
+            <th className="px-3 py-2">Mobile</th>
+            <th className="px-3 py-2">Designation</th>
+            <th className="w-14 px-2 py-2 text-right">Primary</th>
+          </tr>
+        </thead>
+        <tbody>
+          {contacts.map((c) => (
+            <tr key={c.id} className="border-b border-border/50 last:border-b-0">
+              <td className="px-3 py-2.5 font-medium text-foreground">{c.firstName} {c.lastName}</td>
+              <td className="px-3 py-2.5 text-muted-foreground">{contactTypeLabel(c.contactType)}</td>
+              <td className="px-3 py-2.5 text-muted-foreground">{c.email || "—"}</td>
+              <td className="px-3 py-2.5 text-muted-foreground">{c.phone || "—"}</td>
+              <td className="px-3 py-2.5 text-muted-foreground">{c.mobile || "—"}</td>
+              <td className="px-3 py-2.5 text-muted-foreground">{c.designation || "—"}</td>
+              <td className="px-2 py-2.5 text-center">
+                {c.isPrimary ? <span className="text-xs font-semibold text-success">Yes</span> : "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+/*  BanksTab                                                                   */
+/* -------------------------------------------------------------------------- */
+
+function BanksTab({
+  bankAccounts,
+  applicationId,
+  onRefresh,
+}: {
+  bankAccounts: ApplicationBankAccount[]
+  applicationId: string
+  onRefresh: () => void
+}) {
+  if (bankAccounts.length === 0) {
+    return (
+      <div className="flex flex-col items-center py-8 text-center">
+        <Landmark className="mb-2 h-8 w-8 text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">No bank accounts yet.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <th className="px-3 py-2">Account Name</th>
+            <th className="px-3 py-2">Bank</th>
+            <th className="px-3 py-2">Branch</th>
+            <th className="px-3 py-2">Account No</th>
+            <th className="px-3 py-2">Currency</th>
+            <th className="px-3 py-2">SWIFT</th>
+            <th className="w-14 px-2 py-2 text-right">Primary</th>
+          </tr>
+        </thead>
+        <tbody>
+          {bankAccounts.map((b) => (
+            <tr key={b.id} className="border-b border-border/50 last:border-b-0">
+              <td className="px-3 py-2.5 font-medium text-foreground">{b.accountName}</td>
+              <td className="px-3 py-2.5 text-muted-foreground">{b.bankName}</td>
+              <td className="px-3 py-2.5 text-muted-foreground">{b.branchName || "—"}</td>
+              <td className="px-3 py-2.5 text-muted-foreground">{b.accountNumber}</td>
+              <td className="px-3 py-2.5 text-muted-foreground">{b.currency}</td>
+              <td className="px-3 py-2.5 text-muted-foreground">{b.swiftCode || "—"}</td>
+              <td className="px-2 py-2.5 text-center">
+                {b.isPrimary ? <span className="text-xs font-semibold text-success">Yes</span> : "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+/*  StatusBadge (config-driven)                                                */
+/* -------------------------------------------------------------------------- */
+
+function StatusBadge({ status }: { status: string }) {
+  const label = useStatusLabel(status)
+  const color = useStatusColor(status)
+  return (
+    <span className={`ml-auto inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${color}`}>
+      {label}
+    </span>
+  )
+}
+
+function contactTypeLabel(type: string): string {
+  const labels: Record<string, string> = {
+    PRIMARY: "Primary",
+    SECONDARY: "Secondary",
+    BILLING: "Billing",
+    TECHNICAL: "Technical",
+    OTHER: "Other",
+  }
+  return labels[type] ?? type
 }

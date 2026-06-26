@@ -190,32 +190,6 @@ export type ApplicationStatus =
   | "REJECTED"
   | "SUSPENDED"
 
-export const STATUS_LABELS: Record<ApplicationStatus, string> = {
-  ACTIVE: "Active",
-  DRAFT: "Draft",
-  SUBMITTED: "Submitted",
-  UNDER_REVIEW: "Under Review",
-  PENDING_DOCUMENTS: "Pending Docs",
-  COMPLIANCE_CHECK: "Compliance",
-  APPROVED: "Approved",
-  CONVERTED: "Converted",
-  REJECTED: "Rejected",
-  SUSPENDED: "Suspended",
-}
-
-export const STATUS_COLORS: Record<ApplicationStatus, string> = {
-  ACTIVE: "bg-green-100 text-green-700",
-  DRAFT: "bg-gray-100 text-gray-700",
-  SUBMITTED: "bg-blue-100 text-blue-700",
-  UNDER_REVIEW: "bg-purple-100 text-purple-700",
-  PENDING_DOCUMENTS: "bg-amber-100 text-amber-700",
-  COMPLIANCE_CHECK: "bg-orange-100 text-orange-700",
-  APPROVED: "bg-green-100 text-green-700",
-  CONVERTED: "bg-emerald-100 text-emerald-700",
-  REJECTED: "bg-red-100 text-red-700",
-  SUSPENDED: "bg-yellow-100 text-yellow-700",
-}
-
 export interface PartnerApplicationList {
   id: string
   applicationNumber: string
@@ -315,6 +289,7 @@ export interface PartnerApplicationDetail {
 
 export interface ChoicesResponse {
   partnerTypes: { value: string; label: string }[]
+  partnerCategories: { value: string; label: string }[]
   identificationTypes: { value: string; label: string }[]
   titles: { value: string; label: string }[]
   genders: { value: string; label: string }[]
@@ -328,6 +303,9 @@ export interface ChoicesResponse {
   taskTypes: { value: string; label: string }[]
   taskStatuses: { value: string; label: string }[]
   taskPriorities: { value: string; label: string }[]
+  systemPartnerTypes: { value: string; label: string }[]
+  branches: { value: string; label: string }[]
+  locations: { value: string; label: string; branchId: string }[]
 }
 
 export interface PaginatedResponse<T> {
@@ -349,4 +327,611 @@ export interface BulkUploadResult {
   imported: number
   skipped: number
   errors: { row: number; message: string }[]
+}
+
+export interface ApplicationPartnerType {
+  id: string
+  application: string
+  partnerType: string
+  partnerTypeName: string
+  branch: string | null
+  branchName: string | null
+  location: string | null
+  locationName: string | null
+  shareDataExternally: boolean
+  createdAt: string
+}
+
+export interface ApplicationContact {
+  id: string
+  contactType: string
+  firstName: string
+  lastName: string
+  email: string
+  phone: string
+  mobile: string
+  designation: string
+  isPrimary: boolean
+  notes: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ApplicationBankAccount {
+  id: string
+  bankName: string
+  branchName: string
+  accountName: string
+  accountNumber: string
+  swiftCode: string
+  iban: string
+  currency: string
+  isPrimary: boolean
+  isVerified: boolean
+  notes: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface BranchOption {
+  value: string
+  label: string
+}
+
+export interface LocationOption {
+  value: string
+  label: string
+  branch_id: string
+}
+
+// ============================================================================
+// System Parameters types
+// ============================================================================
+
+export interface ParameterGroup {
+  id: string
+  parent: string | null
+  name: string
+  code: string
+  description: string
+  sortOrder: number
+  isActive: boolean
+  children?: ParameterGroup[]
+  parameterCount?: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SystemParameter {
+  id: string
+  group: string
+  groupName: string
+  name: string
+  code: string
+  description: string
+  valueType: "STRING" | "TEXT" | "INTEGER" | "FLOAT" | "BOOLEAN" | "JSON" | "FILE"
+  value: string | number | boolean | Record<string, unknown> | null
+  stringValue: string | null
+  integerValue: number | null
+  floatValue: number | null
+  booleanValue: boolean | null
+  jsonValue: Record<string, unknown> | null
+  fileValue: string | null
+  isActive: boolean
+  isEncrypted: boolean
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ChoiceList {
+  id: string
+  group: string | null
+  code: string
+  name: string
+  description: string
+  isActive: boolean
+  options: ChoiceOption[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ChoiceOption {
+  id: string
+  choiceList: string
+  code: string
+  label: string
+  isDefault: boolean
+  isActive: boolean
+  sortOrder: number
+  metadata: Record<string, unknown> | null
+  createdAt: string
+  updatedAt: string
+}
+
+// ============================================================================
+// Partner Master Domain types (Phase 2 - new normalized structure)
+// ============================================================================
+
+export interface IndividualProfile {
+  id: string
+  identificationType: string
+  identificationNumber: string
+  title: string
+  firstName: string
+  otherName: string
+  surname: string
+  gender: string
+  dateOfBirth: string | null
+  maritalStatus: string
+  occupation: string
+  nationality: string
+}
+
+export interface CorporateProfile {
+  id: string
+  companyName: string
+  tinNumber: string
+  incorporationDate: string | null
+  industry: string
+  contactPerson: string
+  contactPersonPhone: string
+  contactPersonEmail: string
+}
+
+export interface PartnerTypeAssignment {
+  id: string
+  partner: string
+  partnerType: string
+  partnerTypeName: string
+  partnerTypeCode: string
+  branch: string | null
+  branchName: string | null
+  location: string | null
+  locationName: string | null
+  shareDataExternally: boolean
+  status: "ACTIVE" | "INACTIVE"
+  effectiveDate: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PartnerDetail {
+  id: string
+  partnerNumber: string
+  partnerType: PartnerType
+  partnerCategory: PartnerType
+  status: string
+  displayName: string
+  identificationType: string
+  identificationNumber: string
+  title: string
+  firstName: string
+  otherName: string
+  surname: string
+  gender: string
+  dateOfBirth: string | null
+  maritalStatus: string
+  occupation: string
+  nationality: string
+  companyName: string
+  tinNumber: string
+  incorporationDate: string | null
+  industry: string
+  contactPerson: string
+  contactPersonPhone: string
+  contactPersonEmail: string
+  physicalAddress: string
+  postalAddress: string
+  email: string
+  telephoneNumber: string
+  mobileNumber: string
+  politicalRisk: string
+  amlRisk: string
+  createdFromApplication: string | null
+  individualProfile: IndividualProfile | null
+  corporateProfile: CorporateProfile | null
+  typeAssignments: PartnerTypeAssignment[]
+  activatedAt: string | null
+  deactivatedAt: string | null
+  deactivationReason: string
+  createdAt: string
+  updatedAt: string
+}
+
+// ============================================================================
+// Partner Type / Branch / Location (DB-driven CRUD models)
+// ============================================================================
+
+export interface PartnerTypeDocumentRequirement {
+  id: string
+  partnerType: string
+  partnerTypeName: string
+  code: string
+  description: string
+  isRequired: boolean
+  isMandatory: boolean
+  sortOrder: number
+  isActive: boolean
+  createdBy: string | null
+  createdByName: string | null
+  updatedBy: string | null
+  updatedByName: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PartnerTypeRecord {
+  id: string
+  code: string
+  name: string
+  description: string
+  branchId: string | null
+  branchName: string | null
+  locationId: string | null
+  locationName: string | null
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface BranchRecord {
+  id: string
+  code: string
+  name: string
+  isActive: boolean
+}
+
+export interface LocationRecord {
+  id: string
+  branchId: string
+  code: string
+  name: string
+  isActive: boolean
+}
+
+// ============================================================================
+// Partner Type Setup Configuration (Phase 3 - PartnerType Setup Engine)
+// ============================================================================
+
+export interface PartnerTypeFieldConfiguration {
+  id: string
+  partnerType: string
+  partnerTypeName: string
+  fieldName: string
+  fieldCode: string
+  fieldType: "TEXT" | "NUMBER" | "DATE" | "BOOLEAN" | "DROPDOWN" | "MULTI_SELECT" | "FILE" | "CURRENCY" | "PERCENTAGE"
+  defaultValue: string
+  isRequired: boolean
+  validationRules: Record<string, unknown>
+  displayOrder: number
+  visibilityRules: Record<string, unknown>
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PartnerTypeContactRequirement {
+  id: string
+  partnerType: string
+  partnerTypeName: string
+  contactType: string
+  isRequired: boolean
+  multipleAllowed: boolean
+  displayOrder: number
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PartnerTypeBankRequirement {
+  id: string
+  partnerType: string
+  partnerTypeName: string
+  bankType: string
+  isRequired: boolean
+  multipleAllowed: boolean
+  validationRules: Record<string, unknown>
+  displayOrder: number
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+// ============================================================================
+// Partner Type Assignment Setup Data (Phase 3 - transaction/instance data)
+// ============================================================================
+
+export interface PartnerDocument {
+  id: string
+  assignment: string
+  documentRequirement: string
+  documentRequirementCode: string
+  documentRequirementName: string
+  allowMultipleUploads: boolean
+  file: string
+  documentNumber: string
+  issueDate: string | null
+  expiryDate: string | null
+  uploadedBy: string | null
+  uploadedAt: string | null
+  status: "NOT_SUBMITTED" | "UPLOADED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "EXPIRED"
+  verificationNotes: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PartnerDynamicFieldValue {
+  id: string
+  assignment: string
+  fieldConfig: string
+  fieldCode: string
+  fieldName: string
+  fieldType: string
+  valueJson: unknown
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ApplicationFieldValue {
+  id: string
+  application: string
+  fieldConfig: string
+  fieldCode: string
+  fieldName: string
+  fieldType: string
+  valueJson: unknown
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PartnerAssignmentContact {
+  id: string
+  assignment: string
+  contactRequirement: string
+  configContactType: string
+  contactType: string
+  firstName: string
+  lastName: string
+  email: string
+  phone: string
+  mobile: string
+  designation: string
+  isPrimary: boolean
+  notes: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PartnerAssignmentBankAccount {
+  id: string
+  assignment: string
+  bankRequirement: string
+  configBankType: string
+  bankType: string
+  bankName: string
+  branchName: string
+  accountName: string
+  accountNumber: string
+  swiftCode: string
+  currency: string
+  isPrimary: boolean
+  notes: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PartnerKYCProfile {
+  id: string
+  assignment: string
+  kycStatus: "NOT_SET" | "PENDING" | "CLEARED" | "REJECTED" | "ESCALATED"
+  riskScore: number | null
+  riskLevel: string
+  lastReviewDate: string | null
+  reviewedBy: string | null
+  notes: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SetupSummary {
+  documents: {
+    total: number
+    submitted: number
+    required: number
+    requiredSubmitted: number
+    progressPct: number
+  }
+  fields: {
+    total: number
+    filled: number
+    required: number
+    requiredFilled: number
+    progressPct: number
+  }
+  contacts: {
+    total: number
+    submitted: number
+    progressPct: number
+  }
+  banks: {
+    total: number
+    submitted: number
+    progressPct: number
+  }
+  kyc: {
+    status: string
+    riskScore: number | null
+    riskLevel: string
+  }
+}
+
+export interface PartnerTypeAssignmentSetup {
+  id: string
+  partner: string
+  partnerType: string
+  setupSummary: SetupSummary
+  documents: PartnerDocument[]
+  fieldValues: PartnerDynamicFieldValue[]
+  assignmentContacts: PartnerAssignmentContact[]
+  assignmentBankAccounts: PartnerAssignmentBankAccount[]
+  kycProfile: PartnerKYCProfile | null
+}
+
+// ============================================================================
+// Partner List (from /api/v1/partners/)
+// ============================================================================
+
+export interface PartnerListItem {
+  id: string
+  partnerNumber: string
+  partnerType: string
+  partnerCategory: string | null
+  displayName: string
+  email: string
+  mobileNumber: string
+  status: string
+  politicalRisk: string
+  amlRisk: string
+  createdAt: string
+}
+
+// ============================================================================
+// Phase 4 — Enterprise Governance types
+// ============================================================================
+
+export interface AuditLog {
+  id: string
+  user: string | null
+  userEmail: string | null
+  userName: string
+  actionType: string
+  entityType: string
+  entityId: string
+  entityRepr: string
+  beforeState: Record<string, unknown> | null
+  afterState: Record<string, unknown> | null
+  description: string
+  ipAddress: string | null
+  userAgent: string
+  requestId: string
+  timestamp: string
+}
+
+export type ApprovalStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED"
+
+export interface ApprovalRequest {
+  id: string
+  module: string
+  entityType: string
+  entityId: string
+  entityRepr: string
+  action: string
+  requestedData: Record<string, unknown> | null
+  currentData: Record<string, unknown> | null
+  status: ApprovalStatus
+  submittedBy: string | null
+  submittedByEmail: string | null
+  submittedByName: string | null
+  submittedAt: string
+  reviewedBy: string | null
+  reviewedByEmail: string | null
+  reviewedByName: string | null
+  reviewedAt: string | null
+  comments: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ConfigurationVersion {
+  id: string
+  module: string
+  versionNumber: number
+  effectiveFrom: string
+  effectiveTo: string | null
+  status: "DRAFT" | "ACTIVE" | "RETIRED"
+  configurationData: Record<string, unknown>
+  changeSummary: string
+  createdBy: string | null
+  createdByEmail: string | null
+  createdByName: string | null
+  createdAt: string
+  notes: string
+}
+
+export interface DocumentVersion {
+  id: string
+  document: string
+  versionNumber: number
+  file: string
+  fileName: string
+  fileSize: number | null
+  mimeType: string
+  status: string
+  notes: string
+  uploadedBy: string | null
+  uploadedByEmail: string | null
+  uploadedAt: string
+  verificationStatus: string
+  verifiedBy: string | null
+  verifiedByEmail: string | null
+  verifiedAt: string | null
+  verificationNotes: string
+}
+
+export interface KYCReviewHistory {
+  id: string
+  kycProfile: string
+  reviewType: "INITIAL" | "PERIODIC" | "ENHANCED_DUE_DILIGENCE" | "HIGH_RISK_ESCALATION" | "REVIEW"
+  previousKycStatus: string
+  newKycStatus: string
+  previousRiskScore: number | null
+  newRiskScore: number | null
+  previousRiskLevel: string
+  newRiskLevel: string
+  reviewedBy: string | null
+  reviewedByEmail: string | null
+  reviewedByName: string | null
+  decisionDate: string
+  comments: string
+  createdAt: string
+}
+
+export interface PartnerTypeAssignmentHistory {
+  id: string
+  assignment: string
+  previousStatus: string
+  newStatus: string
+  reason: string
+  changedBy: string | null
+  changedByEmail: string | null
+  changedByName: string | null
+  changedAt: string
+}
+
+export interface ComplianceOverview {
+  totalPartners: number
+  activePartners: number
+  kycPending: number
+  kycCleared: number
+  kycRejected: number
+  kycEscalated: number
+  documentsPending: number
+  documentsExpired: number
+  highRiskPartners: number
+}
+
+export interface AuditStats {
+  total: number
+  days: number
+  byAction: Record<string, number>
+  byEntity: Record<string, number>
+}
+
+export interface ApprovalStats {
+  total: number
+  pending: number
+  approved: number
+  rejected: number
+  cancelled: number
 }

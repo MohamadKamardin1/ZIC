@@ -63,7 +63,7 @@ export default function Login() {
         className="min-h-screen w-full bg-cover bg-center flex items-center justify-center p-4"
         style={{ backgroundImage: "url(/login-bg.png)" }}
       >
-        <div className="flex w-full max-w-md flex-col items-center justify-center rounded-2xl bg-card px-8 py-12 shadow-2xl shadow-slate-900/10">
+        <div className="flex w-full max-w-md flex-col items-center justify-center rounded-2xl bg-card px-8 py-12" style={{ boxShadow: "var(--shadow-card)" }}>
           <ZicLogo size={42} />
 
           <div className="mt-6 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
@@ -102,7 +102,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading || otpCode.length < 6}
-              className="mt-6 w-full rounded-lg bg-[#1f2733] py-3 text-sm font-semibold text-white transition hover:bg-[#2b3545] disabled:opacity-60"
+              className="mt-6 w-full rounded-lg bg-primary py-3 text-sm font-semibold text-primary-foreground transition hover:brightness-110 disabled:opacity-60"
             >
               {loading ? "Verifying..." : "Verify & Sign In"}
             </button>
@@ -127,9 +127,9 @@ export default function Login() {
       className="min-h-screen w-full bg-cover bg-center flex items-center justify-center p-4"
       style={{ backgroundImage: "url(/login-bg.png)" }}
     >
-      <div className="flex w-full max-w-4xl overflow-hidden rounded-2xl bg-card shadow-2xl shadow-slate-900/10">
+      <div className="flex w-full max-w-4xl overflow-hidden rounded-2xl bg-card" style={{ boxShadow: "var(--shadow-card-elevated)" }}>
         {/* Illustration panel */}
-        <div className="hidden md:flex w-1/2 items-center justify-center bg-[#cfe4f7] p-8">
+        <div className="hidden md:flex w-1/2 items-center justify-center p-8" style={{ backgroundColor: "var(--color-bg-accent)" }}>
           <img
             src="/insurance-illustration.png"
             alt="Insurance policy review illustration"
@@ -188,7 +188,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="mt-6 w-full rounded-lg bg-[#1f2733] py-3 text-sm font-semibold text-white transition hover:bg-[#2b3545] disabled:opacity-60"
+              className="mt-6 w-full rounded-lg bg-primary py-3 text-sm font-semibold text-primary-foreground transition hover:brightness-110 disabled:opacity-60"
             >
               {loading ? "Signing in..." : "Login"}
             </button>
