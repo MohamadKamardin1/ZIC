@@ -72,7 +72,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         QUOTATION_ONLY = 'QUOTATION_ONLY', 'Quotation Only'
         UNDERWRITER = 'UNDERWRITER', 'Underwriter'
         SYSTEM_MANAGER = 'SYSTEM_MANAGER', 'System Manager'
-        AIMS_GROUP = 'AIMS_GROUP', 'AIMS Group'
+        ZIC_GROUP = 'ZIC_GROUP', 'ZIC Group'
         SUPER_ADMIN = 'SUPER_ADMIN', 'Super Admin'
 
     class OTPMethod(models.TextChoices):
@@ -266,7 +266,7 @@ class UserGroup(models.Model):
         QUOTATION_ONLY = 'QUOTATION_ONLY', 'Quotation Only'
         UNDERWRITER = 'UNDERWRITER', 'Underwriter'
         SYSTEM_MANAGER = 'SYSTEM_MANAGER', 'System Manager'
-        AIMS_GROUP = 'AIMS_GROUP', 'AIMS Group'
+        ZIC_GROUP = 'ZIC_GROUP', 'ZIC Group'
         SUPER_ADMIN = 'SUPER_ADMIN', 'Super Admin'
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

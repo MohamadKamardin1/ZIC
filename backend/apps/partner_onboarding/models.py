@@ -97,6 +97,7 @@ class PartnerApplication(models.Model):
     company_name = models.CharField(max_length=255, blank=True)
     tin_number = models.CharField(max_length=50, blank=True)
     incorporation_date = models.DateField(null=True, blank=True)
+    company_incorporation = models.CharField(max_length=200, blank=True)
     industry = models.CharField(max_length=100, choices=INDUSTRY_CHOICES, blank=True)
     contact_person = models.CharField(max_length=200, blank=True)
     contact_person_phone = models.CharField(max_length=20, blank=True)
@@ -152,12 +153,6 @@ class PartnerApplication(models.Model):
             models.Index(fields=["partner_type", "status"]),
             models.Index(fields=["submitted_by", "status"]),
             models.Index(fields=["email"]),
-        ]
-        constraints = [
-            models.CheckConstraint(
-                check=models.Q(partner_type="INDIVIDUAL") | models.Q(partner_type="CORPORATE"),
-                name="valid_partner_type",
-            ),
         ]
 
     def __init__(self, *args, **kwargs):
@@ -315,6 +310,7 @@ class ApplicationPartnerType(models.Model):
     location = models.ForeignKey(
         Location, on_delete=models.SET_NULL, null=True, blank=True
     )
+    region = models.CharField(max_length=100, blank=True, default="")
     share_data_externally = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -412,3 +408,24 @@ class ApplicationFieldValue(models.Model):
 
     def __str__(self):
         return f"{self.field_config.field_code}: {self.value_json}"
+
+
+class UnifiedOnboardingRecord(models.Model):
+    id = models.UUIDField(primary_key=True)
+    record_type = models.CharField(max_length=20)
+    application_id = models.UUIDField(null=True)
+    partner_id = models.UUIDField(null=True)
+    reference_number = models.CharField(max_length=50)
+    display_name = models.CharField(max_length=255)
+    partner_type = models.CharField(max_length=50)
+    email = models.EmailField()
+    mobile_number = models.CharField(max_length=50)
+    application_status = models.CharField(max_length=50, null=True)
+    kyc_status = models.CharField(max_length=50, null=True)
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        db_table = "onboarding_unified_record"
+        verbose_name = "Unified Onboarding Record"
+        verbose_name_plural = "Unified Onboarding Records"

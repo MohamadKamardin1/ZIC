@@ -60,3 +60,29 @@ class PartnerApplicationFilter(django_filters.FilterSet):
             | Q(email__icontains=value)
             | Q(mobile_number__icontains=value)
         )
+
+
+class UnifiedOnboardingRecordFilter(django_filters.FilterSet):
+    partner_type = django_filters.CharFilter()
+    application_status = django_filters.CharFilter()
+    kyc_status = django_filters.CharFilter()
+    search = django_filters.CharFilter(method="filter_search")
+
+    class Meta:
+        from apps.partner_onboarding.models import UnifiedOnboardingRecord
+        model = UnifiedOnboardingRecord
+        fields = [
+            "partner_type",
+            "application_status",
+            "kyc_status",
+            "record_type",
+        ]
+
+    def filter_search(self, queryset, name, value):
+        return queryset.filter(
+            Q(reference_number__icontains=value)
+            | Q(display_name__icontains=value)
+            | Q(email__icontains=value)
+            | Q(mobile_number__icontains=value)
+        )
+

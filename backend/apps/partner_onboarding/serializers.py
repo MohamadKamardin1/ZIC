@@ -13,6 +13,7 @@ from apps.partner_onboarding.models import (
     ApplicationFieldValue,
     Branch,
     Location,
+    UnifiedOnboardingRecord,
 )
 from apps.system_parameters.services.config_service import ConfigurationService, ConfigurationError
 from apps.system_parameters.services.validation_config_service import ValidationConfigService
@@ -47,7 +48,7 @@ class ApplicationPartnerTypeSerializer(serializers.ModelSerializer):
         fields = [
             "id", "application", "partner_type", "partner_type_name",
             "branch", "branch_name", "location", "location_name",
-            "share_data_externally", "created_at",
+            "region", "share_data_externally", "created_at",
         ]
 
 
@@ -55,6 +56,7 @@ class ApplicationPartnerTypeCreateSerializer(serializers.Serializer):
     partner_type = serializers.UUIDField()
     branches = serializers.ListField(child=serializers.UUIDField(), required=False, default=list)
     location = serializers.UUIDField(required=False, allow_null=True, default=None)
+    region = serializers.CharField(required=False, allow_blank=True, default="")
     share_data_externally = serializers.BooleanField(default=False)
 
     def validate_partner_type(self, value):
@@ -85,6 +87,7 @@ class ApplicationPartnerTypeCreateSerializer(serializers.Serializer):
         partner_type = validated_data["partner_type"]
         branches = validated_data.get("branches", [])
         location = validated_data.get("location")
+        region = validated_data.get("region", "")
         share = validated_data.get("share_data_externally", False)
 
         instances = []
@@ -95,6 +98,7 @@ class ApplicationPartnerTypeCreateSerializer(serializers.Serializer):
                     partner_type=partner_type,
                     branch=branch,
                     location=location if branch == branches[-1] else None,
+                    region=region,
                     share_data_externally=share,
                 )
                 instances.append(apt)
@@ -103,6 +107,7 @@ class ApplicationPartnerTypeCreateSerializer(serializers.Serializer):
                 application=application,
                 partner_type=partner_type,
                 location=location,
+                region=region,
                 share_data_externally=share,
             )
             instances.append(apt)
@@ -278,10 +283,6 @@ class PartnerApplicationDetailSerializer(serializers.ModelSerializer):
 # Application Create Serializer (write — partner-type routing + validation)
 # ---------------------------------------------------------------------------
 
-INDIVIDUAL_REQUIRED_FIELDS = ValidationConfigService.get_individual_required_fields()
-CORPORATE_REQUIRED_FIELDS = ValidationConfigService.get_corporate_required_fields()
-
-
 class PartnerApplicationCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = PartnerApplication
@@ -294,12 +295,25 @@ class PartnerApplicationCreateSerializer(serializers.ModelSerializer):
             "occupation", "nationality",
             # Corporate
             "company_name", "tin_number", "incorporation_date",
+            "company_incorporation",
             "industry", "contact_person", "contact_person_phone",
             "contact_person_email", "physical_address", "postal_address",
             # Common
             "email", "telephone_number", "mobile_number",
             "political_risk", "aml_risk",
         ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Replace ChoiceField with CharField for all choice-model fields
+        # so validation comes from dynamic ChoiceList, not static model choices
+        for field_name in self.fields:
+            field = self.fields[field_name]
+            if isinstance(field, serializers.ChoiceField):
+                self.fields[field_name] = serializers.CharField(
+                    required=field.required,
+                    allow_blank=not field.required,
+                )
 
     def validate_email(self, value):
         from apps.partners.models import Partner
@@ -342,7 +356,6 @@ class PartnerApplicationCreateSerializer(serializers.ModelSerializer):
                 )
         return attrs
 
-
 # ---------------------------------------------------------------------------
 # Application Update Serializer (DRAFT-only)
 # ---------------------------------------------------------------------------
@@ -374,13 +387,15 @@ class PartnerApplicationSubmitSerializer(serializers.Serializer):
             )
         partner_type = application.partner_type
         if partner_type == "INDIVIDUAL":
-            for field in INDIVIDUAL_REQUIRED_FIELDS:
+            individual_fields = ValidationConfigService.get_individual_required_fields()
+            for field in individual_fields:
                 if not getattr(application, field, None):
                     raise serializers.ValidationError(
                         {field: f"{field} is required before submission."}
                     )
         elif partner_type == "CORPORATE":
-            for field in CORPORATE_REQUIRED_FIELDS:
+            corporate_fields = ValidationConfigService.get_corporate_required_fields()
+            for field in corporate_fields:
                 if not getattr(application, field, None):
                     raise serializers.ValidationError(
                         {field: f"{field} is required before submission."}
@@ -471,6 +486,7 @@ class ChoicesSerializer(serializers.Serializer):
     system_partner_types = serializers.SerializerMethodField()
     branches = serializers.SerializerMethodField()
     locations = serializers.SerializerMethodField()
+    regions = serializers.SerializerMethodField()
 
     CHOICE_LIST_MAP = {
         "partner_types": "PARTNER_TYPE_CHOICES",
@@ -561,6 +577,12 @@ class ChoicesSerializer(serializers.Serializer):
             for l in Location.objects.filter(is_active=True).order_by("name")
         ]
 
+    def get_regions(self, obj):
+        try:
+            return ConfigurationService.get_choice_list("REGIONS")
+        except ConfigurationError:
+            return []
+
 
 # ---------------------------------------------------------------------------
 # Field Value Serializers
@@ -587,3 +609,10 @@ class ApplicationFieldValueBatchSerializer(serializers.Serializer):
         if not PartnerTypeFieldConfiguration.objects.filter(id=value).exists():
             raise serializers.ValidationError("Invalid field_config ID")
         return value
+
+
+class UnifiedOnboardingRecordSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UnifiedOnboardingRecord
+        fields = "__all__"
+

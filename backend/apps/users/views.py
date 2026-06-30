@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from django.utils import timezone
 from django.db import transaction
 
-from apps.core.permissions import IsAdminUser, IsOwnerOrAdmin, HasModulePermission
+from apps.core.permissions import IsAdminUser, IsOwnerOrAdmin, HasModulePermission, OrPermission
 from apps.core.pagination import StandardPagination
 from .models import (
     User, UserGroup, UserPermission, PermissionGroup,
@@ -43,11 +43,13 @@ class UserViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ['me', 'update_profile', 'change_password']:
             return [permissions.IsAuthenticated()]
-        if self.action in ['list', 'create']:
-            return [permissions.IsAuthenticated(), IsAdminUser()]
-        if self.action in ['retrieve', 'update', 'partial_update', 'destroy']:
-            return [permissions.IsAuthenticated(), IsOwnerOrAdmin()]
-        return [permissions.IsAuthenticated(), IsAdminUser()]
+        if self.action in ['list']:
+            return [permissions.IsAuthenticated(), HasModulePermission('users', 'READ')]
+        if self.action in ['create', 'destroy', 'activate', 'deactivate']:
+            return [permissions.IsAuthenticated(), HasModulePermission('users', 'MANAGE')]
+        if self.action in ['retrieve', 'update', 'partial_update']:
+            return [permissions.IsAuthenticated(), OrPermission(IsOwnerOrAdmin(), HasModulePermission('users', 'MANAGE'))]
+        return [permissions.IsAuthenticated(), HasModulePermission('users', 'MANAGE')]
 
     @action(detail=False, methods=['get'])
     def me(self, request):
@@ -144,7 +146,11 @@ class UserViewSet(viewsets.ModelViewSet):
 
 class UserGroupViewSet(viewsets.ModelViewSet):
     queryset = UserGroup.objects.all()
-    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [permissions.IsAuthenticated(), HasModulePermission('users', 'READ')]
+        return [permissions.IsAuthenticated(), HasModulePermission('users', 'MANAGE')]
 
     def get_serializer_class(self):
         if self.action in ['retrieve', 'list']:
@@ -202,7 +208,11 @@ class UserPermissionViewSet(viewsets.ReadOnlyModelViewSet):
 class PermissionGroupViewSet(viewsets.ModelViewSet):
     queryset = PermissionGroup.objects.all()
     serializer_class = PermissionGroupSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [permissions.IsAuthenticated(), HasModulePermission('users', 'READ')]
+        return [permissions.IsAuthenticated(), HasModulePermission('users', 'MANAGE')]
     filterset_fields = ['module_code']
     search_fields = ['name', 'module_code']
 

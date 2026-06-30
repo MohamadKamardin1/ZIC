@@ -3,10 +3,8 @@ import {
   Plus,
   Pencil,
   Trash2,
-  Save,
   X,
   AlertCircle,
-  Check,
   Loader2,
 } from "lucide-react"
 import {
@@ -21,6 +19,8 @@ import {
   clearGroupCache,
 } from "../../lib/api"
 import { SkeletonTable } from "../../components/shared/Skeleton"
+import ConfirmDialog from "../../components/shared/ConfirmDialog"
+import Modal from "../../components/shared/Modal"
 import { useDataRefresh } from "../../lib/useDataRefresh"
 import type { ChoiceList, ChoiceOption } from "../../lib/types"
 
@@ -36,29 +36,14 @@ export default function ChoiceListManager({ title, description }: ChoiceListMana
   const [selectedListId, setSelectedListId] = useState<string | null>(null)
   const [options, setOptions] = useState<ChoiceOption[]>([])
   const [optionsLoading, setOptionsLoading] = useState(false)
-
-  // New list form
-  const [showNewList, setShowNewList] = useState(false)
-  const [newListCode, setNewListCode] = useState("")
-  const [newListName, setNewListName] = useState("")
-
-  // Edit list
-  const [editingListId, setEditingListId] = useState<string | null>(null)
-  const [editListCode, setEditListCode] = useState("")
-  const [editListName, setEditListName] = useState("")
-
-  // New option
-  const [showNewOption, setShowNewOption] = useState(false)
-  const [newOptCode, setNewOptCode] = useState("")
-  const [newOptLabel, setNewOptLabel] = useState("")
-
-  // Edit option
-  const [editingOptId, setEditingOptId] = useState<string | null>(null)
-  const [editOptCode, setEditOptCode] = useState("")
-  const [editOptLabel, setEditOptLabel] = useState("")
-
   const [saving, setSaving] = useState(false)
+  
   const refreshKey = useDataRefresh("choice-lists")
+
+  // Modals state
+  const [listModal, setListModal] = useState<{ open: boolean; mode: "create" | "edit"; id?: string; code: string; name: string }>({ open: false, mode: "create", code: "", name: "" })
+  const [optionModal, setOptionModal] = useState<{ open: boolean; mode: "create" | "edit"; id?: string; code: string; label: string }>({ open: false, mode: "create", code: "", label: "" })
+  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; type: "list" | "option"; id: string; name: string }>({ open: false, type: "list", id: "", name: "" })
 
   const loadLists = useCallback(async () => {
     setLoading(true)
@@ -100,101 +85,72 @@ export default function ChoiceListManager({ title, description }: ChoiceListMana
 
   const selectedList = lists.find((l) => l.id === selectedListId)
 
-  // --- List CRUD ---
-
-  async function handleCreateList() {
-    if (!newListCode) { setError("Code is required"); return }
+  // --- List Handlers ---
+  async function handleSaveList() {
+    if (!listModal.code) { setError("Code is required"); return }
     setSaving(true)
     setError("")
     try {
-      await createChoiceList({ code: newListCode, name: newListName || newListCode } as Record<string, unknown>)
-      setShowNewList(false)
-      setNewListCode("")
-      setNewListName("")
-      clearGroupCache()
-      await loadLists()
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to create")
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleUpdateList(id: string) {
-    setSaving(true)
-    setError("")
-    try {
-      await updateChoiceList(id, { code: editListCode, name: editListName } as Record<string, unknown>)
-      setEditingListId(null)
-      clearGroupCache()
-      await loadLists()
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to update")
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleDeleteList(id: string) {
-    if (!window.confirm("Delete this choice list and all its options?")) return
-    try {
-      await deleteChoiceList(id)
-      if (selectedListId === id) {
-        setSelectedListId(null)
-        setOptions([])
+      if (listModal.mode === "create") {
+        await createChoiceList({ code: listModal.code, name: listModal.name || listModal.code } as Record<string, unknown>)
+      } else {
+        await updateChoiceList(listModal.id!, { code: listModal.code, name: listModal.name } as Record<string, unknown>)
       }
+      setListModal((prev) => ({ ...prev, open: false }))
       clearGroupCache()
       await loadLists()
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to delete")
+      setError(e instanceof Error ? e.message : `Failed to ${listModal.mode} list`)
+    } finally {
+      setSaving(false)
     }
   }
 
-  // --- Option CRUD ---
-
-  async function handleCreateOption() {
-    if (!newOptCode || !selectedListId) { setError("Code is required"); return }
+  async function handleSaveOption() {
+    if (!optionModal.code || !selectedListId) { setError("Code is required"); return }
     setSaving(true)
     setError("")
     try {
-      await createChoiceOption({
-        choice_list: selectedListId,
-        code: newOptCode,
-        label: newOptLabel || newOptCode,
-        sort_order: (options.length + 1) * 10,
-      } as Record<string, unknown>)
-      setShowNewOption(false)
-      setNewOptCode("")
-      setNewOptLabel("")
+      if (optionModal.mode === "create") {
+        await createChoiceOption({
+          choice_list: selectedListId,
+          code: optionModal.code,
+          label: optionModal.label || optionModal.code,
+          sort_order: (options.length + 1) * 10,
+        } as Record<string, unknown>)
+      } else {
+        await updateChoiceOption(optionModal.id!, { code: optionModal.code, label: optionModal.label } as Record<string, unknown>)
+      }
+      setOptionModal((prev) => ({ ...prev, open: false }))
       await loadOptions(selectedListId)
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to create option")
+      setError(e instanceof Error ? e.message : `Failed to ${optionModal.mode} option`)
     } finally {
       setSaving(false)
     }
   }
 
-  async function handleUpdateOption(id: string) {
+  async function confirmDelete() {
     setSaving(true)
     setError("")
     try {
-      await updateChoiceOption(id, { code: editOptCode, label: editOptLabel } as Record<string, unknown>)
-      setEditingOptId(null)
-      if (selectedListId) await loadOptions(selectedListId)
+      if (deleteDialog.type === "list") {
+        await deleteChoiceList(deleteDialog.id)
+        if (selectedListId === deleteDialog.id) {
+          setSelectedListId(null)
+          setOptions([])
+        }
+        clearGroupCache()
+        await loadLists()
+      } else {
+        await deleteChoiceOption(deleteDialog.id)
+        if (selectedListId) await loadOptions(selectedListId)
+      }
+      setDeleteDialog((prev) => ({ ...prev, open: false }))
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to update option")
+      setError(e instanceof Error ? e.message : "Failed to delete")
     } finally {
       setSaving(false)
-    }
-  }
-
-  async function handleDeleteOption(id: string) {
-    if (!window.confirm("Delete this option?")) return
-    try {
-      await deleteChoiceOption(id)
-      if (selectedListId) await loadOptions(selectedListId)
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to delete option")
     }
   }
 
@@ -236,107 +192,48 @@ export default function ChoiceListManager({ title, description }: ChoiceListMana
           <div className="mb-3 flex items-center justify-between">
             <span className="text-xs font-medium text-muted-foreground">{lists.length} lists</span>
             <button
-              onClick={() => setShowNewList(true)}
+              onClick={() => setListModal({ open: true, mode: "create", code: "", name: "" })}
               className="inline-flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
             >
               <Plus className="h-3 w-3" /> New
             </button>
           </div>
 
-          {/* New list form */}
-          {showNewList && (
-            <div className="mb-3 rounded-lg border border-border bg-card p-3">
-              <input
-                type="text"
-                value={newListCode}
-                onChange={(e) => setNewListCode(e.target.value)}
-                placeholder="Code"
-                className="mb-2 w-full rounded border border-input bg-background px-2 py-1.5 text-xs font-mono"
-              />
-              <input
-                type="text"
-                value={newListName}
-                onChange={(e) => setNewListName(e.target.value)}
-                placeholder="Name (optional)"
-                className="mb-2 w-full rounded border border-input bg-background px-2 py-1.5 text-xs"
-              />
-              <div className="flex justify-end gap-1.5">
-                <button onClick={() => setShowNewList(false)} className="rounded px-2 py-1 text-xs hover:bg-secondary">Cancel</button>
-                <button onClick={handleCreateList} disabled={saving || !newListCode} className="rounded bg-primary px-2 py-1 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-                  {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : "Create"}
-                </button>
-              </div>
-            </div>
-          )}
-
           <div className="space-y-1">
-            {lists.map((list) => {
-              const editing = editingListId === list.id
-              return (
-                <div key={list.id}>
-                  <button
-                    onClick={() => setSelectedListId(list.id)}
-                    className={`w-full rounded-lg px-3 py-2 text-left text-sm transition ${
-                      selectedListId === list.id
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:bg-secondary"
-                    }`}
-                  >
-                    {editing ? (
-                      <div className="space-y-1" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="text"
-                          value={editListCode}
-                          onChange={(e) => setEditListCode(e.target.value)}
-                          className="w-full rounded border border-input bg-background px-2 py-1 text-xs font-mono text-foreground"
-                        />
-                        <input
-                          type="text"
-                          value={editListName}
-                          onChange={(e) => setEditListName(e.target.value)}
-                          className="w-full rounded border border-input bg-background px-2 py-1 text-xs text-foreground"
-                        />
-                        <div className="flex justify-end gap-1 pt-1">
-                          <button onClick={() => setEditingListId(null)} className="rounded px-1.5 py-0.5 text-xs hover:bg-secondary/50">
-                            <X className="h-3 w-3" />
-                          </button>
-                          <button onClick={() => handleUpdateList(list.id)} disabled={saving} className="rounded px-1.5 py-0.5 text-xs hover:bg-secondary/50">
-                            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="text-sm font-medium truncate">{list.code}</div>
-                          <div className={`text-xs ${selectedListId === list.id ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
-                            {list.options?.length ?? "—"} options
-                          </div>
-                        </div>
-                        <div className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            onClick={() => {
-                              setEditingListId(list.id)
-                              setEditListCode(list.code)
-                              setEditListName(list.name)
-                            }}
-                            className={`rounded p-0.5 ${selectedListId === list.id ? "hover:bg-primary-foreground/20" : "hover:bg-secondary"}`}
-                          >
-                            <Pencil className="h-3 w-3" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteList(list.id)}
-                            className={`rounded p-0.5 ${selectedListId === list.id ? "hover:bg-primary-foreground/20" : "hover:bg-secondary"}`}
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </button>
+            {lists.map((list) => (
+              <button
+                key={list.id}
+                onClick={() => setSelectedListId(list.id)}
+                className={`w-full rounded-lg px-3 py-2 text-left text-sm transition ${
+                  selectedListId === list.id
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-secondary"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-medium truncate">{list.code}</div>
+                    <div className={`text-xs ${selectedListId === list.id ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
+                      {list.options?.length ?? "—"} options
+                    </div>
+                  </div>
+                  <div className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={() => setListModal({ open: true, mode: "edit", id: list.id, code: list.code, name: list.name || "" })}
+                      className={`rounded p-0.5 transition ${selectedListId === list.id ? "hover:bg-primary-foreground/20 text-primary-foreground" : "hover:bg-secondary text-muted-foreground"}`}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setDeleteDialog({ open: true, type: "list", id: list.id, name: list.code })}
+                      className={`rounded p-0.5 transition ${selectedListId === list.id ? "hover:bg-primary-foreground/20 text-primary-foreground" : "hover:bg-secondary hover:text-destructive text-muted-foreground"}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </div>
-              )
-            })}
+              </button>
+            ))}
             {lists.length === 0 && (
               <p className="py-4 text-center text-xs text-muted-foreground">No choice lists yet.</p>
             )}
@@ -350,7 +247,7 @@ export default function ChoiceListManager({ title, description }: ChoiceListMana
               <div className="mb-3 flex items-center justify-between">
                 <h3 className="text-base font-semibold">{selectedList.code} — Options</h3>
                 <button
-                  onClick={() => { setShowNewOption(true); setNewOptCode(""); setNewOptLabel("") }}
+                  onClick={() => setOptionModal({ open: true, mode: "create", code: "", label: "" })}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
                 >
                   <Plus className="h-3.5 w-3.5" />
@@ -358,43 +255,16 @@ export default function ChoiceListManager({ title, description }: ChoiceListMana
                 </button>
               </div>
 
-              {showNewOption && (
-                <div className="mb-3 rounded-lg border border-border bg-card p-3">
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <input
-                      type="text"
-                      value={newOptCode}
-                      onChange={(e) => setNewOptCode(e.target.value)}
-                      placeholder="Code"
-                      className="rounded border border-input bg-background px-2 py-1.5 text-xs font-mono"
-                    />
-                    <input
-                      type="text"
-                      value={newOptLabel}
-                      onChange={(e) => setNewOptLabel(e.target.value)}
-                      placeholder="Label"
-                      className="rounded border border-input bg-background px-2 py-1.5 text-xs"
-                    />
-                  </div>
-                  <div className="mt-2 flex justify-end gap-1.5">
-                    <button onClick={() => setShowNewOption(false)} className="rounded px-2 py-1 text-xs hover:bg-secondary">Cancel</button>
-                    <button onClick={handleCreateOption} disabled={saving || !newOptCode} className="rounded bg-primary px-2 py-1 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-                      {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : "Add"}
-                    </button>
-                  </div>
-                </div>
-              )}
-
               {optionsLoading ? (
                 <SkeletonTable rows={4} cols={3} />
               ) : (
-                <div className="overflow-hidden rounded-lg border border-border">
+                <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-border bg-secondary/50">
-                        <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Code</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Label</th>
-                        <th className="w-16 px-3 py-2 text-right text-xs font-medium text-muted-foreground">Actions</th>
+                      <tr className="border-b border-border bg-muted/50">
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Code</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Label</th>
+                        <th className="w-20 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -405,73 +275,141 @@ export default function ChoiceListManager({ title, description }: ChoiceListMana
                           </td>
                         </tr>
                       )}
-                      {options.map((opt) => {
-                        const editing = editingOptId === opt.id
-                        return (
-                          <tr key={opt.id} className="border-b border-border last:border-0 hover:bg-secondary/20">
-                            <td className="px-3 py-2">
-                              {editing ? (
-                                <input
-                                  type="text"
-                                  value={editOptCode}
-                                  onChange={(e) => setEditOptCode(e.target.value)}
-                                  className="w-32 rounded border border-input bg-background px-2 py-1 font-mono text-xs"
-                                />
-                              ) : (
-                                <span className="font-mono text-xs text-muted-foreground">{opt.code}</span>
-                              )}
-                            </td>
-                            <td className="px-3 py-2">
-                              {editing ? (
-                                <input
-                                  type="text"
-                                  value={editOptLabel}
-                                  onChange={(e) => setEditOptLabel(e.target.value)}
-                                  className="w-full rounded border border-input bg-background px-2 py-1 text-sm"
-                                />
-                              ) : (
-                                <span>{opt.label}</span>
-                              )}
-                            </td>
-                            <td className="px-3 py-2 text-right">
-                              {editing ? (
-                                <div className="inline-flex gap-1">
-                                  <button onClick={() => handleUpdateOption(opt.id)} disabled={saving} className="rounded p-1 text-primary hover:bg-primary/10">
-                                    {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                                  </button>
-                                  <button onClick={() => setEditingOptId(null)} className="rounded p-1 text-muted-foreground hover:bg-secondary">
-                                    <X className="h-3.5 w-3.5" />
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className="inline-flex gap-1">
-                                  <button
-                                    onClick={() => { setEditingOptId(opt.id); setEditOptCode(opt.code); setEditOptLabel(opt.label) }}
-                                    className="rounded p-1 text-muted-foreground hover:text-foreground"
-                                  >
-                                    <Pencil className="h-3.5 w-3.5" />
-                                  </button>
-                                  <button onClick={() => handleDeleteOption(opt.id)} className="rounded p-1 text-muted-foreground hover:text-destructive">
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </button>
-                                </div>
-                              )}
-                            </td>
-                          </tr>
-                        )
-                      })}
+                      {options.map((opt) => (
+                        <tr key={opt.id} className="border-b border-border/50 last:border-0 hover:bg-secondary/40 transition">
+                          <td className="px-4 py-3 font-mono text-xs text-foreground/80">{opt.code}</td>
+                          <td className="px-4 py-3 font-medium text-foreground">{opt.label}</td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="inline-flex justify-end gap-1">
+                              <button
+                                onClick={() => setOptionModal({ open: true, mode: "edit", id: opt.id, code: opt.code, label: opt.label || "" })}
+                                className="rounded p-1.5 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => setDeleteDialog({ open: true, type: "option", id: opt.id, name: opt.label || opt.code })}
+                                className="rounded p-1.5 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
               )}
             </div>
           ) : (
-            <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
+            <div className="flex h-40 items-center justify-center rounded-xl border border-dashed border-border text-sm text-muted-foreground">
               Select a choice list to manage its options
             </div>
           )}
         </div>
       </div>
+
+      {/* Modals */}
+      <Modal 
+        open={listModal.open} 
+        title={listModal.mode === "create" ? "Create Choice List" : "Edit Choice List"} 
+        onClose={() => setListModal((prev) => ({ ...prev, open: false }))}
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-foreground">Code</label>
+            <input
+              type="text"
+              value={listModal.code}
+              onChange={(e) => setListModal((prev) => ({ ...prev, code: e.target.value }))}
+              placeholder="e.g. COUNTRY_LIST"
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm font-mono focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-foreground">Name (Optional)</label>
+            <input
+              type="text"
+              value={listModal.name}
+              onChange={(e) => setListModal((prev) => ({ ...prev, name: e.target.value }))}
+              placeholder="e.g. Countries"
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              onClick={() => setListModal((prev) => ({ ...prev, open: false }))}
+              className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition hover:bg-secondary"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSaveList}
+              disabled={saving || !listModal.code}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+            >
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+              {listModal.mode === "create" ? "Create" : "Save Changes"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal 
+        open={optionModal.open} 
+        title={optionModal.mode === "create" ? "Add Option" : "Edit Option"} 
+        onClose={() => setOptionModal((prev) => ({ ...prev, open: false }))}
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-foreground">Code / Value</label>
+            <input
+              type="text"
+              value={optionModal.code}
+              onChange={(e) => setOptionModal((prev) => ({ ...prev, code: e.target.value }))}
+              placeholder="e.g. US"
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm font-mono focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-foreground">Display Label</label>
+            <input
+              type="text"
+              value={optionModal.label}
+              onChange={(e) => setOptionModal((prev) => ({ ...prev, label: e.target.value }))}
+              placeholder="e.g. United States"
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              onClick={() => setOptionModal((prev) => ({ ...prev, open: false }))}
+              className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition hover:bg-secondary"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSaveOption}
+              disabled={saving || !optionModal.code}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+            >
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+              {optionModal.mode === "create" ? "Add Option" : "Save Changes"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={deleteDialog.open}
+        title={`Delete ${deleteDialog.type === "list" ? "Choice List" : "Option"}`}
+        message={`Are you sure you want to delete "${deleteDialog.name}"? ${deleteDialog.type === "list" ? "All options inside this list will also be permanently deleted." : "This action cannot be undone."}`}
+        confirmLabel="Delete"
+        loading={saving}
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteDialog((prev) => ({ ...prev, open: false }))}
+      />
     </div>
   )
 }

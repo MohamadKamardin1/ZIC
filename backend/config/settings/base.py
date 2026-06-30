@@ -56,6 +56,8 @@ INSTALLED_APPS = [
     'apps.system_parameters',
     'apps.ai_assistant',
     'apps.governance',
+    'apps.group_life',
+    'apps.group_credit',
 ]
 
 MIDDLEWARE = [

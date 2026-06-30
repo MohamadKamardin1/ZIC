@@ -24,6 +24,8 @@ INDIVIDUAL_COLUMNS = {
     "Mobile_Number": "mobile_number",
     "Nationality": "nationality",
     "Date_of_Birth": "date_of_birth",
+    "Physical_Address": "physical_address",
+    "Postal_Address": "postal_address",
     "Political_Risk": "political_risk",
     "Anti-Money_Laundering": "aml_risk",
     "Marital_Status": "marital_status",
@@ -39,6 +41,7 @@ CORPORATE_COLUMNS = {
     "TIN_Number": "tin_number",
     "Industry": "industry",
     "Incorporation_Date": "incorporation_date",
+    "Company_Incorporation": "company_incorporation",
     "Contact_Person": "contact_person",
     "Contact_Person_Phone": "contact_person_phone",
     "Contact_Person_Email": "contact_person_email",
@@ -392,6 +395,7 @@ def _clean_field(field, value, partner_type):
 
     if field in (
         "first_name", "surname", "other_name", "company_name",
+        "company_incorporation",
         "occupation", "identification_number", "tin_number",
         "contact_person", "contact_person_phone", "contact_person_email",
         "physical_address", "postal_address",

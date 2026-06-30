@@ -3,7 +3,7 @@ import { login as apiLogin, logout as apiLogout, loadStoredTokens, dropTokens } 
 import type { AuthUser } from "./types"
 
 interface AuthContextValue {
-  user: AuthUser | null
+  user: ExtendedAuthUser | null
   accessToken: string | null
   signIn: (email: string, password: string) => Promise<boolean>
   complete2FA: (otpCode: string) => Promise<void>
@@ -11,26 +11,48 @@ interface AuthContextValue {
   signOut: () => Promise<void>
   requires2FA: boolean
   pendingEmail: string | null
+  hasPermission: (module: string, action: string) => boolean
+  hasAnyPermission: (permissions: Array<{ module: string; action: string }>) => boolean
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 const STORAGE_KEY = "aims_user"
 
-function readStoredUser(): AuthUser | null {
+function readStoredUser(): ExtendedAuthUser | null {
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY)
-    return raw ? (JSON.parse(raw) as AuthUser) : null
+    return raw ? (JSON.parse(raw) as ExtendedAuthUser) : null
   } catch {
     return null
   }
 }
 
+export interface Permission {
+  module: string
+  action: string
+}
+
+export interface ExtendedAuthUser extends AuthUser {
+  permissions: Permission[]
+  groups: string[]
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(() => readStoredUser())
+  const [user, setUser] = useState<ExtendedAuthUser | null>(() => readStoredUser())
   const [tokens, setTokens] = useState(() => loadStoredTokens())
   const [requires2FA, setRequires2FA] = useState(false)
   const [pendingCreds, setPendingCreds] = useState<{ email: string; password: string } | null>(null)
+
+  const hasPermission = useCallback((module: string, action: string): boolean => {
+    if (!user || !user.permissions) return false
+    return user.permissions.some((p) => p.module === module && p.action === action)
+  }, [user])
+
+  const hasAnyPermission = useCallback((permissions: Array<{ module: string; action: string }>): boolean => {
+    if (!user || !user.permissions) return false
+    return permissions.some((perm) => hasPermission(perm.module, perm.action))
+  }, [hasPermission, user])
 
   const signIn = useCallback(async (email: string, password: string): Promise<boolean> => {
     const result = await apiLogin({ email, password })
@@ -44,8 +66,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return true
     }
 
-    const userObj = data.user as AuthUser | undefined
+    const userObj = data.user as ExtendedAuthUser | undefined
     if (userObj) {
+      // Ensure permissions and groups are present
+      userObj.permissions = (userObj.permissions || []) as Permission[]
+      userObj.groups = (userObj.groups || []) as string[]
+      
       setUser(userObj)
       setTokens({
         accessToken: (data.accessToken as string) ?? (data.access_token as string) ?? "",
@@ -63,8 +89,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const result = await apiLogin(pendingCreds, otpCode)
     const data = result.data as Record<string, unknown>
 
-    const userObj = data.user as AuthUser | undefined
+    const userObj = data.user as ExtendedAuthUser | undefined
     if (userObj) {
+      userObj.permissions = (userObj.permissions || []) as Permission[]
+      userObj.groups = (userObj.groups || []) as string[]
+      
       setUser(userObj)
       setTokens({
         accessToken: (data.accessToken as string) ?? (data.access_token as string) ?? "",
@@ -104,6 +133,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signOut,
         requires2FA,
         pendingEmail: pendingCreds?.email ?? null,
+        hasPermission,
+        hasAnyPermission,
       }}
     >
       {children}

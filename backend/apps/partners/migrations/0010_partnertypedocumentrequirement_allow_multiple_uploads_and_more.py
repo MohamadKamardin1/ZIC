@@ -17,8 +17,4 @@ class Migration(migrations.Migration):
             name='allow_multiple_uploads',
             field=models.BooleanField(default=False),
         ),
-        migrations.AddIndex(
-            model_name='partnertypedocumentrequirement',
-            index=models.Index(fields=['partner_type', 'is_active'], name='partner_par_partner_991821_idx'),
-        ),
     ]

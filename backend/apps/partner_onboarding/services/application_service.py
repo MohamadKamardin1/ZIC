@@ -209,7 +209,13 @@ class ApplicationService:
     def convert_to_partner(application, user):
         ApplicationService._validate_transition(application, "CONVERTED")
 
-        from apps.partners.models import Partner, IndividualProfile, CorporateProfile
+        from apps.partners.models import (
+            Partner, IndividualProfile, CorporateProfile,
+            PartnerTypeAssignment, PartnerDynamicFieldValue,
+            PartnerAssignmentContact, PartnerAssignmentBankAccount,
+            PartnerDocument, PartnerKYCProfile
+        )
+        from apps.partner_onboarding.services.compliance_service import ComplianceService
 
         if Partner.objects.filter(email=application.email).exists():
             raise PartnerConversionError(
@@ -280,6 +286,78 @@ class ApplicationService:
                     contact_person_phone=application.contact_person_phone,
                     contact_person_email=application.contact_person_email,
                 )
+
+            # Migrate ApplicationPartnerTypes to PartnerTypeAssignments
+            risk_score = ComplianceService.calculate_risk_score(application)
+            kyc_status = "VERIFIED" if application.status in ("APPROVED", "CONVERTED") else "PENDING_REVIEW"
+
+            for app_pt in application.partner_types.all():
+                assignment = PartnerTypeAssignment.objects.create(
+                    partner=partner,
+                    partner_type=app_pt.partner_type,
+                    branch=app_pt.branch,
+                    location=app_pt.location,
+                    share_data_externally=app_pt.share_data_externally,
+                    status="ACTIVE",
+                    effective_date=timezone.now().date(),
+                )
+
+                # Create KYC Profile for this assignment
+                PartnerKYCProfile.objects.create(
+                    assignment=assignment,
+                    kyc_status=kyc_status,
+                    risk_score=risk_score,
+                    notes=application.compliance_notes,
+                )
+
+                # Migrate Dynamic Fields
+                for app_field in application.field_values.all():
+                    PartnerDynamicFieldValue.objects.create(
+                        assignment=assignment,
+                        field_config=app_field.field_config,
+                        value_json=app_field.value_json,
+                    )
+
+                # Migrate Contacts
+                for app_contact in application.contacts.all():
+                    PartnerAssignmentContact.objects.create(
+                        assignment=assignment,
+                        contact_type=app_contact.contact_type,
+                        first_name=app_contact.first_name,
+                        last_name=app_contact.last_name,
+                        email=app_contact.email,
+                        phone=app_contact.phone,
+                        mobile=app_contact.mobile,
+                        designation=app_contact.designation,
+                        is_primary=app_contact.is_primary,
+                        notes=app_contact.notes,
+                    )
+
+                # Migrate Bank Accounts
+                for app_bank in application.bank_accounts.all():
+                    PartnerAssignmentBankAccount.objects.create(
+                        assignment=assignment,
+                        bank_type="OTHER",  # Fallback if unknown
+                        bank_name=app_bank.bank_name,
+                        branch_name=app_bank.branch_name,
+                        account_name=app_bank.account_name,
+                        account_number=app_bank.account_number,
+                        swift_code=app_bank.swift_code,
+                        currency=app_bank.currency,
+                        is_primary=app_bank.is_primary,
+                        notes=app_bank.notes,
+                    )
+
+                # Migrate Documents
+                for app_doc in application.documents.all():
+                    PartnerDocument.objects.create(
+                        assignment=assignment,
+                        file=app_doc.file,
+                        uploaded_by=app_doc.uploaded_by,
+                        uploaded_at=app_doc.created_at,
+                        status="APPROVED" if app_doc.is_verified else "UPLOADED",
+                        verification_notes=app_doc.verification_notes,
+                    )
 
             application.status = "CONVERTED"
             application.converted_at = timezone.now()

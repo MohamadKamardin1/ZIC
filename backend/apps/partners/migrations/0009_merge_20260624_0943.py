@@ -6,7 +6,6 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('partners', '0002_partnertypedocumentrequirement'),
         ('partners', '0008_seed_zanzibar_life_insurance_config'),
     ]
 

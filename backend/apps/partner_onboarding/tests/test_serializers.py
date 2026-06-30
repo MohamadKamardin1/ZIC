@@ -470,4 +470,4 @@ class ChoicesSerializerTest(TestCase):
             self.assertIn("value", item)
             self.assertIn("label", item)
         # Verify application statuses count
-        self.assertEqual(len(data["application_statuses"]), 10)
+        self.assertEqual(len(data["application_statuses"]), 12)

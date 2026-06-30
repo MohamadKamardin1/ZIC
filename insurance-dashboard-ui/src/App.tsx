@@ -32,6 +32,16 @@ import PartnerSchedules from "./pages/system-parameters/PartnerSchedules"
 import UserParameters from "./pages/system-parameters/UserParameters"
 import PasswordPolicy from "./pages/system-parameters/PasswordPolicy"
 import ReinsuranceParameters from "./pages/system-parameters/ReinsuranceParameters"
+import PermissionGroups from "./pages/user-management/PermissionGroups"
+import Permissions from "./pages/user-management/Permissions"
+import UserGroups from "./pages/user-management/UserGroups"
+import Users from "./pages/user-management/Users"
+import GLSetup from "./pages/group-life/GLSetup"
+import GLQuotations from "./pages/group-life/GLQuotations"
+import GLSchemes from "./pages/group-life/GLSchemes"
+import GLMembers from "./pages/group-life/GLMembers"
+import GLClaims from "./pages/group-life/GLClaims"
+import GLMedicalUW from "./pages/group-life/GLMedicalUW"
 import type { ReactNode } from "react"
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -54,14 +64,12 @@ export default function App() {
       >
         <Route index element={<Dashboard />} />
         <Route path="onboarding" element={<OnboardingList />} />
-        <Route path="partners" element={<PartnerList />} />
-        <Route path="partners/:id" element={<PartnerDetail />} />
-        <Route path="partners/:id/edit" element={<PartnerEdit />} />
         <Route path="onboarding/new" element={<ApplicationForm />} />
         <Route path="onboarding/:id" element={<ApplicationDetail />} />
         <Route path="onboarding/:id/edit" element={<ApplicationForm />} />
-
-        {/* System Parameters */}
+        <Route path="partners" element={<PartnerList />} />
+        <Route path="partners/:id" element={<PartnerDetail />} />
+        <Route path="partners/:id/edit" element={<PartnerEdit />} />
         <Route path="system-parameters/general" element={<GeneralParameters />} />
         <Route path="system-parameters/partner" element={<PartnerParameters />} />
         <Route path="system-parameters/partner/workflow" element={<PartnerWorkflow />} />
@@ -85,6 +93,16 @@ export default function App() {
         <Route path="system-parameters/users" element={<UserParameters />} />
         <Route path="system-parameters/users/password-policy" element={<PasswordPolicy />} />
         <Route path="system-parameters/reinsurance" element={<ReinsuranceParameters />} />
+        <Route path="user-management/permission-groups" element={<PermissionGroups />} />
+        <Route path="user-management/permissions" element={<Permissions />} />
+        <Route path="user-management/user-groups" element={<UserGroups />} />
+        <Route path="user-management/users" element={<Users />} />
+        <Route path="group-life/setup" element={<GLSetup />} />
+        <Route path="group-life/quotations" element={<GLQuotations />} />
+        <Route path="group-life/schemes" element={<GLSchemes />} />
+        <Route path="group-life/members" element={<GLMembers />} />
+        <Route path="group-life/claims" element={<GLClaims />} />
+        <Route path="group-life/medical-uw" element={<GLMedicalUW />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

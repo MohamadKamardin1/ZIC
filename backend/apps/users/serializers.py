@@ -15,6 +15,7 @@ logger = logging.getLogger('apps.users.serializers')
 class UserListSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(read_only=True)
     active_sessions_count = serializers.IntegerField(read_only=True)
+    groups = serializers.StringRelatedField(many=True, read_only=True)
 
     class Meta:
         model = User
@@ -24,7 +25,7 @@ class UserListSerializer(serializers.ModelSerializer):
             'is_2fa_enabled', 'email_verified', 'phone_verified',
             'department', 'job_title', 'employee_id',
             'last_login', 'last_activity', 'date_joined',
-            'active_sessions_count',
+            'active_sessions_count', 'groups',
         ]
 
 
@@ -86,14 +87,23 @@ class UserCreateSerializer(serializers.ModelSerializer):
 
 
 class UserUpdateSerializer(serializers.ModelSerializer):
+    group_ids = serializers.ListField(child=serializers.UUIDField(), required=False)
+
     class Meta:
         model = User
         fields = [
             'first_name', 'last_name', 'phone_number',
             'user_type', 'is_active', 'is_approved',
             'department', 'job_title', 'employee_id',
-            'date_of_birth', 'avatar',
+            'date_of_birth', 'avatar', 'group_ids',
         ]
+
+    def update(self, instance, validated_data):
+        group_ids = validated_data.pop('group_ids', None)
+        instance = super().update(instance, validated_data)
+        if group_ids is not None:
+            instance.groups.set(UserGroup.objects.filter(id__in=group_ids))
+        return instance
 
 
 class UserProfileSerializer(serializers.ModelSerializer):

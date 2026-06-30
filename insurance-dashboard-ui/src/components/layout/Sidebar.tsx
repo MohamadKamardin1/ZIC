@@ -33,12 +33,14 @@ import {
   type LucideIcon,
 } from "lucide-react"
 import { ZicLogo } from "../ZicLogo"
+import { useAuth } from "../../lib/auth"
 
 interface SubNavItem {
   label: string
   icon: LucideIcon
   path?: string
   children?: SubNavItem[]
+  permission?: { module: string; action: string }
 }
 
 interface NavItem {
@@ -47,6 +49,7 @@ interface NavItem {
   path?: string
   expandable?: boolean
   children?: SubNavItem[]
+  permission?: { module: string; action: string }
 }
 
 const PARTNER_TYPE_CHILDREN: SubNavItem[] = [
@@ -76,7 +79,14 @@ const NAV: NavItem[] = [
     { label: "Partner", icon: UserPlus, path: "/onboarding" },
   ] },
   { label: "Ordinary Life", icon: Users, expandable: true },
-  { label: "Group Life", icon: ShieldCheck, expandable: true },
+  { label: "Group Life", icon: ShieldCheck, expandable: true, children: [
+    { label: "Quotations", icon: FileText, path: "/group-life/quotations" },
+    { label: "Schemes", icon: ShieldCheck, path: "/group-life/schemes" },
+    { label: "Members", icon: Users, path: "/group-life/members" },
+    { label: "Claims", icon: FileText, path: "/group-life/claims" },
+    { label: "Medical U/W", icon: Users, path: "/group-life/medical-uw" },
+    { label: "Setup", icon: Settings, path: "/group-life/setup" },
+  ] },
   { label: "Group Credit", icon: CreditCard, expandable: true },
   { label: "Front Office", icon: Building2, expandable: true },
   { label: "Reports", icon: FileText },
@@ -98,7 +108,17 @@ const NAV: NavItem[] = [
       { label: "Reinsurance Parameters", icon: ShieldCheck, path: "/system-parameters/reinsurance" },
     ],
   },
-  { label: "User Management", icon: UserCog, expandable: true },
+  {
+    label: "User Management",
+    icon: UserCog,
+    expandable: true,
+    children: [
+      { label: "Permission Groups", icon: Grip, path: "/user-management/permission-groups" },
+      { label: "Permissions", icon: ShieldCheck, path: "/user-management/permissions" },
+      { label: "User Groups", icon: Users, path: "/user-management/user-groups" },
+      { label: "Users", icon: User, path: "/user-management/users" },
+    ],
+  },
   { label: "Approvals", icon: CheckSquare, expandable: true },
 ]
 
@@ -158,14 +178,13 @@ function SubMenuItem({ item, depth }: { item: SubNavItem; depth: number }) {
 export function Sidebar({ open }: { open: boolean }) {
   const location = useLocation()
   const navigate = useNavigate()
+  const { user } = useAuth()
   const [expanded, setExpanded] = useState<string[]>(() => {
     const items: string[] = []
     for (const item of NAV) {
       if (item.children) {
-        const childPaths = collectPaths(item.children)
-        if (isParentOfAny(childPaths, location.pathname)) {
-          items.push(item.label)
-        }
+        // Always expand items that have children (like Partner On-boarding)
+        items.push(item.label)
       }
     }
     return items
@@ -184,6 +203,14 @@ export function Sidebar({ open }: { open: boolean }) {
       if (item.children) paths.push(...collectPaths(item.children))
     }
     return paths
+  }
+
+  function filterByPermission(items: SubNavItem[]): SubNavItem[] {
+    return items
+  }
+
+  function filterNavItems(items: NavItem[]): NavItem[] {
+    return items
   }
 
   return (

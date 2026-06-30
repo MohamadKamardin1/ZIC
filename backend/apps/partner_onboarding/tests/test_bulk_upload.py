@@ -36,8 +36,8 @@ def _build_individual_xlsx(rows):
         "Partner_Type", "Identification_Type", "Identification_Number",
         "Gender", "Title", "First_Name", "Other_Name", "Surname",
         "Email", "Telephone_Number", "Mobile_Number", "Nationality",
-        "Date_of_Birth", "Political_Risk", "Anti-Money_Laundering",
-        "Marital_Status", "Occupation",
+        "Date_of_Birth", "Physical_Address", "Postal_Address",
+        "Political_Risk", "Anti-Money_Laundering", "Marital_Status", "Occupation",
     ]
     ws.append(headers)
     for row in rows:
@@ -56,6 +56,7 @@ def _build_corporate_xlsx(rows):
     headers = [
         "Partner_Type", "Company_Name", "Email", "Telephone_Number",
         "Mobile_Number", "TIN_Number", "Industry", "Incorporation_Date",
+        "Company_Incorporation",
         "Contact_Person", "Contact_Person_Phone", "Contact_Person_Email",
         "Physical_Address", "Postal_Address", "Political_Risk", "AML_Risk",
     ]
@@ -80,7 +81,8 @@ class ValidateAndParseExcelTest(TestCase):
                 "INDIVIDUAL", "National Identification Number", "NIN-001",
                 "Male", "Mr", "John", "", "Doe",
                 "john@example.com", "+255712345678", "+255712345678",
-                "Tanzanian", "1990-05-15", "Low", "Low", "Married", "Engineer",
+                "Tanzanian", "1990-05-15", "", "",
+                "Low", "Low", "Married", "Engineer",
             ],
         ])
         partner_type, rows = validate_and_parse_excel(buf)
@@ -102,7 +104,8 @@ class ValidateAndParseExcelTest(TestCase):
                 "INDIVIDUAL", "Invalid ID Type", "",
                 "UnknownGender", "", "", "", "",
                 "not-an-email", "", "",
-                "InvalidCountry", "invalid-date", "BadRisk", "BadAML", "", "",
+                "InvalidCountry", "invalid-date", "", "",
+                "BadRisk", "BadAML", "", "",
             ],
         ])
         partner_type, rows = validate_and_parse_excel(buf)
@@ -114,7 +117,7 @@ class ValidateAndParseExcelTest(TestCase):
 
     def test_individual_missing_required_fields(self):
         buf = _build_individual_xlsx([
-            ["INDIVIDUAL", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+            ["INDIVIDUAL", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
         ])
         partner_type, rows = validate_and_parse_excel(buf)
         self.assertEqual(len(rows), 1)
@@ -132,7 +135,7 @@ class ValidateAndParseExcelTest(TestCase):
                 "INDIVIDUAL", "National Identification Number", "NIN-002",
                 "Male", "Mr", "Child", "", "User",
                 "child@example.com", "", "+255700000001",
-                "Tanzanian", "2015-06-01", "Low", "Low", "", "",
+                "Tanzanian", "2015-06-01", "", "", "Low", "Low", "", "",
             ],
         ])
         partner_type, rows = validate_and_parse_excel(buf)
@@ -146,14 +149,16 @@ class ValidateAndParseExcelTest(TestCase):
             [
                 "INDIVIDUAL", "National Identification Number", "NIN-001",
                 "Male", "Mr", "John", "", "Doe",
-                "dup@example.com", "", "+255700000001",
-                "Tanzanian", "1990-05-15", "Low", "Low", "Married", "Engineer",
+                "john@example.com", "+255712345678", "+255712345678",
+                "Tanzanian", "1990-05-15", "", "",
+                "Low", "Low", "Married", "Engineer",
             ],
             [
                 "INDIVIDUAL", "Passport Number", "PP-002",
                 "Female", "Ms", "Jane", "", "Doe",
-                "dup@example.com", "", "+255700000002",
-                "Tanzanian", "1992-08-20", "Low", "Low", "Single", "Doctor",
+                "john@example.com", "", "+255700000002",
+                "Tanzanian", "1992-08-20", "", "",
+                "Low", "Low", "Single", "Doctor",
             ],
         ])
         partner_type, rows = validate_and_parse_excel(buf)
@@ -166,7 +171,7 @@ class ValidateAndParseExcelTest(TestCase):
             [
                 "CORPORATE", "Acme Corp", "info@acme.co.tz",
                 "+255222000000", "+255712000000", "TIN-12345",
-                "Technology", "2020-01-15",
+                "Technology", "2020-01-15", "",
                 "Jane Smith", "+255712000001", "jane@acme.co.tz",
                 "123 Main St", "P.O. Box 456", "Low", "Low",
             ],
@@ -181,7 +186,7 @@ class ValidateAndParseExcelTest(TestCase):
 
     def test_corporate_missing_required_fields(self):
         buf = _build_corporate_xlsx([
-            ["CORPORATE", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+            ["CORPORATE", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
         ])
         partner_type, rows = validate_and_parse_excel(buf)
         self.assertEqual(len(rows), 1)
@@ -285,7 +290,8 @@ class BulkUploadViewTest(TestCase):
                 "INDIVIDUAL", "National Identification Number", "NIN-001",
                 "Male", "Mr", "John", "", "Doe",
                 "john@example.com", "+255712345678", "+255712345678",
-                "Tanzanian", "1990-05-15", "Low", "Low", "Married", "Engineer",
+                "Tanzanian", "1990-05-15", "", "",
+                "Low", "Low", "Married", "Engineer",
             ],
         ])
         response = self._upload_file(buf)
@@ -301,7 +307,7 @@ class BulkUploadViewTest(TestCase):
             [
                 "CORPORATE", "Acme Corp", "info@acme.co.tz",
                 "+255222000000", "+255712000000", "TIN-12345",
-                "Technology", "2020-01-15",
+                "Technology", "2020-01-15", "",
                 "Jane Smith", "+255712000001", "jane@acme.co.tz",
                 "123 Main St", "P.O. Box 456", "Low", "Low",
             ],
@@ -320,14 +326,16 @@ class BulkUploadViewTest(TestCase):
                 "INDIVIDUAL", "National Identification Number", "NIN-001",
                 "Male", "Mr", "Valid", "", "User",
                 "valid@example.com", "", "+255700000001",
-                "Tanzanian", "1990-05-15", "Low", "Low", "Married", "Engineer",
+                "Tanzanian", "1990-05-15", "", "",
+                "Low", "Low", "Married", "Engineer",
             ],
             # Invalid row — bad email, missing required
             [
                 "INDIVIDUAL", "National Identification Number", "",
                 "Unknown", "", "", "", "",
                 "bad-email", "", "",
-                "Invalid", "bad-date", "Bad", "Bad", "", "",
+                "Invalid", "bad-date", "", "",
+                "Bad", "Bad", "", "",
             ],
         ])
         response = self._upload_file(buf)
@@ -346,7 +354,8 @@ class BulkUploadViewTest(TestCase):
                 "INDIVIDUAL", "National Identification Number", "NIN-001",
                 "Male", "Mr", "John", "", "Doe",
                 "john@example.com", "", "+255700000001",
-                "Tanzanian", "1990-05-15", "Low", "Low", "Married", "Engineer",
+                "Tanzanian", "1990-05-15", "", "",
+                "Low", "Low", "Married", "Engineer",
             ],
         ])
         response = self._upload_file(buf)
@@ -376,7 +385,8 @@ class BulkUploadViewTest(TestCase):
                 "INDIVIDUAL", "National Identification Number", "NIN-001",
                 "Male", "Mr", "John", "", "Doe",
                 "john@example.com", "", "+255700000001",
-                "Tanzanian", "1990-05-15", "Low", "Low", "Married", "Engineer",
+                "Tanzanian", "1990-05-15", "", "",
+                "Low", "Low", "Married", "Engineer",
             ],
         ])
         response = self._upload_file(buf)
@@ -389,13 +399,15 @@ class BulkUploadViewTest(TestCase):
                 "INDIVIDUAL", "National Identification Number", "NIN-001",
                 "Male", "Mr", "Alice", "", "Smith",
                 "alice@example.com", "", "+255700000001",
-                "Tanzanian", "1990-01-01", "Low", "Low", "Single", "Doctor",
+                "Tanzanian", "1990-01-01", "", "",
+                "Low", "Low", "Single", "Doctor",
             ],
             [
                 "INDIVIDUAL", "Passport Number", "PP-001",
                 "Female", "Ms", "Bob", "", "Jones",
                 "bob@example.com", "", "+255700000002",
-                "Kenyan", "1985-05-10", "Medium", "Low", "Married", "Engineer",
+                "Kenyan", "1985-05-10", "", "",
+                "Medium", "Low", "Married", "Engineer",
             ],
         ])
         response = self._upload_file(buf)

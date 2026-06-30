@@ -10,6 +10,11 @@
  *   { success, statusCode, message, data: { requires2FA, userId }, meta }
  */
 
+export interface Permission {
+  module: string
+  action: string
+}
+
 export interface AuthUser {
   id: string
   username: string
@@ -30,6 +35,8 @@ export interface AuthUser {
   avatar: string | null
   lastLogin: string | null
   dateJoined: string
+  permissions: Permission[]
+  groups: string[]
 }
 
 export interface LoginTokens {
@@ -178,7 +185,25 @@ export interface DashboardData {
 // ============================================================================
 
 export type PartnerType = "INDIVIDUAL" | "CORPORATE"
+export type KycStatus = "NOT_SET" | "CLEARED" | "PENDING" | "REJECTED" | "REQUIRE_MORE_INFO"
+
+export interface UnifiedOnboardingRecord {
+  id: string
+  recordType: "APPLICATION" | "PARTNER"
+  applicationId: string | null
+  partnerId: string | null
+  referenceNumber: string
+  displayName: string
+  partnerType: PartnerType
+  email: string
+  mobileNumber: string
+  applicationStatus: ApplicationStatus | null
+  kycStatus: KycStatus | null
+  createdAt: string
+}
+
 export type ApplicationStatus =
+
   | "ACTIVE"
   | "DRAFT"
   | "SUBMITTED"
@@ -261,6 +286,7 @@ export interface PartnerApplicationDetail {
   companyName: string
   tinNumber: string
   incorporationDate: string | null
+  companyIncorporation: string
   industry: string
   contactPerson: string
   contactPersonPhone: string
@@ -306,6 +332,7 @@ export interface ChoicesResponse {
   systemPartnerTypes: { value: string; label: string }[]
   branches: { value: string; label: string }[]
   locations: { value: string; label: string; branchId: string }[]
+  regions: { value: string; label: string }[]
 }
 
 export interface PaginatedResponse<T> {
@@ -338,6 +365,7 @@ export interface ApplicationPartnerType {
   branchName: string | null
   location: string | null
   locationName: string | null
+  region: string
   shareDataExternally: boolean
   createdAt: string
 }

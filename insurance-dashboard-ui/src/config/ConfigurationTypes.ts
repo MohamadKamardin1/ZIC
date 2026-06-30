@@ -18,6 +18,10 @@ export interface ChoicesResponse {
   taskTypes: ChoiceOption[];
   taskStatuses: ChoiceOption[];
   taskPriorities: ChoiceOption[];
+  systemPartnerTypes?: ChoiceOption[];
+  branches?: ChoiceOption[];
+  locations?: { value: string; label: string; branchId: string }[];
+  regions?: ChoiceOption[];
 }
 
 export interface WorkflowConfig {

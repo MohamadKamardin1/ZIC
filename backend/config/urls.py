@@ -21,6 +21,7 @@ api_v1_patterns = [
     path('system-parameters/', include('apps.system_parameters.urls')),
     path('governance/', include('apps.governance.urls')),
     path('ai/', include('apps.ai_assistant.urls')),
+    path('group-life/', include('apps.group_life.urls')),
 ]
 
 urlpatterns = [

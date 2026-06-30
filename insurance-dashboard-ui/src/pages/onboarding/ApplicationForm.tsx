@@ -1,6 +1,10 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
-import { ArrowLeft, Loader2, Save, Send, Upload, Trash2, FileText, CheckCircle2 } from "lucide-react"
+import {
+  ArrowLeft, ArrowRight, Loader2, Save, Send, Upload, Trash2,
+  FileText, CheckCircle2, Building2, User, AlertCircle, FileCheck,
+  Eye, Plus, X, Search,
+} from "lucide-react"
 import {
   createApplication,
   updateApplication,
@@ -9,10 +13,33 @@ import {
   uploadDocument,
   deleteDocument,
   listDocuments,
+  createApplicationPartnerType,
+  listApplicationPartnerTypes,
+  deleteApplicationPartnerType,
+  listFieldValues,
+  batchUpdateFieldValues,
+  fetchFieldConfigurations,
   getChoices,
 } from "../../lib/api"
-import type { PartnerApplicationDetail, ApplicationDocument, ChoicesResponse } from "../../lib/types"
-import { useChoices } from "../../config/ConfigurationHooks"
+import type {
+  PartnerApplicationDetail,
+  ApplicationDocument,
+  PartnerTypeFieldConfiguration,
+  ChoicesResponse,
+} from "../../lib/types"
+import { useChoiceList } from "../../config/ConfigurationAPI"
+import Stepper from "../../components/shared/Stepper"
+import type { Step } from "../../components/shared/Stepper"
+
+/* ------------------------------------------------------------------ */
+/*  Types                                                              */
+/* ------------------------------------------------------------------ */
+interface PartnerRoleConfig {
+  branches: string[]
+  region: string
+  location: string | null
+  shareDataExternally: boolean
+}
 
 interface FormState {
   partnerType: "INDIVIDUAL" | "CORPORATE" | ""
@@ -30,6 +57,7 @@ interface FormState {
   companyName: string
   tinNumber: string
   incorporationDate: string
+  companyIncorporation: string
   industry: string
   contactPerson: string
   contactPersonPhone: string
@@ -45,54 +73,115 @@ interface FormState {
 
 const INITIAL: FormState = {
   partnerType: "",
-  identificationType: "", identificationNumber: "", title: "Mr",
-  firstName: "", otherName: "", surname: "", gender: "",
-  dateOfBirth: "", maritalStatus: "", occupation: "", nationality: "",
-  companyName: "", tinNumber: "", incorporationDate: "", industry: "",
-  contactPerson: "", contactPersonPhone: "", contactPersonEmail: "",
-  email: "", telephoneNumber: "", mobileNumber: "",
-  physicalAddress: "", postalAddress: "",
-  politicalRisk: "LOW", amlRisk: "LOW",
+  identificationType: "",
+  identificationNumber: "",
+  title: "Mr",
+  firstName: "",
+  otherName: "",
+  surname: "",
+  gender: "",
+  dateOfBirth: "",
+  maritalStatus: "",
+  occupation: "",
+  nationality: "",
+  companyName: "",
+  tinNumber: "",
+  incorporationDate: "",
+  companyIncorporation: "",
+  industry: "",
+  contactPerson: "",
+  contactPersonPhone: "",
+  contactPersonEmail: "",
+  email: "",
+  telephoneNumber: "",
+  mobileNumber: "",
+  physicalAddress: "",
+  postalAddress: "",
+  politicalRisk: "LOW",
+  amlRisk: "LOW",
 }
+
+const STEPS: Step[] = [
+  { title: "Client Type", description: "Individual or Corporate" },
+  { title: "Information", description: "Personal or Company details" },
+  { title: "Partner Roles", description: "Select roles & fields" },
+  { title: "Contact & Risk", description: "Contact info & assessment" },
+  { title: "Documents", description: "Upload required docs" },
+  { title: "Review & Submit", description: "Final review" },
+]
 
 function toPayload(f: FormState): Record<string, unknown> {
-  return {
+  const payload: Record<string, unknown> = {
     partner_type: f.partnerType,
-    ...(f.partnerType === "INDIVIDUAL" ? {
-      identification_type: f.identificationType, identification_number: f.identificationNumber,
-      title: f.title, first_name: f.firstName, other_name: f.otherName, surname: f.surname,
-      gender: f.gender, date_of_birth: f.dateOfBirth || null,
-      marital_status: f.maritalStatus, occupation: f.occupation, nationality: f.nationality,
-    } : {
-      company_name: f.companyName, tin_number: f.tinNumber,
-      incorporation_date: f.incorporationDate || null, industry: f.industry,
-      contact_person: f.contactPerson, contact_person_phone: f.contactPersonPhone,
-      contact_person_email: f.contactPersonEmail,
-    }),
-    email: f.email, telephone_number: f.telephoneNumber, mobile_number: f.mobileNumber,
-    physical_address: f.physicalAddress, postal_address: f.postalAddress,
-    political_risk: f.politicalRisk, aml_risk: f.amlRisk,
+    email: f.email,
+    telephone_number: f.telephoneNumber,
+    mobile_number: f.mobileNumber,
+    physical_address: f.physicalAddress,
+    postal_address: f.postalAddress,
+    political_risk: f.politicalRisk,
+    aml_risk: f.amlRisk,
   }
+
+  if (f.partnerType === "INDIVIDUAL") {
+    payload.identification_type = f.identificationType
+    payload.identification_number = f.identificationNumber
+    payload.title = f.title
+    payload.first_name = f.firstName
+    payload.other_name = f.otherName
+    payload.surname = f.surname
+    payload.gender = f.gender
+    payload.date_of_birth = f.dateOfBirth || null
+    payload.marital_status = f.maritalStatus
+    payload.occupation = f.occupation
+    payload.nationality = f.nationality
+  } else {
+    payload.company_name = f.companyName
+    payload.tin_number = f.tinNumber
+    payload.incorporation_date = f.incorporationDate || null
+    payload.company_incorporation = f.companyIncorporation
+    payload.industry = f.industry
+    payload.contact_person = f.contactPerson
+    payload.contact_person_phone = f.contactPersonPhone
+    payload.contact_person_email = f.contactPersonEmail
+  }
+
+  return payload
 }
 
+/* ------------------------------------------------------------------ */
+/*  Main Component                                                     */
+/* ------------------------------------------------------------------ */
 export default function ApplicationForm() {
   const { id } = useParams<{ id: string }>()
   const isEdit = !!id
   const navigate = useNavigate()
 
   const [form, setForm] = useState<FormState>(INITIAL)
+  const [step, setStep] = useState(0)
   const [saving, setSaving] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState("")
   const [docs, setDocs] = useState<ApplicationDocument[]>([])
-  const choices = useChoices()
 
-  // Load choices from API (legacy path — hook handles config endpoint)
-  useEffect(() => {
-    getChoices().catch(() => {})
-  }, [])
+  const [selectedPartnerTypes, setSelectedPartnerTypes] = useState<string[]>([])
+  const [dynamicFieldsConfig, setDynamicFieldsConfig] = useState<PartnerTypeFieldConfiguration[]>([])
+  const [dynamicFieldValues, setDynamicFieldValues] = useState<Record<string, unknown>>({})
+  const [choices, setChoices] = useState<ChoicesResponse | null>(null)
+  const [roleConfigs, setRoleConfigs] = useState<Record<string, PartnerRoleConfig>>({})
 
-  // Edit mode: load application
+  /* ------------------ Choice Lists ------------------ */
+  const titleList = useChoiceList("TITLE_CHOICES")
+  const genderList = useChoiceList("GENDER_CHOICES")
+  const idTypeList = useChoiceList("IDENTIFICATION_TYPE_CHOICES")
+  const maritalStatusList = useChoiceList("MARITAL_STATUS_CHOICES")
+  const nationalityList = useChoiceList("NATIONALITY_CHOICES")
+  const industryList = useChoiceList("INDUSTRY_CHOICES")
+  const politicalRiskList = useChoiceList("POLITICAL_RISK_CHOICES")
+  const amlRiskList = useChoiceList("AML_RISK_CHOICES")
+  const documentTypeList = useChoiceList("DOCUMENT_TYPE_CHOICES")
+  const systemPartnerTypeList = useChoiceList("system_partner_types")
+
+  /* ------------------ Effects ------------------ */
   useEffect(() => {
     if (!isEdit) return
     let active = true
@@ -100,77 +189,190 @@ export default function ApplicationForm() {
       if (!active) return
       setForm({
         partnerType: d.partnerType,
-        identificationType: d.identificationType || "", identificationNumber: d.identificationNumber || "",
-        title: d.title || "Mr", firstName: d.firstName || "", otherName: d.otherName || "",
-        surname: d.surname || "", gender: d.gender || "", dateOfBirth: d.dateOfBirth || "",
-        maritalStatus: d.maritalStatus || "", occupation: d.occupation || "", nationality: d.nationality || "",
-        companyName: d.companyName || "", tinNumber: d.tinNumber || "", incorporationDate: d.incorporationDate || "",
-        industry: d.industry || "", contactPerson: d.contactPerson || "",
-        contactPersonPhone: d.contactPersonPhone || "", contactPersonEmail: d.contactPersonEmail || "",
-        email: d.email || "", telephoneNumber: d.telephoneNumber || "", mobileNumber: d.mobileNumber || "",
-        physicalAddress: d.physicalAddress || "", postalAddress: d.postalAddress || "",
-        politicalRisk: d.politicalRisk || "LOW", amlRisk: d.amlRisk || "LOW",
+        identificationType: d.identificationType || "",
+        identificationNumber: d.identificationNumber || "",
+        title: d.title || "Mr",
+        firstName: d.firstName || "",
+        otherName: d.otherName || "",
+        surname: d.surname || "",
+        gender: d.gender || "",
+        dateOfBirth: d.dateOfBirth || "",
+        maritalStatus: d.maritalStatus || "",
+        occupation: d.occupation || "",
+        nationality: d.nationality || "",
+        companyName: d.companyName || "",
+        tinNumber: d.tinNumber || "",
+        incorporationDate: d.incorporationDate || "",
+        companyIncorporation: d.companyIncorporation || "",
+        industry: d.industry || "",
+        contactPerson: d.contactPerson || "",
+        contactPersonPhone: d.contactPersonPhone || "",
+        contactPersonEmail: d.contactPersonEmail || "",
+        email: d.email || "",
+        telephoneNumber: d.telephoneNumber || "",
+        mobileNumber: d.mobileNumber || "",
+        physicalAddress: d.physicalAddress || "",
+        postalAddress: d.postalAddress || "",
+        politicalRisk: d.politicalRisk || "LOW",
+        amlRisk: d.amlRisk || "LOW",
       })
       setDocs(d.documents || [])
-    }).catch((e) => {
-      if (active) setError(e instanceof Error ? e.message : "Failed to load")
     })
     return () => { active = false }
   }, [id, isEdit])
 
-  // Load documents in edit mode
   useEffect(() => {
     if (!isEdit || !id) return
     let active = true
-    listDocuments(id).then((d) => { if (active) setDocs(d) }).catch(() => {})
+    listDocuments(id)
+      .then((d) => { if (active) setDocs(d) })
+      .catch(() => {})
     return () => { active = false }
   }, [id, isEdit])
 
+  useEffect(() => {
+    let active = true
+    const fetchConfigs = async () => {
+      const configs: PartnerTypeFieldConfiguration[] = []
+      for (const pt of selectedPartnerTypes) {
+        try {
+          const fc = await fetchFieldConfigurations(pt)
+          configs.push(...fc)
+        } catch {}
+      }
+      if (active) setDynamicFieldsConfig(configs)
+    }
+    fetchConfigs()
+    return () => { active = false }
+  }, [selectedPartnerTypes])
+
+  useEffect(() => {
+    getChoices().then(setChoices).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!isEdit || !id) return
+    let active = true
+    Promise.all([
+      listApplicationPartnerTypes(id),
+      listFieldValues(id),
+      getChoices(),
+    ]).then(([ptypes, fvalues, chs]) => {
+      if (!active) return
+      setSelectedPartnerTypes(ptypes.map(pt => pt.partnerType))
+      const rc: Record<string, PartnerRoleConfig> = {}
+      ptypes.forEach(pt => {
+        rc[pt.partnerType] = {
+          branches: pt.branch ? [pt.branch] : [],
+          region: pt.region || "",
+          location: pt.location || null,
+          shareDataExternally: pt.shareDataExternally,
+        }
+      })
+      setRoleConfigs(rc)
+      setChoices(chs)
+      const fvMap: Record<string, unknown> = {}
+      fvalues.forEach(fv => { fvMap[fv.fieldConfig] = fv.valueJson })
+      setDynamicFieldValues(fvMap)
+    }).catch(() => {})
+    return () => { active = false }
+  }, [id, isEdit])
+
+  /* ------------------ Helpers ------------------ */
   const update = useCallback(
-    <K extends keyof FormState>(k: K, v: FormState[K]) => setForm((f) => ({ ...f, [k]: v })),
-    [],
+    <K extends keyof FormState>(k: K, v: FormState[K]) =>
+      setForm((f) => ({ ...f, [k]: v })),
+    []
   )
 
-  function validate(submit = false): string | null {
-    if (!form.partnerType) return "Select a partner type"
-    if (form.partnerType === "INDIVIDUAL") {
-      if (!form.firstName) return "First name is required"
-      if (!form.surname) return "Surname is required"
-      if (submit) {
-        if (!form.identificationType) return "ID type is required for submission"
-        if (!form.identificationNumber) return "ID number is required for submission"
-        if (!form.dateOfBirth) return "Date of birth is required for submission"
-        if (!form.nationality) return "Nationality is required for submission"
-        if (!form.gender) return "Gender is required for submission"
-      }
-    } else {
-      if (!form.companyName) return "Company name is required"
-      if (!form.tinNumber) return "TIN number is required"
-      if (!form.contactPerson) return "Contact person is required"
-      if (submit) {
-        if (!form.incorporationDate) return "Incorporation date is required for submission"
-        if (!form.industry) return "Industry is required for submission"
-        if (!form.contactPersonPhone) return "Contact person phone is required for submission"
-        if (!form.contactPersonEmail) return "Contact person email is required for submission"
-        if (!form.physicalAddress) return "Physical address is required for submission"
-      }
+  function validateStep(s: number): string | null {
+    switch (s) {
+      case 0:
+        if (!form.partnerType) return "Select a client type"
+        break
+      case 1:
+        if (form.partnerType === "INDIVIDUAL") {
+          if (!form.firstName) return "First name is required"
+          if (!form.surname) return "Surname is required"
+        } else {
+          if (!form.companyName) return "Company name is required"
+          if (!form.tinNumber) return "TIN number is required"
+          if (!form.contactPerson) return "Contact person is required"
+        }
+        break
+      case 2:
+        break
+      case 3:
+        if (!form.email) return "Email is required"
+        if (!form.mobileNumber) return "Mobile number is required"
+        break
+      case 4:
+        break
+      case 5:
+        if (isEdit && docs.length === 0) return "At least one document must be uploaded before submitting"
+        break
     }
-    if (!form.email) return "Email is required"
-    if (!form.mobileNumber) return "Mobile number is required"
-    if (submit && isEdit && docs.length === 0) return "At least one document must be uploaded before submitting"
     return null
   }
 
+  function canAdvance(s: number): boolean {
+    return validateStep(s) === null
+  }
+
+  function handleNext() {
+    const err = validateStep(step)
+    if (err) { setError(err); return }
+    setError("")
+    setStep((s) => Math.min(s + 1, STEPS.length - 1))
+  }
+
+  function handleBack() {
+    setError("")
+    setStep((s) => Math.max(s - 1, 0))
+  }
+
+  async function savePartnerTypesAndFields(appId: string) {
+    const existingPts = isEdit ? await listApplicationPartnerTypes(appId) : []
+    const existingIds = existingPts.map(pt => pt.partnerType)
+
+    const toAdd = selectedPartnerTypes.filter(pid => !existingIds.includes(pid))
+    const toRemove = existingPts.filter(pt => !selectedPartnerTypes.includes(pt.partnerType))
+
+    for (const pt of toRemove) {
+      await deleteApplicationPartnerType(appId, pt.id)
+    }
+    for (const ptId of toAdd) {
+      const cfg = roleConfigs[ptId] ?? { branches: [], region: "", location: null, shareDataExternally: false }
+      await createApplicationPartnerType(appId, {
+        partner_type: ptId,
+        branches: cfg.branches.length > 0 ? cfg.branches : undefined,
+        location: cfg.location || null,
+        region: cfg.region,
+        share_data_externally: cfg.shareDataExternally,
+      })
+    }
+
+    const batchData = Object.entries(dynamicFieldValues).map(([configId, val]) => ({
+      field_config: configId,
+      value_json: val as Record<string, unknown>
+    }))
+    if (batchData.length > 0) {
+      await batchUpdateFieldValues(appId, batchData)
+    }
+  }
+
   async function handleSave() {
-    const err = validate(false)
+    const err = validateStep(step)
     if (err) { setError(err); return }
     setError("")
     setSaving(true)
     try {
       if (isEdit) {
         await updateApplication(id!, toPayload(form))
+        await savePartnerTypesAndFields(id!)
       } else {
         const result = await createApplication(toPayload(form))
+        await savePartnerTypesAndFields((result as PartnerApplicationDetail).id)
         navigate(`/onboarding/${(result as PartnerApplicationDetail).id}`)
         return
       }
@@ -182,13 +384,16 @@ export default function ApplicationForm() {
   }
 
   async function handleSaveAndSubmit() {
-    const err = validate(true)
+    const err = validateStep(step)
     if (err) { setError(err); return }
     setError("")
     setSubmitting(true)
     try {
-      const appId = isEdit ? id! : ((await createApplication(toPayload(form))) as PartnerApplicationDetail).id
+      const appId = isEdit
+        ? id!
+        : ((await createApplication(toPayload(form))) as PartnerApplicationDetail).id
       if (isEdit) await updateApplication(appId, toPayload(form))
+      await savePartnerTypesAndFields(appId)
       await submitApplication(appId)
       navigate(`/onboarding/${appId}`)
     } catch (e) {
@@ -220,195 +425,858 @@ export default function ApplicationForm() {
 
   const isCorporate = form.partnerType === "CORPORATE"
   const busy = saving || submitting
+  const isLastStep = step === STEPS.length - 1
+  const isFirstStep = step === 0
 
+  function handleStepClick(index: number) {
+    if (index < step) {
+      setStep(index)
+      return
+    }
+    for (let i = step; i < index; i++) {
+      if (!canAdvance(i)) {
+        const err = validateStep(i)
+        setError(err || "Complete the current step first")
+        return
+      }
+    }
+    setError("")
+    setStep(index)
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  Render                                                             */
+  /* ------------------------------------------------------------------ */
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
+    <div className="mx-auto w-full max-w-5xl">
       {/* Header */}
-      <div className="flex items-center gap-3">
+      <div className="mb-4 flex items-center gap-3">
         <button
           onClick={() => navigate(isEdit ? `/onboarding/${id}` : "/onboarding")}
           className="rounded-lg p-2 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
-        <h1 className="text-xl font-bold text-foreground">
+        <h1 className="text-2xl font-bold text-foreground">
           {isEdit ? "Edit Application" : "Add Partner"}
         </h1>
       </div>
 
+      {/* Stepper */}
+      <Stepper steps={STEPS} currentStep={step} className="mb-6" />
+
+      {/* Step clickable nav dots */}
+      <div className="flex justify-center gap-1 mb-6">
+        {STEPS.map((_, i) => (
+          <button
+            key={i}
+            onClick={() => handleStepClick(i)}
+            className={`h-2 w-2 rounded-full transition-all duration-300 ${
+              i === step
+                ? "bg-[var(--color-brand-primary)] w-6"
+                : i < step
+                  ? "bg-[var(--color-feedback-success)]"
+                  : "bg-[var(--color-border-default)]"
+            }`}
+          />
+        ))}
+      </div>
+
+      {/* Error Banner */}
       {error && (
-        <div className="rounded-xl border px-4 py-3 text-sm font-medium" style={{ borderColor: "var(--color-bg-destructive-soft)", backgroundColor: "var(--color-bg-destructive-soft)", color: "var(--color-text-destructive-soft)" }}>
+        <div className="mb-4 flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          <AlertCircle className="h-4 w-4 shrink-0" />
           {error}
         </div>
       )}
 
-      {/* Type selector */}
-      <div className="flex gap-3">
-        {(choices?.partnerTypes ?? []).length > 0
-          ? (choices!.partnerTypes).map((t) => (
-              <button
-                key={t.value}
-                type="button"
-                disabled={isEdit}
-                onClick={() => setForm((f) => ({ ...f, partnerType: t.value as "INDIVIDUAL" | "CORPORATE" }))}
-                className={`flex-1 rounded-xl border-2 py-4 text-center text-sm font-semibold transition ${
-                  form.partnerType === t.value
-                    ? "border-primary bg-accent text-accent-foreground"
-                    : "border-border bg-card text-muted-foreground hover:border-primary/50"
-                } ${isEdit ? "cursor-not-allowed opacity-60" : ""}`}
-              >
-                {t.label}
-              </button>
-            ))
-          : (["INDIVIDUAL", "CORPORATE"] as const).map((t) => (
-              <button
-                key={t}
-                type="button"
-                disabled={isEdit}
-                onClick={() => setForm((f) => ({ ...f, partnerType: t }))}
-                className={`flex-1 rounded-xl border-2 py-4 text-center text-sm font-semibold transition ${
-                  form.partnerType === t
-                    ? "border-primary bg-accent text-accent-foreground"
-                    : "border-border bg-card text-muted-foreground hover:border-primary/50"
-                } ${isEdit ? "cursor-not-allowed opacity-60" : ""}`}
-              >
-                {t === "INDIVIDUAL" ? "Individual" : "Corporate"}
-              </button>
-            ))}
+      {/* Step Content */}
+      <div className="rounded-xl border border-border bg-card shadow-sm">
+        {step === 0 && (
+          <StepClientType
+            partnerType={form.partnerType}
+            isEdit={isEdit}
+            onSelect={(v) => setForm((f) => ({ ...f, partnerType: v }))}
+          />
+        )}
+
+        {step === 1 && (
+          <StepInformation
+            form={form}
+            isCorporate={isCorporate}
+            update={update}
+            titleList={titleList}
+            idTypeList={idTypeList}
+            genderList={genderList}
+            maritalStatusList={maritalStatusList}
+            nationalityList={nationalityList}
+            industryList={industryList}
+          />
+        )}
+
+        {step === 2 && (
+          <StepPartnerRoles
+            selectedPartnerTypes={selectedPartnerTypes}
+            setSelectedPartnerTypes={setSelectedPartnerTypes}
+            roleConfigs={roleConfigs}
+            setRoleConfigs={setRoleConfigs}
+            dynamicFieldsConfig={dynamicFieldsConfig}
+            dynamicFieldValues={dynamicFieldValues}
+            setDynamicFieldValues={setDynamicFieldValues}
+            systemPartnerTypeList={systemPartnerTypeList}
+            choices={choices}
+          />
+        )}
+
+        {step === 3 && (
+          <StepContactRisk
+            form={form}
+            update={update}
+            politicalRiskList={politicalRiskList}
+            amlRiskList={amlRiskList}
+          />
+        )}
+
+        {step === 4 && (
+          <StepDocuments
+            isEdit={isEdit}
+            docs={docs}
+            documentTypeList={documentTypeList}
+            onUpload={handleUpload}
+            onDelete={handleDeleteDoc}
+          />
+        )}
+
+        {step === 5 && (
+          <StepReview
+            form={form}
+            isCorporate={isCorporate}
+            selectedPartnerTypes={selectedPartnerTypes}
+            systemPartnerTypeList={systemPartnerTypeList}
+            docs={docs}
+            isEdit={isEdit}
+          />
+        )}
       </div>
 
-      {/* Form */}
-      <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-        <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2">
-          {isCorporate ? (
-            <>
-              <SelectField label="Industry" value={form.industry} onChange={(v) => update("industry", v)}
-                options={choices?.industries ?? []} placeholder="Select industry" colSpan={2} />
-              <InputField label="Company Name *" value={form.companyName} onChange={(v) => update("companyName", v)} colSpan={2} />
-              <InputField label="TIN Number *" value={form.tinNumber} onChange={(v) => update("tinNumber", v)} />
-              <InputField type="date" label="Incorporation Date" value={form.incorporationDate} onChange={(v) => update("incorporationDate", v)} />
-              <InputField label="Contact Person *" value={form.contactPerson} onChange={(v) => update("contactPerson", v)} />
-              <InputField label="Contact Phone" value={form.contactPersonPhone} onChange={(v) => update("contactPersonPhone", v)} />
-              <InputField label="Contact Email" value={form.contactPersonEmail} onChange={(v) => update("contactPersonEmail", v)} />
-            </>
-          ) : (
-            <>
-              <SelectField label="Title" value={form.title} onChange={(v) => update("title", v)} options={choices?.titles ?? []} />
-              <InputField label="First Name *" value={form.firstName} onChange={(v) => update("firstName", v)} />
-              <InputField label="Other Name" value={form.otherName} onChange={(v) => update("otherName", v)} />
-              <InputField label="Surname *" value={form.surname} onChange={(v) => update("surname", v)} />
-              <SelectField label="ID Type" value={form.identificationType} onChange={(v) => update("identificationType", v)}
-                options={choices?.identificationTypes ?? []} placeholder="Select ID type" />
-              <InputField label="ID Number" value={form.identificationNumber} onChange={(v) => update("identificationNumber", v)} />
-              <SelectField label="Gender" value={form.gender} onChange={(v) => update("gender", v)}
-                options={choices?.genders ?? []} placeholder="Select gender" />
-              <InputField type="date" label="Date of Birth" value={form.dateOfBirth} onChange={(v) => update("dateOfBirth", v)} />
-              <SelectField label="Marital Status" value={form.maritalStatus} onChange={(v) => update("maritalStatus", v)}
-                options={choices?.maritalStatuses ?? []} placeholder="Select" />
-              <InputField label="Occupation" value={form.occupation} onChange={(v) => update("occupation", v)} />
-              <SelectField label="Nationality" value={form.nationality} onChange={(v) => update("nationality", v)}
-                options={choices?.nationalities ?? []} placeholder="Select nationality" />
-            </>
-          )}
-
-          {/* --- Common fields --- */}
-          <InputField label="Email *" type="email" value={form.email} onChange={(v) => update("email", v)} />
-          <InputField label="Mobile Number *" value={form.mobileNumber} onChange={(v) => update("mobileNumber", v)} />
-          <InputField label="Telephone" value={form.telephoneNumber} onChange={(v) => update("telephoneNumber", v)} />
-          <SelectField label="Political Risk" value={form.politicalRisk} onChange={(v) => update("politicalRisk", v)}
-            options={choices?.politicalRisks ?? []} />
-          <SelectField label="AML Risk" value={form.amlRisk} onChange={(v) => update("amlRisk", v)}
-            options={choices?.amlRisks ?? []} />
-          <TextAreaField label="Physical Address" value={form.physicalAddress} onChange={(v) => update("physicalAddress", v)} />
-          <TextAreaField label="Postal Address" value={form.postalAddress} onChange={(v) => update("postalAddress", v)} />
-        </div>
-      </div>
-
-      {/* Documents (edit mode only) */}
-      {isEdit && (
-      <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-          <h2 className="mb-3 text-base font-semibold text-foreground">Documents</h2>
-          <div className="mb-4 flex gap-3">
-            <select
-              id="docType"
-              className="rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground"
+      {/* Navigation */}
+      <div className="mt-6 flex items-center justify-between">
+        <div>
+          {!isFirstStep && (
+            <button
+              onClick={handleBack}
+              disabled={busy}
+              className="inline-flex items-center gap-2 rounded-lg border border-border px-5 py-2.5 text-sm font-semibold text-foreground transition hover:bg-secondary disabled:opacity-50"
             >
-              {(choices?.documentTypes ?? []).map((d) => (
-                <option key={d.value} value={d.value}>{d.label}</option>
-              ))}
-            </select>
-            <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-input bg-card px-4 py-2 text-sm font-medium text-foreground transition hover:bg-secondary">
-              <Upload className="h-4 w-4" />
-              Upload
-              <input
-                type="file"
-                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0]
-                  const sel = document.getElementById("docType") as HTMLSelectElement | null
-                  if (file && sel) { handleUpload(file, sel.value); e.target.value = "" }
-                }}
-              />
-            </label>
-          </div>
-          {docs.length > 0 && (
-            <ul className="divide-y divide-border">
-              {docs.map((d) => (
-                <li key={d.id} className="flex items-center gap-3 py-3">
-                  <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium text-foreground">{d.documentName}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {(choices?.documentTypes ?? []).find((t) => t.value === d.documentType)?.label ?? d.documentType}
-                      {d.fileSize ? ` · ${(d.fileSize / 1024).toFixed(0)} KB` : ""}
-                    </div>
-                  </div>
-                  {d.isVerified && <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: "var(--color-feedback-success)" }} />}
-                  <button onClick={() => handleDeleteDoc(d.id)}
-                    className="rounded p-1 text-muted-foreground hover:text-destructive">
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </li>
-              ))}
-            </ul>
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </button>
           )}
         </div>
-      )}
 
-      {/* Actions */}
-      <div className="flex items-center justify-end gap-3">
-        <button
-          onClick={handleSave}
-          disabled={busy}
-          className="inline-flex items-center gap-2 rounded-lg border border-border px-5 py-2.5 text-sm font-semibold text-foreground transition hover:bg-secondary disabled:opacity-50"
-        >
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          Save as Draft
-        </button>
-        <button
-          onClick={handleSaveAndSubmit}
-          disabled={busy}
-          className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition hover:brightness-110 disabled:opacity-50"
-        >
-          {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          Save & Submit
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleSave}
+            disabled={busy}
+            className="inline-flex items-center gap-2 rounded-lg border border-border px-5 py-2.5 text-sm font-semibold text-foreground transition hover:bg-secondary disabled:opacity-50"
+          >
+            {saving ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            Save as Draft
+          </button>
+
+          {isLastStep ? (
+            <button
+              onClick={handleSaveAndSubmit}
+              disabled={busy}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition hover:brightness-110 disabled:opacity-50"
+            >
+              {submitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+              Submit Application
+            </button>
+          ) : (
+            <button
+              onClick={handleNext}
+              disabled={busy}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition hover:brightness-110 disabled:opacity-50"
+            >
+              Next
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Field helpers                                                              */
-/* -------------------------------------------------------------------------- */
+/* ================================================================== */
+/*  Step Components                                                    */
+/* ================================================================== */
+
+function StepClientType({
+  partnerType,
+  isEdit,
+  onSelect,
+}: {
+  partnerType: string
+  isEdit: boolean
+  onSelect: (v: "INDIVIDUAL" | "CORPORATE") => void
+}) {
+  return (
+    <div className="p-6">
+      <div className="mb-6 text-center">
+        <h2 className="text-lg font-bold text-foreground">Choose Client Type</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Select whether this partner is an individual person or a company</p>
+      </div>
+      <div className="mx-auto grid max-w-2xl grid-cols-2 gap-6">
+        {[
+          { value: "INDIVIDUAL", label: "Individual", icon: User, description: "Individual person", detail: "For sole proprietors, freelancers, and individual partners" },
+          { value: "CORPORATE", label: "Corporate", icon: Building2, description: "Company/Organization", detail: "For registered companies, LLCs, corporations, and organizations" },
+        ].map((type) => {
+          const Icon = type.icon
+          const isSelected = partnerType === type.value
+          return (
+            <button
+              key={type.value}
+              type="button"
+              disabled={isEdit}
+              onClick={() => onSelect(type.value as "INDIVIDUAL" | "CORPORATE")}
+              className={`relative flex flex-col items-center rounded-xl border-2 p-8 text-center transition-all duration-200 ${
+                isSelected
+                  ? "border-primary bg-primary/5 text-primary shadow-md scale-[1.02]"
+                  : "border-border bg-card text-muted-foreground hover:border-primary/30 hover:bg-accent/50 hover:shadow-sm"
+              } ${isEdit ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+            >
+              <Icon className={`mb-3 h-10 w-10 ${isSelected ? "text-primary" : "text-muted-foreground"}`} />
+              <span className={`text-base font-bold ${isSelected ? "text-primary" : "text-foreground"}`}>
+                {type.label}
+              </span>
+              <span className="mt-1 text-xs text-muted-foreground">{type.description}</span>
+              <span className="mt-2 text-[11px] leading-tight text-muted-foreground/70">{type.detail}</span>
+              {isSelected && (
+                <div className="absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                  <CheckCircle2 className="h-4 w-4" />
+                </div>
+              )}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function StepInformation({
+  form,
+  isCorporate,
+  update,
+  titleList,
+  idTypeList,
+  genderList,
+  maritalStatusList,
+  nationalityList,
+  industryList,
+}: {
+  form: FormState
+  isCorporate: boolean
+  update: <K extends keyof FormState>(k: K, v: FormState[K]) => void
+  titleList: { options: { value: string; label: string }[] }
+  idTypeList: { options: { value: string; label: string }[] }
+  genderList: { options: { value: string; label: string }[] }
+  maritalStatusList: { options: { value: string; label: string }[] }
+  nationalityList: { options: { value: string; label: string }[] }
+  industryList: { options: { value: string; label: string }[] }
+}) {
+  return (
+    <>
+      <div className="border-b border-border px-6 py-4">
+        <h2 className="text-base font-semibold text-foreground">
+          {isCorporate ? "Company Information" : "Personal Information"}
+        </h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {isCorporate
+            ? "Enter the company details below. Fields marked with * are required."
+            : "Enter the personal details below. Fields marked with * are required."}
+        </p>
+      </div>
+      <div className="grid grid-cols-1 gap-x-6 gap-y-4 p-6 sm:grid-cols-2 lg:grid-cols-3">
+        {isCorporate ? (
+          <>
+            <InputField label="Company Name *" value={form.companyName} onChange={(v) => update("companyName", v)} colSpan={3} />
+            <InputField label="TIN Number *" value={form.tinNumber} onChange={(v) => update("tinNumber", v)} />
+            <InputField type="date" label="Incorporation Date" value={form.incorporationDate} onChange={(v) => update("incorporationDate", v)} />
+            <InputField label="Company Incorporation Number *" value={form.companyIncorporation} onChange={(v) => update("companyIncorporation", v)} colSpan={3} />
+            <SelectField label="Industry" value={form.industry} onChange={(v) => update("industry", v)} options={industryList.options} placeholder="Select industry" colSpan={3} />
+            <InputField label="Contact Person *" value={form.contactPerson} onChange={(v) => update("contactPerson", v)} />
+            <InputField label="Contact Phone" value={form.contactPersonPhone} onChange={(v) => update("contactPersonPhone", v)} />
+            <InputField label="Contact Email" type="email" value={form.contactPersonEmail} onChange={(v) => update("contactPersonEmail", v)} />
+          </>
+        ) : (
+          <>
+            <SelectField label="Title" value={form.title} onChange={(v) => update("title", v)} options={titleList.options} />
+            <InputField label="First Name *" value={form.firstName} onChange={(v) => update("firstName", v)} />
+            <InputField label="Other Name" value={form.otherName} onChange={(v) => update("otherName", v)} />
+            <InputField label="Surname *" value={form.surname} onChange={(v) => update("surname", v)} />
+            <SelectField label="ID Type" value={form.identificationType} onChange={(v) => update("identificationType", v)} options={idTypeList.options} placeholder="Select ID type" />
+            <InputField label="ID Number" value={form.identificationNumber} onChange={(v) => update("identificationNumber", v)} />
+            <SelectField label="Gender" value={form.gender} onChange={(v) => update("gender", v)} options={genderList.options} placeholder="Select gender" />
+            <InputField type="date" label="Date of Birth" value={form.dateOfBirth} onChange={(v) => update("dateOfBirth", v)} />
+            <SelectField label="Marital Status" value={form.maritalStatus} onChange={(v) => update("maritalStatus", v)} options={maritalStatusList.options} placeholder="Select" />
+            <InputField label="Occupation" value={form.occupation} onChange={(v) => update("occupation", v)} />
+            <SelectField label="Nationality" value={form.nationality} onChange={(v) => update("nationality", v)} options={nationalityList.options} placeholder="Select nationality" colSpan={3} />
+          </>
+        )}
+      </div>
+    </>
+  )
+}
+
+function StepPartnerRoles({
+  selectedPartnerTypes,
+  setSelectedPartnerTypes,
+  roleConfigs,
+  setRoleConfigs,
+  dynamicFieldsConfig,
+  dynamicFieldValues,
+  setDynamicFieldValues,
+  systemPartnerTypeList,
+  choices,
+}: {
+  selectedPartnerTypes: string[]
+  setSelectedPartnerTypes: (v: string[]) => void
+  roleConfigs: Record<string, PartnerRoleConfig>
+  setRoleConfigs: (v: Record<string, PartnerRoleConfig>) => void
+  dynamicFieldsConfig: PartnerTypeFieldConfiguration[]
+  dynamicFieldValues: Record<string, unknown>
+  setDynamicFieldValues: (v: Record<string, unknown>) => void
+  systemPartnerTypeList: { options: { value: string; label: string }[] }
+  choices: ChoicesResponse | null
+}) {
+  function togglePartnerType(value: string) {
+    const isSelected = selectedPartnerTypes.includes(value)
+    if (isSelected) {
+      setSelectedPartnerTypes(selectedPartnerTypes.filter((id) => id !== value))
+      const next = { ...roleConfigs }
+      delete next[value]
+      setRoleConfigs(next)
+    } else {
+      setSelectedPartnerTypes([...selectedPartnerTypes, value])
+      setRoleConfigs({
+        ...roleConfigs,
+        [value]: { branches: [], region: "", location: null, shareDataExternally: false },
+      })
+    }
+  }
+
+  function updateConfig(ptId: string, patch: Partial<PartnerRoleConfig>) {
+    setRoleConfigs({
+      ...roleConfigs,
+      [ptId]: { ...roleConfigs[ptId], ...patch },
+    })
+  }
+
+  const ptLabel = (id: string) => systemPartnerTypeList.options.find((o) => o.value === id)?.label ?? id
+
+  const branchOptions = choices?.branches ?? []
+  const locationOptions = choices?.locations ?? []
+
+  return (
+    <>
+      <div className="border-b border-border px-6 py-4">
+        <h2 className="text-base font-semibold text-foreground">Assign Partner Roles</h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Select one or more partner roles for this application. Each role may require additional information.
+        </p>
+      </div>
+
+      <div className="p-6">
+        {/* Partner type chips */}
+        <div className="flex flex-wrap gap-2 mb-6">
+          {systemPartnerTypeList.options.map((pt) => {
+            const isSelected = selectedPartnerTypes.includes(pt.value)
+            return (
+              <button
+                key={pt.value}
+                type="button"
+                onClick={() => togglePartnerType(pt.value)}
+                className={`rounded-full border px-4 py-1.5 text-sm font-medium transition ${
+                  isSelected
+                    ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                    : "border-border bg-card text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                }`}
+              >
+                {pt.label}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Config cards for selected partner types */}
+        {selectedPartnerTypes.length > 0 && (
+          <div className="space-y-4 mb-6">
+            {selectedPartnerTypes.map((ptId) => {
+              const cfg = roleConfigs[ptId] ?? { branches: [], region: "", location: null, shareDataExternally: false }
+              const locOpts = locationOptions.filter(
+                (l) => cfg.branches.length === 0 || cfg.branches.includes(l.branchId),
+              )
+              return (
+                <div key={ptId} className="rounded-lg border border-border bg-card p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-foreground">{ptLabel(ptId)}</h3>
+                    <button
+                      type="button"
+                      onClick={() => togglePartnerType(ptId)}
+                      className="rounded p-1 text-muted-foreground hover:text-destructive transition-colors"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {/* Branches */}
+                    <BranchSelect
+                      selected={cfg.branches}
+                      options={branchOptions}
+                      onChange={(vals) => updateConfig(ptId, { branches: vals, location: vals.length === 0 ? null : cfg.location })}
+                    />
+                    {/* Region */}
+                    <SelectField
+                      label="Region"
+                      value={cfg.region}
+                      onChange={(v) => updateConfig(ptId, { region: v })}
+                      options={choices?.regions ?? []}
+                      placeholder="Select region"
+                    />
+                    {/* Location */}
+                    <SelectField
+                      label="Location"
+                      value={cfg.location ?? ""}
+                      onChange={(v) => updateConfig(ptId, { location: v || null })}
+                      options={locOpts}
+                      placeholder={cfg.branches.length === 0 ? "Select a branch first" : "Select location"}
+                    />
+                    {/* Share Data */}
+                    <SelectField
+                      label="Share Data Externally"
+                      value={cfg.shareDataExternally ? "yes" : "no"}
+                      onChange={(v) => updateConfig(ptId, { shareDataExternally: v === "yes" })}
+                      options={[
+                        { value: "no", label: "No" },
+                        { value: "yes", label: "Yes" },
+                      ]}
+                    />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {selectedPartnerTypes.length === 0 && (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            Click a partner role above to configure it.
+          </p>
+        )}
+      </div>
+
+      {dynamicFieldsConfig.length > 0 && (
+        <>
+          <div className="border-t border-border px-6 py-4">
+            <h3 className="text-sm font-semibold text-foreground">Additional Information</h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Fill in the additional fields required for the selected partner roles.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-x-6 gap-y-4 p-6 pt-2 sm:grid-cols-2 lg:grid-cols-3">
+            {dynamicFieldsConfig.map((config) => (
+              <InputField
+                key={config.id}
+                label={config.fieldName + (config.isRequired ? " *" : "")}
+                value={(dynamicFieldValues[config.id] as string) || ""}
+                onChange={(v) => {
+                  const next = { ...dynamicFieldValues, [config.id]: v }
+                  setDynamicFieldValues(next)
+                }}
+                type={config.fieldType === "DATE" ? "date" : config.fieldType === "NUMBER" ? "number" : "text"}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </>
+  )
+}
+
+/* ── Branch multi-select with search ── */
+function BranchSelect({
+  selected,
+  options,
+  onChange,
+}: {
+  selected: string[]
+  options: { value: string; label: string }[]
+  onChange: (vals: string[]) => void
+}) {
+  const [query, setQuery] = useState("")
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
+  }, [])
+
+  const filtered = query
+    ? options.filter((b) => !selected.includes(b.value) && b.label.toLowerCase().includes(query.toLowerCase()))
+    : options.filter((b) => !selected.includes(b.value))
+
+  return (
+    <div ref={ref} className="relative">
+      <label className="mb-1 block text-sm font-medium text-foreground">Branches</label>
+      {selected.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-1.5">
+          {selected.map((id) => {
+            const b = options.find((o) => o.value === id)
+            return (
+              <span key={id} className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2.5 py-0.5 text-xs font-medium">
+                {b?.label ?? id}
+                <button
+                  type="button"
+                  onClick={() => onChange(selected.filter((v) => v !== id))}
+                  className="hover:text-destructive"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            )
+          })}
+        </div>
+      )}
+      <div className="relative">
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+        <input
+          type="text"
+          placeholder="Search branches..."
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
+          onFocus={() => setOpen(true)}
+          className="w-full rounded-lg border border-input bg-background text-foreground pl-9 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
+        />
+      </div>
+      {open && filtered.length > 0 && (
+        <div className="absolute z-20 mt-1 w-full rounded-lg border border-border bg-card shadow-lg max-h-48 overflow-y-auto">
+          {filtered.map((b) => (
+            <button
+              key={b.value}
+              type="button"
+              onClick={() => { onChange([...selected, b.value]); setQuery(""); setOpen(false) }}
+              className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors"
+            >
+              {b.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StepContactRisk({
+  form,
+  update,
+  politicalRiskList,
+  amlRiskList,
+}: {
+  form: FormState
+  update: <K extends keyof FormState>(k: K, v: FormState[K]) => void
+  politicalRiskList: { options: { value: string; label: string }[] }
+  amlRiskList: { options: { value: string; label: string }[] }
+}) {
+  return (
+    <>
+      <div className="border-b border-border px-6 py-4">
+        <h2 className="text-base font-semibold text-foreground">Contact Information</h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">Provide contact details and risk assessment information.</p>
+      </div>
+      <div className="grid grid-cols-1 gap-x-6 gap-y-4 p-6 sm:grid-cols-2 lg:grid-cols-3">
+        <InputField label="Email *" type="email" value={form.email} onChange={(v) => update("email", v)} />
+        <InputField label="Mobile Number *" value={form.mobileNumber} onChange={(v) => update("mobileNumber", v)} />
+        <InputField label="Telephone" value={form.telephoneNumber} onChange={(v) => update("telephoneNumber", v)} />
+        <TextAreaField label="Physical Address" value={form.physicalAddress} onChange={(v) => update("physicalAddress", v)} colSpan={3} />
+        <TextAreaField label="Postal Address" value={form.postalAddress} onChange={(v) => update("postalAddress", v)} colSpan={3} />
+      </div>
+
+      <div className="border-t border-border px-6 py-4">
+        <h3 className="text-sm font-semibold text-foreground">Risk Assessment</h3>
+      </div>
+      <div className="grid grid-cols-1 gap-x-6 gap-y-4 p-6 pt-2 sm:grid-cols-2">
+        <SelectField label="Political Risk" value={form.politicalRisk} onChange={(v) => update("politicalRisk", v)} options={politicalRiskList.options} />
+        <SelectField label="AML Risk" value={form.amlRisk} onChange={(v) => update("amlRisk", v)} options={amlRiskList.options} />
+      </div>
+    </>
+  )
+}
+
+function StepDocuments({
+  isEdit,
+  docs,
+  documentTypeList,
+  onUpload,
+  onDelete,
+}: {
+  isEdit: boolean
+  docs: ApplicationDocument[]
+  documentTypeList: { options: { value: string; label: string }[] }
+  onUpload: (file: File, docType: string) => Promise<void>
+  onDelete: (docId: string) => Promise<void>
+}) {
+  return (
+    <>
+      <div className="border-b border-border px-6 py-4">
+        <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
+          <FileCheck className="h-5 w-5 text-primary" />
+          Documents
+        </h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {isEdit
+            ? "Upload required documents for this application. You can upload multiple documents."
+            : "Documents can be uploaded after saving the application draft."}
+        </p>
+      </div>
+      <div className="p-6">
+        {isEdit ? (
+          <>
+            <div className="mb-4 flex gap-3">
+              <select
+                id="docType"
+                className="rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground"
+              >
+                {(documentTypeList.options ?? []).map((d) => (
+                  <option key={d.value} value={d.value}>{d.label}</option>
+                ))}
+              </select>
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-input bg-card px-4 py-2 text-sm font-medium text-foreground transition hover:bg-secondary">
+                <Upload className="h-4 w-4" />
+                Upload
+                <input
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    const sel = document.getElementById("docType") as HTMLSelectElement | null
+                    if (file && sel) {
+                      onUpload(file, sel.value)
+                      e.target.value = ""
+                    }
+                  }}
+                />
+              </label>
+            </div>
+
+            {docs.length > 0 ? (
+              <ul className="divide-y divide-border">
+                {docs.map((d) => (
+                  <li key={d.id} className="flex items-center gap-3 py-3">
+                    <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium text-foreground">{d.documentName}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {d.fileSize ? ` · ${(d.fileSize / 1024).toFixed(0)} KB` : ""}
+                      </div>
+                    </div>
+                    {d.isVerified && (
+                      <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: "var(--color-feedback-success)" }} />
+                    )}
+                    <button onClick={() => onDelete(d.id)} className="rounded p-1 text-muted-foreground hover:text-destructive">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="py-8 text-center">
+                <FileText className="mx-auto mb-2 h-8 w-8 text-muted-foreground/40" />
+                <p className="text-sm text-muted-foreground">No documents uploaded yet.</p>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="py-8 text-center">
+            <FileCheck className="mx-auto mb-2 h-8 w-8 text-muted-foreground/40" />
+            <p className="text-sm font-medium text-foreground">Save the application first</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Documents can be uploaded after saving this application as a draft.
+            </p>
+          </div>
+        )}
+      </div>
+    </>
+  )
+}
+
+function StepReview({
+  form,
+  isCorporate,
+  selectedPartnerTypes,
+  systemPartnerTypeList,
+  docs,
+  isEdit,
+}: {
+  form: FormState
+  isCorporate: boolean
+  selectedPartnerTypes: string[]
+  systemPartnerTypeList: { options: { value: string; label: string }[] }
+  docs: ApplicationDocument[]
+  isEdit: boolean
+}) {
+  const ptLabels = selectedPartnerTypes.map((id) => {
+    const found = systemPartnerTypeList.options.find((o) => o.value === id)
+    return found?.label || id
+  })
+
+  return (
+    <>
+      <div className="border-b border-border px-6 py-4">
+        <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
+          <Eye className="h-5 w-5 text-primary" />
+          Review & Submit
+        </h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Please review all information before submitting. Once submitted, changes will require a new review cycle.
+        </p>
+      </div>
+      <div className="p-6 space-y-6">
+        {/* Client Type */}
+        <div>
+          <h3 className="text-sm font-semibold text-foreground mb-2">Client Type</h3>
+          <div className="rounded-lg border border-border bg-muted/30 px-4 py-3">
+            <div className="flex items-center gap-2">
+              {isCorporate ? <Building2 className="h-4 w-4 text-muted-foreground" /> : <User className="h-4 w-4 text-muted-foreground" />}
+              <span className="text-sm font-medium text-foreground">{isCorporate ? "Corporate" : "Individual"}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Info Summary */}
+        <div>
+          <h3 className="text-sm font-semibold text-foreground mb-2">
+            {isCorporate ? "Company Information" : "Personal Information"}
+          </h3>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-2 rounded-lg border border-border bg-muted/30 px-4 py-3">
+            {isCorporate ? (
+              <>
+                <ReviewField label="Company Name" value={form.companyName} />
+                <ReviewField label="TIN" value={form.tinNumber} />
+                <ReviewField label="Incorporation Date" value={form.incorporationDate} />
+                <ReviewField label="Industry" value={form.industry} />
+                <ReviewField label="Contact Person" value={form.contactPerson} />
+                <ReviewField label="Contact Phone" value={form.contactPersonPhone} />
+                <ReviewField label="Contact Email" value={form.contactPersonEmail} />
+              </>
+            ) : (
+              <>
+                <ReviewField label="Title" value={form.title} />
+                <ReviewField label="First Name" value={form.firstName} />
+                <ReviewField label="Other Name" value={form.otherName} />
+                <ReviewField label="Surname" value={form.surname} />
+                <ReviewField label="ID Type" value={form.identificationType} />
+                <ReviewField label="ID Number" value={form.identificationNumber} />
+                <ReviewField label="Gender" value={form.gender} />
+                <ReviewField label="Date of Birth" value={form.dateOfBirth} />
+                <ReviewField label="Marital Status" value={form.maritalStatus} />
+                <ReviewField label="Occupation" value={form.occupation} />
+                <ReviewField label="Nationality" value={form.nationality} />
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Partner Roles */}
+        <div>
+          <h3 className="text-sm font-semibold text-foreground mb-2">Partner Roles</h3>
+          <div className="rounded-lg border border-border bg-muted/30 px-4 py-3">
+            {ptLabels.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {ptLabels.map((label) => (
+                  <span key={label} className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+                    {label}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <span className="text-sm text-muted-foreground">None selected</span>
+            )}
+          </div>
+        </div>
+
+        {/* Contact */}
+        <div>
+          <h3 className="text-sm font-semibold text-foreground mb-2">Contact & Risk</h3>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-2 rounded-lg border border-border bg-muted/30 px-4 py-3">
+            <ReviewField label="Email" value={form.email} />
+            <ReviewField label="Mobile" value={form.mobileNumber} />
+            <ReviewField label="Telephone" value={form.telephoneNumber} />
+            <ReviewField label="Political Risk" value={form.politicalRisk} />
+            <ReviewField label="AML Risk" value={form.amlRisk} />
+            <ReviewField label="Physical Address" value={form.physicalAddress} colSpan={2} />
+            <ReviewField label="Postal Address" value={form.postalAddress} colSpan={2} />
+          </div>
+        </div>
+
+        {/* Documents */}
+        <div>
+          <h3 className="text-sm font-semibold text-foreground mb-2">Documents</h3>
+          <div className="rounded-lg border border-border bg-muted/30 px-4 py-3">
+            {isEdit && docs.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {docs.map((d) => (
+                  <span key={d.id} className="inline-flex items-center gap-1 rounded-full bg-muted px-3 py-1 text-xs text-foreground">
+                    <FileText className="h-3 w-3" />
+                    {d.documentName}
+                    {d.isVerified && <CheckCircle2 className="h-3 w-3 text-success" />}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <span className="text-sm text-muted-foreground">No documents uploaded</span>
+            )}
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
+function ReviewField({ label, value, colSpan }: { label: string; value?: string; colSpan?: number }) {
+  return (
+    <div className={colSpan === 2 ? "col-span-2" : ""}>
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <p className="text-sm font-medium text-foreground">{value || "—"}</p>
+    </div>
+  )
+}
+
+/* ================================================================== */
+/*  Field helpers                                                      */
+/* ================================================================== */
 
 function InputField({ label, value, onChange, type = "text", colSpan }: {
   label: string; value: string; onChange: (v: string) => void; type?: string; colSpan?: number
 }) {
   return (
-    <div className={colSpan === 2 ? "sm:col-span-2" : ""}>
-      <label className="mb-1 block text-sm font-medium text-foreground">{label}</label>
+    <div className={colSpan === 3 ? "sm:col-span-2 lg:col-span-3" : ""}>
+      <label className="mb-1.5 block text-sm font-medium text-foreground">{label}</label>
       <input
         type={type}
         value={value}
@@ -424,15 +1292,15 @@ function SelectField({ label, value, onChange, options, placeholder, colSpan }: 
   options: { value: string; label: string }[]; placeholder?: string; colSpan?: number
 }) {
   return (
-    <div className={colSpan === 2 ? "sm:col-span-2" : ""}>
-      <label className="mb-1 block text-sm font-medium text-foreground">{label}</label>
+    <div className={colSpan === 3 ? "sm:col-span-2 lg:col-span-3" : ""}>
+      <label className="mb-1.5 block text-sm font-medium text-foreground">{label}</label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="w-full rounded-lg border border-input bg-card px-3 py-2.5 text-sm text-foreground outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/40"
       >
         {placeholder && <option value="">{placeholder}</option>}
-        {options.map((o) => (
+        {options?.map((o) => (
           <option key={o.value} value={o.value}>{o.label}</option>
         ))}
       </select>
@@ -440,12 +1308,12 @@ function SelectField({ label, value, onChange, options, placeholder, colSpan }: 
   )
 }
 
-function TextAreaField({ label, value, onChange }: {
-  label: string; value: string; onChange: (v: string) => void
+function TextAreaField({ label, value, onChange, colSpan }: {
+  label: string; value: string; onChange: (v: string) => void; colSpan?: number
 }) {
   return (
-    <div className="sm:col-span-2">
-      <label className="mb-1 block text-sm font-medium text-foreground">{label}</label>
+    <div className={colSpan === 3 ? "sm:col-span-2 lg:col-span-3" : ""}>
+      <label className="mb-1.5 block text-sm font-medium text-foreground">{label}</label>
       <textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}

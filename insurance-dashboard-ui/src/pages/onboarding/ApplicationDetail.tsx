@@ -1,18 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import {
-  ArrowLeft,
-  Plus,
-  Trash2,
-  Loader2,
-  X,
-  Search,
-  User,
-  Building2,
-  Landmark,
-  Phone,
-  Mail,
-  MapPin,
+  ArrowLeft, Plus, Trash2, Loader2, X, Search,
+  User, Building2, Landmark, Phone, Mail, MapPin, Send, CheckCircle2,
+  XCircle, AlertTriangle, Shield, FileCheck, Pencil,
 } from "lucide-react"
 import {
   getApplication,
@@ -22,6 +13,15 @@ import {
   listContacts,
   listBankAccounts,
   getChoices,
+  submitApplication,
+  startReview,
+  sendToCompliance,
+  approveApplication,
+  rejectApplication,
+  suspendApplication,
+  resumeApplication,
+  convertApplication,
+  runCompliance,
 } from "../../lib/api"
 import type {
   PartnerApplicationDetail,
@@ -31,6 +31,74 @@ import type {
   ChoicesResponse,
 } from "../../lib/types"
 import { useStatusLabel, useStatusColor } from "../../config/ConfigurationHooks"
+import FlowBanner from "../../components/shared/FlowBanner"
+import ConfirmDialog from "../../components/shared/ConfirmDialog"
+
+const LIFECYCLE: Record<string, { label: string; status: "completed" | "active" | "pending" | "rejected" }[]> = {
+  ACTIVE: [
+    { label: "Draft", status: "active" },
+    { label: "Submitted", status: "pending" },
+    { label: "Review", status: "pending" },
+    { label: "Compliance", status: "pending" },
+    { label: "Decision", status: "pending" },
+  ],
+  SUBMITTED: [
+    { label: "Draft", status: "completed" },
+    { label: "Submitted", status: "active" },
+    { label: "Review", status: "pending" },
+    { label: "Compliance", status: "pending" },
+    { label: "Decision", status: "pending" },
+  ],
+  UNDER_REVIEW: [
+    { label: "Draft", status: "completed" },
+    { label: "Submitted", status: "completed" },
+    { label: "Review", status: "active" },
+    { label: "Compliance", status: "pending" },
+    { label: "Decision", status: "pending" },
+  ],
+  PENDING_DOCUMENTS: [
+    { label: "Draft", status: "completed" },
+    { label: "Submitted", status: "completed" },
+    { label: "Review", status: "active" },
+    { label: "Compliance", status: "pending" },
+    { label: "Decision", status: "pending" },
+  ],
+  COMPLIANCE_CHECK: [
+    { label: "Draft", status: "completed" },
+    { label: "Submitted", status: "completed" },
+    { label: "Review", status: "completed" },
+    { label: "Compliance", status: "active" },
+    { label: "Decision", status: "pending" },
+  ],
+  APPROVED: [
+    { label: "Draft", status: "completed" },
+    { label: "Submitted", status: "completed" },
+    { label: "Review", status: "completed" },
+    { label: "Compliance", status: "completed" },
+    { label: "Approved", status: "active" },
+  ],
+  REJECTED: [
+    { label: "Draft", status: "completed" },
+    { label: "Submitted", status: "completed" },
+    { label: "Review", status: "completed" },
+    { label: "Compliance", status: "completed" },
+    { label: "Rejected", status: "rejected" },
+  ],
+  SUSPENDED: [
+    { label: "Draft", status: "completed" },
+    { label: "Submitted", status: "completed" },
+    { label: "Review", status: "completed" },
+    { label: "Suspended", status: "rejected" },
+    { label: "Decision", status: "pending" },
+  ],
+  CONVERTED: [
+    { label: "Draft", status: "completed" },
+    { label: "Submitted", status: "completed" },
+    { label: "Review", status: "completed" },
+    { label: "Compliance", status: "completed" },
+    { label: "Converted", status: "active" },
+  ],
+}
 
 export default function ApplicationDetail() {
   const { id } = useParams<{ id: string }>()
@@ -44,6 +112,13 @@ export default function ApplicationDetail() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [subTab, setSubTab] = useState<"types" | "contacts" | "banks">("types")
+
+  /* Confirm dialog state */
+  const [confirmAction, setConfirmAction] = useState<{
+    title: string
+    message: string
+    action: () => Promise<void>
+  } | null>(null)
 
   const load = useCallback(async () => {
     if (!id) return
@@ -69,9 +144,11 @@ export default function ApplicationDetail() {
     }
   }, [id])
 
-  useEffect(() => {
-    load()
-  }, [load])
+  useEffect(() => { load() }, [load])
+
+  /* ── Hooks that must be called before early returns ── */
+  const statusLabel = useStatusLabel(app?.status ?? "DRAFT")
+  const lifecycleSteps = LIFECYCLE[app?.status ?? "DRAFT"] ?? LIFECYCLE.ACTIVE
 
   async function handleDeletePartnerType(ptId: string) {
     if (!id) return
@@ -81,6 +158,26 @@ export default function ApplicationDetail() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to delete partner type")
     }
+  }
+
+  /* ---- Action Handlers ---- */
+  async function handleAction(action: () => Promise<unknown>) {
+    setError("")
+    try {
+      await action()
+      load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Action failed")
+    }
+    setConfirmAction(null)
+  }
+
+  function confirmThen(action: () => Promise<unknown>, title: string, message: string) {
+    setConfirmAction({
+      title,
+      message,
+      action: () => handleAction(action),
+    })
   }
 
   if (loading && !app) {
@@ -99,6 +196,118 @@ export default function ApplicationDetail() {
     )
   }
 
+  /* ---- Action Buttons Config ---- */
+  function getNextAction() {
+    const s = app!.status
+    if (s === "ACTIVE" || s === "DRAFT") {
+      return {
+        label: "Submit Application",
+        onClick: () => confirmThen(
+          () => submitApplication(id!),
+          "Submit Application",
+          "Are you sure you want to submit this application for review? You won't be able to edit it after submission.",
+        ),
+      }
+    }
+    if (s === "SUBMITTED") {
+      return {
+        label: "Start Review",
+        onClick: () => confirmThen(
+          () => startReview(id!),
+          "Start Review",
+          "Begin reviewing this application?",
+        ),
+      }
+    }
+    if (s === "UNDER_REVIEW" || s === "PENDING_DOCUMENTS") {
+      return {
+        label: "Send to Compliance",
+        onClick: () => confirmThen(
+          () => sendToCompliance(id!),
+          "Send to Compliance",
+          "Send this application for compliance check?",
+        ),
+      }
+    }
+    if (s === "COMPLIANCE_CHECK") {
+      return {
+        label: "Approve Application",
+        onClick: () => confirmThen(
+          () => approveApplication(id!),
+          "Approve Application",
+          "Are you sure you want to approve this application?",
+        ),
+      }
+    }
+    if (s === "APPROVED") {
+      return {
+        label: "Convert to Partner",
+        onClick: () => confirmThen(
+          () => convertApplication(id!),
+          "Convert to Partner",
+          "This will create a partner record from this application. Continue?",
+        ),
+      }
+    }
+    if (s === "SUSPENDED") {
+      return {
+        label: "Resume Application",
+        onClick: () => confirmThen(
+          () => resumeApplication(id!),
+          "Resume Application",
+          "Resume this application back to compliance check?",
+        ),
+      }
+    }
+    return null
+  }
+
+  function getSecondaryActions() {
+    const s = app!.status
+    const actions: { label: string; icon: React.ReactNode; onClick: () => void; variant: "danger" | "warning" }[] = []
+
+    if (s === "COMPLIANCE_CHECK") {
+      actions.push({
+        label: "Reject",
+        icon: <XCircle className="h-3.5 w-3.5" />,
+        onClick: () => confirmThen(
+          () => rejectApplication(id!, "Rejected during compliance"),
+          "Reject Application",
+          "Are you sure you want to reject this application?",
+        ),
+        variant: "danger",
+      })
+      actions.push({
+        label: "Suspend",
+        icon: <AlertTriangle className="h-3.5 w-3.5" />,
+        onClick: () => confirmThen(
+          () => suspendApplication(id!),
+          "Suspend Application",
+          "Are you sure you want to suspend this application?",
+        ),
+        variant: "warning",
+      })
+    }
+
+    if (s === "UNDER_REVIEW" || s === "PENDING_DOCUMENTS") {
+      actions.push({
+        label: "Reject",
+        icon: <XCircle className="h-3.5 w-3.5" />,
+        onClick: () => confirmThen(
+          () => rejectApplication(id!, "Rejected during review"),
+          "Reject Application",
+          "Are you sure you want to reject this application?",
+        ),
+        variant: "danger",
+      })
+    }
+
+    return actions
+  }
+
+  const nextAction = getNextAction()
+  const secondaryActions = getSecondaryActions()
+
   return (
     <div className="flex flex-col gap-5">
       {/* Breadcrumb */}
@@ -116,6 +325,64 @@ export default function ApplicationDetail() {
         </div>
       )}
 
+      {/* Flow Banner */}
+      <FlowBanner
+        title={`Application ${app.applicationNumber} — ${statusLabel}`}
+        steps={lifecycleSteps}
+        nextAction={
+          nextAction
+            ? nextAction
+            : app.status === "ACTIVE" || app.status === "DRAFT"
+              ? { label: "Edit Application", onClick: () => navigate(`/onboarding/${id}/edit`) }
+              : undefined
+        }
+      />
+
+      {/* Secondary Actions */}
+      {(secondaryActions.length > 0 || app.status === "ACTIVE" || app.status === "DRAFT") && (
+        <div className="flex items-center gap-2">
+          {app.status === "ACTIVE" || app.status === "DRAFT" ? (
+            <button
+              onClick={() => navigate(`/onboarding/${id}/edit`)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary transition-colors"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Edit Application
+            </button>
+          ) : null}
+          {secondaryActions.map((action, i) => (
+            <button
+              key={i}
+              onClick={action.onClick}
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                action.variant === "danger"
+                  ? "border-destructive/30 text-destructive hover:bg-destructive/5"
+                  : "border-warning/30 text-warning hover:bg-warning/5"
+              }`}
+            >
+              {action.icon}
+              {action.label}
+            </button>
+          ))}
+          {app.status === "COMPLIANCE_CHECK" && (
+            <button
+              onClick={async () => {
+                try {
+                  await runCompliance(id!)
+                  load()
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : "Compliance check failed")
+                }
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary transition-colors"
+            >
+              <Shield className="h-3.5 w-3.5" />
+              Run Compliance
+            </button>
+          )}
+        </div>
+      )}
+
       {/* ===== TABLE 1: User Info ===== */}
       <div className="rounded-xl border border-border bg-card">
         <div className="flex items-center gap-3 border-b border-border px-5 py-3">
@@ -125,7 +392,11 @@ export default function ApplicationDetail() {
           >
             <ArrowLeft className="h-4 w-4" />
           </button>
-          <User className="h-5 w-5 text-muted-foreground" />
+          {app.partnerType === "INDIVIDUAL" ? (
+            <User className="h-5 w-5 text-muted-foreground" />
+          ) : (
+            <Building2 className="h-5 w-5 text-muted-foreground" />
+          )}
           <h2 className="text-base font-semibold text-foreground">Partner Information</h2>
           <StatusBadge status={app.status} />
         </div>
@@ -215,6 +486,18 @@ export default function ApplicationDetail() {
           )}
         </div>
       </div>
+
+      {/* Confirm Dialog */}
+      {confirmAction && (
+        <ConfirmDialog
+          open
+          title={confirmAction.title}
+          message={confirmAction.message}
+          confirmLabel="Confirm"
+          onConfirm={confirmAction.action}
+          onCancel={() => setConfirmAction(null)}
+        />
+      )}
     </div>
   )
 }
@@ -281,6 +564,7 @@ function PartnerTypeTab({
               <tr className="border-b border-border text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 <th className="px-3 py-2">Partner Type</th>
                 <th className="px-3 py-2">Branch</th>
+                <th className="px-3 py-2">Region</th>
                 <th className="px-3 py-2">Location</th>
                 <th className="px-3 py-2">Share Data</th>
                 <th className="w-14 px-2 py-2 text-right">Actions</th>
@@ -291,6 +575,7 @@ function PartnerTypeTab({
                 <tr key={pt.id} className="border-b border-border/50 last:border-b-0">
                   <td className="px-3 py-2.5 font-medium text-foreground">{pt.partnerTypeName}</td>
                   <td className="px-3 py-2.5 text-muted-foreground">{pt.branchName || "—"}</td>
+                  <td className="px-3 py-2.5 text-muted-foreground">{pt.region || "—"}</td>
                   <td className="px-3 py-2.5 text-muted-foreground">{pt.locationName || "—"}</td>
                   <td className="px-3 py-2.5 text-muted-foreground">{pt.shareDataExternally ? "Yes" : "No"}</td>
                   <td className="px-2 py-2.5 text-right">
@@ -337,20 +622,11 @@ function PartnerTypeTab({
 /* -------------------------------------------------------------------------- */
 
 function AddPartnerTypePopup({
-  open,
-  onClose,
-  onConfirm,
-  choices,
-  loading,
+  open, onClose, onConfirm, choices, loading,
 }: {
   open: boolean
   onClose: () => void
-  onConfirm: (data: {
-    partner_type: string
-    branches?: string[]
-    location?: string | null
-    share_data_externally?: boolean
-  }) => Promise<void>
+  onConfirm: (data: { partner_type: string; branches?: string[]; region?: string; location?: string | null; share_data_externally?: boolean }) => Promise<void>
   choices: ChoicesResponse | null
   loading: boolean
 }) {
@@ -359,12 +635,14 @@ function AddPartnerTypePopup({
   const [branchQuery, setBranchQuery] = useState("")
   const [branchOpen, setBranchOpen] = useState(false)
   const branchRef = useRef<HTMLDivElement>(null)
+  const [region, setRegion] = useState("")
   const [location, setLocation] = useState("")
   const [shareData, setShareData] = useState("no")
   const [error, setError] = useState("")
 
   const systemTypes = choices?.systemPartnerTypes ?? []
   const branchOptions = choices?.branches ?? []
+  const regionOptions = choices?.regions ?? []
   const locationOptions = (choices?.locations ?? []).filter(
     (l) => selectedBranches.length === 0 || selectedBranches.includes(l.branchId),
   )
@@ -395,19 +673,18 @@ function AddPartnerTypePopup({
 
   async function handleSubmit() {
     setError("")
-    if (!partnerType) {
-      setError("Please select a partner type.")
-      return
-    }
+    if (!partnerType) { setError("Please select a partner type."); return }
     try {
       await onConfirm({
         partner_type: partnerType,
         branches: selectedBranches.length > 0 ? selectedBranches : undefined,
+        region: region || undefined,
         location: location || null,
         share_data_externally: shareData === "yes",
       })
       setPartnerType("")
       setSelectedBranches([])
+      setRegion("")
       setLocation("")
       setShareData("no")
     } catch (e) {
@@ -416,11 +693,7 @@ function AddPartnerTypePopup({
   }
 
   function handleClose() {
-    setPartnerType("")
-    setSelectedBranches([])
-    setLocation("")
-    setShareData("no")
-    setError("")
+    setPartnerType(""); setSelectedBranches([]); setRegion(""); setLocation(""); setShareData("no"); setError("")
     onClose()
   }
 
@@ -429,25 +702,18 @@ function AddPartnerTypePopup({
       <div className="mx-4 w-full max-w-md rounded-xl bg-card shadow-xl">
         <div className="flex items-center justify-between border-b px-5 py-4">
           <h2 className="text-base font-semibold">Add Partner Type</h2>
-          <button onClick={handleClose} className="rounded p-1 text-muted-foreground hover:bg-accent">
-            <X className="h-5 w-5" />
-          </button>
+          <button onClick={handleClose} className="rounded p-1 text-muted-foreground hover:bg-accent"><X className="h-5 w-5" /></button>
         </div>
         <div className="space-y-4 px-5 py-4">
           <div>
             <label className="mb-1 block text-sm font-medium">Partner Type</label>
-            <select
-              value={partnerType}
-              onChange={(e) => setPartnerType(e.target.value)}
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
-            >
+            <select value={partnerType} onChange={(e) => setPartnerType(e.target.value)} className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40">
               <option value="">Select partner type</option>
               {systemTypes.map((t) => (
                 <option key={t.value} value={t.value}>{t.label}</option>
               ))}
             </select>
           </div>
-
           <div ref={branchRef} className="relative">
             <label className="mb-1 block text-sm font-medium">Branches</label>
             {selectedBranches.length > 0 && (
@@ -457,9 +723,7 @@ function AddPartnerTypePopup({
                   return (
                     <span key={id} className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2.5 py-0.5 text-xs font-medium">
                       {b?.label ?? id}
-                      <button onClick={() => { setSelectedBranches((prev) => prev.filter((v) => v !== id)); setLocation("") }} className="hover:text-destructive">
-                        <X className="h-3 w-3" />
-                      </button>
+                      <button onClick={() => { setSelectedBranches((prev) => prev.filter((v) => v !== id)); setLocation("") }} className="hover:text-destructive"><X className="h-3 w-3" /></button>
                     </span>
                   )
                 })}
@@ -467,68 +731,37 @@ function AddPartnerTypePopup({
             )}
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="Search branches..."
-                value={branchQuery}
-                onChange={(e) => { setBranchQuery(e.target.value); setBranchOpen(true) }}
-                onFocus={() => setBranchOpen(true)}
-                className="w-full rounded-lg border border-input bg-background text-foreground pl-9 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
-              />
+              <input type="text" placeholder="Search branches..." value={branchQuery} onChange={(e) => { setBranchQuery(e.target.value); setBranchOpen(true) }} onFocus={() => setBranchOpen(true)} className="w-full rounded-lg border border-input bg-background text-foreground pl-9 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40" />
             </div>
             {branchOpen && branchSearchResults.length > 0 && (
               <div className="absolute z-20 mt-1 w-full rounded-lg border border-border bg-card shadow-lg max-h-48 overflow-y-auto">
                 {branchSearchResults.map((b) => (
-                  <button
-                    key={b.value}
-                    onClick={() => handleBranchToggle(b.value)}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors"
-                  >
-                    {b.label}
-                  </button>
+                  <button key={b.value} onClick={() => handleBranchToggle(b.value)} className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors">{b.label}</button>
                 ))}
               </div>
             )}
-          </div>
-
+            </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Location</label>
-            <select
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              disabled={selectedBranches.length === 0 || locationOptions.length === 0}
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-50"
-            >
-              <option value="">{selectedBranches.length === 0 ? "Select a branch first" : "Select location"}</option>
-              {locationOptions.map((l) => (
-                <option key={l.value} value={l.value}>{l.label}</option>
+            <label className="mb-1 block text-sm font-medium">Region</label>
+            <select value={region} onChange={(e) => setRegion(e.target.value)} className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40">
+              <option value="">Select region</option>
+              {regionOptions.map((r) => (
+                <option key={r.value} value={r.value}>{r.label}</option>
               ))}
             </select>
           </div>
-
           <div>
             <label className="mb-1 block text-sm font-medium">Share Data Externally</label>
-            <select
-              value={shareData}
-              onChange={(e) => setShareData(e.target.value)}
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
-            >
+            <select value={shareData} onChange={(e) => setShareData(e.target.value)} className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40">
               <option value="no">No</option>
               <option value="yes">Yes</option>
             </select>
           </div>
-
-          {error && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</div>
-          )}
+          {error && <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</div>}
         </div>
         <div className="flex justify-end gap-2 border-t px-5 py-3">
-          <button onClick={handleClose} disabled={loading} className="rounded-lg border border-input px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50">
-            Cancel
-          </button>
-          <button onClick={handleSubmit} disabled={loading} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-            {loading ? "Adding..." : "Add"}
-          </button>
+          <button onClick={handleClose} disabled={loading} className="rounded-lg border border-input px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50">Cancel</button>
+          <button onClick={handleSubmit} disabled={loading} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">{loading ? "Adding..." : "Add"}</button>
         </div>
       </div>
     </div>
@@ -539,14 +772,8 @@ function AddPartnerTypePopup({
 /*  ContactsTab                                                                */
 /* -------------------------------------------------------------------------- */
 
-function ContactsTab({
-  contacts,
-  applicationId,
-  onRefresh,
-}: {
-  contacts: ApplicationContact[]
-  applicationId: string
-  onRefresh: () => void
+function ContactsTab({ contacts, applicationId, onRefresh }: {
+  contacts: ApplicationContact[]; applicationId: string; onRefresh: () => void
 }) {
   if (contacts.length === 0) {
     return (
@@ -556,7 +783,6 @@ function ContactsTab({
       </div>
     )
   }
-
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -580,9 +806,7 @@ function ContactsTab({
               <td className="px-3 py-2.5 text-muted-foreground">{c.phone || "—"}</td>
               <td className="px-3 py-2.5 text-muted-foreground">{c.mobile || "—"}</td>
               <td className="px-3 py-2.5 text-muted-foreground">{c.designation || "—"}</td>
-              <td className="px-2 py-2.5 text-center">
-                {c.isPrimary ? <span className="text-xs font-semibold text-success">Yes</span> : "—"}
-              </td>
+              <td className="px-2 py-2.5 text-center">{c.isPrimary ? <span className="text-xs font-semibold text-success">Yes</span> : "—"}</td>
             </tr>
           ))}
         </tbody>
@@ -595,14 +819,8 @@ function ContactsTab({
 /*  BanksTab                                                                   */
 /* -------------------------------------------------------------------------- */
 
-function BanksTab({
-  bankAccounts,
-  applicationId,
-  onRefresh,
-}: {
-  bankAccounts: ApplicationBankAccount[]
-  applicationId: string
-  onRefresh: () => void
+function BanksTab({ bankAccounts, applicationId, onRefresh }: {
+  bankAccounts: ApplicationBankAccount[]; applicationId: string; onRefresh: () => void
 }) {
   if (bankAccounts.length === 0) {
     return (
@@ -612,7 +830,6 @@ function BanksTab({
       </div>
     )
   }
-
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -636,9 +853,7 @@ function BanksTab({
               <td className="px-3 py-2.5 text-muted-foreground">{b.accountNumber}</td>
               <td className="px-3 py-2.5 text-muted-foreground">{b.currency}</td>
               <td className="px-3 py-2.5 text-muted-foreground">{b.swiftCode || "—"}</td>
-              <td className="px-2 py-2.5 text-center">
-                {b.isPrimary ? <span className="text-xs font-semibold text-success">Yes</span> : "—"}
-              </td>
+              <td className="px-2 py-2.5 text-center">{b.isPrimary ? <span className="text-xs font-semibold text-success">Yes</span> : "—"}</td>
             </tr>
           ))}
         </tbody>
@@ -653,21 +868,18 @@ function BanksTab({
 
 function StatusBadge({ status }: { status: string }) {
   const label = useStatusLabel(status)
-  const color = useStatusColor(status)
+  const bg = useStatusColor(status)
   return (
-    <span className={`ml-auto inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${color}`}>
+    <span
+      className="ml-auto inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold"
+      style={{ backgroundColor: bg, color: "inherit" }}
+    >
       {label}
     </span>
   )
 }
 
 function contactTypeLabel(type: string): string {
-  const labels: Record<string, string> = {
-    PRIMARY: "Primary",
-    SECONDARY: "Secondary",
-    BILLING: "Billing",
-    TECHNICAL: "Technical",
-    OTHER: "Other",
-  }
+  const labels: Record<string, string> = { PRIMARY: "Primary", SECONDARY: "Secondary", BILLING: "Billing", TECHNICAL: "Technical", OTHER: "Other" }
   return labels[type] ?? type
 }

@@ -79,6 +79,29 @@ class LoginView(APIView):
 
         from apps.users.serializers import UserListSerializer
         user_data = UserListSerializer(user).data
+        
+        # Add permissions and groups to login response
+        # Get permissions from user's groups
+        all_permissions = []
+        
+        # Check if user has groups attribute (UserGroup M2M)
+        if hasattr(user, 'groups'):
+            for group in user.groups.all():
+                if hasattr(group, 'permissions'):
+                    for perm in group.permissions.all():
+                        all_permissions.append({'module': perm.module, 'action': perm.action})
+        
+        # Remove duplicates
+        seen = set()
+        unique_permissions = []
+        for perm in all_permissions:
+            key = f"{perm['module']}:{perm['action']}"
+            if key not in seen:
+                seen.add(key)
+                unique_permissions.append(perm)
+        
+        user_data['permissions'] = unique_permissions
+        user_data['groups'] = list(user.groups.values_list('name', flat=True)) if hasattr(user, 'groups') else []
 
         return Response({
             'success': True,
@@ -396,7 +419,50 @@ class VerifyOTPView(APIView):
                 })
         except User.DoesNotExist:
             pass
-        return Response({'error': 'Invalid or expired OTP'}, status=400)
+            return Response({'error': 'Invalid or expired OTP'}, status=400)
+
+
+class MeView(APIView):
+    """Get current authenticated user info with permissions"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        from apps.users.serializers import UserListSerializer
+        user_data = UserListSerializer(user).data
+        
+        # Add permissions and groups
+        user_permissions = [
+            {'module': perm.module, 'action': perm.action}
+            for perm in user.user_permissions.all()
+        ] if hasattr(user, 'user_permissions') else []
+        
+        group_permissions = []
+        if hasattr(user, 'groups'):
+            for group in user.groups.all():
+                if hasattr(group, 'permissions'):
+                    for perm in group.permissions.all():
+                        group_permissions.append({'module': perm.module, 'action': perm.action})
+        
+        all_permissions = user_permissions + group_permissions
+        seen = set()
+        unique_permissions = []
+        for perm in all_permissions:
+            key = f"{perm['module']}:{perm['action']}"
+            if key not in seen:
+                seen.add(key)
+                unique_permissions.append(perm)
+        
+        user_data['permissions'] = unique_permissions
+        user_data['groups'] = list(user.groups.values_list('name', flat=True)) if hasattr(user, 'groups') else []
+        
+        return Response({
+            'success': True,
+            'status_code': 200,
+            'message': 'User info retrieved',
+            'data': {'user': user_data},
+            'meta': {'timestamp': timezone.now().isoformat(), 'version': 'v1'},
+        })
 
 
 class CustomTokenObtainPairSerializer:

@@ -13,6 +13,7 @@ urlpatterns = [
     path('setup-2fa/', views.Setup2FAView.as_view(), name='auth-setup-2fa'),
     path('verify-2fa/', views.Verify2FAView.as_view(), name='auth-verify-2fa'),
     path('disable-2fa/', views.Disable2FAView.as_view(), name='auth-disable-2fa'),
+    path('me/', views.MeView.as_view(), name='auth-me'),
     path('request-otp/', views.RequestOTPView.as_view(), name='auth-request-otp'),
     path('verify-otp/', views.VerifyOTPView.as_view(), name='auth-verify-otp'),
 ]

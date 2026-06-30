@@ -18,13 +18,13 @@ import BulkUploadModal from "../../components/onboarding/BulkUploadModal"
 import ConfirmDialog from "../../components/shared/ConfirmDialog"
 import { SkeletonTable } from "../../components/shared/Skeleton"
 import {
-  listApplications,
+  listUnifiedRecords,
   deleteApplication,
-  listPartners,
 } from "../../lib/api"
 import { useDataRefresh } from "../../lib/useDataRefresh"
-import type { PartnerApplicationList, ApplicationStatus, PartnerListItem } from "../../lib/types"
+import type { UnifiedOnboardingRecord, ApplicationStatus, KycStatus } from "../../lib/types"
 import { useWorkflowConfig } from "../../config/ConfigurationHooks"
+import { useChoices } from "../../hooks/useChoices"
 
 const STATUSES: { value: ApplicationStatus | ""; label: string }[] = [
   { value: "", label: "All Statuses" },
@@ -44,6 +44,8 @@ const PARTNER_TYPES = [
   { value: "INDIVIDUAL", label: "Individual" },
   { value: "CORPORATE", label: "Corporate" },
 ]
+
+
 
 function statusVariant(status: ApplicationStatus): { bg: string; text: string; dot: string } {
   const active = { bg: "bg-[var(--color-bg-success-soft)]", text: "text-[var(--color-text-success-soft)]", dot: "bg-[var(--color-feedback-success)]" }
@@ -76,7 +78,8 @@ function getPageNumbers(current: number, total: number): (number | "...")[] {
 
 export default function OnboardingList() {
   const navigate = useNavigate()
-  const [items, setItems] = useState<PartnerApplicationList[]>([])
+  const { data: kycOptions } = useChoices("KYC_STATUS_CHOICES")
+  const [items, setItems] = useState<UnifiedOnboardingRecord[]>([])
   const [count, setCount] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
@@ -84,6 +87,7 @@ export default function OnboardingList() {
   const [pageSize, setPageSize] = useState(10)
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<ApplicationStatus | "">("")
+  const [kycFilter, setKycFilter] = useState<KycStatus | "">("")
   const [typeFilter, setTypeFilter] = useState("")
   const workflowConfig = useWorkflowConfig()
   const statusLabels = workflowConfig?.status_labels ?? {
@@ -99,57 +103,31 @@ export default function OnboardingList() {
   const [showFilters, setShowFilters] = useState(false)
   const refreshKey = useDataRefresh("partners")
 
-  const [viewMode, setViewMode] = useState<"applications" | "partners">("applications")
-  const [partnerItems, setPartnerItems] = useState<PartnerListItem[]>([])
-  const [partnerCount, setPartnerCount] = useState(0)
-  const [partnerPage, setPartnerPage] = useState(1)
-  const partnerPageSize = 20
-
   const load = useCallback(async () => {
     setLoading(true)
     setError("")
     try {
-      const result = await listApplications({
+      const result = await listUnifiedRecords({
         page,
         pageSize,
         search: search || undefined,
-        status: statusFilter || undefined,
-        partnerType: typeFilter || undefined,
+        application_status: statusFilter || undefined,
+        kyc_status: kycFilter || undefined,
+        partner_type: typeFilter || undefined,
         ordering: "-created_at",
       })
       setItems(result.results ?? [])
       setCount(result.count ?? 0)
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load applications")
+      setError(e instanceof Error ? e.message : "Failed to load records")
     } finally {
       setLoading(false)
     }
-  }, [page, pageSize, search, statusFilter, typeFilter, refreshKey])
+  }, [page, pageSize, search, statusFilter, kycFilter, typeFilter, refreshKey])
 
   useEffect(() => {
     load()
   }, [load])
-
-  useEffect(() => {
-    if (viewMode !== "partners") return
-    let cancelled = false
-    ;(async () => {
-      setLoading(true)
-      setError("")
-      try {
-        const result = await listPartners({ page: partnerPage, per_page: partnerPageSize, search: search || undefined })
-        if (!cancelled) {
-          setPartnerItems(result.results ?? [])
-          setPartnerCount(result.count ?? 0)
-        }
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load partners")
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
-    return () => { cancelled = true }
-  }, [viewMode, partnerPage, search, refreshKey])
 
   function handleSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter") {
@@ -165,11 +143,12 @@ export default function OnboardingList() {
   }
 
   function hasActiveFilters() {
-    return statusFilter !== "" || typeFilter !== "" || search !== ""
+    return statusFilter !== "" || typeFilter !== "" || kycFilter !== "" || search !== ""
   }
 
   function clearAllFilters() {
     setStatusFilter("")
+    setKycFilter("")
     setTypeFilter("")
     setSearch("")
     setSearchValue("")
@@ -200,58 +179,28 @@ export default function OnboardingList() {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* View Toggle */}
-      <div className="flex gap-1 border-b border-border">
-        <button
-          onClick={() => { setViewMode("applications"); setPage(1) }}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-            viewMode === "applications"
-              ? "border-primary text-foreground"
-              : "border-transparent text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          Applications
-        </button>
-        <button
-          onClick={() => { setViewMode("partners"); setPartnerPage(1) }}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-            viewMode === "partners"
-              ? "border-primary text-foreground"
-              : "border-transparent text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <Users className="h-3.5 w-3.5 inline mr-1.5" />
-          Partners
-        </button>
-      </div>
-
       {/* Page header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-foreground">Partner Onboarding</h1>
           <p className="text-sm text-muted-foreground">
-            {viewMode === "applications"
-              ? `${count} application${count !== 1 ? "s" : ""} · ${items.length} shown${hasActiveFilters() ? " (filtered)" : ""}`
-              : `${partnerCount} partner${partnerCount !== 1 ? "s" : ""} · ${partnerItems.length} shown`
-            }
+            {count} record{count !== 1 ? "s" : ""} · {items.length} shown{hasActiveFilters() ? " (filtered)" : ""}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {viewMode === "applications" && (
-            <button
-              onClick={() => setShowBulkUpload(true)}
-              className="inline-flex items-center gap-2 rounded-lg border border-input bg-card px-3 py-2 text-sm font-medium text-foreground transition hover:bg-secondary"
-            >
-              <Upload className="h-4 w-4" />
-              <span className="hidden sm:inline">Bulk Upload</span>
-            </button>
-          )}
           <button
-            onClick={() => viewMode === "applications" ? navigate("/onboarding/new") : navigate("/partners/new")}
+            onClick={() => setShowBulkUpload(true)}
+            className="inline-flex items-center gap-2 rounded-lg border border-input bg-card px-3 py-2 text-sm font-medium text-foreground transition hover:bg-secondary"
+          >
+            <Upload className="h-4 w-4" />
+            <span className="hidden sm:inline">Bulk Upload</span>
+          </button>
+          <button
+            onClick={() => navigate("/onboarding/new")}
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 active:scale-[0.98]"
           >
             <Plus className="h-4 w-4" />
-            {viewMode === "applications" ? "Add Partner" : "New Partner"}
+            Add Partner
           </button>
         </div>
       </div>
@@ -262,120 +211,7 @@ export default function OnboardingList() {
         </div>
       )}
 
-      {viewMode === "partners" ? (
-        /* ---- Partners Table ---- */
-        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-          <div className="flex flex-col gap-3 border-b border-border p-3 sm:flex-row sm:items-center sm:justify-between">
-            <div />
-            <div className="relative flex-1 sm:flex-none sm:w-60">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="Search partners..."
-                value={searchValue}
-                onChange={(e) => setSearchValue(e.target.value)}
-                onKeyDown={handleSearchKeyDown}
-                className="w-full rounded-lg border border-input bg-card py-1.5 pl-9 pr-8 text-sm text-foreground outline-none transition placeholder:text-muted-foreground focus:ring-2 focus:ring-ring/40"
-              />
-              {searchValue && (
-                <button
-                  onClick={handleClearSearch}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-          </div>
-
-          {loading ? (
-            <SkeletonTable rows={6} cols={7} />
-          ) : partnerItems.length === 0 ? (
-            <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-              <h3 className="text-lg font-semibold text-foreground">No Partners Found</h3>
-              <p className="mt-1 text-sm text-muted-foreground">{search ? "Try a different search." : "No partners yet."}</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border bg-muted/30">
-                    <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Partner #</th>
-                    <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Name</th>
-                    <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Type</th>
-                    <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Email</th>
-                    <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Mobile</th>
-                    <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Status</th>
-                    <th className="w-24 px-2 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {partnerItems.map((partner) => (
-                    <tr key={partner.id} className="border-b border-border/50 transition last:border-b-0 hover:bg-secondary/40">
-                      <td className="whitespace-nowrap px-3 py-3 font-medium text-foreground">{partner.partnerNumber}</td>
-                      <td className="whitespace-nowrap px-3 py-3 text-foreground">{partner.displayName}</td>
-                      <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">{partner.partnerCategory || partner.partnerType}</td>
-                      <td className="px-3 py-3 text-muted-foreground">{partner.email}</td>
-                      <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">{partner.mobileNumber}</td>
-                      <td className="whitespace-nowrap px-3 py-3">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          partner.status === "ACTIVE"
-                            ? "bg-[var(--color-bg-success-soft)] text-[var(--color-text-success-soft)]"
-                            : "bg-[var(--color-bg-destructive-soft)] text-[var(--color-text-destructive-soft)]"
-                        }`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${
-                            partner.status === "ACTIVE" ? "bg-[var(--color-feedback-success)]" : "bg-[var(--color-feedback-destructive)]"
-                          }`} />
-                          {partner.status}
-                        </span>
-                      </td>
-                      <td className="px-2 py-3 text-right">
-                        <div className="flex items-center justify-end gap-0.5">
-                          <button
-                            onClick={() => navigate(`/partners/${partner.id}/edit?from=onboarding`)}
-                            className="rounded p-1.5 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
-                            title="Edit"
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => navigate(`/partners/${partner.id}?from=onboarding`)}
-                            className="rounded p-1.5 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
-                            title="View"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {Math.ceil(partnerCount / partnerPageSize) > 1 && (
-            <div className="flex items-center justify-center gap-2 border-t border-border px-3 py-3">
-              <button
-                onClick={() => setPartnerPage((p) => Math.max(1, p - 1))}
-                disabled={partnerPage <= 1}
-                className="p-2 rounded-lg hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <span className="text-sm text-muted-foreground">Page {partnerPage} of {Math.ceil(partnerCount / partnerPageSize)}</span>
-              <button
-                onClick={() => setPartnerPage((p) => Math.min(Math.ceil(partnerCount / partnerPageSize), p + 1))}
-                disabled={partnerPage >= Math.ceil(partnerCount / partnerPageSize)}
-                className="p-2 rounded-lg hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-          )}
-        </div>
-      ) : (
-      /* ---- Applications Table ---- */
+      {/* ---- Unified Table ---- */}
       <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
         {/* Toolbar */}
         <div className="flex flex-col gap-3 border-b border-border p-3 sm:flex-row sm:items-center sm:justify-between">
@@ -408,7 +244,7 @@ export default function OnboardingList() {
               Filters
               {hasActiveFilters() && (
                 <span className="ml-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                  {[statusFilter, typeFilter, search].filter(Boolean).length}
+                  {[statusFilter, typeFilter, kycFilter, search].filter(Boolean).length}
                 </span>
               )}
             </button>
@@ -430,6 +266,22 @@ export default function OnboardingList() {
                 {STATUSES.map((s) => (
                   <option key={s.value} value={s.value}>
                     {s.label}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={kycFilter}
+                onChange={(e) => {
+                  setKycFilter(e.target.value as KycStatus | "")
+                  setPage(1)
+                }}
+                className="rounded-lg border border-input bg-card px-2.5 py-1.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring/40"
+              >
+                <option value="">All KYC Statuses</option>
+                {kycOptions?.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
                   </option>
                 ))}
               </select>
@@ -460,6 +312,7 @@ export default function OnboardingList() {
               )}
             </div>
           </div>
+
 
           {/* Search */}
           <div className="relative flex-1 sm:flex-none sm:w-60">
@@ -538,38 +391,30 @@ export default function OnboardingList() {
                     <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       #
                     </th>
+
                     <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      App Number
+                      Ref #
                     </th>
                     <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Title
+                      Name
                     </th>
                     <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Surname
+                      Record Type
                     </th>
                     <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Type
+                      Partner Type
                     </th>
                     <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       Mobile
                     </th>
                     <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Nationality
-                    </th>
-                    <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      ID Type
-                    </th>
-                    <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       Email
                     </th>
                     <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Status
+                      App Status
                     </th>
                     <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Created By
-                    </th>
-                    <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Updated By
+                      KYC Status
                     </th>
                     <th className="whitespace-nowrap px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       Created
@@ -580,66 +425,66 @@ export default function OnboardingList() {
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((app, idx) => {
-                    const sv = statusVariant(app.status)
+                  {items.map((record, idx) => {
+                    const sv = record.applicationStatus ? statusVariant(record.applicationStatus) : null
+                    const navigateTo = record.recordType === "APPLICATION" 
+                      ? `/onboarding/${record.applicationId}` 
+                      : `/partners/${record.partnerId}?from=onboarding`
+                    const navigateEditTo = record.recordType === "APPLICATION" 
+                      ? `/onboarding/${record.applicationId}/edit` 
+                      : `/partners/${record.partnerId}/edit?from=onboarding`
+
                     return (
                       <tr
-                        key={app.id}
+                        key={record.id}
                         className="cursor-pointer border-b border-border/50 transition last:border-b-0 hover:bg-secondary/40"
-                        onClick={() => navigate(`/onboarding/${app.id}`)}
+                        onClick={() => navigate(navigateTo)}
                       >
                         <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">
                           {idx + 1 + (page - 1) * pageSize}
                         </td>
                         <td className="whitespace-nowrap px-3 py-3 font-medium text-foreground">
-                          {app.applicationNumber}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">
-                          {app.title || "—"}
+                          {record.referenceNumber}
                         </td>
                         <td className="whitespace-nowrap px-3 py-3 text-foreground">
-                          {app.surname || "—"}
+                          {record.displayName}
                         </td>
                         <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">
-                          {app.partnerType === "INDIVIDUAL" ? "Individual" : "Corporate"}
+                          {record.recordType === "APPLICATION" ? "Application" : "Partner"}
                         </td>
                         <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">
-                          {app.mobileNumber || "—"}
+                          {record.partnerType === "INDIVIDUAL" ? "Individual" : "Corporate"}
                         </td>
                         <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">
-                          {app.nationality || "—"}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">
-                          {app.identificationType || "—"}
+                          {record.mobileNumber || "—"}
                         </td>
                         <td className="max-w-[180px] px-3 py-3">
-                          <div className="truncate text-muted-foreground">{app.email}</div>
+                          <div className="truncate text-muted-foreground">{record.email || "—"}</div>
                         </td>
                         <td className="whitespace-nowrap px-3 py-3">
-                          <span
-                            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${sv.bg} ${sv.text}`}
-                          >
+                          {sv ? (
                             <span
-                              className={`h-1.5 w-1.5 shrink-0 rounded-full ${sv.dot}`}
-                            />
-                            {statusLabels[app.status]}
-                          </span>
+                              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${sv.bg} ${sv.text}`}
+                            >
+                              <span
+                                className={`h-1.5 w-1.5 shrink-0 rounded-full ${sv.dot}`}
+                              />
+                              {statusLabels[record.applicationStatus!] || record.applicationStatus}
+                            </span>
+                          ) : "—"}
                         </td>
                         <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">
-                          {app.createdByName || "—"}
+                          {record.kycStatus || "NOT_SET"}
                         </td>
                         <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">
-                          {app.updatedByName || "—"}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">
-                          {new Date(app.createdAt).toLocaleDateString()}
+                          {new Date(record.createdAt).toLocaleDateString()}
                         </td>
                         <td className="px-2 py-3 text-right">
                           <div className="flex items-center justify-end gap-0.5">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation()
-                                navigate(`/onboarding/${app.id}/edit`)
+                                navigate(navigateEditTo)
                               }}
                               className="rounded p-1.5 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
                               title="Edit"
@@ -649,21 +494,21 @@ export default function OnboardingList() {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation()
-                                navigate(`/onboarding/${app.id}`)
+                                navigate(navigateTo)
                               }}
                               className="rounded p-1.5 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
                               title="View"
                             >
                               <Eye className="h-4 w-4" />
                             </button>
-                            {(app.status === "DRAFT" || app.status === "ACTIVE") && (
+                            {record.recordType === "APPLICATION" && record.applicationStatus && ["DRAFT", "ACTIVE"].includes(record.applicationStatus) && (
                               <button
-                                onClick={(e) => handleDeleteClick(app.id, e)}
-                                disabled={deleting === app.id}
+                                onClick={(e) => handleDeleteClick(record.applicationId!, e)}
+                                disabled={deleting === record.applicationId}
                                 className="rounded p-1.5 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
                                 title="Delete"
                               >
-                                {deleting === app.id ? (
+                                {deleting === record.applicationId ? (
                                   <Loader2 className="h-4 w-4 animate-spin" />
                                 ) : (
                                   <Trash2 className="h-4 w-4" />
@@ -679,15 +524,21 @@ export default function OnboardingList() {
               </table>
             </div>
 
-            {/* Mobile cards (<768px) */}
             <div className="divide-y divide-border md:hidden">
-              {items.map((app, idx) => {
-                const sv = statusVariant(app.status)
+              {items.map((record, idx) => {
+                const sv = record.applicationStatus ? statusVariant(record.applicationStatus) : null
+                const navigateTo = record.recordType === "APPLICATION" 
+                  ? `/onboarding/${record.applicationId}` 
+                  : `/partners/${record.partnerId}?from=onboarding`
+                const navigateEditTo = record.recordType === "APPLICATION" 
+                  ? `/onboarding/${record.applicationId}/edit` 
+                  : `/partners/${record.partnerId}/edit?from=onboarding`
+
                 return (
                   <div
-                    key={app.id}
+                    key={record.id}
                     className="cursor-pointer px-4 py-3 transition active:bg-secondary/60"
-                    onClick={() => navigate(`/onboarding/${app.id}`)}
+                    onClick={() => navigate(navigateTo)}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
@@ -696,43 +547,37 @@ export default function OnboardingList() {
                             {idx + 1 + (page - 1) * pageSize}
                           </span>
                           <span className="truncate font-medium text-foreground">
-                            {app.surname ? `${app.title ? app.title + " " : ""}${app.surname}` : app.displayName}
+                            {record.displayName}
                           </span>
-                          <span
-                            className={`inline-flex items-center gap-1 rounded-full px-2 py-0 text-[10px] font-semibold ${sv.bg} ${sv.text}`}
-                          >
-                            {statusLabels[app.status]}
-                          </span>
+                          {sv && (
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-full px-2 py-0 text-[10px] font-semibold ${sv.bg} ${sv.text}`}
+                            >
+                              {statusLabels[record.applicationStatus!] || record.applicationStatus}
+                            </span>
+                          )}
                         </div>
                         <div className="mt-0.5 text-xs text-muted-foreground">
-                          {app.applicationNumber}
+                          {record.referenceNumber} ({record.recordType === "APPLICATION" ? "Application" : "Partner"})
                         </div>
                         <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs">
                           <span className="text-muted-foreground">Type</span>
                           <span className="text-foreground">
-                            {app.partnerType === "INDIVIDUAL" ? "Individual" : "Corporate"}
+                            {record.partnerType === "INDIVIDUAL" ? "Individual" : "Corporate"}
                           </span>
                           <span className="text-muted-foreground">Mobile</span>
                           <span className="truncate text-foreground">
-                            {app.mobileNumber || "—"}
-                          </span>
-                          <span className="text-muted-foreground">Nationality</span>
-                          <span className="text-foreground">
-                            {app.nationality || "—"}
-                          </span>
-                          <span className="text-muted-foreground">ID Type</span>
-                          <span className="text-foreground">
-                            {app.identificationType || "—"}
+                            {record.mobileNumber || "—"}
                           </span>
                           <span className="text-muted-foreground">Email</span>
-                          <span className="truncate text-foreground">{app.email}</span>
-                          <span className="text-muted-foreground">Created By</span>
+                          <span className="truncate text-foreground">{record.email || "—"}</span>
+                          <span className="text-muted-foreground">KYC Status</span>
                           <span className="text-foreground">
-                            {app.createdByName || "—"}
+                            {record.kycStatus || "NOT_SET"}
                           </span>
-                          <span className="text-muted-foreground">Updated By</span>
+                          <span className="text-muted-foreground">Created</span>
                           <span className="text-foreground">
-                            {app.updatedByName || "—"}
+                            {new Date(record.createdAt).toLocaleDateString()}
                           </span>
                         </div>
                       </div>
@@ -740,7 +585,7 @@ export default function OnboardingList() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
-                            navigate(`/onboarding/${app.id}/edit`)
+                            navigate(navigateEditTo)
                           }}
                           className="rounded p-1 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
                           title="Edit"
@@ -750,21 +595,21 @@ export default function OnboardingList() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
-                            navigate(`/onboarding/${app.id}`)
+                            navigate(navigateTo)
                           }}
                           className="rounded p-1 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
                           title="View"
                         >
                           <Eye className="h-4 w-4" />
                         </button>
-                        {(app.status === "DRAFT" || app.status === "ACTIVE") && (
+                        {record.recordType === "APPLICATION" && record.applicationStatus && ["DRAFT", "ACTIVE"].includes(record.applicationStatus) && (
                           <button
-                            onClick={(e) => handleDeleteClick(app.id, e)}
-                            disabled={deleting === app.id}
+                            onClick={(e) => handleDeleteClick(record.applicationId!, e)}
+                            disabled={deleting === record.applicationId}
                             className="rounded p-1 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
                             title="Delete"
                           >
-                            {deleting === app.id ? (
+                            {deleting === record.applicationId ? (
                               <Loader2 className="h-4 w-4 animate-spin" />
                             ) : (
                               <Trash2 className="h-4 w-4" />
@@ -852,7 +697,6 @@ export default function OnboardingList() {
           </div>
         )}
       </div>
-      )}
 
       <BulkUploadModal
         open={showBulkUpload}

@@ -24,6 +24,7 @@ import type {
   ApplicationContact,
   ApplicationBankAccount,
   ApplicationFieldValue,
+  UnifiedOnboardingRecord,
 } from "./types"
 
 export const API_BASE = import.meta.env.VITE_API_BASE ?? ""
@@ -486,6 +487,8 @@ import type {
   PartnerListItem,
   PartnerDetail,
   SetupSummary,
+  ApplicationPartnerType,
+  BulkUploadResult,
 } from "./types"
 
 const ONBOARDING = "/api/v1/onboarding"
@@ -514,6 +517,40 @@ function qs(params: Record<string, string | number | undefined>): string {
 }
 
 // --- Applications ---
+
+export async function listUnifiedRecords(
+  params: {
+    page?: number
+    pageSize?: number
+    search?: string
+    application_status?: string
+    kyc_status?: string
+    partner_type?: string
+    ordering?: string
+  } = {}
+): Promise<PaginatedResponse<UnifiedOnboardingRecord>> {
+  const backendParams: Record<string, string | number | undefined> = {
+    page: params.page,
+    per_page: params.pageSize,
+    search: params.search,
+    application_status: params.application_status,
+    kyc_status: params.kyc_status,
+    partner_type: params.partner_type,
+    ordering: params.ordering,
+  }
+  const res = await apiFetchAuth(`${ONBOARDING}/unified-records/${qs(backendParams)}`)
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const body = await res.json()
+  return {
+    results: body.data ?? body,
+    count: body.pagination?.total ?? body.count ?? (body.data || body).length,
+    next: body.pagination?.next ?? body.next ?? null,
+    previous: body.pagination?.previous ?? body.previous ?? null,
+  }
+}
 
 export interface ListApplicationsParams {
   page?: number
@@ -679,6 +716,39 @@ export async function updateApplication(
     throw new Error(extractError(res, body))
   }
   return (await res.json()).data
+}
+
+export async function listApplicationPartnerTypes(applicationId: string): Promise<ApplicationPartnerType[]> {
+  const res = await apiFetchAuth(`${ONBOARDING}/applications/${applicationId}/partner-types/`)
+  if (!res.ok) throw new Error("Failed to load application partner types")
+  const json = await res.json()
+  return Array.isArray(json.data) ? json.data : (Array.isArray(json) ? json : [])
+}
+
+export async function createApplicationPartnerType(applicationId: string, data: {
+  partner_type: string
+  branches?: string[]
+  location?: string | null
+  region?: string
+  share_data_externally?: boolean
+}): Promise<ApplicationPartnerType[]> {
+  const res = await apiFetchAuth(`${ONBOARDING}/applications/${applicationId}/partner-types/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const json = await res.json()
+  return Array.isArray(json.data) ? json.data : [json.data]
+}
+
+export async function deleteApplicationPartnerType(applicationId: string, ptId: string): Promise<void> {
+  const res = await apiFetchAuth(`${ONBOARDING}/applications/${applicationId}/partner-types/${ptId}/`, {
+    method: "DELETE",
+  })
+  if (!res.ok) throw new Error("Failed to delete application partner type")
 }
 
 export async function downloadTemplate(partnerType: string): Promise<Blob> {
@@ -976,7 +1046,7 @@ export async function listPartnerTypes(applicationId: string): Promise<Applicati
 
 export async function createPartnerType(
   applicationId: string,
-  data: { partner_type: string; branches?: string[]; location?: string | null; share_data_externally?: boolean }
+  data: { partner_type: string; branches?: string[]; region?: string; location?: string | null; share_data_externally?: boolean }
 ): Promise<ApplicationPartnerType[]> {
   const res = await apiFetchAuth(`${ONBOARDING}/applications/${applicationId}/partner-types/`, {
     method: "POST",
@@ -1859,4 +1929,209 @@ export async function clarifyPartnerPrompt(
     throw new Error(extractError(res, body))
   }
   return res.json()
+}
+
+// ============================================================================
+// User Management API
+// ============================================================================
+
+const USERS_API = "/api/v1/users"
+
+// --- Permission Groups ---
+export async function listPermissionGroups(): Promise<any[]> {
+  const res = await apiFetchAuth(`${USERS_API}/permission-groups/`)
+  const json = await res.json()
+  if (!res.ok) throw new Error(extractError(res, json))
+  return json.data ?? json
+}
+
+export async function createPermissionGroup(data: Record<string, unknown>): Promise<any> {
+  const res = await apiFetchAuth(`${USERS_API}/permission-groups/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(extractError(res, json))
+  return json.data ?? json
+}
+
+export async function updatePermissionGroup(id: string, data: Record<string, unknown>): Promise<any> {
+  const res = await apiFetchAuth(`${USERS_API}/permission-groups/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(extractError(res, json))
+  return json.data ?? json
+}
+
+export async function deletePermissionGroup(id: string): Promise<void> {
+  const res = await apiFetchAuth(`${USERS_API}/permission-groups/${id}/`, {
+    method: "DELETE",
+  })
+  if (!res.ok) {
+    const json = await res.json().catch(() => null)
+    throw new Error(extractError(res, json))
+  }
+}
+
+// --- Permissions ---
+export async function listPermissions(params: { module?: string; search?: string } = {}): Promise<any[]> {
+  const q = new URLSearchParams()
+  if (params.module) q.set("module", params.module)
+  if (params.search) q.set("search", params.search)
+  const query = q.toString() ? `?${q.toString()}` : ""
+  const res = await apiFetchAuth(`${USERS_API}/permissions/${query}`)
+  const json = await res.json()
+  if (!res.ok) throw new Error(extractError(res, json))
+  return json.data ?? json
+}
+
+export async function listPermissionModules(): Promise<string[]> {
+  const res = await apiFetchAuth(`${USERS_API}/permissions/modules/`)
+  const json = await res.json()
+  if (!res.ok) throw new Error(extractError(res, json))
+  return json.data ?? json
+}
+
+// --- User Groups (Roles) ---
+export async function listUserGroups(): Promise<any[]> {
+  const res = await apiFetchAuth(`${USERS_API}/groups/`)
+  const json = await res.json()
+  if (!res.ok) throw new Error(extractError(res, json))
+  return json.data ?? json
+}
+
+export async function getUserGroup(id: string): Promise<any> {
+  const res = await apiFetchAuth(`${USERS_API}/groups/${id}/`)
+  const json = await res.json()
+  if (!res.ok) throw new Error(extractError(res, json))
+  return json.data ?? json
+}
+
+export async function createUserGroup(data: Record<string, unknown>): Promise<any> {
+  const res = await apiFetchAuth(`${USERS_API}/groups/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(extractError(res, json))
+  return json.data ?? json
+}
+
+export async function updateUserGroup(id: string, data: Record<string, unknown>): Promise<any> {
+  const res = await apiFetchAuth(`${USERS_API}/groups/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(extractError(res, json))
+  return json.data ?? json
+}
+
+export async function deleteUserGroup(id: string): Promise<void> {
+  const res = await apiFetchAuth(`${USERS_API}/groups/${id}/`, {
+    method: "DELETE",
+  })
+  if (!res.ok) {
+    const json = await res.json().catch(() => null)
+    throw new Error(extractError(res, json))
+  }
+}
+
+export async function assignPermissionsToGroup(groupId: string, permissionIds: string[]): Promise<any> {
+  const res = await apiFetchAuth(`${USERS_API}/groups/${groupId}/assign_permissions/`, {
+    method: "POST",
+    body: JSON.stringify({ permission_ids: permissionIds }),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(extractError(res, json))
+  return json.data ?? json
+}
+
+export async function removePermissionsFromGroup(groupId: string, permissionIds: string[]): Promise<any> {
+  const res = await apiFetchAuth(`${USERS_API}/groups/${groupId}/remove_permissions/`, {
+    method: "POST",
+    body: JSON.stringify({ permission_ids: permissionIds }),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(extractError(res, json))
+  return json.data ?? json
+}
+
+// --- Users ---
+export async function listUsers(params: { page?: number; pageSize?: number; search?: string; group?: string; is_active?: boolean } = {}): Promise<PaginatedResponse<any>> {
+  const q = new URLSearchParams()
+  if (params.page) q.set("page", String(params.page))
+  if (params.pageSize) q.set("per_page", String(params.pageSize))
+  if (params.search) q.set("search", params.search)
+  if (params.group) q.set("group", params.group)
+  if (params.is_active !== undefined) q.set("is_active", String(params.is_active))
+  const query = q.toString() ? `?${q.toString()}` : ""
+  const res = await apiFetchAuth(`${USERS_API}/users/${query}`)
+  const json = await res.json()
+  if (!res.ok) throw new Error(extractError(res, json))
+  return {
+    results: json.data ?? json,
+    count: json.pagination?.total ?? json.count ?? (json.data || json).length,
+    next: json.pagination?.next ?? json.next ?? null,
+    previous: json.pagination?.previous ?? json.previous ?? null,
+  }
+}
+
+export async function getUser(id: string): Promise<any> {
+  const res = await apiFetchAuth(`${USERS_API}/users/${id}/`)
+  const json = await res.json()
+  if (!res.ok) throw new Error(extractError(res, json))
+  return json.data ?? json
+}
+
+export async function createUser(data: Record<string, unknown>): Promise<any> {
+  const res = await apiFetchAuth(`${USERS_API}/users/`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(extractError(res, json))
+  return json.data ?? json
+}
+
+export async function updateUser(id: string, data: Record<string, unknown>): Promise<any> {
+  const res = await apiFetchAuth(`${USERS_API}/users/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  })
+  const json = await res.json()
+  if (!res.ok) throw new Error(extractError(res, json))
+  return json.data ?? json
+}
+
+export async function deleteUser(id: string): Promise<void> {
+  const res = await apiFetchAuth(`${USERS_API}/users/${id}/`, {
+    method: "DELETE",
+  })
+  if (!res.ok) {
+    const json = await res.json().catch(() => null)
+    throw new Error(extractError(res, json))
+  }
+}
+
+export async function activateUser(id: string): Promise<void> {
+  const res = await apiFetchAuth(`${USERS_API}/users/${id}/activate/`, {
+    method: "POST",
+  })
+  if (!res.ok) {
+    const json = await res.json().catch(() => null)
+    throw new Error(extractError(res, json))
+  }
+}
+
+export async function deactivateUser(id: string): Promise<void> {
+  const res = await apiFetchAuth(`${USERS_API}/users/${id}/deactivate/`, {
+    method: "POST",
+  })
+  if (!res.ok) {
+    const json = await res.json().catch(() => null)
+    throw new Error(extractError(res, json))
+  }
 }

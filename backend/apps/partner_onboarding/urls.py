@@ -14,10 +14,12 @@ from .views import (
     download_template,
     bulk_upload,
     choices,
+    UnifiedOnboardingRecordViewSet,
 )
 
 router = DefaultRouter()
 router.register(r"applications", PartnerApplicationViewSet, basename="partner-applications")
+router.register(r"unified-records", UnifiedOnboardingRecordViewSet, basename="unified-records")
 router.register(r"branches", BranchViewSet, basename="branches")
 router.register(r"locations", LocationViewSet, basename="locations")
 

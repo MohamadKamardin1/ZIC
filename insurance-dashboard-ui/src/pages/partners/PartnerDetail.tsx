@@ -255,6 +255,53 @@ export default function PartnerDetail() {
         </div>
 
         <div className="space-y-6">
+          {/* Progress Overview */}
+          {partner.typeAssignments && partner.typeAssignments.length > 0 && (
+            <div className="rounded-xl border border-border bg-card p-5">
+              <h2 className="text-base font-semibold text-foreground mb-4 flex items-center gap-2">
+                <Shield className="h-4 w-4 text-muted-foreground" />
+                Progress Overview
+              </h2>
+              {(() => {
+                const vals = Object.values(summaries)
+                const total = vals.length
+                if (total === 0) return <p className="text-xs text-muted-foreground">Loading...</p>
+                const avgDocs = Math.round(vals.reduce((s, v) => s + v.documents.progressPct, 0) / total)
+                const avgFields = Math.round(vals.reduce((s, v) => s + v.fields.progressPct, 0) / total)
+                const avgContacts = Math.round(vals.reduce((s, v) => s + v.contacts.progressPct, 0) / total)
+                const avgBanks = Math.round(vals.reduce((s, v) => s + v.banks.progressPct, 0) / total)
+                const overall = Math.round((avgDocs + avgFields + avgContacts + avgBanks) / 4)
+                return (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">Overall Completion</span>
+                      <span className="text-sm font-bold text-foreground">{overall}%</span>
+                    </div>
+                    <div className="h-2 w-full rounded-full bg-[var(--color-bg-muted)] overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-700 ease-out"
+                        style={{
+                          width: `${overall}%`,
+                          backgroundColor: overall >= 80
+                            ? "var(--color-feedback-success)"
+                            : overall >= 50
+                              ? "var(--color-feedback-warning)"
+                              : "var(--color-feedback-info)",
+                        }}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <MiniProgress label="Docs" pct={avgDocs} />
+                      <MiniProgress label="Fields" pct={avgFields} />
+                      <MiniProgress label="Contacts" pct={avgContacts} />
+                      <MiniProgress label="Banks" pct={avgBanks} />
+                    </div>
+                  </div>
+                )
+              })()}
+            </div>
+          )}
+
           <div className="rounded-xl border border-border bg-card p-5">
             <h2 className="text-base font-semibold text-foreground mb-4 flex items-center gap-2">
               <FileText className="h-4 w-4 text-muted-foreground" />
@@ -818,6 +865,28 @@ function Field({ label, value }: { label: string; value?: string | null }) {
     <div className="text-sm">
       <span className="text-muted-foreground">{label}</span>
       <p className="text-foreground mt-0.5">{value || "-"}</p>
+    </div>
+  )
+}
+
+function MiniProgress({ label, pct }: { label: string; pct: number }) {
+  return (
+    <div className="text-center">
+      <p className="text-xs font-medium text-foreground">{pct}%</p>
+      <div className="mt-0.5 h-1 w-full rounded-full bg-[var(--color-bg-muted)] overflow-hidden">
+        <div
+          className="h-full rounded-full"
+          style={{
+            width: `${pct}%`,
+            backgroundColor: pct >= 80
+              ? "var(--color-feedback-success)"
+              : pct >= 50
+                ? "var(--color-feedback-warning)"
+                : "var(--color-feedback-info)",
+          }}
+        />
+      </div>
+      <p className="text-[10px] text-muted-foreground mt-0.5">{label}</p>
     </div>
   )
 }

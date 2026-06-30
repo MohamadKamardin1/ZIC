@@ -22,6 +22,7 @@ from apps.partner_onboarding.models import (
     ApplicationFieldValue,
     Branch,
     Location,
+    UnifiedOnboardingRecord,
 )
 from apps.partner_onboarding.serializers import (
     PartnerApplicationListSerializer,
@@ -44,6 +45,7 @@ from apps.partner_onboarding.serializers import (
     ApplicationBankAccountSerializer,
     ApplicationFieldValueSerializer,
     ApplicationFieldValueBatchSerializer,
+    UnifiedOnboardingRecordSerializer,
 )
 from apps.partner_onboarding.services import ApplicationService, ComplianceService
 from apps.partner_onboarding.exceptions import (
@@ -51,7 +53,7 @@ from apps.partner_onboarding.exceptions import (
     ApplicationValidationError,
     PartnerConversionError,
 )
-from apps.partner_onboarding.filters import PartnerApplicationFilter
+from apps.partner_onboarding.filters import PartnerApplicationFilter, UnifiedOnboardingRecordFilter
 from apps.partner_onboarding.validators import validate_and_parse_excel
 from apps.partner_onboarding.permissions import (
     IsOwnerOrReviewer,
@@ -700,3 +702,19 @@ def bulk_upload(request):
         message=f"Bulk upload completed. {imported} imported, {skipped} skipped.",
         status_code=status.HTTP_200_OK if imported > 0 else status.HTTP_400_BAD_REQUEST,
     )
+
+
+class UnifiedOnboardingRecordViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    A unified read-only view that combines applications and converted partners
+    into a single list, allowing cross-entity filtering and pagination.
+    """
+    queryset = UnifiedOnboardingRecord.objects.all()
+    serializer_class = UnifiedOnboardingRecordSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardPagination
+    filterset_class = UnifiedOnboardingRecordFilter
+    search_fields = ["reference_number", "display_name", "email", "mobile_number"]
+    ordering_fields = ["created_at", "application_status", "kyc_status", "reference_number"]
+    ordering = ["-created_at"]
+
