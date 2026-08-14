@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import {
   ArrowLeft, User, Building2, Shield, FileText, Loader2, Pencil,
   FileSpreadsheet, Contact, Landmark, CheckCircle, XCircle, Plus, Trash2, Upload,
+  ChevronDown, Search, X, Save, MapPin, CalendarDays, Mail, Phone, Eye,
 } from "lucide-react"
 import {
   getPartner,
@@ -26,6 +27,11 @@ import {
   getAssignmentKYC,
   updateAssignmentKYC,
   fetchDocumentRequirements,
+  fetchPartnerTypes,
+  fetchBranches,
+  fetchLocations,
+  assignPartnerType,
+  updatePartnerTypeAssignment,
 } from "../../lib/api"
 import type {
   PartnerDetail as PartnerDetailType,
@@ -41,9 +47,14 @@ import type {
   PartnerTypeContactRequirement,
   PartnerTypeBankRequirement,
   PartnerTypeAssignmentHistory,
+  PartnerTypeRecord,
+  BranchRecord,
+  LocationRecord,
 } from "../../lib/types"
 
 type SetupTab = "documents" | "fields" | "contacts" | "banks" | "kyc"
+
+
 
 export default function PartnerDetail() {
   const { id } = useParams<{ id: string }>()
@@ -58,7 +69,10 @@ export default function PartnerDetail() {
   const [actionBusy, setActionBusy] = useState(false)
   const [error, setError] = useState("")
   const [expandedAssign, setExpandedAssign] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<SetupTab>("documents")
+  const [detailTab, setDetailTab] = useState<"types" | "contacts" | "banks">("types")
+  const [assignmentSearch, setAssignmentSearch] = useState("")
+  const [typeModalOpen, setTypeModalOpen] = useState(false)
+  const [editingAssignment, setEditingAssignment] = useState<PartnerTypeAssignment | null>(null)
 
   const load = useCallback(async () => {
     if (!id) return
@@ -67,7 +81,6 @@ export default function PartnerDetail() {
     try {
       const data = await getPartner(id)
       setPartner(data)
-
       const summaryMap: Record<string, SetupSummary> = {}
       const historyMap: Record<string, PartnerTypeAssignmentHistory[]> = {}
       if (data.typeAssignments?.length) {
@@ -78,10 +91,10 @@ export default function PartnerDetail() {
             history: await getAssignmentHistory(a.id),
           })),
         )
-        for (const r of results) {
-          if (r.status === "fulfilled") {
-            summaryMap[r.value.id] = r.value.summary
-            historyMap[r.value.id] = r.value.history
+        for (const result of results) {
+          if (result.status === "fulfilled") {
+            summaryMap[result.value.id] = result.value.summary
+            historyMap[result.value.id] = result.value.history
           }
         }
       }
@@ -127,255 +140,222 @@ export default function PartnerDetail() {
     return () => document.removeEventListener("partner-action", handlePartnerAction)
   }, [id, load, partner])
 
+  async function handleAssignmentLifecycle(assignment: PartnerTypeAssignment) {
+    const isDeactivation = assignment.status === "ACTIVE"
+    const reason = isDeactivation ? window.prompt("Enter the reason for deactivation:", "") : ""
+    if (isDeactivation && reason === null) return
+    setActionBusy(true)
+    setError("")
+    try {
+      if (isDeactivation) await deactivateAssignment(assignment.id, reason || "")
+      else await activateAssignment(assignment.id)
+      await load()
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Assignment lifecycle action failed")
+    } finally {
+      setActionBusy(false)
+    }
+  }
+
+  function openTypeModal(assignment: PartnerTypeAssignment | null = null) {
+    setEditingAssignment(assignment)
+    setTypeModalOpen(true)
+  }
+
+  function openAssignmentSetup(assignmentId: string) {
+    setDetailTab("types")
+    setExpandedAssign(assignmentId)
+    window.setTimeout(() => {
+      document.getElementById(`assignment-${assignmentId}`)?.scrollIntoView({ behavior: "smooth", block: "center" })
+    }, 80)
+  }
+
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    )
+    return <div className="flex min-h-[420px] items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-[#777]" /></div>
   }
 
   if (error) {
     return (
-      <div className="p-4 rounded-lg bg-[var(--color-bg-destructive-soft)] text-[var(--color-text-destructive-soft)] text-sm">
-        {error}
+      <div className="space-y-4">
+        <button onClick={() => navigate(fromOnboarding ? "/onboarding" : "/partners")} className="inline-flex items-center gap-2 text-sm text-[#666] hover:text-[#111]"><ArrowLeft className="h-4 w-4" />Back</button>
+        <div className="rounded-xl border border-[#d9d9d9] bg-white p-5 text-sm text-[#333]">{error}</div>
+        <button onClick={load} className="rounded-lg bg-[#111] px-4 py-2 text-sm font-semibold text-white">Retry</button>
       </div>
     )
   }
 
   if (!partner) return null
 
-  function statusBadge(status: string) {
-    const colors: Record<string, string> = {
-      ACTIVE: "bg-[var(--color-bg-success-soft)] text-[var(--color-text-success-soft)]",
-      INACTIVE: "bg-[var(--color-bg-destructive-soft)] text-[var(--color-text-destructive-soft)]",
-    }
-    return (
-      <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${colors[status] ?? "bg-[var(--color-bg-warning-soft)] text-[var(--color-text-warning-soft)]"}`}>
-        {status}
-      </span>
-    )
-  }
+  const assignments = partner.typeAssignments ?? []
+  const visibleAssignments = assignments.filter((assignment) => {
+    const query = assignmentSearch.trim().toLowerCase()
+    if (!query) return true
+    return [assignment.partnerTypeName, assignment.partnerTypeCode, assignment.branchName, assignment.locationName, assignment.status]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(query))
+  })
+  const expandedAssignment = assignments.find((assignment) => assignment.id === expandedAssign)
+  const activeAssignments = assignments.filter((assignment) => assignment.status === "ACTIVE").length
 
   return (
-    <div className="space-y-6">
-      <button
-        onClick={() => navigate(fromOnboarding ? "/onboarding" : "/partners")}
-        className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        {fromOnboarding ? "Back to Onboarding" : "Back to Partners"}
-      </button>
-
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">{partner.displayName}</h1>
-          <p className="text-sm text-muted-foreground mt-1">{partner.partnerNumber}</p>
+    <div className="space-y-5 pb-8 text-[#222]">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm text-[#777]">
+          <button onClick={() => navigate(fromOnboarding ? "/onboarding" : "/partners")} className="hover:text-[#111]">{fromOnboarding ? "Onboarding" : "Partners"}</button>
+          <span>/</span>
+          <span className="text-[#222]">View Partner</span>
         </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate(`/partners/${id}/edit`)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-sm text-foreground hover:bg-muted transition-colors"
-          >
-            <Pencil className="h-3.5 w-3.5" />
-            Edit
-          </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={() => navigate(`/partners/${id}/edit`)} className="inline-flex items-center gap-2 rounded-lg border border-[#d6d6d6] bg-white px-3.5 py-2 text-sm font-semibold text-[#333] hover:bg-[#f5f5f5]"><Pencil className="h-4 w-4" />Edit Partner</button>
           <partner-lifecycle-actions status={partner.status} entityId={partner.id} busy={actionBusy}></partner-lifecycle-actions>
-          {statusBadge(partner.status)}
-          <span className="text-sm text-muted-foreground">{partner.partnerCategory || partner.partnerType}</span>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          <div className="rounded-xl border border-border bg-card p-5">
-            <h2 className="text-base font-semibold text-foreground mb-4 flex items-center gap-2">
-              <User className="h-4 w-4 text-muted-foreground" />
-              Core Information
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Partner Type" value={partner.partnerCategory || partner.partnerType} />
-              <Field label="Status" value={partner.status} />
-              <Field label="Email" value={partner.email} />
-              <Field label="Mobile" value={partner.mobileNumber} />
-              <Field label="Telephone" value={partner.telephoneNumber} />
-              <Field label="TIN" value={partner.tinNumber} />
-              <Field label="Political Risk" value={partner.politicalRisk} />
-              <Field label="AML Risk" value={partner.amlRisk} />
-            </div>
-            <div className="mt-4 space-y-2">
-              <Field label="Physical Address" value={partner.physicalAddress} />
-              <Field label="Postal Address" value={partner.postalAddress} />
-            </div>
-            <div className="mt-4 pt-4 border-t border-border grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Company" value={partner.companyName} />
-              <Field label="Contact Person" value={partner.contactPerson} />
-              <Field label="Contact Phone" value={partner.contactPersonPhone} />
-              <Field label="Contact Email" value={partner.contactPersonEmail} />
-              <Field label="Occupation" value={partner.occupation} />
-              <Field label="Nationality" value={partner.nationality} />
-            </div>
+      <section className="overflow-hidden rounded-xl border border-[#dedede] bg-white shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e8e8e8] px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#111] text-white"><User className="h-5 w-5" /></div>
+            <div><h1 className="text-xl font-bold tracking-tight text-[#111]">{partner.displayName}</h1><p className="mt-0.5 text-xs text-[#777]">{partner.partnerNumber} · {partner.partnerCategory || partner.partnerType}</p></div>
           </div>
+          <div className="flex items-center gap-3 text-right"><div><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#999]">Status</p><p className="mt-1 text-sm font-semibold text-[#222]">{partner.status}</p></div><span className="h-8 w-px bg-[#e4e4e4]" /><div><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#999]">Active Types</p><p className="mt-1 text-sm font-semibold text-[#222]">{activeAssignments}</p></div></div>
+        </div>
+        <div className="grid grid-cols-1 divide-y divide-[#ededed] md:grid-cols-3 md:divide-x md:divide-y-0">
+          <InfoColumn rows={[
+            ["Partner Number", partner.partnerNumber],
+            ["Client Type", partner.partnerCategory || partner.partnerType],
+            ["Name", partner.displayName],
+            ["Email", partner.email],
+            ["Telephone", partner.telephoneNumber],
+            ["Mobile Number", partner.mobileNumber],
+          ]} />
+          <InfoColumn rows={[
+            ["Nationality", partner.nationality],
+            ["Identification Type", partner.identificationType],
+            ["Identification Number", partner.identificationNumber],
+            ["Date of Birth", partner.dateOfBirth],
+            ["Occupation", partner.occupation],
+            ["Gender", partner.gender],
+          ]} />
+          <InfoColumn rows={[
+            ["Marital Status", partner.maritalStatus],
+            ["Status", partner.status],
+            ["Created", formatDate(partner.createdAt)],
+            ["Updated", formatDate(partner.updatedAt)],
+            ["AML Risk", partner.amlRisk],
+            ["Political Risk", partner.politicalRisk],
+          ]} />
+        </div>
+      </section>
 
-          {partner.individualProfile && (
-            <div className="rounded-xl border border-border bg-card p-5">
-              <h2 className="text-base font-semibold text-foreground mb-4 flex items-center gap-2">
-                <User className="h-4 w-4 text-muted-foreground" />
-                Individual Profile
-              </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Field label="Title" value={partner.individualProfile.title} />
-                <Field label="First Name" value={partner.individualProfile.firstName} />
-                <Field label="Other Name" value={partner.individualProfile.otherName} />
-                <Field label="Surname" value={partner.individualProfile.surname} />
-                <Field label="Gender" value={partner.individualProfile.gender} />
-                <Field label="Date of Birth" value={partner.individualProfile.dateOfBirth} />
-                <Field label="Marital Status" value={partner.individualProfile.maritalStatus} />
-                <Field label="Occupation" value={partner.individualProfile.occupation} />
-                <Field label="Nationality" value={partner.individualProfile.nationality} />
-                <Field label="ID Type" value={partner.individualProfile.identificationType} />
-                <Field label="ID Number" value={partner.individualProfile.identificationNumber} />
-              </div>
-            </div>
-          )}
-
-          {partner.corporateProfile && (
-            <div className="rounded-xl border border-border bg-card p-5">
-              <h2 className="text-base font-semibold text-foreground mb-4 flex items-center gap-2">
-                <Building2 className="h-4 w-4 text-muted-foreground" />
-                Corporate Profile
-              </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Field label="Company Name" value={partner.corporateProfile.companyName} />
-                <Field label="TIN Number" value={partner.corporateProfile.tinNumber} />
-                <Field label="Incorporation Date" value={partner.corporateProfile.incorporationDate} />
-                <Field label="Industry" value={partner.corporateProfile.industry} />
-                <Field label="Contact Person" value={partner.corporateProfile.contactPerson} />
-                <Field label="Contact Phone" value={partner.corporateProfile.contactPersonPhone} />
-                <Field label="Contact Email" value={partner.corporateProfile.contactPersonEmail} />
-              </div>
-            </div>
-          )}
-
-          {partner.typeAssignments?.length > 0 && (
-            <div className="rounded-xl border border-border bg-card p-5">
-              <h2 className="text-base font-semibold text-foreground mb-4 flex items-center gap-2">
-                <Shield className="h-4 w-4 text-muted-foreground" />
-                Type Assignments ({partner.typeAssignments.length})
-              </h2>
-              <div className="space-y-3">
-                {partner.typeAssignments.map((ta) => {
-                  const summary = summaries[ta.id]
-                  const isExpanded = expandedAssign === ta.id
-                  return (
-                    <div key={ta.id} className="rounded-lg border border-border">
-                      <div
-                        className="flex items-center justify-between p-4 hover:bg-muted/30 transition-colors cursor-pointer"
-                        onClick={() => setExpandedAssign(isExpanded ? null : ta.id)}
-                      >
-                        <div>
-                          <span className="font-medium text-foreground">{ta.partnerTypeName}</span>
-                          <span className="text-sm text-muted-foreground ml-2">({ta.partnerTypeCode})</span>
-                        </div>
-                                                  <div className="flex items-center gap-3">
-                            <partner-lifecycle-actions status={ta.status} entityId={ta.id} busy={actionBusy} compact></partner-lifecycle-actions>
-                            {summary && (
-
-                            <span className="text-xs text-muted-foreground">
-                              Docs {summary.documents.progressPct}% | Fields {summary.fields.progressPct}%
-                            </span>
-                          )}
-                          {statusBadge(ta.status)}
-                        </div>
-                      </div>
-                      {isExpanded && (
-                        <div className="space-y-4">
-                          <SetupManager
-                            assignment={ta}
-                            summary={summary}
-                            onRefresh={() => load()}
-                          />
-                          <partner-assignment-history history={histories[ta.id] ?? []}></partner-assignment-history>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
+      <section className="overflow-hidden rounded-xl border border-[#dedede] bg-white shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e6e6e6] px-5 pt-4">
+          <div className="flex items-center gap-1 overflow-x-auto">
+            {(["types", "contacts", "banks"] as const).map((tab) => (
+              <button key={tab} onClick={() => setDetailTab(tab)} className={`border-b-2 px-4 pb-3 text-sm font-semibold capitalize transition-colors ${detailTab === tab ? "border-[#111] text-[#111]" : "border-transparent text-[#999] hover:text-[#333]"}`}>{tab === "types" ? "Partner Types" : tab === "contacts" ? "Partner Contacts" : "Partner Banks"}</button>
+            ))}
+          </div>
+          {detailTab === "types" && <button onClick={() => openTypeModal()} className="mb-2 inline-flex items-center gap-2 rounded-lg bg-[#111] px-3.5 py-2 text-sm font-semibold text-white hover:bg-[#2c2c2c]"><Plus className="h-4 w-4" />Add Partner Type</button>}
         </div>
 
-        <div className="space-y-6">
-          {/* Progress Overview */}
-          {partner.typeAssignments && partner.typeAssignments.length > 0 && (
-            <div className="rounded-xl border border-border bg-card p-5">
-              <h2 className="text-base font-semibold text-foreground mb-4 flex items-center gap-2">
-                <Shield className="h-4 w-4 text-muted-foreground" />
-                Progress Overview
-              </h2>
-              {(() => {
-                const vals = Object.values(summaries)
-                const total = vals.length
-                if (total === 0) return <p className="text-xs text-muted-foreground">Loading...</p>
-                const avgDocs = Math.round(vals.reduce((s, v) => s + v.documents.progressPct, 0) / total)
-                const avgFields = Math.round(vals.reduce((s, v) => s + v.fields.progressPct, 0) / total)
-                const avgContacts = Math.round(vals.reduce((s, v) => s + v.contacts.progressPct, 0) / total)
-                const avgBanks = Math.round(vals.reduce((s, v) => s + v.banks.progressPct, 0) / total)
-                const overall = Math.round((avgDocs + avgFields + avgContacts + avgBanks) / 4)
-                return (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-muted-foreground">Overall Completion</span>
-                      <span className="text-sm font-bold text-foreground">{overall}%</span>
-                    </div>
-                    <div className="h-2 w-full rounded-full bg-[var(--color-bg-muted)] overflow-hidden">
-                      <div
-                        className="h-full rounded-full transition-all duration-700 ease-out"
-                        style={{
-                          width: `${overall}%`,
-                          backgroundColor: overall >= 80
-                            ? "var(--color-feedback-success)"
-                            : overall >= 50
-                              ? "var(--color-feedback-warning)"
-                              : "var(--color-feedback-info)",
-                        }}
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 pt-1">
-                      <MiniProgress label="Docs" pct={avgDocs} />
-                      <MiniProgress label="Fields" pct={avgFields} />
-                      <MiniProgress label="Contacts" pct={avgContacts} />
-                      <MiniProgress label="Banks" pct={avgBanks} />
-                    </div>
-                  </div>
-                )
-              })()}
+        {detailTab === "types" && (
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#efefef] px-5 py-4">
+              <div className="flex items-center gap-2 text-sm text-[#777]"><span>Showing</span><span className="font-semibold text-[#222]">{visibleAssignments.length}</span><span>of {assignments.length}</span></div>
+              <label className="relative block w-full sm:w-64"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#aaa]" /><input value={assignmentSearch} onChange={(event) => setAssignmentSearch(event.target.value)} placeholder="Search partner types..." className="w-full rounded-lg border border-[#d7d7d7] bg-white py-2 pl-9 pr-3 text-sm text-[#222] outline-none focus:border-[#111] focus:ring-2 focus:ring-[#111]/10" /></label>
             </div>
-          )}
+            <div className="overflow-x-auto">
+              <table className="min-w-[980px] w-full text-left text-sm">
+                <thead className="bg-[#fafafa] text-[11px] font-bold uppercase tracking-[0.08em] text-[#777]"><tr><th className="px-5 py-3">No.</th><th className="px-4 py-3">Partner Type</th><th className="px-4 py-3">Location</th><th className="px-4 py-3">Active</th><th className="px-4 py-3">KYC Compliance</th><th className="px-4 py-3">Created</th><th className="px-4 py-3">Updated</th><th className="px-5 py-3 text-right">Actions</th></tr></thead>
+                <tbody className="divide-y divide-[#efefef]">
+                  {visibleAssignments.map((assignment, index) => {
+                    const summary = summaries[assignment.id]
+                    const kycReady = summary?.kyc.status === "APPROVED" || summary?.kyc.status === "COMPLIANT"
+                    return <tr key={assignment.id} id={`assignment-${assignment.id}`} className="hover:bg-[#fcfcfc]">
+                      <td className="px-5 py-4 text-[#999]">{index + 1}</td>
+                      <td className="px-4 py-4"><div className="font-semibold text-[#222]">{assignment.partnerTypeName}</div><div className="mt-0.5 text-xs text-[#999]">{assignment.partnerTypeCode}</div></td>
+                      <td className="px-4 py-4"><div className="flex items-center gap-1.5 text-[#555]"><MapPin className="h-3.5 w-3.5 text-[#999]" />{assignment.locationName || assignment.branchName || "Not set"}</div></td>
+                      <td className="px-4 py-4"><span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${assignment.status === "ACTIVE" ? "bg-[#f0f0f0] text-[#222]" : "bg-[#fafafa] text-[#999]"}`}><span className={`h-1.5 w-1.5 rounded-full ${assignment.status === "ACTIVE" ? "bg-[#111]" : "bg-[#aaa]"}`} />{assignment.status === "ACTIVE" ? "Active" : "Inactive"}</span></td>
+                      <td className="px-4 py-4"><span className={`font-semibold ${kycReady ? "text-[#222]" : "text-[#999]"}`}>{summary ? (kycReady ? "Compliant" : summary.kyc.status || "Not Set") : "Not Set"}</span></td>
+                      <td className="px-4 py-4 text-[#666]">{formatDate(assignment.createdAt)}</td>
+                      <td className="px-4 py-4 text-[#666]">{formatDate(assignment.updatedAt)}</td>
+                      <td className="px-5 py-4"><div className="flex items-center justify-end gap-1.5"><button title="View setup" onClick={() => openAssignmentSetup(assignment.id)} className="inline-flex items-center gap-1 rounded-md border border-[#d7d7d7] px-2.5 py-1.5 text-xs font-semibold text-[#333] hover:bg-[#f4f4f4]"><Eye className="h-3.5 w-3.5" />View</button><button title="Edit assignment" onClick={() => openTypeModal(assignment)} className="inline-flex items-center gap-1 rounded-md border border-[#d7d7d7] px-2.5 py-1.5 text-xs font-semibold text-[#333] hover:bg-[#f4f4f4]"><Pencil className="h-3.5 w-3.5" />Edit</button><button title={assignment.status === "ACTIVE" ? "Deactivate assignment" : "Activate assignment"} disabled={actionBusy} onClick={() => handleAssignmentLifecycle(assignment)} className="rounded-md border border-[#d7d7d7] px-2.5 py-1.5 text-xs font-semibold text-[#333] hover:bg-[#f4f4f4] disabled:opacity-50">{assignment.status === "ACTIVE" ? "Deactivate" : "Activate"}</button></div></td>
+                    </tr>
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {visibleAssignments.length === 0 && <div className="px-5 py-14 text-center"><Shield className="mx-auto h-8 w-8 text-[#bbb]" /><p className="mt-3 text-sm font-semibold text-[#444]">No partner types found</p><p className="mt-1 text-sm text-[#999]">Assign a partner type or change the search term.</p></div>}
+            {expandedAssignment && <div className="border-t border-[#e8e8e8] bg-[#fafafa]"><div className="flex items-center justify-between px-5 py-4"><div><p className="text-sm font-bold text-[#222]">Setup workspace · {expandedAssignment.partnerTypeName}</p><p className="mt-0.5 text-xs text-[#777]">Manage documents, fields, contacts, banks, and KYC for this assignment.</p></div><button onClick={() => setExpandedAssign(null)} className="rounded-md p-1.5 text-[#777] hover:bg-[#eee] hover:text-[#111]"><X className="h-4 w-4" /></button></div><SetupManager assignment={expandedAssignment} summary={summaries[expandedAssignment.id]} onRefresh={load} /><partner-assignment-history history={histories[expandedAssignment.id] ?? []}></partner-assignment-history></div>}
+          </>
+        )}
 
-          <div className="rounded-xl border border-border bg-card p-5">
-            <h2 className="text-base font-semibold text-foreground mb-4 flex items-center gap-2">
-              <FileText className="h-4 w-4 text-muted-foreground" />
-              Timestamps
-            </h2>
-            <div className="space-y-3 text-sm">
-              <div><span className="text-muted-foreground">Created</span><p className="text-foreground">{formatDate(partner.createdAt)}</p></div>
-              <div><span className="text-muted-foreground">Updated</span><p className="text-foreground">{formatDate(partner.updatedAt)}</p></div>
-              {partner.activatedAt && <div><span className="text-muted-foreground">Activated</span><p className="text-foreground">{formatDate(partner.activatedAt)}</p></div>}
-              {partner.deactivatedAt && <div><span className="text-muted-foreground">Deactivated</span><p className="text-foreground">{formatDate(partner.deactivatedAt)}</p></div>}
-            </div>
-          </div>
-          {partner.deactivationReason && (
-            <div className="rounded-xl border border-border bg-card p-5">
-              <h2 className="text-base font-semibold text-foreground mb-2">Deactivation Reason</h2>
-              <p className="text-sm text-muted-foreground">{partner.deactivationReason}</p>
-            </div>
-          )}
-        </div>
-      </div>
+        {detailTab !== "types" && <RelatedAssignmentTab tab={detailTab} assignments={assignments} summaries={summaries} onManage={openAssignmentSetup} />}
+      </section>
+
+      <PartnerTypeModal open={typeModalOpen} partnerId={partner.id} assignment={editingAssignment} onClose={() => { setTypeModalOpen(false); setEditingAssignment(null) }} onSaved={async () => { setTypeModalOpen(false); setEditingAssignment(null); await load() }} />
     </div>
   )
+}
+
+function InfoColumn({ rows }: { rows: [string, string | null | undefined][] }) {
+  return <div className="px-5 py-3">{rows.map(([label, value]) => <div key={label} className="grid grid-cols-[minmax(130px,0.9fr)_minmax(0,1.1fr)] gap-3 border-b border-[#f0f0f0] py-2.5 last:border-b-0"><span className="text-xs font-bold text-[#333]">{label}:</span><span className="truncate text-sm text-[#666]">{value || "—"}</span></div>)}</div>
+}
+
+function RelatedAssignmentTab({ tab, assignments, summaries, onManage }: { tab: "contacts" | "banks"; assignments: PartnerTypeAssignment[]; summaries: Record<string, SetupSummary>; onManage: (id: string) => void }) {
+  const label = tab === "contacts" ? "contacts" : "bank accounts"
+  return <div className="p-5"><div className="mb-4 flex items-center justify-between"><div><h2 className="text-base font-bold text-[#222]">Partner {tab === "contacts" ? "Contacts" : "Banks"}</h2><p className="mt-1 text-sm text-[#777]">Manage assignment-specific {label} from the setup workspace.</p></div><span className="rounded-full bg-[#f3f3f3] px-3 py-1 text-xs font-semibold text-[#555]">{assignments.length} assignment{assignments.length === 1 ? "" : "s"}</span></div><div className="overflow-x-auto rounded-lg border border-[#e3e3e3]"><table className="min-w-[720px] w-full text-left text-sm"><thead className="bg-[#fafafa] text-[11px] font-bold uppercase tracking-[0.08em] text-[#777]"><tr><th className="px-4 py-3">Partner Type</th><th className="px-4 py-3">Location</th><th className="px-4 py-3">Required</th><th className="px-4 py-3">Submitted</th><th className="px-4 py-3 text-right">Action</th></tr></thead><tbody className="divide-y divide-[#efefef]">{assignments.map((assignment) => { const summary = summaries[assignment.id]; const metrics = tab === "contacts" ? summary?.contacts : summary?.banks; return <tr key={assignment.id}><td className="px-4 py-3 font-semibold text-[#222]">{assignment.partnerTypeName}</td><td className="px-4 py-3 text-[#666]">{assignment.locationName || assignment.branchName || "Not set"}</td><td className="px-4 py-3 text-[#666]">{metrics?.total ?? "—"}</td><td className="px-4 py-3 text-[#666]">{metrics?.submitted ?? "—"}</td><td className="px-4 py-3 text-right"><button onClick={() => onManage(assignment.id)} className="inline-flex items-center gap-1.5 rounded-md border border-[#d7d7d7] px-2.5 py-1.5 text-xs font-semibold text-[#333] hover:bg-[#f4f4f4]"><Eye className="h-3.5 w-3.5" />Manage</button></td></tr> })}</tbody></table>{assignments.length === 0 && <div className="p-12 text-center text-sm text-[#999]">No partner type assignments are available yet.</div>}</div></div>
+}
+
+function PartnerTypeModal({ open, partnerId, assignment, onClose, onSaved }: { open: boolean; partnerId: string; assignment: PartnerTypeAssignment | null; onClose: () => void; onSaved: () => Promise<void> }) {
+  const [partnerTypes, setPartnerTypes] = useState<PartnerTypeRecord[]>([])
+  const [branches, setBranches] = useState<BranchRecord[]>([])
+  const [locations, setLocations] = useState<LocationRecord[]>([])
+  const [selectedType, setSelectedType] = useState("")
+  const [selectedBranch, setSelectedBranch] = useState("")
+  const [selectedLocation, setSelectedLocation] = useState("")
+  const [shareData, setShareData] = useState(false)
+  const [effectiveDate, setEffectiveDate] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState("")
+
+  useEffect(() => {
+    if (!open) return
+    setLoading(true)
+    setError("")
+    Promise.all([fetchPartnerTypes(), fetchBranches(), fetchLocations()]).then(([types, branchRows, locationRows]) => {
+      setPartnerTypes(types.filter((type) => type.isActive))
+      setBranches(branchRows.filter((branch) => branch.isActive))
+      setLocations(locationRows.filter((location) => location.isActive))
+      setSelectedType(assignment?.partnerType || "")
+      setSelectedBranch(assignment?.branch || "")
+      setSelectedLocation(assignment?.location || "")
+      setShareData(assignment?.shareDataExternally ?? false)
+      setEffectiveDate(assignment?.effectiveDate || "")
+    }).catch((e: unknown) => setError(e instanceof Error ? e.message : "Failed to load partner type options")).finally(() => setLoading(false))
+  }, [open, assignment])
+
+  if (!open) return null
+
+  async function submit() {
+    if (!selectedType) { setError("Select a partner type before saving."); return }
+    setSaving(true)
+    setError("")
+    try {
+      const payload = { partner_type: selectedType, branches: selectedBranch ? [selectedBranch] : [], location: selectedLocation || null, share_data_externally: shareData, effective_date: effectiveDate || null }
+      if (assignment) await updatePartnerTypeAssignment(partnerId, assignment.id, payload)
+      else await assignPartnerType(partnerId, payload)
+      await onSaved()
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Unable to save partner type")
+    } finally { setSaving(false) }
+  }
+
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="dialog" aria-modal="true" aria-labelledby="partner-type-modal-title"><div className="w-full max-w-2xl overflow-hidden rounded-xl border border-[#d7d7d7] bg-white shadow-2xl"><div className="flex items-center justify-between border-b border-[#e7e7e7] px-5 py-4"><div><h2 id="partner-type-modal-title" className="text-lg font-bold text-[#222]">{assignment ? "Edit Partner Type" : "Add Partner Type"}</h2><p className="mt-1 text-xs text-[#777]">Configure type, branch, location, and data-sharing rules.</p></div><button onClick={onClose} className="rounded-md p-2 text-[#777] hover:bg-[#f2f2f2] hover:text-[#111]" aria-label="Close"><X className="h-5 w-5" /></button></div>{loading ? <div className="flex h-56 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-[#777]" /></div> : <><div className="grid gap-5 px-5 py-5 md:grid-cols-2"><SelectField label="Partner Type" value={selectedType} onChange={setSelectedType} options={partnerTypes.map((type) => ({ value: type.id, label: `${type.name} · ${type.code}` }))} placeholder="Select partner type" /><SelectField label="Branch" value={selectedBranch} onChange={(value) => { setSelectedBranch(value); if (!value) setSelectedLocation("") }} options={branches.map((branch) => ({ value: branch.id, label: `${branch.name} · ${branch.code}` }))} placeholder="Select branch" /><SelectField label="Location" value={selectedLocation} onChange={setSelectedLocation} options={locations.filter((location) => !selectedBranch || location.branchId === selectedBranch).map((location) => ({ value: location.id, label: `${location.name} · ${location.code}` }))} placeholder={selectedBranch ? "Select location" : "Select branch first"} disabled={!selectedBranch} /><label className="block"><span className="mb-1.5 block text-xs font-bold text-[#333]">Effective Date</span><div className="relative"><CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#999]" /><input type="date" value={effectiveDate} onChange={(event) => setEffectiveDate(event.target.value)} className="w-full rounded-lg border border-[#d7d7d7] bg-white py-2.5 pl-9 pr-3 text-sm text-[#222] outline-none focus:border-[#111] focus:ring-2 focus:ring-[#111]/10" /></div></label><label className="flex items-center gap-3 rounded-lg border border-[#e1e1e1] bg-[#fafafa] px-3 py-3 md:col-span-2"><input type="checkbox" checked={shareData} onChange={(event) => setShareData(event.target.checked)} className="h-4 w-4 accent-[#111]" /><span><span className="block text-sm font-semibold text-[#333]">Share data externally</span><span className="mt-0.5 block text-xs text-[#777]">Allow this partner type to share approved information with configured external systems.</span></span></label></div>{error && <div className="mx-5 mb-4 rounded-lg border border-[#d7d7d7] bg-[#f7f7f7] px-3 py-2 text-sm text-[#333]">{error}</div>}<div className="flex items-center justify-end gap-2 border-t border-[#e7e7e7] px-5 py-4"><button onClick={onClose} className="rounded-lg border border-[#d7d7d7] px-4 py-2 text-sm font-semibold text-[#555] hover:bg-[#f4f4f4]">Cancel</button><button onClick={submit} disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-[#111] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2c2c2c] disabled:opacity-50">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{saving ? "Saving..." : "Save"}</button></div></>}</div></div>
+}
+
+function SelectField({ label, value, onChange, options, placeholder, disabled = false }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[]; placeholder: string; disabled?: boolean }) {
+  return <label className="block"><span className="mb-1.5 block text-xs font-bold text-[#333]">{label}</span><div className="relative"><select value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled} className="w-full appearance-none rounded-lg border border-[#d7d7d7] bg-white px-3 py-2.5 pr-9 text-sm text-[#222] outline-none focus:border-[#111] focus:ring-2 focus:ring-[#111]/10 disabled:bg-[#f7f7f7] disabled:text-[#aaa]"><option value="">{placeholder}</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#999]" /></div></label>
 }
 
 function SetupManager({

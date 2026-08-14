@@ -56,6 +56,7 @@ from apps.partners.serializers import (
 from apps.partners.services.duplicate_detection import PartnerDuplicateDetectionService
 from apps.partners.services.partner_link_service import PartnerLinkService
 from apps.partners.services.partner_service import PartnerLifecycleService
+from apps.partners.services.partner_type_service import PartnerTypeAssignmentService
 from apps.partners.services.setup_service import PartnerSetupService
 
 logger = logging.getLogger(__name__)
@@ -178,6 +179,45 @@ class PartnerViewSet(viewsets.ModelViewSet):
             data=PartnerTypeAssignmentSerializer(assignment).data,
             message=f"Partner type '{assignment.partner_type.name}' assigned.",
             status_code=status.HTTP_201_CREATED,
+        )
+
+    @action(
+        detail=True,
+        methods=["patch"],
+        url_path=r"assignments/(?P<assignment_id>[^/.]+)",
+    )
+    def update_partner_type_assignment(self, request, pk=None, assignment_id=None):
+        partner = self.get_object()
+        try:
+            assignment = PartnerTypeAssignment.objects.get(
+                id=assignment_id,
+                partner=partner,
+            )
+        except PartnerTypeAssignment.DoesNotExist:
+            return _response(
+                message="Partner type assignment not found.",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = PartnerTypeAssignmentCreateSerializer(
+            data=request.data,
+            context={"partner": partner},
+        )
+        serializer.is_valid(raise_exception=True)
+        validated = serializer.validated_data
+        branches = validated.get("branches", [])
+        PartnerTypeAssignmentService.assign(
+            partner=partner,
+            partner_type=validated["partner_type"],
+            branch=branches[0] if branches else None,
+            location=validated.get("location"),
+            share_data_externally=validated.get("share_data_externally", False),
+            effective_date=validated.get("effective_date"),
+        )
+        assignment.refresh_from_db()
+        return _response(
+            data=PartnerTypeAssignmentSerializer(assignment).data,
+            message="Partner type assignment updated.",
         )
 
     @action(detail=True, methods=["get", "patch"], url_path="individual-profile")

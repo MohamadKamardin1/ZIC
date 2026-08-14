@@ -817,6 +817,29 @@ export async function assignPartnerType(id: string, data: {
   return json.data ?? json
 }
 
+export async function updatePartnerTypeAssignment(
+  partnerId: string,
+  assignmentId: string,
+  data: {
+    partner_type: string
+    branches?: string[]
+    location?: string | null
+    share_data_externally?: boolean
+    effective_date?: string | null
+  },
+): Promise<PartnerTypeAssignment> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/${partnerId}/assignments/${assignmentId}/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const json = await res.json()
+  return json.data ?? json
+}
+
 export async function listPartners(
   params: { page?: number; per_page?: number; search?: string } = {},
 ): Promise<PaginatedResponse<PartnerListItem>> {
