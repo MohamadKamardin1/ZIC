@@ -1,14 +1,33 @@
 import { useState, useEffect } from "react"
 import {
   Settings, Package, Shield, Activity, Heart, FileText,
-  Plus, Edit3, Trash2, ChevronRight, Search, X, Check,
-  Loader2, AlertCircle
+  Plus, Edit3, Trash2, ChevronRight, Search, X, Check, CheckCircle,
+  Loader2, AlertCircle, DollarSign, Users, Repeat, HelpCircle, PackageCheck, Percent, AlertTriangle, CheckSquare, Cigarette, HeartPulse, Stethoscope, FileCheck, Receipt, CreditCard, UserCheck, Star, BookOpen,
+  Clipboard, Database, Award, ListChecks
 } from "lucide-react"
 import { glSetup } from "../../lib/gl-api"
+
+interface FieldDef {
+  key: string
+  label: string
+  type?: "text" | "number" | "boolean" | "date" | "select" | "textarea"
+  required?: boolean
+  /** Static choices for select fields: [{value, label}] */
+  choices?: { value: string; label: string }[]
+  /** Async options loader for FK select fields — returns list of {id, name|code} */
+  optionsFn?: () => Promise<any>
+  /** Which field to use as the option label (default: "name") */
+  optionLabel?: string
+  /** Which field to display in the table for FK fields */
+  displayKey?: string
+  /** Lookup category for dynamic choices (e.g. "GENDER") */
+  lookupCategory?: string
+}
 
 interface SetupCategory {
   key: string
   label: string
+  group: string
   icon: typeof Settings
   color: string
   gradient: string
@@ -16,41 +35,73 @@ interface SetupCategory {
   createFn?: (data: Record<string, unknown>) => Promise<any>
   updateFn?: (id: string, data: Record<string, unknown>) => Promise<any>
   deleteFn?: (id: string) => Promise<void>
-  fields: { key: string; label: string; type?: string; required?: boolean }[]
+  fields: FieldDef[]
 }
 
 const SETUP_CATEGORIES: SetupCategory[] = [
+  // ── System Setup ──────────────────────────────────────────────
   {
-    key: "products", label: "Products", icon: Package,
-    color: "var(--color-primary)", gradient: "linear-gradient(135deg, #6366f1, #8b5cf6)",
-    fetchFn: glSetup.listProducts, createFn: (d) => glSetup.createProduct(d),
-    updateFn: (id, d) => glSetup.updateProduct(id, d), deleteFn: (id) => glSetup.deleteProduct(id),
+    key: "lookupValues", label: "Dropdown Configuration", group: "System Setup", icon: Database,
+    color: "#64748b", gradient: "linear-gradient(135deg, #64748b, #94a3b8)",
+    fetchFn: () => glSetup.listLookupValues(), createFn: (d) => glSetup.createLookupValue(d),
+    updateFn: (id, d) => glSetup.updateLookupValue(id, d), deleteFn: (id) => glSetup.deleteLookupValue(id),
     fields: [
-      { key: "code", label: "Code", required: true },
-      { key: "name", label: "Name", required: true },
-      { key: "minMembers", label: "Min Members", type: "number" },
-      { key: "maxMembers", label: "Max Members", type: "number" },
-      { key: "freeCoverLimit", label: "FCL", type: "number" },
-      { key: "currency", label: "Currency" },
+      { key: "category", label: "Category Key", required: true, type: "select", choices: [
+        { value: "RATE_TYPE", label: "RATE_TYPE" },
+        { value: "GENDER", label: "GENDER" },
+        { value: "QUESTION_TYPE", label: "QUESTION_TYPE" },
+        { value: "HEALTH_QUESTION_CATEGORY", label: "HEALTH_QUESTION_CATEGORY" },
+        { value: "RIDER_TYPE", label: "RIDER_TYPE" },
+        { value: "STATUS", label: "STATUS" },
+        { value: "UW_STATUS", label: "UW_STATUS" },
+        { value: "RELATIONSHIP", label: "RELATIONSHIP" },
+        { value: "PERSONAL_HABIT_CATEGORY", label: "PERSONAL_HABIT_CATEGORY" },
+        { value: "RISK_LEVEL", label: "RISK_LEVEL" },
+        { value: "MEDICAL_HISTORY_CATEGORY", label: "MEDICAL_HISTORY_CATEGORY" },
+        { value: "RISK_IMPACT", label: "RISK_IMPACT" },
+        { value: "FACILITY_TYPE", label: "FACILITY_TYPE" },
+        { value: "MEDICAL_CASE_STATUS", label: "MEDICAL_CASE_STATUS" },
+        { value: "CLAIM_INSTALLMENT_STATUS", label: "CLAIM_INSTALLMENT_STATUS" },
+        { value: "INVOICE_STATUS", label: "INVOICE_STATUS" },
+      ] },
+      { key: "value", label: "Stored Value", required: true },
+      { key: "label", label: "Display Label", required: true },
+      { key: "sort_order", label: "Sort Order", type: "number" },
     ],
   },
+  
+  // ── GL Scheme Setup ──────────────────────────────────────────────
   {
-    key: "riders", label: "Riders", icon: Shield,
-    color: "#10b981", gradient: "linear-gradient(135deg, #10b981, #34d399)",
-    fetchFn: glSetup.listRiders, createFn: (d) => glSetup.createRider(d),
-    updateFn: (id, d) => glSetup.updateRider(id, d),
-    fields: [
-      { key: "code", label: "Code", required: true },
-      { key: "name", label: "Name", required: true },
-      { key: "riderType", label: "Type" },
-      { key: "isMandatory", label: "Mandatory", type: "boolean" },
-    ],
-  },
-  {
-    key: "schemeTypes", label: "Scheme Types", icon: FileText,
+    key: "schemeTypes", label: "GL Scheme Types", group: "GL Scheme Setup", icon: FileText,
     color: "#f59e0b", gradient: "linear-gradient(135deg, #f59e0b, #fbbf24)",
     fetchFn: glSetup.listSchemeTypes, createFn: (d) => glSetup.createSchemeType(d),
     updateFn: (id, d) => glSetup.updateSchemeType(id, d), deleteFn: (id) => glSetup.deleteSchemeType(id),
+    fields: [
+      { key: "code", label: "Code", required: true },
+      { key: "name", label: "Name", required: true },
+      { key: "description", label: "Description", type: "textarea" },
+    ],
+  },
+  {
+    key: "premiumRates", label: "Premium Rates", group: "GL Scheme Setup", icon: DollarSign,
+    color: "#f59e0b", gradient: "linear-gradient(135deg, #f59e0b, #fbbf24)",
+    fetchFn: glSetup.listPremiumRates, createFn: (d) => glSetup.createPremiumRate(d),
+    updateFn: (id, d) => glSetup.updatePremiumRate(id, d), deleteFn: (id) => glSetup.deletePremiumRate(id),
+    fields: [
+      { key: "name", label: "Name", required: true },
+      { key: "rate_type", label: "Rate Type", type: "select", lookupCategory: "RATE_TYPE", required: true },
+      { key: "age_band_start", label: "Age Start", type: "number" },
+      { key: "age_band_end", label: "Age End", type: "number" },
+      { key: "gender", label: "Gender", type: "select", lookupCategory: "GENDER" },
+      { key: "rate_per_mille", label: "Rate Per Mille", type: "number" },
+      { key: "effective_date", label: "Effective Date", type: "date", required: true },
+    ],
+  },
+  {
+    key: "memberStatuses", label: "Member Statuses", group: "GL Scheme Setup", icon: Users,
+    color: "#f59e0b", gradient: "linear-gradient(135deg, #f59e0b, #fbbf24)",
+    fetchFn: glSetup.listMemberStatuses, createFn: (d) => glSetup.createMemberStatus(d),
+    updateFn: (id, d) => glSetup.updateMemberStatus(id, d), deleteFn: (id) => glSetup.deleteMemberStatus(id),
     fields: [
       { key: "code", label: "Code", required: true },
       { key: "name", label: "Name", required: true },
@@ -58,45 +109,285 @@ const SETUP_CATEGORIES: SetupCategory[] = [
     ],
   },
   {
-    key: "schemeStatuses", label: "Scheme Statuses", icon: Activity,
-    color: "#ec4899", gradient: "linear-gradient(135deg, #ec4899, #f472b6)",
+    key: "schemeStatuses", label: "Scheme Statuses", group: "GL Scheme Setup", icon: Activity,
+    color: "#f59e0b", gradient: "linear-gradient(135deg, #f59e0b, #fbbf24)",
     fetchFn: glSetup.listSchemeStatuses, createFn: (d) => glSetup.createSchemeStatus(d),
     updateFn: (id, d) => glSetup.updateSchemeStatus(id, d), deleteFn: (id) => glSetup.deleteSchemeStatus(id),
     fields: [
       { key: "code", label: "Code", required: true },
       { key: "name", label: "Name", required: true },
-      { key: "sortOrder", label: "Sort Order", type: "number" },
-      { key: "isTerminal", label: "Terminal", type: "boolean" },
+      { key: "sort_order", label: "Sort Order", type: "number" },
+      { key: "is_terminal", label: "Is Terminal", type: "boolean" },
     ],
   },
   {
-    key: "claimTypes", label: "Claim Types", icon: AlertCircle,
-    color: "#ef4444", gradient: "linear-gradient(135deg, #ef4444, #f87171)",
-    fetchFn: glSetup.listClaimTypes, createFn: (d) => glSetup.createClaimType(d),
-    updateFn: (id, d) => glSetup.updateClaimType(id, d),
+    key: "renewalStatuses", label: "Renewal Statuses", group: "GL Scheme Setup", icon: Repeat,
+    color: "#f59e0b", gradient: "linear-gradient(135deg, #f59e0b, #fbbf24)",
+    fetchFn: glSetup.listRenewalStatuses, createFn: (d) => glSetup.createRenewalStatus(d),
+    updateFn: (id, d) => glSetup.updateRenewalStatus(id, d), deleteFn: (id) => glSetup.deleteRenewalStatus(id),
     fields: [
       { key: "code", label: "Code", required: true },
       { key: "name", label: "Name", required: true },
-      { key: "requiresMedicalReport", label: "Req. Medical", type: "boolean" },
     ],
   },
   {
-    key: "medicalFacilities", label: "Medical Facilities", icon: Heart,
-    color: "#06b6d4", gradient: "linear-gradient(135deg, #06b6d4, #22d3ee)",
+    key: "healthQuestions", label: "Health Questions", group: "GL Scheme Setup", icon: HelpCircle,
+    color: "#f59e0b", gradient: "linear-gradient(135deg, #f59e0b, #fbbf24)",
+    fetchFn: glSetup.listHealthQuestions, createFn: (d) => glSetup.createHealthQuestion(d),
+    updateFn: (id, d) => glSetup.updateHealthQuestion(id, d), deleteFn: (id) => glSetup.deleteHealthQuestion(id),
+    fields: [
+      { key: "code", label: "Code", required: true },
+      { key: "question_text", label: "Question", type: "textarea", required: true },
+      { key: "question_type", label: "Type", type: "select", lookupCategory: "QUESTION_TYPE", required: true },
+      { key: "category", label: "Category", type: "select", lookupCategory: "HEALTH_QUESTION_CATEGORY", required: true },
+    ],
+  },
+  {
+    key: "healthQuestionnaires", label: "Health Questionnaires", group: "GL Scheme Setup", icon: FileText,
+    color: "#f59e0b", gradient: "linear-gradient(135deg, #f59e0b, #fbbf24)",
+    fetchFn: glSetup.listHealthQuestionnaires, createFn: (d) => glSetup.createHealthQuestionnaire(d),
+    updateFn: (id, d) => glSetup.updateHealthQuestionnaire(id, d), deleteFn: (id) => glSetup.deleteHealthQuestionnaire(id),
+    fields: [
+      { key: "code", label: "Code", required: true },
+      { key: "name", label: "Name", required: true },
+      { key: "version", label: "Version" },
+      { key: "effective_date", label: "Effective Date", type: "date", required: true },
+    ],
+  },
+  
+  // ── GL Product Setup ──────────────────────────────────────────────
+  {
+    key: "subProducts", label: "Sub Products", group: "GL Product Setup", icon: Package,
+    color: "#6366f1", gradient: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+    fetchFn: glSetup.listSubProducts, createFn: (d) => glSetup.createSubProduct(d),
+    updateFn: (id, d) => glSetup.updateSubProduct(id, d), deleteFn: (id) => glSetup.deleteSubProduct(id),
+    fields: [
+      { key: "code", label: "Code", required: true },
+      { key: "name", label: "Name", required: true },
+      { key: "description", label: "Description", type: "textarea" },
+    ],
+  },
+  {
+    key: "products", label: "GL Products", group: "GL Product Setup", icon: PackageCheck,
+    color: "#6366f1", gradient: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+    fetchFn: glSetup.listProducts, createFn: (d) => glSetup.createProduct(d),
+    updateFn: (id, d) => glSetup.updateProduct(id, d), deleteFn: (id) => glSetup.deleteProduct(id),
+    fields: [
+      { key: "code", label: "Code", required: true },
+      { key: "name", label: "Name", required: true },
+      { key: "sub_product", label: "Sub Product", type: "select", optionsFn: glSetup.listSubProducts, displayKey: "sub_product_name", required: true },
+      { key: "min_members", label: "Min Members", type: "number" },
+      { key: "max_members", label: "Max Members", type: "number" },
+      { key: "free_cover_limit", label: "FCL", type: "number" },
+    ],
+  },
+
+  // ── GL Rider Setup ──────────────────────────────────────────────
+  {
+    key: "riders", label: "GL Riders", group: "GL Rider Setup", icon: Shield,
+    color: "#10b981", gradient: "linear-gradient(135deg, #10b981, #34d399)",
+    fetchFn: glSetup.listRiders, createFn: (d) => glSetup.createRider(d),
+    updateFn: (id, d) => glSetup.updateRider(id, d), deleteFn: (id) => glSetup.deleteRider(id),
+    fields: [
+      { key: "code", label: "Code", required: true },
+      { key: "name", label: "Name", required: true },
+      { key: "rider_type", label: "Type", type: "select", lookupCategory: "RIDER_TYPE", required: true },
+      { key: "is_mandatory", label: "Mandatory", type: "boolean" },
+    ],
+  },
+  {
+    key: "riderRates", label: "Rider Rates", group: "GL Rider Setup", icon: Percent,
+    color: "#10b981", gradient: "linear-gradient(135deg, #10b981, #34d399)",
+    fetchFn: glSetup.listRiderRates, createFn: (d) => glSetup.createRiderRate(d),
+    updateFn: (id, d) => glSetup.updateRiderRate(id, d), deleteFn: (id) => glSetup.deleteRiderRate(id),
+    fields: [
+      { key: "rider", label: "Rider", type: "select", optionsFn: glSetup.listRiders, displayKey: "rider_name", required: true },
+      { key: "age_band_start", label: "Age Start", type: "number" },
+      { key: "age_band_end", label: "Age End", type: "number" },
+      { key: "gender", label: "Gender", type: "select", lookupCategory: "GENDER" },
+      { key: "rate_per_mille", label: "Rate Per Mille", type: "number" },
+      { key: "effective_date", label: "Effective Date", type: "date", required: true },
+    ],
+  },
+
+  // ── GL Medical U/w ──────────────────────────────────────────────
+  {
+    key: "medicalCodes", label: "Medical Codes", group: "GL Medical U/w", icon: Activity,
+    color: "#ec4899", gradient: "linear-gradient(135deg, #ec4899, #f472b6)",
+    fetchFn: glSetup.listMedicalCodes, createFn: (d) => glSetup.createMedicalCode(d),
+    updateFn: (id, d) => glSetup.updateMedicalCode(id, d), deleteFn: (id) => glSetup.deleteMedicalCode(id),
+    fields: [
+      { key: "code", label: "Code", required: true },
+      { key: "name", label: "Name", required: true },
+      { key: "description", label: "Description", type: "textarea" },
+    ],
+  },
+  {
+    key: "medicalLimits", label: "Medical Limits", group: "GL Medical U/w", icon: AlertTriangle,
+    color: "#ec4899", gradient: "linear-gradient(135deg, #ec4899, #f472b6)",
+    fetchFn: glSetup.listMedicalLimits, createFn: (d) => glSetup.createMedicalLimit(d),
+    updateFn: (id, d) => glSetup.updateMedicalLimit(id, d), deleteFn: (id) => glSetup.deleteMedicalLimit(id),
+    fields: [
+      { key: "age_min", label: "Age Min", type: "number", required: true },
+      { key: "age_max", label: "Age Max", type: "number", required: true },
+      { key: "sum_assured_min", label: "SA Min", type: "number" },
+      { key: "sum_assured_max", label: "SA Max", type: "number" },
+      { key: "required_codes", label: "Requirements", type: "textarea" },
+    ],
+  },
+  {
+    key: "uwDecisions", label: "UW Decisions", group: "GL Medical U/w", icon: CheckSquare,
+    color: "#ec4899", gradient: "linear-gradient(135deg, #ec4899, #f472b6)",
+    fetchFn: glSetup.listUnderwritingDecisions, createFn: (d) => glSetup.createUnderwritingDecision(d),
+    updateFn: (id, d) => glSetup.updateUnderwritingDecision(id, d), deleteFn: (id) => glSetup.deleteUnderwritingDecision(id),
+    fields: [
+      { key: "code", label: "Code", required: true },
+      { key: "decision_name", label: "Name", required: true },
+      { key: "loading_percentage", label: "Loading %", type: "number" },
+    ],
+  },
+  {
+    key: "personalHabits", label: "Personal Habits", group: "GL Medical U/w", icon: Cigarette,
+    color: "#ec4899", gradient: "linear-gradient(135deg, #ec4899, #f472b6)",
+    fetchFn: glSetup.listPersonalHabits, createFn: (d) => glSetup.createPersonalHabit(d),
+    updateFn: (id, d) => glSetup.updatePersonalHabit(id, d), deleteFn: (id) => glSetup.deletePersonalHabit(id),
+    fields: [
+      { key: "code", label: "Code", required: true },
+      { key: "category", label: "Category", type: "select", lookupCategory: "PERSONAL_HABIT_CATEGORY", required: true },
+      { key: "description", label: "Description", type: "textarea" },
+      { key: "risk_level", label: "Risk Level", type: "select", lookupCategory: "RISK_LEVEL", required: true },
+    ],
+  },
+  {
+    key: "medicalHistories", label: "Medical Histories", group: "GL Medical U/w", icon: HeartPulse,
+    color: "#ec4899", gradient: "linear-gradient(135deg, #ec4899, #f472b6)",
+    fetchFn: glSetup.listMedicalHistories, createFn: (d) => glSetup.createMedicalHistory(d),
+    updateFn: (id, d) => glSetup.updateMedicalHistory(id, d), deleteFn: (id) => glSetup.deleteMedicalHistory(id),
+    fields: [
+      { key: "code", label: "Code", required: true },
+      { key: "category", label: "Category", type: "select", lookupCategory: "MEDICAL_HISTORY_CATEGORY", required: true },
+      { key: "condition_name", label: "Condition", required: true },
+      { key: "risk_impact", label: "Risk Impact", type: "select", lookupCategory: "RISK_IMPACT", required: true },
+    ],
+  },
+  {
+    key: "medicalFacilities", label: "Medical Facilities", group: "GL Medical U/w", icon: Heart,
+    color: "#ec4899", gradient: "linear-gradient(135deg, #ec4899, #f472b6)",
     fetchFn: glSetup.listMedicalFacilities, createFn: (d) => glSetup.createMedicalFacility(d),
-    updateFn: (id, d) => glSetup.updateMedicalFacility(id, d),
+    updateFn: (id, d) => glSetup.updateMedicalFacility(id, d), deleteFn: (id) => glSetup.deleteMedicalFacility(id),
     fields: [
       { key: "code", label: "Code", required: true },
       { key: "name", label: "Name", required: true },
-      { key: "facilityType", label: "Type" },
+      { key: "facility_type", label: "Type", type: "select", lookupCategory: "FACILITY_TYPE", required: true },
       { key: "city", label: "City" },
       { key: "region", label: "Region" },
       { key: "phone", label: "Phone" },
     ],
   },
+  {
+    key: "medicalPractitioners", label: "Medical Practitioners", group: "GL Medical U/w", icon: Stethoscope,
+    color: "#ec4899", gradient: "linear-gradient(135deg, #ec4899, #f472b6)",
+    fetchFn: glSetup.listMedicalPractitioners, createFn: (d) => glSetup.createMedicalPractitioner(d),
+    updateFn: (id, d) => glSetup.updateMedicalPractitioner(id, d), deleteFn: (id) => glSetup.deleteMedicalPractitioner(id),
+    fields: [
+      { key: "license_number", label: "License", required: true },
+      { key: "name", label: "Name", required: true },
+      { key: "specialty", label: "Specialty", required: true },
+      { key: "facility", label: "Facility", type: "select", optionsFn: glSetup.listMedicalFacilities, displayKey: "facility_name" },
+    ],
+  },
+
+  // ── GL Claim Setup ──────────────────────────────────────────────
+  {
+    key: "claimTypes", label: "Claim Types", group: "GL Claim Setup", icon: AlertCircle,
+    color: "#ef4444", gradient: "linear-gradient(135deg, #ef4444, #f87171)",
+    fetchFn: glSetup.listClaimTypes, createFn: (d) => glSetup.createClaimType(d),
+    updateFn: (id, d) => glSetup.updateClaimType(id, d), deleteFn: (id) => glSetup.deleteClaimType(id),
+    fields: [
+      { key: "code", label: "Code", required: true },
+      { key: "name", label: "Name", required: true },
+      { key: "requires_medical_report", label: "Req. Medical", type: "boolean" },
+    ],
+  },
+  {
+    key: "claimReasons", label: "Claim Reasons", group: "GL Claim Setup", icon: HelpCircle,
+    color: "#ef4444", gradient: "linear-gradient(135deg, #ef4444, #f87171)",
+    fetchFn: glSetup.listClaimReasons, createFn: (d) => glSetup.createClaimReason(d),
+    updateFn: (id, d) => glSetup.updateClaimReason(id, d), deleteFn: (id) => glSetup.deleteClaimReason(id),
+    fields: [
+      { key: "code", label: "Code", required: true },
+      { key: "name", label: "Name", required: true },
+    ],
+  },
+  {
+    key: "claimStatuses", label: "Claim Statuses", group: "GL Claim Setup", icon: Activity,
+    color: "#ef4444", gradient: "linear-gradient(135deg, #ef4444, #f87171)",
+    fetchFn: glSetup.listClaimStatuses, createFn: (d) => glSetup.createClaimStatus(d),
+    updateFn: (id, d) => glSetup.updateClaimStatus(id, d), deleteFn: (id) => glSetup.deleteClaimStatus(id),
+    fields: [
+      { key: "code", label: "Code", required: true },
+      { key: "name", label: "Name", required: true },
+      { key: "sort_order", label: "Sort Order", type: "number" },
+      { key: "is_terminal", label: "Is Terminal", type: "boolean" },
+    ],
+  },
+  {
+    key: "dischargeTypes", label: "Discharge Types", group: "GL Claim Setup", icon: FileCheck,
+    color: "#ef4444", gradient: "linear-gradient(135deg, #ef4444, #f87171)",
+    fetchFn: glSetup.listDischargeTypes, createFn: (d) => glSetup.createDischargeType(d),
+    updateFn: (id, d) => glSetup.updateDischargeType(id, d), deleteFn: (id) => glSetup.deleteDischargeType(id),
+    fields: [
+      { key: "code", label: "Code", required: true },
+      { key: "name", label: "Name", required: true },
+    ],
+  },
+  {
+    key: "correspondentTypes", label: "Correspondent Types", group: "GL Claim Setup", icon: Users,
+    color: "#ef4444", gradient: "linear-gradient(135deg, #ef4444, #f87171)",
+    fetchFn: glSetup.listCorrespondentTypes, createFn: (d) => glSetup.createCorrespondentType(d),
+    updateFn: (id, d) => glSetup.updateCorrespondentType(id, d), deleteFn: (id) => glSetup.deleteCorrespondentType(id),
+    fields: [
+      { key: "code", label: "Code", required: true },
+      { key: "name", label: "Name", required: true },
+    ],
+  },
+
+  // ── GL Invoicing ──────────────────────────────────────────────
+  {
+    key: "medicalInvoices", label: "Medical Invoices", group: "GL Invoicing", icon: Receipt,
+    color: "#8b5cf6", gradient: "linear-gradient(135deg, #8b5cf6, #d946ef)",
+    fetchFn: glSetup.listMedicalInvoices, createFn: (d) => glSetup.createMedicalInvoice(d),
+    updateFn: (id, d) => glSetup.updateMedicalInvoice(id, d), deleteFn: (id) => glSetup.deleteMedicalInvoice(id),
+    fields: [
+      { key: "invoice_number", label: "Invoice No.", required: true },
+      { key: "facility", label: "Facility", type: "select", optionsFn: glSetup.listMedicalFacilities, displayKey: "facility_name", required: true },
+      { key: "amount", label: "Amount", type: "number", required: true },
+      { key: "status", label: "Status", type: "select", lookupCategory: "INVOICE_STATUS", required: true },
+    ],
+  },
 ]
 
-export default function GLSetup() {
+// Group setup categories by their group name
+function groupByGroup(categories: SetupCategory[]) {
+  const groups: { name: string; items: SetupCategory[] }[] = []
+  const map = new Map<string, SetupCategory[]>()
+  for (const cat of categories) {
+    const existing = map.get(cat.group)
+    if (existing) {
+      existing.push(cat)
+    } else {
+      const arr = [cat]
+      map.set(cat.group, arr)
+      groups.push({ name: cat.group, items: arr })
+    }
+  }
+  return groups
+}
+
+const SETUP_GROUPS = groupByGroup(SETUP_CATEGORIES)
+
+
+export default function GCSetup() {
   const [activeCat, setActiveCat] = useState<SetupCategory | null>(null)
   const [items, setItems] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
@@ -105,9 +396,26 @@ export default function GLSetup() {
   const [editItem, setEditItem] = useState<any>(null)
   const [formData, setFormData] = useState<Record<string, any>>({})
   const [saving, setSaving] = useState(false)
+  const [deleteItem, setDeleteItem] = useState<any>(null)
   const [counts, setCounts] = useState<Record<string, number>>({})
+  // FK dropdown options: { [fieldKey]: [{id, name, ...}] }
+  const [fkOptions, setFkOptions] = useState<Record<string, any[]>>({})
+  // Global cache of lookup values: { [category]: [{value, label, ...}] }
+  const [globalLookups, setGlobalLookups] = useState<Record<string, any[]>>({})
+  const [lookupFilter, setLookupFilter] = useState("All")
 
   useEffect(() => {
+    // Load all lookup values for table display
+    glSetup.listLookupValues().then((res) => {
+      const list = res?.results ?? res?.data ?? res ?? []
+      const map: Record<string, any[]> = {}
+      list.forEach((item: any) => {
+        if (!map[item.category]) map[item.category] = []
+        map[item.category].push(item)
+      })
+      setGlobalLookups(map)
+    }).catch(console.error)
+
     SETUP_CATEGORIES.forEach(async (cat) => {
       try {
         const res = await cat.fetchFn()
@@ -132,16 +440,34 @@ export default function GLSetup() {
     }
   }
 
+  async function loadFkOptions(cat: SetupCategory) {
+    const opts: Record<string, any[]> = {}
+    for (const f of cat.fields) {
+      if (f.type === "select" && f.optionsFn) {
+        try {
+          const res = await f.optionsFn()
+          const list = res?.results ?? res?.data ?? res ?? []
+          opts[f.key] = Array.isArray(list) ? list : []
+        } catch {
+          opts[f.key] = []
+        }
+      }
+    }
+    setFkOptions(opts)
+  }
+
   function openCreate() {
     setEditItem(null)
     setFormData({})
     setShowForm(true)
+    if (activeCat) loadFkOptions(activeCat)
   }
 
   function openEdit(item: any) {
     setEditItem(item)
     setFormData({ ...item })
     setShowForm(true)
+    if (activeCat) loadFkOptions(activeCat)
   }
 
   async function handleSave() {
@@ -162,28 +488,40 @@ export default function GLSetup() {
     }
   }
 
-  async function handleDelete(id: string) {
-    if (!activeCat?.deleteFn) return
-    if (!confirm("Are you sure you want to delete this item?")) return
+  function handleDeleteClick(item: any) {
+    setDeleteItem(item)
+  }
+
+  async function confirmDelete() {
+    if (!activeCat?.deleteFn || !deleteItem) return
+    setSaving(true)
     try {
-      await activeCat.deleteFn(id)
+      await activeCat.deleteFn(deleteItem.id)
       await loadCategory(activeCat)
+      setDeleteItem(null)
     } catch (err: any) {
       alert(err.message)
+    } finally {
+      setSaving(false)
     }
   }
 
+  const uniqueLookupCategories = activeCat?.key === "lookupValues" ? Array.from(new Set(items.map((i: any) => i.category))).sort() : []
+
   const filtered = items.filter((item) => {
+    if (activeCat?.key === "lookupValues" && lookupFilter !== "All" && item.category !== lookupFilter) return false
+    
     if (!search) return true
     const s = search.toLowerCase()
     return (
       item.name?.toLowerCase().includes(s) ||
       item.code?.toLowerCase().includes(s) ||
-      item.description?.toLowerCase().includes(s)
+      item.description?.toLowerCase().includes(s) ||
+      item.question_text?.toLowerCase().includes(s)
     )
   })
 
-  // Category grid view
+  // Category grid view — grouped by section
   if (!activeCat) {
     return (
       <div className="p-6 max-w-7xl mx-auto">
@@ -192,35 +530,44 @@ export default function GLSetup() {
             <div className="p-2 rounded-xl" style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}>
               <Settings className="h-6 w-6 text-white" />
             </div>
-            Group Life Setup
+            Group Life Parameters
           </h1>
-          <p className="text-muted-foreground mt-1">Configure parameters, products, and lookup tables for Group Life insurance.</p>
+          <p className="text-muted-foreground mt-1">Configure all parameters, products, and lookup tables for Group Life insurance.</p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {SETUP_CATEGORIES.map((cat) => {
-            const Icon = cat.icon
-            return (
-              <button
-                key={cat.key}
-                onClick={() => loadCategory(cat)}
-                className="group relative overflow-hidden rounded-2xl border border-border bg-card p-6 text-left transition-all duration-300 hover:shadow-xl hover:shadow-primary/5 hover:-translate-y-1 hover:border-primary/30"
-              >
-                <div className="absolute inset-0 opacity-0 transition-opacity group-hover:opacity-5" style={{ background: cat.gradient }} />
-                <div className="flex items-start justify-between">
-                  <div className="rounded-xl p-3 shadow-lg" style={{ background: cat.gradient }}>
-                    <Icon className="h-6 w-6 text-white" />
-                  </div>
-                  <ChevronRight className="h-5 w-5 text-muted-foreground transition-transform group-hover:translate-x-1" />
-                </div>
-                <h3 className="mt-4 text-lg font-semibold text-foreground">{cat.label}</h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {counts[cat.key] !== undefined ? `${counts[cat.key]} items configured` : "Loading..."}
-                </p>
-              </button>
-            )
-          })}
-        </div>
+        {SETUP_GROUPS.map((group) => (
+          <div key={group.name} className="mb-8">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
+              <div className="h-px flex-1 bg-border" />
+              <span className="px-2">{group.name}</span>
+              <div className="h-px flex-1 bg-border" />
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {group.items.map((cat) => {
+                const Icon = cat.icon
+                return (
+                  <button
+                    key={cat.key}
+                    onClick={() => loadCategory(cat)}
+                    className="group relative overflow-hidden rounded-2xl border border-border bg-card p-5 text-left transition-all duration-300 hover:shadow-xl hover:shadow-primary/5 hover:-translate-y-1 hover:border-primary/30"
+                  >
+                    <div className="absolute inset-0 opacity-0 transition-opacity group-hover:opacity-5" style={{ background: cat.gradient }} />
+                    <div className="flex items-start justify-between">
+                      <div className="rounded-xl p-2.5 shadow-lg" style={{ background: cat.gradient }}>
+                        <Icon className="h-5 w-5 text-white" />
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1" />
+                    </div>
+                    <h3 className="mt-3 text-sm font-semibold text-foreground">{cat.label}</h3>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {counts[cat.key] !== undefined ? `${counts[cat.key]} items` : "Loading..."}
+                    </p>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        ))}
       </div>
     )
   }
@@ -240,10 +587,22 @@ export default function GLSetup() {
           </div>
           <div>
             <h1 className="text-xl font-bold text-foreground">{activeCat.label}</h1>
-            <p className="text-sm text-muted-foreground">{filtered.length} items</p>
+            <p className="text-xs text-muted-foreground">{activeCat.group} • {filtered.length} items</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
+          {activeCat.key === "lookupValues" && (
+            <select
+              value={lookupFilter}
+              onChange={(e) => setLookupFilter(e.target.value)}
+              className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 appearance-none min-w-[160px]"
+            >
+              <option value="All">All Categories</option>
+              {uniqueLookupCategories.map((c: any) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          )}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
@@ -291,22 +650,38 @@ export default function GLSetup() {
             <tbody className="divide-y divide-border">
               {filtered.map((item: any) => (
                 <tr key={item.id} className="group transition hover:bg-secondary/20">
-                  {activeCat.fields.slice(0, 5).map((f) => (
-                    <td key={f.key} className="px-4 py-3.5 text-sm text-foreground">
-                      {f.type === "boolean" ? (
-                        item[f.key] ? <Check className="h-4 w-4 text-emerald-500" /> : <X className="h-4 w-4 text-muted-foreground/40" />
-                      ) : (
-                        String(item[f.key] ?? "—")
-                      )}
-                    </td>
-                  ))}
+                  {activeCat.fields.slice(0, 5).map((f) => {
+                    let cellValue: any
+                    if (f.type === "boolean") {
+                      cellValue = item[f.key] ? <Check className="h-4 w-4 text-emerald-500" /> : <X className="h-4 w-4 text-muted-foreground/40" />
+                    } else if (f.type === "select" && f.displayKey && item[f.displayKey]) {
+                      // FK field — show the display name from serializer (e.g. sub_product_name)
+                      cellValue = item[f.displayKey]
+                    } else if (f.type === "select" && f.lookupCategory) {
+                      // Lookup field — get label from globalLookups
+                      const options = globalLookups[f.lookupCategory] || []
+                      const match = options.find((o) => o.value === item[f.key])
+                      cellValue = match ? match.label : (item[f.key] ?? "—")
+                    } else if (f.type === "select" && f.choices) {
+                      // Choice field — show the human label
+                      const match = f.choices.find((c) => c.value === item[f.key])
+                      cellValue = match ? match.label : (item[f.key] ?? "—")
+                    } else {
+                      cellValue = String(item[f.key] ?? "—")
+                    }
+                    return (
+                      <td key={f.key} className="px-4 py-3.5 text-sm text-foreground">
+                        {cellValue}
+                      </td>
+                    )
+                  })}
                   <td className="px-4 py-3.5">
                     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                      item.isActive !== false
+                      item.is_active !== false
                         ? "bg-emerald-500/10 text-emerald-500"
                         : "bg-red-500/10 text-red-500"
                     }`}>
-                      {item.isActive !== false ? "Active" : "Inactive"}
+                      {item.is_active !== false ? "Active" : "Inactive"}
                     </span>
                   </td>
                   <td className="px-4 py-3.5 text-right">
@@ -317,7 +692,7 @@ export default function GLSetup() {
                         </button>
                       )}
                       {activeCat.deleteFn && (
-                        <button onClick={() => handleDelete(item.id)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition">
+                        <button onClick={() => handleDeleteClick(item)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition">
                           <Trash2 className="h-4 w-4" />
                         </button>
                       )}
@@ -338,7 +713,7 @@ export default function GLSetup() {
               <h2 className="text-lg font-bold text-foreground">{editItem ? "Edit" : "Create"} {activeCat.label.replace(/s$/, "")}</h2>
               <button onClick={() => setShowForm(false)} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground"><X className="h-5 w-5" /></button>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
               {activeCat.fields.map((f) => (
                 <div key={f.key}>
                   <label className="mb-1.5 block text-sm font-medium text-foreground">{f.label}{f.required && <span className="text-red-400 ml-1">*</span>}</label>
@@ -352,9 +727,58 @@ export default function GLSetup() {
                       />
                       <span className="text-sm text-muted-foreground">Enabled</span>
                     </label>
+                  ) : f.type === "select" && f.optionsFn ? (
+                    /* FK dropdown — options loaded from API */
+                    <select
+                      value={formData[f.key] ?? ""}
+                      onChange={(e) => setFormData({ ...formData, [f.key]: e.target.value })}
+                      className="h-10 w-full rounded-xl border border-border bg-secondary/30 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 appearance-none"
+                      required={f.required}
+                    >
+                      <option value="">— Select {f.label} —</option>
+                      {(fkOptions[f.key] ?? []).map((opt: any) => (
+                        <option key={opt.id} value={opt.id}>
+                          {opt[f.optionLabel ?? "name"] ?? opt.code ?? opt.id}
+                        </option>
+                      ))}
+                    </select>
+                  ) : f.type === "select" && f.lookupCategory ? (
+                    /* Dynamic choice dropdown from GCLookupValue */
+                    <select
+                      value={formData[f.key] ?? ""}
+                      onChange={(e) => setFormData({ ...formData, [f.key]: e.target.value })}
+                      className="h-10 w-full rounded-xl border border-border bg-secondary/30 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 appearance-none"
+                      required={f.required}
+                    >
+                      <option value="">— Select {f.label} —</option>
+                      {(globalLookups[f.lookupCategory] || []).map((c: any) => (
+                        <option key={c.value} value={c.value}>{c.label}</option>
+                      ))}
+                    </select>
+                  ) : f.type === "select" && f.choices ? (
+                    /* Static choice dropdown */
+                    <select
+                      value={formData[f.key] ?? ""}
+                      onChange={(e) => setFormData({ ...formData, [f.key]: e.target.value })}
+                      className="h-10 w-full rounded-xl border border-border bg-secondary/30 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 appearance-none"
+                      required={f.required}
+                    >
+                      <option value="">— Select {f.label} —</option>
+                      {f.choices.map((c) => (
+                        <option key={c.value} value={c.value}>{c.label}</option>
+                      ))}
+                    </select>
+                  ) : f.type === "textarea" ? (
+                    <textarea
+                      value={formData[f.key] ?? ""}
+                      onChange={(e) => setFormData({ ...formData, [f.key]: e.target.value })}
+                      rows={3}
+                      className="w-full rounded-xl border border-border bg-secondary/30 px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 resize-y"
+                      required={f.required}
+                    />
                   ) : (
                     <input
-                      type={f.type === "number" ? "number" : "text"}
+                      type={f.type === "number" ? "number" : f.type === "date" ? "date" : "text"}
                       value={formData[f.key] ?? ""}
                       onChange={(e) => setFormData({ ...formData, [f.key]: f.type === "number" ? Number(e.target.value) : e.target.value })}
                       className="h-10 w-full rounded-xl border border-border bg-secondary/30 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
@@ -374,6 +798,42 @@ export default function GLSetup() {
               >
                 {saving && <Loader2 className="h-4 w-4 animate-spin" />}
                 {editItem ? "Save Changes" : "Create"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE CONFIRMATION MODAL */}
+      {deleteItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setDeleteItem(null)}>
+          <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-4 mb-4 text-red-500">
+              <div className="p-3 bg-red-500/10 rounded-full">
+                <AlertCircle className="h-6 w-6" />
+              </div>
+              <h2 className="text-lg font-bold text-foreground">Confirm Delete</h2>
+            </div>
+            <p className="text-sm text-muted-foreground mb-6">
+              Are you sure you want to delete this item? This action cannot be undone.
+            </p>
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-border">
+              <button
+                type="button"
+                onClick={() => setDeleteItem(null)}
+                className="px-4 py-2 text-sm font-medium text-foreground bg-secondary hover:bg-secondary/80 rounded-xl transition"
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDelete}
+                disabled={saving}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-xl transition flex items-center gap-2 disabled:opacity-50"
+              >
+                {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                Delete
               </button>
             </div>
           </div>

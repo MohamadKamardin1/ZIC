@@ -56,6 +56,25 @@ class GLSchemeType(models.Model):
         return self.name
 
 
+class GLLookupValue(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    category = models.CharField(max_length=50, db_index=True)
+    value = models.CharField(max_length=50)
+    label = models.CharField(max_length=200)
+    sort_order = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "gl_lookup_value"
+        ordering = ["category", "sort_order", "label"]
+        unique_together = ("category", "value")
+
+    def __str__(self):
+        return f"{self.category}: {self.value} — {self.label}"
+
+
 class GLSchemeStatus(models.Model):
     """
     Operational lifecycle statuses for group life schemes.
@@ -136,19 +155,11 @@ class GLSchemePremiumRate(models.Model):
     and occupation-class based rating approaches.
     """
 
-    class RateType(models.TextChoices):
-        AGE_BAND = "AGE_BAND", "Age Band"
-        FLAT = "FLAT", "Flat Rate"
-        OCCUPATION = "OCCUPATION", "Occupation Class"
 
-    class Gender(models.TextChoices):
-        MALE = "MALE", "Male"
-        FEMALE = "FEMALE", "Female"
-        UNISEX = "UNISEX", "Unisex"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200)
-    rate_type = models.CharField(max_length=20, choices=RateType.choices)
+    rate_type = models.CharField(max_length=20)
     age_band_start = models.PositiveSmallIntegerField(
         null=True, blank=True, help_text="Minimum age (inclusive) for age-band rates."
     )
@@ -156,7 +167,7 @@ class GLSchemePremiumRate(models.Model):
         null=True, blank=True, help_text="Maximum age (inclusive) for age-band rates."
     )
     gender = models.CharField(
-        max_length=10, choices=Gender.choices, default="UNISEX"
+        max_length=10, default="UNISEX"
     )
     occupation_class = models.CharField(
         max_length=50, blank=True,
@@ -198,24 +209,13 @@ class GLHealthQuestion(models.Model):
     Individual health screening questions used in medical underwriting questionnaires.
     """
 
-    class QuestionType(models.TextChoices):
-        YES_NO = "YES_NO", "Yes / No"
-        TEXT = "TEXT", "Free Text"
-        NUMERIC = "NUMERIC", "Numeric Value"
-        MULTIPLE_CHOICE = "MULTIPLE_CHOICE", "Multiple Choice"
 
-    class Category(models.TextChoices):
-        GENERAL = "GENERAL", "General Health"
-        OCCUPATION = "OCCUPATION", "Occupational Risk"
-        LIFESTYLE = "LIFESTYLE", "Lifestyle & Habits"
-        FAMILY = "FAMILY", "Family Medical History"
-        CHRONIC = "CHRONIC", "Chronic Conditions"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(max_length=50, unique=True)
     question_text = models.TextField()
-    question_type = models.CharField(max_length=20, choices=QuestionType.choices)
-    category = models.CharField(max_length=20, choices=Category.choices, default="GENERAL")
+    question_type = models.CharField(max_length=20)
+    category = models.CharField(max_length=20, default="GENERAL")
     options = models.JSONField(
         blank=True, default=list,
         help_text="Available options for MULTIPLE_CHOICE type questions."
@@ -375,22 +375,12 @@ class GLRider(models.Model):
     Examples: PTD, ADD, Critical Illness, Waiver of Premium, Funeral.
     """
 
-    class RiderType(models.TextChoices):
-        PTD = "PTD", "Permanent Total Disability"
-        ADD = "ADD", "Accidental Death & Dismemberment"
-        CI = "CI", "Critical Illness"
-        WAIVER = "WAIVER", "Waiver of Premium"
-        FUNERAL = "FUNERAL", "Funeral Benefit"
-        TTD = "TTD", "Temporary Total Disability"
-        REPATRIATION = "REPATRIATION", "Repatriation of Remains"
-        EDUCATION = "EDUCATION", "Education Benefit"
-        OTHER = "OTHER", "Other"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
-    rider_type = models.CharField(max_length=20, choices=RiderType.choices)
+    rider_type = models.CharField(max_length=20)
     is_mandatory = models.BooleanField(
         default=False, help_text="If True, this rider is always included with the product."
     )
@@ -420,7 +410,6 @@ class GLRiderRate(models.Model):
     age_band_end = models.PositiveSmallIntegerField(null=True, blank=True)
     gender = models.CharField(
         max_length=10,
-        choices=GLSchemePremiumRate.Gender.choices,
         default="UNISEX",
     )
     rate_per_mille = models.DecimalField(
@@ -463,14 +452,6 @@ class GLQuotation(models.Model):
     computation, experience rating, and rider selections.
     """
 
-    class Status(models.TextChoices):
-        DRAFT = "DRAFT", "Draft"
-        SUBMITTED = "SUBMITTED", "Submitted"
-        UNDER_REVIEW = "UNDER_REVIEW", "Under Review"
-        APPROVED = "APPROVED", "Approved"
-        DECLINED = "DECLINED", "Declined"
-        EXPIRED = "EXPIRED", "Expired"
-        CONVERTED = "CONVERTED", "Converted to Scheme"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     quotation_number = models.CharField(max_length=50, unique=True, db_index=True)
@@ -486,7 +467,7 @@ class GLQuotation(models.Model):
         GLSchemeType, on_delete=models.PROTECT, related_name="quotations"
     )
     status = models.CharField(
-        max_length=20, choices=Status.choices, default="DRAFT"
+        max_length=20, default="DRAFT"
     )
 
     quotation_date = models.DateField(default=timezone.now)
@@ -807,17 +788,7 @@ class GLSchemeMember(models.Model):
     Contains personal, employment, coverage, and underwriting data.
     """
 
-    class UWStatus(models.TextChoices):
-        NOT_REQUIRED = "NOT_REQUIRED", "Not Required"
-        PENDING = "PENDING", "Pending UW"
-        STANDARD = "STANDARD", "Standard Acceptance"
-        LOADED = "LOADED", "Premium Loading"
-        EXCLUDED = "EXCLUDED", "Exclusion"
-        DECLINED = "DECLINED", "Declined"
 
-    class Gender(models.TextChoices):
-        MALE = "MALE", "Male"
-        FEMALE = "FEMALE", "Female"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     scheme = models.ForeignKey(
@@ -837,7 +808,7 @@ class GLSchemeMember(models.Model):
     first_name = models.CharField(max_length=100)
     surname = models.CharField(max_length=100)
     other_name = models.CharField(max_length=100, blank=True)
-    gender = models.CharField(max_length=10, choices=Gender.choices)
+    gender = models.CharField(max_length=10)
     date_of_birth = models.DateField()
     identification_type = models.CharField(max_length=30, blank=True)
     identification_number = models.CharField(max_length=100, blank=True)
@@ -870,7 +841,7 @@ class GLSchemeMember(models.Model):
         help_text="True if member's sum assured exceeds the Free Cover Limit."
     )
     uw_status = models.CharField(
-        max_length=20, choices=UWStatus.choices, default="NOT_REQUIRED"
+        max_length=20, default="NOT_REQUIRED"
     )
     premium_loading_percent = models.DecimalField(
         max_digits=5, decimal_places=2, default=0,
@@ -929,25 +900,16 @@ class GLSchemeMemberDependent(models.Model):
     Dependents covered under a member's group life policy.
     """
 
-    class Relationship(models.TextChoices):
-        SPOUSE = "SPOUSE", "Spouse"
-        CHILD = "CHILD", "Child"
-        PARENT = "PARENT", "Parent"
-        SIBLING = "SIBLING", "Sibling"
-        OTHER = "OTHER", "Other"
 
-    class Gender(models.TextChoices):
-        MALE = "MALE", "Male"
-        FEMALE = "FEMALE", "Female"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     member = models.ForeignKey(
         GLSchemeMember, on_delete=models.CASCADE, related_name="dependents"
     )
-    relationship = models.CharField(max_length=20, choices=Relationship.choices)
+    relationship = models.CharField(max_length=20)
     first_name = models.CharField(max_length=100)
     surname = models.CharField(max_length=100)
-    gender = models.CharField(max_length=10, choices=Gender.choices, blank=True)
+    gender = models.CharField(max_length=10, blank=True)
     date_of_birth = models.DateField(null=True, blank=True)
     sum_assured = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     premium_amount = models.DecimalField(max_digits=18, decimal_places=2, default=0)
@@ -1072,23 +1034,13 @@ class GLPersonalHabit(models.Model):
     Personal habits and lifestyle factors affecting underwriting risk.
     """
 
-    class Category(models.TextChoices):
-        SMOKING = "SMOKING", "Smoking"
-        ALCOHOL = "ALCOHOL", "Alcohol"
-        SUBSTANCE = "SUBSTANCE", "Substance Use"
-        EXTREME_SPORTS = "EXTREME_SPORTS", "Extreme Sports"
-        OTHER = "OTHER", "Other"
 
-    class RiskLevel(models.TextChoices):
-        LOW = "LOW", "Low"
-        MEDIUM = "MEDIUM", "Medium"
-        HIGH = "HIGH", "High"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=200)
-    category = models.CharField(max_length=20, choices=Category.choices)
-    risk_level = models.CharField(max_length=10, choices=RiskLevel.choices, default="LOW")
+    category = models.CharField(max_length=20)
+    risk_level = models.CharField(max_length=10, default="LOW")
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1108,24 +1060,13 @@ class GLMedicalHistory(models.Model):
     Medical history categories that impact underwriting decisions.
     """
 
-    class Category(models.TextChoices):
-        CHRONIC = "CHRONIC", "Chronic Condition"
-        HEREDITARY = "HEREDITARY", "Hereditary Condition"
-        SURGICAL = "SURGICAL", "Surgical History"
-        MENTAL_HEALTH = "MENTAL_HEALTH", "Mental Health"
-        OTHER = "OTHER", "Other"
 
-    class RiskImpact(models.TextChoices):
-        LOW = "LOW", "Low Impact"
-        MODERATE = "MODERATE", "Moderate Impact"
-        HIGH = "HIGH", "High Impact"
-        CRITICAL = "CRITICAL", "Critical Impact"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=200)
-    category = models.CharField(max_length=20, choices=Category.choices)
-    risk_impact = models.CharField(max_length=10, choices=RiskImpact.choices, default="LOW")
+    category = models.CharField(max_length=20)
+    risk_impact = models.CharField(max_length=10, default="LOW")
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1145,17 +1086,11 @@ class GLMedicalFacility(models.Model):
     Approved medical facilities (hospitals, clinics, labs) for examinations.
     """
 
-    class FacilityType(models.TextChoices):
-        HOSPITAL = "HOSPITAL", "Hospital"
-        CLINIC = "CLINIC", "Clinic"
-        LAB = "LAB", "Laboratory"
-        DIAGNOSTIC_CENTER = "DIAGNOSTIC_CENTER", "Diagnostic Center"
-        PHARMACY = "PHARMACY", "Pharmacy"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=300)
-    facility_type = models.CharField(max_length=20, choices=FacilityType.choices)
+    facility_type = models.CharField(max_length=20)
     address = models.TextField(blank=True)
     city = models.CharField(max_length=100, blank=True)
     region = models.CharField(max_length=100, blank=True)
@@ -1220,11 +1155,6 @@ class GLMedicalCase(models.Model):
     the Free Cover Limit. Tracks examination, diagnosis, and decision.
     """
 
-    class Status(models.TextChoices):
-        PENDING = "PENDING", "Pending"
-        IN_PROGRESS = "IN_PROGRESS", "In Progress"
-        COMPLETED = "COMPLETED", "Completed"
-        CANCELLED = "CANCELLED", "Cancelled"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     member = models.ForeignKey(
@@ -1284,7 +1214,7 @@ class GLMedicalCase(models.Model):
     decided_at = models.DateTimeField(null=True, blank=True)
 
     status = models.CharField(
-        max_length=20, choices=Status.choices, default="PENDING"
+        max_length=20, default="PENDING"
     )
     medical_report = models.FileField(
         upload_to="gl_medical_reports/%Y/%m/", blank=True
@@ -1591,11 +1521,6 @@ class GLClaimInstallment(models.Model):
     (e.g., disability annuities, funeral monthly payouts).
     """
 
-    class Status(models.TextChoices):
-        SCHEDULED = "SCHEDULED", "Scheduled"
-        PAID = "PAID", "Paid"
-        OVERDUE = "OVERDUE", "Overdue"
-        CANCELLED = "CANCELLED", "Cancelled"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     claim = models.ForeignKey(
@@ -1606,7 +1531,7 @@ class GLClaimInstallment(models.Model):
     amount = models.DecimalField(max_digits=18, decimal_places=2)
     paid_amount = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     status = models.CharField(
-        max_length=20, choices=Status.choices, default="SCHEDULED"
+        max_length=20, default="SCHEDULED"
     )
     payment_reference = models.CharField(max_length=100, blank=True)
     payment_date = models.DateField(null=True, blank=True)
@@ -1633,12 +1558,6 @@ class GLMedicalInvoice(models.Model):
     Medical invoices submitted by facilities for member examinations or claim-related checkups.
     """
 
-    class Status(models.TextChoices):
-        SUBMITTED = "SUBMITTED", "Submitted"
-        UNDER_REVIEW = "UNDER_REVIEW", "Under Review"
-        APPROVED = "APPROVED", "Approved"
-        REJECTED = "REJECTED", "Rejected"
-        PAID = "PAID", "Paid"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     claim = models.ForeignKey(
@@ -1664,7 +1583,7 @@ class GLMedicalInvoice(models.Model):
     )
     currency = models.CharField(max_length=3, default="TZS")
     status = models.CharField(
-        max_length=20, choices=Status.choices, default="SUBMITTED"
+        max_length=20, default="SUBMITTED"
     )
     notes = models.TextField(blank=True)
     reviewed_by = models.ForeignKey(

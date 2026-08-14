@@ -8,16 +8,17 @@ All responses follow the ZIC standard envelope: {success, status_code, message, 
 
 import logging
 
-from rest_framework import viewsets, status, permissions
+from rest_framework import viewsets, status, permissions, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.utils import timezone
+from django_filters.rest_framework import DjangoFilterBackend
 
 from apps.core.pagination import StandardPagination
 
 from apps.group_life.models import (
     # Layer 1 — Parameters
-    GLSchemeType, GLSchemeStatus, GLSchemeMemberStatus, GLSchemeRenewalStatus,
+    GLLookupValue, GLSchemeType, GLSchemeStatus, GLSchemeMemberStatus, GLSchemeRenewalStatus,
     GLSchemePremiumRate, GLHealthQuestion, GLHealthQuestionnaire,
     # Layer 2 — Products & Riders
     GLSubProduct, GLProduct, GLRider, GLRiderRate,
@@ -38,7 +39,7 @@ from apps.group_life.models import (
 )
 from apps.group_life.serializers import (
     # Layer 1
-    GLSchemeTypeSerializer, GLSchemeStatusSerializer,
+    GLLookupValueSerializer, GLSchemeTypeSerializer, GLSchemeStatusSerializer,
     GLSchemeMemberStatusSerializer, GLSchemeRenewalStatusSerializer,
     GLSchemePremiumRateSerializer, GLHealthQuestionSerializer,
     GLHealthQuestionnaireSerializer,
@@ -97,6 +98,16 @@ def _response(data=None, message="", status_code=200):
 # =============================================================================
 # LAYER 1 — PARAMETER / SETUP VIEWSETS
 # =============================================================================
+
+
+class GLLookupValueViewSet(viewsets.ModelViewSet):
+    queryset = GLLookupValue.objects.all()
+    serializer_class = GLLookupValueSerializer
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ["category", "is_active"]
+    search_fields = ["category", "value", "label"]
+    ordering_fields = ["category", "sort_order", "label", "created_at"]
+    ordering = ["category", "sort_order", "label"]
 
 
 class GLSchemeTypeViewSet(viewsets.ModelViewSet):

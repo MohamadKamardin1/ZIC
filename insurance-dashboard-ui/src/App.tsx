@@ -37,11 +37,33 @@ import Permissions from "./pages/user-management/Permissions"
 import UserGroups from "./pages/user-management/UserGroups"
 import Users from "./pages/user-management/Users"
 import GLSetup from "./pages/group-life/GLSetup"
+import OLSetup from "./pages/ordinary-life/OLSetup"
+import OLQuotations from "./pages/ordinary-life/OLQuotations"
+import OLCommitments from "./pages/ordinary-life/OLCommitments"
+import OLProposals from "./pages/ordinary-life/OLProposals"
+import OLPolicies from "./pages/ordinary-life/OLPolicies"
+import OLLoans from "./pages/ordinary-life/OLLoans"
+import OLWithdrawals from "./pages/ordinary-life/OLWithdrawals"
+import OLClaims from "./pages/ordinary-life/OLClaims"
+import OLMaturityInstallments from "./pages/ordinary-life/OLMaturityInstallments"
 import GLQuotations from "./pages/group-life/GLQuotations"
 import GLSchemes from "./pages/group-life/GLSchemes"
 import GLMembers from "./pages/group-life/GLMembers"
 import GLClaims from "./pages/group-life/GLClaims"
 import GLMedicalUW from "./pages/group-life/GLMedicalUW"
+import GCSetup from "./pages/group-credit/GCSetup"
+import GCQuotations from "./pages/group-credit/GCQuotations"
+import GCSchemes from "./pages/group-credit/GCSchemes"
+import GCBorrowers from "./pages/group-credit/GCBorrowers"
+import GCClaims from "./pages/group-credit/GCClaims"
+import GCMedicalUW from "./pages/group-credit/GCMedicalUW"
+import GCRenewals from "./pages/group-credit/GCRenewals"
+import FOReceipts from "./pages/front-office/FOReceipts"
+import FOCommissions from "./pages/front-office/FOCommissions"
+import FOCommissionStatements from "./pages/front-office/FOCommissionStatements"
+import FORequisitions from "./pages/front-office/FORequisitions"
+import FOPayments from "./pages/front-office/FOPayments"
+import FOParameters from "./pages/front-office/FOParameters"
 import type { ReactNode } from "react"
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -98,11 +120,35 @@ export default function App() {
         <Route path="user-management/user-groups" element={<UserGroups />} />
         <Route path="user-management/users" element={<Users />} />
         <Route path="group-life/setup" element={<GLSetup />} />
+
+        {/* Ordinary Life */}
+        <Route path="ordinary-life/setup" element={<OLSetup />} />
+        <Route path="ordinary-life/quotations" element={<OLQuotations />} />
+        <Route path="ordinary-life/commitments" element={<OLCommitments />} />
+        <Route path="ordinary-life/proposals" element={<OLProposals />} />
+        <Route path="ordinary-life/policies" element={<OLPolicies />} />
+        <Route path="ordinary-life/loans" element={<OLLoans />} />
+        <Route path="ordinary-life/withdrawals" element={<OLWithdrawals />} />
+        <Route path="ordinary-life/claims" element={<OLClaims />} />
+        <Route path="ordinary-life/maturity-installments" element={<OLMaturityInstallments />} />
         <Route path="group-life/quotations" element={<GLQuotations />} />
         <Route path="group-life/schemes" element={<GLSchemes />} />
         <Route path="group-life/members" element={<GLMembers />} />
         <Route path="group-life/claims" element={<GLClaims />} />
         <Route path="group-life/medical-uw" element={<GLMedicalUW />} />
+        <Route path="group-credit/setup" element={<GCSetup />} />
+        <Route path="group-credit/quotations" element={<GCQuotations />} />
+        <Route path="group-credit/schemes" element={<GCSchemes />} />
+        <Route path="group-credit/renewals" element={<GCRenewals />} />
+        <Route path="group-credit/borrowers" element={<GCBorrowers />} />
+        <Route path="group-credit/claims" element={<GCClaims />} />
+        <Route path="group-credit/medical-uw" element={<GCMedicalUW />} />
+        <Route path="front-office/receipts" element={<FOReceipts />} />
+        <Route path="front-office/commissions" element={<FOCommissions />} />
+        <Route path="front-office/commission-statements" element={<FOCommissionStatements />} />
+        <Route path="front-office/requisitions" element={<FORequisitions />} />
+        <Route path="front-office/payments" element={<FOPayments />} />
+        <Route path="front-office/parameters" element={<FOParameters />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

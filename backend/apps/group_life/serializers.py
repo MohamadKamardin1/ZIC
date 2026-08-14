@@ -17,7 +17,7 @@ from rest_framework import serializers
 
 from apps.group_life.models import (
     # Layer 1 — Parameters
-    GLSchemeType, GLSchemeStatus, GLSchemeMemberStatus, GLSchemeRenewalStatus,
+    GLLookupValue, GLSchemeType, GLSchemeStatus, GLSchemeMemberStatus, GLSchemeRenewalStatus,
     GLSchemePremiumRate, GLHealthQuestion, GLHealthQuestionnaire,
     # Layer 2 — Products & Riders
     GLSubProduct, GLProduct, GLRider, GLRiderRate,
@@ -42,8 +42,15 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
-# LAYER 1 — PARAMETER / SETUP SERIALIZERS
+# LAYER 1 — PARAMETER / SETUP TABLES
 # =============================================================================
+
+
+class GLLookupValueSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GLLookupValue
+        fields = ["id", "category", "value", "label", "sort_order", "is_active", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
 
 
 class GLSchemeTypeSerializer(serializers.ModelSerializer):

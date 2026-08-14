@@ -10,6 +10,7 @@ from rest_framework.routers import DefaultRouter
 
 from apps.group_life.views import (
     # Layer 1 — Setup
+    GLLookupValueViewSet,
     GLSchemeTypeViewSet, GLSchemeStatusViewSet,
     GLSchemeMemberStatusViewSet, GLSchemeRenewalStatusViewSet,
     GLSchemePremiumRateViewSet, GLHealthQuestionViewSet,
@@ -41,6 +42,7 @@ from apps.group_life.views import (
 # ---------------------------------------------------------------------------
 
 setup_router = DefaultRouter()
+setup_router.register(r"lookup-values", GLLookupValueViewSet, basename="gl-lookup-values")
 setup_router.register(r"scheme-types", GLSchemeTypeViewSet, basename="gl-scheme-types")
 setup_router.register(r"scheme-statuses", GLSchemeStatusViewSet, basename="gl-scheme-statuses")
 setup_router.register(r"member-statuses", GLSchemeMemberStatusViewSet, basename="gl-member-statuses")

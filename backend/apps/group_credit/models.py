@@ -99,6 +99,30 @@ class GCSchemeRenewalStatus(models.Model):
         return self.name
 
 
+class GCLookupValue(models.Model):
+    """Generic configurable dropdown values for GC module.
+
+    Groups values by `category` (e.g. RATE_TYPE, GENDER, RIDER_TYPE).
+    The frontend fetches /lookup-values/?category=<CAT> to populate dropdowns.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    category = models.CharField(max_length=50, db_index=True, help_text="Grouping key, e.g. RATE_TYPE, GENDER")
+    value = models.CharField(max_length=50, help_text="Stored value / code")
+    label = models.CharField(max_length=200, help_text="Human-readable display label")
+    sort_order = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "gc_lookup_value"
+        ordering = ["category", "sort_order", "label"]
+        unique_together = ("category", "value")
+        verbose_name_plural = "GC Lookup Values"
+
+    def __str__(self):
+        return f"{self.category}: {self.value} — {self.label}"
+
 class GCSchemePremiumRate(models.Model):
     RATE_TYPE_CHOICES = [
         ("BASE", "Base Rate"),
@@ -112,10 +136,10 @@ class GCSchemePremiumRate(models.Model):
     ]
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200)
-    rate_type = models.CharField(max_length=20, choices=RATE_TYPE_CHOICES, default="BASE")
+    rate_type = models.CharField(max_length=20, default="BASE")
     age_band_start = models.IntegerField(validators=[MinValueValidator(0)])
     age_band_end = models.IntegerField(validators=[MaxValueValidator(120)])
-    gender = models.CharField(max_length=10, choices=GENDER_CHOICES, default="U")
+    gender = models.CharField(max_length=10, default="U")
     occupation_class = models.CharField(max_length=50, blank=True, null=True)
     rate_per_mille = models.DecimalField(max_digits=10, decimal_places=4, default=Decimal('0.0000'))
     flat_rate = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0.00'))
@@ -149,8 +173,8 @@ class GCHealthQuestion(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(max_length=50, unique=True)
     question_text = models.TextField()
-    question_type = models.CharField(max_length=20, choices=QUESTION_TYPE_CHOICES, default="YES_NO")
-    category = models.CharField(max_length=50, choices=CATEGORY_CHOICES, default="GENERAL")
+    question_type = models.CharField(max_length=20, default="YES_NO")
+    category = models.CharField(max_length=50, default="GENERAL")
     options = models.JSONField(blank=True, null=True, help_text="JSON list for CHOICE type")
     sort_order = models.IntegerField(default=0)
     is_required = models.BooleanField(default=True)
@@ -247,7 +271,7 @@ class GCRider(models.Model):
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
-    rider_type = models.CharField(max_length=20, choices=RIDER_TYPE_CHOICES, default="OTHER")
+    rider_type = models.CharField(max_length=20, default="OTHER")
     is_mandatory = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -267,7 +291,7 @@ class GCRiderRate(models.Model):
     rider = models.ForeignKey(GCRider, on_delete=models.CASCADE, related_name="rates")
     age_band_start = models.IntegerField(validators=[MinValueValidator(0)])
     age_band_end = models.IntegerField(validators=[MaxValueValidator(120)])
-    gender = models.CharField(max_length=10, choices=GENDER_CHOICES, default="U")
+    gender = models.CharField(max_length=10, default="U")
     rate_per_mille = models.DecimalField(max_digits=10, decimal_places=4, default=Decimal('0.0000'))
     flat_amount = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0.00'))
     effective_date = models.DateField()
@@ -303,7 +327,7 @@ class GCQuotation(models.Model):
     partner = models.ForeignKey("partners.Partner", on_delete=models.PROTECT, related_name="gc_quotations")
     product = models.ForeignKey(GCProduct, on_delete=models.PROTECT, related_name="quotations")
     scheme_type = models.ForeignKey(GCSchemeType, on_delete=models.PROTECT, related_name="quotations", null=True, blank=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="DRAFT")
+    status = models.CharField(max_length=20, default="DRAFT")
     quotation_date = models.DateField(auto_now_add=True)
     valid_until = models.DateField(blank=True, null=True)
     total_members = models.IntegerField(default=0)
@@ -480,7 +504,7 @@ class GCSchemeMember(models.Model):
     first_name = models.CharField(max_length=100)
     surname = models.CharField(max_length=100)
     other_name = models.CharField(max_length=100, blank=True)
-    gender = models.CharField(max_length=10, choices=GENDER_CHOICES)
+    gender = models.CharField(max_length=10)
     date_of_birth = models.DateField()
     identification_type = models.CharField(max_length=50, blank=True)
     identification_number = models.CharField(max_length=100, blank=True)
@@ -502,7 +526,7 @@ class GCSchemeMember(models.Model):
     
     # Medical UW Flags
     requires_medical_uw = models.BooleanField(default=False)
-    uw_status = models.CharField(max_length=20, choices=UW_STATUS_CHOICES, default="NOT_REQUIRED")
+    uw_status = models.CharField(max_length=20, default="NOT_REQUIRED")
     premium_loading_percent = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('0.00'))
     
     email = models.EmailField(blank=True)
@@ -542,10 +566,10 @@ class GCSchemeMemberDependent(models.Model):
     GENDER_CHOICES = [("M", "Male"), ("F", "Female"), ("U", "Unisex")]
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     member = models.ForeignKey(GCSchemeMember, on_delete=models.CASCADE, related_name="dependents")
-    relationship = models.CharField(max_length=20, choices=RELATIONSHIP_CHOICES)
+    relationship = models.CharField(max_length=20)
     first_name = models.CharField(max_length=100)
     surname = models.CharField(max_length=100)
-    gender = models.CharField(max_length=10, choices=GENDER_CHOICES)
+    gender = models.CharField(max_length=10)
     date_of_birth = models.DateField()
     sum_assured = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0.00'))
     premium_amount = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0.00'))
@@ -637,8 +661,8 @@ class GCPersonalHabit(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=100)
-    category = models.CharField(max_length=50, choices=CATEGORY_CHOICES)
-    risk_level = models.CharField(max_length=20, choices=RISK_LEVEL_CHOICES, default="LOW")
+    category = models.CharField(max_length=50)
+    risk_level = models.CharField(max_length=20, default="LOW")
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -664,8 +688,8 @@ class GCMedicalHistory(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=200)
-    category = models.CharField(max_length=50, choices=CATEGORY_CHOICES)
-    risk_impact = models.CharField(max_length=20, choices=RISK_IMPACT_CHOICES, default="LOW")
+    category = models.CharField(max_length=50)
+    risk_impact = models.CharField(max_length=20, default="LOW")
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -689,7 +713,7 @@ class GCMedicalFacility(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=200)
-    facility_type = models.CharField(max_length=50, choices=FACILITY_TYPE_CHOICES)
+    facility_type = models.CharField(max_length=50)
     address = models.TextField()
     city = models.CharField(max_length=100)
     region = models.CharField(max_length=100, blank=True)
@@ -763,7 +787,7 @@ class GCMedicalCase(models.Model):
     decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="gc_uw_decisions")
     decided_at = models.DateTimeField(blank=True, null=True)
     
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="OPEN")
+    status = models.CharField(max_length=20, default="OPEN")
     medical_report = models.FileField(upload_to="gc_medical_reports/", blank=True, null=True)
     
     created_at = models.DateTimeField(auto_now_add=True)
@@ -956,7 +980,7 @@ class GCClaimInstallment(models.Model):
     due_date = models.DateField()
     amount = models.DecimalField(max_digits=18, decimal_places=2)
     paid_amount = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0.00'))
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="PENDING")
+    status = models.CharField(max_length=20, default="PENDING")
     payment_reference = models.CharField(max_length=100, blank=True)
     payment_date = models.DateField(blank=True, null=True)
     notes = models.TextField(blank=True)
@@ -990,7 +1014,7 @@ class GCMedicalInvoice(models.Model):
     approved_amount = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0.00'))
     paid_amount = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0.00'))
     currency = models.CharField(max_length=10, default="TZS")
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="RECEIVED")
+    status = models.CharField(max_length=20, default="RECEIVED")
     notes = models.TextField(blank=True)
     reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="gc_reviewed_invoices")
     approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="gc_approved_invoices")
