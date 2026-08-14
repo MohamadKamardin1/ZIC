@@ -1,3 +1,6 @@
+from functools import wraps
+
+from django.core.exceptions import PermissionDenied
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 
 
@@ -36,6 +39,39 @@ class HasModulePermission(BasePermission):
         if request.user.is_staff and self.action in ['READ']:
             return True
         return request.user.has_module_permission(self.module_code, self.action)
+
+
+class HasPermission(BasePermission):
+    """Authorize an endpoint using a normalized ``module.action`` code."""
+
+    permission_code = None
+
+    def __init__(self, permission_code=None):
+        self.permission_code = permission_code or self.permission_code
+
+    def has_permission(self, request, view):
+        code = getattr(view, 'permission_code', None) or self.permission_code
+        return bool(
+            request.user
+            and request.user.is_authenticated
+            and code
+            and request.user.has_permission(code)
+        )
+
+
+def permission_required(permission_code):
+    """Protect a Django view with a normalized ``module.action`` permission."""
+
+    def decorator(view_func):
+        @wraps(view_func)
+        def wrapped(request, *args, **kwargs):
+            if not request.user.is_authenticated or not request.user.has_permission(permission_code):
+                raise PermissionDenied(f'Missing permission: {permission_code}')
+            return view_func(request, *args, **kwargs)
+
+        return wrapped
+
+    return decorator
 
 
 class OrPermission(BasePermission):

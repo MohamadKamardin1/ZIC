@@ -251,13 +251,29 @@ class User(AbstractBaseUser, PermissionsMixin):
     def is_phone_verified(self):
         return self.phone_verified
 
+    def has_permission(self, permission_code):
+        if self.is_superuser:
+            return True
+        normalized = (permission_code or '').strip().lower()
+        if '.' not in normalized:
+            return False
+        module_code, action = normalized.rsplit('.', 1)
+        return self.groups.filter(
+            is_active=True,
+            permissions__is_active=True,
+            permissions__module__iexact=module_code,
+            permissions__action__iexact=action,
+        ).exists()
+
     def has_module_permission(self, module_code, action='READ'):
         if self.is_superuser:
             return True
         return self.groups.filter(
+            is_active=True,
+            permissions__is_active=True,
             permissions__module=module_code,
             permissions__action=action,
-        ).exists()
+        ).exists() or self.has_permission(f'{module_code}.{action}')
 
     def record_failed_login(self):
         self.failed_login_attempts += 1
@@ -281,27 +297,53 @@ class User(AbstractBaseUser, PermissionsMixin):
 
 class UserPermission(models.Model):
     class Action(models.TextChoices):
-        CREATE = 'CREATE', 'Create'
+        VIEW = 'VIEW', 'View'
         READ = 'READ', 'Read'
+        CREATE = 'CREATE', 'Create'
         UPDATE = 'UPDATE', 'Update'
         DELETE = 'DELETE', 'Delete'
         APPROVE = 'APPROVE', 'Approve'
+        REJECT = 'REJECT', 'Reject'
+        CONFIGURE = 'CONFIGURE', 'Configure'
         EXPORT = 'EXPORT', 'Export'
+        PRINT = 'PRINT', 'Print'
+        REVERSE = 'REVERSE', 'Reverse'
+        SETTLE = 'SETTLE', 'Settle'
+        ASSIGN = 'ASSIGN', 'Assign'
+        ADMINISTER = 'ADMINISTER', 'Administer'
+        MANAGE = 'MANAGE', 'Manage'
+        REVIEW = 'REVIEW', 'Review'
+        COMPLIANCE = 'COMPLIANCE', 'Compliance'
+        ASSESS = 'ASSESS', 'Assess'
+        CONVERT = 'CONVERT', 'Convert'
+        BULK_IMPORT = 'BULK_IMPORT', 'Bulk import'
+        SUSPEND = 'SUSPEND', 'Suspend'
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200)
-    codename = models.CharField(max_length=100, unique=True)
+    codename = models.CharField(max_length=150, unique=True)
     module = models.CharField(max_length=100, db_index=True)
     action = models.CharField(max_length=20, choices=Action.choices, default=Action.READ)
     resource_type = models.CharField(max_length=100, blank=True)
+    description = models.TextField(blank=True, default='')
+    is_active = models.BooleanField(default=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = 'Permission'
         verbose_name_plural = 'Permissions'
-        ordering = ['module', 'name']
-        unique_together = ['module', 'action', 'resource_type']
+        ordering = ['module', 'action', 'name']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['module', 'action', 'resource_type'],
+                name='users_permission_module_action_resource_uniq',
+            ),
+        ]
+
+    @property
+    def code(self):
+        return self.codename
 
     def __str__(self):
         return f'{self.name} ({self.codename})'
@@ -335,14 +377,29 @@ class UserGroup(models.Model):
         ZIC_GROUP = 'ZIC_GROUP', 'ZIC Group'
         SUPER_ADMIN = 'SUPER_ADMIN', 'Super Admin'
 
+    class GroupType(models.TextChoices):
+        INTERNAL = 'INTERNAL', 'Internal'
+        PARTNER = 'PARTNER', 'Partner'
+        ADMINISTRATIVE = 'ADMINISTRATIVE', 'Administrative'
+        AUDIT = 'AUDIT', 'Audit'
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    name = models.CharField(max_length=30, choices=GroupName.choices, unique=True)
+    name = models.CharField(max_length=100, unique=True)
+    code = models.CharField(max_length=100, unique=True, null=True, blank=True, db_index=True)
     description = models.TextField(blank=True)
+    group_type = models.CharField(max_length=20, choices=GroupType.choices, default=GroupType.INTERNAL, db_index=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+    is_system = models.BooleanField(default=False, db_index=True)
+    # Kept as a compatibility alias for older admin and signal code.
     is_system_group = models.BooleanField(default=False)
     permissions = models.ManyToManyField(UserPermission, related_name='groups', blank=True)
     created_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='created_groups'
+    )
+    updated_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='updated_groups'
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -353,11 +410,14 @@ class UserGroup(models.Model):
         ordering = ['name']
 
     def __str__(self):
-        return self.get_name_display()
+        return self.name
 
     def save(self, *args, **kwargs):
-        if self.name in [choice[0] for choice in self.GroupName.choices]:
-            self.is_system_group = True
+        if not self.code:
+            self.code = self.name.upper().replace(' ', '_')
+        legacy_system = self.name in [choice[0] for choice in self.GroupName.choices]
+        self.is_system = bool(self.is_system or self.is_system_group or legacy_system)
+        self.is_system_group = self.is_system
         super().save(*args, **kwargs)
 
 

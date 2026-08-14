@@ -1,9 +1,10 @@
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.utils.translation import gettext_lazy as _
 from import_export import resources
 from import_export.admin import ImportExportModelAdmin
 
 from apps.authentication import services as iam_services
+from apps.users.rbac import RBACService
 
 from .models import NotificationPreference, PermissionGroup, User, UserGroup, UserPermission
 
@@ -79,17 +80,36 @@ class UserAdmin(ImportExportModelAdmin, admin.ModelAdmin):
 
 @admin.register(UserGroup)
 class UserGroupAdmin(admin.ModelAdmin):
-    list_display = ['name', 'is_system_group', 'created_at']
-    list_filter = ['is_system_group']
-    search_fields = ['name', 'description']
+    list_display = ['name', 'code', 'group_type', 'is_active', 'is_system', 'created_at']
+    list_filter = ['group_type', 'is_active', 'is_system']
+    search_fields = ['name', 'code', 'description']
+    readonly_fields = ['id', 'created_by', 'updated_by', 'created_at', 'updated_at']
     filter_horizontal = ['permissions']
+    actions = ['deactivate_groups', 'activate_groups']
+
+    @admin.action(description='Deactivate selected non-system groups')
+    def deactivate_groups(self, request, queryset):
+        count = 0
+        for group in queryset:
+            try:
+                RBACService.deactivate_group(actor=request.user, group=group, request=request)
+                count += 1
+            except Exception as exc:
+                self.message_user(request, f'{group.name}: {exc}', level=messages.ERROR)
+        self.message_user(request, f'{count} group(s) deactivated.')
+
+    @admin.action(description='Activate selected groups')
+    def activate_groups(self, request, queryset):
+        updated = queryset.update(is_active=True, updated_by=request.user)
+        self.message_user(request, f'{updated} group(s) activated.')
 
 
 @admin.register(UserPermission)
 class UserPermissionAdmin(admin.ModelAdmin):
-    list_display = ['name', 'codename', 'module', 'action', 'resource_type']
-    list_filter = ['module', 'action']
-    search_fields = ['name', 'codename', 'module']
+    list_display = ['name', 'codename', 'module', 'action', 'resource_type', 'is_active']
+    list_filter = ['module', 'action', 'is_active']
+    search_fields = ['name', 'codename', 'module', 'description']
+    readonly_fields = ['id', 'created_at', 'updated_at']
 
 
 @admin.register(PermissionGroup)

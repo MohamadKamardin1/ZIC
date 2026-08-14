@@ -7,7 +7,7 @@ from rest_framework.response import Response
 
 from apps.authentication import services as iam_services
 from apps.core.pagination import StandardPagination
-from apps.core.permissions import HasModulePermission, IsAdminUser, IsOwnerOrAdmin, OrPermission
+from apps.core.permissions import HasModulePermission, HasPermission, IsAdminUser, IsOwnerOrAdmin, OrPermission
 
 from .models import (
     PermissionGroup,
@@ -17,8 +17,10 @@ from .models import (
     UserPermission,
     UserSession,
 )
+from .rbac import RBACService
 from .serializers import (
     ChangePasswordSerializer,
+    GroupAssignmentSerializer,
     PermissionGroupSerializer,
     UserActivityLogSerializer,
     UserCreateSerializer,
@@ -165,57 +167,156 @@ class UserViewSet(viewsets.ModelViewSet):
 
 
 class UserGroupViewSet(viewsets.ModelViewSet):
-    queryset = UserGroup.objects.all()
+    queryset = UserGroup.objects.prefetch_related('permissions', 'users').all()
 
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
-            return [permissions.IsAuthenticated(), HasModulePermission('users', 'READ')]
-        return [permissions.IsAuthenticated(), HasModulePermission('users', 'MANAGE')]
+            return [
+                permissions.IsAuthenticated(),
+                OrPermission(
+                    HasPermission('user_management.view'),
+                    HasModulePermission('users', 'READ'),
+                ),
+            ]
+        return [
+            permissions.IsAuthenticated(),
+            OrPermission(
+                HasPermission('user_management.administer'),
+                HasModulePermission('users', 'MANAGE'),
+            ),
+        ]
 
     def get_serializer_class(self):
-        if self.action in ['retrieve', 'list']:
-            return UserGroupDetailSerializer if self.action == 'retrieve' else UserGroupSerializer
-        return UserGroupSerializer
+        return UserGroupDetailSerializer if self.action == 'retrieve' else UserGroupSerializer
+
+    def _wrapped(self, message, data=None, code=200):
+        return Response({
+            'success': True,
+            'status_code': code,
+            'message': message,
+            'data': data,
+            'meta': {'timestamp': timezone.now().isoformat(), 'version': 'v1'},
+        }, status=code)
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        group = RBACService.create_group(actor=request.user, data=serializer.validated_data, request=request)
+        return self._wrapped('Group created successfully.', UserGroupDetailSerializer(group).data, status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        group = self.get_object()
+        serializer = self.get_serializer(group, data=request.data, partial=kwargs.pop('partial', False))
+        serializer.is_valid(raise_exception=True)
+        group = RBACService.update_group(actor=request.user, group=group, data=serializer.validated_data, request=request)
+        return self._wrapped('Group updated successfully.', UserGroupDetailSerializer(group).data)
+
+    def destroy(self, request, *args, **kwargs):
+        group = self.get_object()
+        group = RBACService.deactivate_group(actor=request.user, group=group, request=request)
+        return self._wrapped('Group deactivated successfully.', UserGroupDetailSerializer(group).data)
+
+    @action(detail=True, methods=['post'])
+    def deactivate(self, request, pk=None):
+        group = RBACService.deactivate_group(actor=request.user, group=self.get_object(), request=request)
+        return self._wrapped('Group deactivated successfully.', UserGroupDetailSerializer(group).data)
+
+    @action(detail=True, methods=['post'])
+    def activate(self, request, pk=None):
+        group = self.get_object()
+        if group.is_system:
+            group.is_active = True
+            group.updated_by = request.user
+            group.save(update_fields=['is_active', 'updated_by', 'updated_at'])
+        else:
+            group.is_active = True
+            group.updated_by = request.user
+            group.save(update_fields=['is_active', 'updated_by', 'updated_at'])
+        return self._wrapped('Group activated successfully.', UserGroupDetailSerializer(group).data)
 
     @action(detail=True, methods=['post'])
     def assign_permissions(self, request, pk=None):
         group = self.get_object()
-        permission_ids = request.data.get('permission_ids', [])
-        permissions = UserPermission.objects.filter(id__in=permission_ids)
-        group.permissions.add(*permissions)
-        return Response({
-            'success': True,
-            'status_code': 200,
-            'message': f'{permissions.count()} permissions assigned to {group.name}',
-            'data': None,
-            'meta': {'timestamp': timezone.now().isoformat(), 'version': 'v1'},
-        })
+        serializer = GroupAssignmentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        assigned = RBACService.assign_permissions(
+            actor=request.user,
+            group=group,
+            permission_ids=serializer.validated_data.get('permission_ids', []),
+            request=request,
+        )
+        return self._wrapped(
+            f'{len(assigned)} permissions assigned to {group.name}.',
+            {'permission_ids': [str(permission.id) for permission in assigned]},
+        )
 
     @action(detail=True, methods=['post'])
     def remove_permissions(self, request, pk=None):
         group = self.get_object()
-        permission_ids = request.data.get('permission_ids', [])
-        permissions = UserPermission.objects.filter(id__in=permission_ids)
-        group.permissions.remove(*permissions)
-        return Response({
-            'success': True,
-            'status_code': 200,
-            'message': f'{permissions.count()} permissions removed from {group.name}',
-            'data': None,
-            'meta': {'timestamp': timezone.now().isoformat(), 'version': 'v1'},
-        })
+        serializer = GroupAssignmentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        removed = RBACService.remove_permissions(
+            actor=request.user,
+            group=group,
+            permission_ids=serializer.validated_data.get('permission_ids', []),
+            request=request,
+        )
+        return self._wrapped(
+            f'{len(removed)} permissions removed from {group.name}.',
+            {'permission_ids': [str(permission.id) for permission in removed]},
+        )
+
+    @action(detail=True, methods=['post'])
+    def assign_users(self, request, pk=None):
+        group = self.get_object()
+        serializer = GroupAssignmentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        assigned = RBACService.assign_users(
+            actor=request.user,
+            group=group,
+            user_ids=serializer.validated_data.get('user_ids', []),
+            request=request,
+        )
+        return self._wrapped(
+            f'{len(assigned)} users assigned to {group.name}.',
+            {'user_ids': [str(user.id) for user in assigned]},
+        )
+
+    @action(detail=True, methods=['post'])
+    def remove_users(self, request, pk=None):
+        group = self.get_object()
+        serializer = GroupAssignmentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        removed = RBACService.remove_users(
+            actor=request.user,
+            group=group,
+            user_ids=serializer.validated_data.get('user_ids', []),
+            request=request,
+        )
+        return self._wrapped(
+            f'{len(removed)} users removed from {group.name}.',
+            {'user_ids': [str(user.id) for user in removed]},
+        )
 
 
 class UserPermissionViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = UserPermission.objects.all()
+    queryset = UserPermission.objects.filter(is_active=True)
     serializer_class = UserPermissionSerializer
-    permission_classes = [permissions.IsAuthenticated]
     filterset_fields = ['module', 'action', 'resource_type']
-    search_fields = ['name', 'codename', 'module']
+    search_fields = ['name', 'codename', 'module', 'description']
+
+    def get_permissions(self):
+        return [
+            permissions.IsAuthenticated(),
+            OrPermission(
+                HasPermission('user_management.view'),
+                HasModulePermission('users', 'READ'),
+            ),
+        ]
 
     @action(detail=False, methods=['get'])
     def modules(self, request):
-        modules = UserPermission.objects.values_list('module', flat=True).distinct()
+        modules = UserPermission.objects.filter(is_active=True).values_list('module', flat=True).distinct()
         return Response({
             'success': True,
             'status_code': 200,
@@ -231,8 +332,20 @@ class PermissionGroupViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
-            return [permissions.IsAuthenticated(), HasModulePermission('users', 'READ')]
-        return [permissions.IsAuthenticated(), HasModulePermission('users', 'MANAGE')]
+            return [
+                permissions.IsAuthenticated(),
+                OrPermission(
+                    HasPermission('user_management.view'),
+                    HasModulePermission('users', 'READ'),
+                ),
+            ]
+        return [
+            permissions.IsAuthenticated(),
+            OrPermission(
+                HasPermission('user_management.administer'),
+                HasModulePermission('users', 'MANAGE'),
+            ),
+        ]
     filterset_fields = ['module_code']
     search_fields = ['name', 'module_code']
 

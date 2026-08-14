@@ -142,45 +142,72 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
 class UserGroupSerializer(serializers.ModelSerializer):
     permission_count = serializers.SerializerMethodField()
-
-    class Meta:
-        model = UserGroup
-        fields = [
-            'id', 'name', 'description', 'is_system_group',
-            'permission_count', 'created_at', 'updated_at',
-        ]
-        read_only_fields = ['id', 'is_system_group', 'created_at', 'updated_at']
-
-    def get_permission_count(self, obj):
-        return obj.permissions.count()
-
-
-class UserGroupDetailSerializer(serializers.ModelSerializer):
-    permissions = serializers.SerializerMethodField()
     user_count = serializers.SerializerMethodField()
 
     class Meta:
         model = UserGroup
         fields = [
-            'id', 'name', 'description', 'is_system_group',
-            'permissions', 'user_count', 'created_at', 'updated_at',
+            'id', 'name', 'code', 'description', 'group_type',
+            'is_active', 'is_system', 'is_system_group',
+            'permission_count', 'user_count', 'created_at', 'updated_at',
         ]
-        read_only_fields = ['id', 'is_system_group', 'created_at', 'updated_at']
+        read_only_fields = [
+            'id', 'is_system', 'is_system_group', 'permission_count',
+            'user_count', 'created_at', 'updated_at',
+        ]
+
+    def validate_code(self, value):
+        return value.strip().upper().replace(' ', '_')
+
+    def get_permission_count(self, obj):
+        return obj.permissions.filter(is_active=True).count()
+
+    def get_user_count(self, obj):
+        return obj.users.filter(is_active=True).count()
+
+
+class UserGroupDetailSerializer(UserGroupSerializer):
+    permissions = serializers.SerializerMethodField()
+    users = serializers.SerializerMethodField()
+
+    class Meta(UserGroupSerializer.Meta):
+        fields = UserGroupSerializer.Meta.fields + ['permissions', 'users']
 
     def get_permissions(self, obj):
         return UserPermissionSerializer(obj.permissions.all(), many=True).data
 
-    def get_user_count(self, obj):
-        return obj.users.count()
+    def get_users(self, obj):
+        return [
+            {
+                'id': str(user.id),
+                'username': user.username,
+                'email': user.email,
+                'user_type': user.user_type,
+                'status': user.status,
+            }
+            for user in obj.users.all()
+        ]
 
 
 class UserPermissionSerializer(serializers.ModelSerializer):
+    code = serializers.CharField(source='codename', read_only=True)
+
     class Meta:
         model = UserPermission
         fields = [
-            'id', 'name', 'codename', 'module',
-            'action', 'resource_type', 'created_at',
+            'id', 'name', 'code', 'codename', 'module', 'action',
+            'resource_type', 'description', 'is_active', 'created_at',
         ]
+        read_only_fields = ['id', 'code', 'codename', 'created_at']
+
+
+class GroupAssignmentSerializer(serializers.Serializer):
+    permission_ids = serializers.ListField(
+        child=serializers.UUIDField(), required=False, allow_empty=True,
+    )
+    user_ids = serializers.ListField(
+        child=serializers.UUIDField(), required=False, allow_empty=True,
+    )
 
 
 class PermissionGroupSerializer(serializers.ModelSerializer):
