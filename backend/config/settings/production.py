@@ -1,6 +1,11 @@
+from django.core.exceptions import ImproperlyConfigured
+
 from .base import *
 
 DEBUG = False
+
+if SECRET_KEY == 'insecure-dev-key-change-in-production':
+    raise ImproperlyConfigured('DJANGO_SECRET_KEY must be set to a non-default value in production.')
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['zic.co.zw', 'api.zic.co.zw'])
 
 SECURE_SSL_REDIRECT = True

@@ -9,10 +9,12 @@ from drf_spectacular.views import (
     SpectacularRedocView,
 )
 
-from apps.core.views import health_check
+from apps.core.views import health_check, liveness_check, readiness_check
 
 api_v1_patterns = [
     path('health/', health_check, name='health-check'),
+    path('live/', liveness_check, name='liveness-check'),
+    path('ready/', readiness_check, name='readiness-check'),
     path('auth/', include('apps.authentication.urls')),
     path('users/', include('apps.users.urls')),
     path('partners/', include('apps.partners.urls')),

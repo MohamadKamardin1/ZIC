@@ -8,3 +8,5 @@ faker
 django-debug-toolbar
 ipython
 pre-commit
+ruff
+mypy

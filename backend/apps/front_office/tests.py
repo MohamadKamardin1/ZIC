@@ -2,10 +2,17 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 from rest_framework import status
 from .models import FOReceipt, FOCommission, FORequisition
+from apps.users.models import User
 
 class FrontOfficeTests(TestCase):
     def setUp(self):
         self.client = APIClient()
+        self.user = User.objects.create_user(
+            username="front-office-test",
+            email="front-office-test@example.com",
+            password="TestPass123!",
+        )
+        self.client.force_authenticate(user=self.user)
         self.receipt = FOReceipt.objects.create(
             receipt_number="REC-001",
             amount=100.00,

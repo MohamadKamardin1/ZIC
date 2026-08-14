@@ -1,5 +1,4 @@
 import logging
-import time
 from datetime import datetime
 
 
@@ -19,7 +18,6 @@ class ZICLogFormatter(logging.Formatter):
         level = record.levelname
         color = self.COLORS.get(level, '')
         module = record.name
-        func = record.funcName
         msg = record.getMessage()
 
         log_line = (

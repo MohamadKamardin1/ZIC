@@ -1,0 +1,34 @@
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+exclude = [
+  ".git",
+  ".venv",
+  "backend/**/migrations/*.py",
+  "insurance-dashboard-ui",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"backend/**/tests.py" = ["B"]
+"backend/**/tests/**/*.py" = ["B"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["backend/apps/common", "backend/apps/core"]
+exclude = "backend/apps/.*/migrations/.*"
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = true
+no_implicit_optional = true
+explicit_package_bases = true
+plugins = []
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.development"
+python_files = ["tests.py", "test_*.py", "*_tests.py"]
+testpaths = ["backend/apps"]
+addopts = "--reuse-db --nomigrations -v"

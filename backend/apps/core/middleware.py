@@ -1,6 +1,6 @@
-import uuid
-import time
 import logging
+import time
+import uuid
 
 from django.utils import timezone
 from django.utils.deprecation import MiddlewareMixin

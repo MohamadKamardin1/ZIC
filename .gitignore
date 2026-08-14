@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Environments
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+# Django/runtime
+backend/db.sqlite3
+backend/*.sqlite3
+backend/media/
+backend/staticfiles/
+backend/logs/
+backend/*.log
+
+# Node/frontend
+insurance-dashboard-ui/node_modules/
+insurance-dashboard-ui/dist/
+insurance-dashboard-ui/.vite/
+
+# IDE/OS
+.vscode/
+.idea/
+.DS_Store

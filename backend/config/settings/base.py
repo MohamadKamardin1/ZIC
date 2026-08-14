@@ -14,8 +14,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 env.read_env(os.path.join(BASE_DIR, '.env'))
 
-SECRET_KEY = env('DJANGO_SECRET_KEY', default='insecure-dev-key-change-in-production')
 DEBUG = env('DEBUG')
+SECRET_KEY = env('DJANGO_SECRET_KEY', default='insecure-dev-key-change-in-production')
+ZIC_RELEASE_VERSION = env('ZIC_RELEASE_VERSION', default='1.0.0')
 
 ALLOWED_HOSTS = env('ALLOWED_HOSTS')
 
@@ -139,6 +140,7 @@ LOGIN_URL = 'admin:login'
 LOGOUT_URL = 'admin:logout'
 
 CORS_ALLOWED_ORIGINS = env('CORS_ALLOWED_ORIGINS')
+CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[])
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOW_HEADERS = [
@@ -156,9 +158,13 @@ CORS_ALLOW_HEADERS = [
 
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_BROWSER_XSS_FILTER = True
+SECURE_REFERRER_POLICY = 'same-origin'
+SECURE_CROSS_ORIGIN_OPENER_POLICY = 'same-origin'
 X_FRAME_OPTIONS = 'DENY'
 CSRF_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SAMESITE = 'Lax'
 SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Lax'
 
 CONTENT_SECURITY_POLICY = {
     'DIRECTIVES': {
