@@ -5,8 +5,8 @@ from django.test import TestCase
 from django.utils import timezone
 
 from apps.users.models import User
-from apps.partners.models import Partner
-from apps.partner_onboarding.models import PartnerApplication, PartnerApplicationDocument
+from apps.partners.models import Partner, PartnerType
+from apps.partner_onboarding.models import PartnerApplication, PartnerApplicationDocument, ApplicationPartnerType
 from apps.partner_onboarding.services import ApplicationService, ComplianceService
 from apps.system_parameters.services.workflow_service import WorkflowEngine
 from apps.partner_onboarding.exceptions import (
@@ -42,11 +42,20 @@ def create_individual_app(user, **overrides):
     }
     defaults.update(overrides)
     app_num = ApplicationService.generate_application_number(defaults.get("partner_type"))
-    return PartnerApplication.objects.create(
+    application = PartnerApplication.objects.create(
         application_number=app_num,
         submitted_by=user,
         **defaults,
     )
+    partner_type, _ = PartnerType.objects.get_or_create(
+        code="TEST_SERVICE",
+        defaults={"name": "Test Service Partner Type", "is_active": True},
+    )
+    ApplicationPartnerType.objects.get_or_create(
+        application=application,
+        partner_type=partner_type,
+    )
+    return application
 
 
 def create_corporate_app(user, **overrides):
@@ -65,11 +74,20 @@ def create_corporate_app(user, **overrides):
     }
     defaults.update(overrides)
     app_num = ApplicationService.generate_application_number(defaults.get("partner_type"))
-    return PartnerApplication.objects.create(
+    application = PartnerApplication.objects.create(
         application_number=app_num,
         submitted_by=user,
         **defaults,
     )
+    partner_type, _ = PartnerType.objects.get_or_create(
+        code="TEST_SERVICE_CORPORATE",
+        defaults={"name": "Test Service Corporate Partner Type", "is_active": True},
+    )
+    ApplicationPartnerType.objects.get_or_create(
+        application=application,
+        partner_type=partner_type,
+    )
+    return application
 
 
 def add_document(application, user):
@@ -279,16 +297,16 @@ class StateTransitionTest(TestCase):
         ApplicationService.submit(app, self.user)
         ApplicationService.start_review(app, self.user)
         ApplicationService.send_to_compliance(app, self.user)
-        ApplicationService.reject(app, self.user)
+        ApplicationService.reject(app, self.user, reason="Rejected for testing")
         with self.assertRaises(ApplicationTransitionError):
             ApplicationService.approve(app, self.user)
 
     def test_submitted_to_draft_recall(self):
         app = create_individual_app(self.user)
         add_document(app, self.user)
-        ApplicationService.submit(app, self.user)
-        ApplicationService._validate_transition(app, "DRAFT")
-        self.assertEqual(app.status, "SUBMITTED")
+        submitted = ApplicationService.submit(app, self.user)
+        self.assertIsNone(ApplicationService._validate_transition(submitted, "DRAFT"))
+        self.assertEqual(submitted.status, "SUBMITTED")
 
     def test_rejected_is_terminal(self):
         app = create_individual_app(self.user)
@@ -296,7 +314,7 @@ class StateTransitionTest(TestCase):
         ApplicationService.submit(app, self.user)
         ApplicationService.start_review(app, self.user)
         ApplicationService.send_to_compliance(app, self.user)
-        ApplicationService.reject(app, self.user)
+        ApplicationService.reject(app, self.user, reason="Rejected for testing")
         self.assertTrue(WorkflowEngine.is_terminal("REJECTED"))
 
     def test_converted_is_terminal(self):

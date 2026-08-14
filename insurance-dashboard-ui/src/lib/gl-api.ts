@@ -148,6 +148,7 @@ export const glSetup = {
   updateMedicalLimit: (id: string, data: any) => glPatch("/setup/medical-limits/${id}/", data),
   deleteMedicalLimit: (id: string) => glDelete("/setup/medical-limits/${id}/"),
   listUnderwritingDecisions: (params?: Record<string, string>) => glList("/setup/uw-decisions/", params),
+  listUWDecisions: (params?: Record<string, string>) => glList("/setup/uw-decisions/", params),
   getUnderwritingDecision: (id: string) => glGet("/setup/uw-decisions/${id}/"),
   createUnderwritingDecision: (data: any) => glPost("/setup/uw-decisions/", data),
   updateUnderwritingDecision: (id: string, data: any) => glPatch("/setup/uw-decisions/${id}/", data),

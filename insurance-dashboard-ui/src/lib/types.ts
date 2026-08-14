@@ -267,6 +267,18 @@ export interface ApplicationTask {
   updatedAt: string
 }
 
+export interface PartnerApplicationEvent {
+  id: string
+  eventType: string
+  fromStatus: string
+  toStatus: string
+  actor: string | null
+  actorName: string | null
+  notes: string
+  metadata: Record<string, unknown>
+  createdAt: string
+}
+
 export interface PartnerApplicationDetail {
   id: string
   applicationNumber: string
@@ -311,6 +323,7 @@ export interface PartnerApplicationDetail {
   updatedAt: string
   documents: ApplicationDocument[]
   tasks: ApplicationTask[]
+  events: PartnerApplicationEvent[]
 }
 
 export interface ChoicesResponse {

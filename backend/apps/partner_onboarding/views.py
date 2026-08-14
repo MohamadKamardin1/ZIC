@@ -62,6 +62,7 @@ from apps.partner_onboarding.permissions import (
     CanPerformComplianceAction,
     CanRejectApplication,
     CanConvertApplication,
+    CanCreateApplication,
 )
 
 logger = logging.getLogger(__name__)
@@ -77,10 +78,25 @@ def _response(data=None, message="", status_code=200):
     }, status=status_code)
 
 
+def _can_access_application(user, application, write=False, approve=False):
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_superuser or application.submitted_by_id == user.id:
+        return True
+    if approve:
+        return user.has_module_permission("partner_onboarding", "APPROVE")
+    return user.has_module_permission(
+        "partner_onboarding", "UPDATE" if write else "READ"
+    ) or user.has_module_permission("partner_onboarding", "APPROVE")
+
+
 class PartnerApplicationViewSet(viewsets.ModelViewSet):
     queryset = PartnerApplication.objects.select_related(
         "submitted_by", "reviewed_by", "approved_by",
-    ).prefetch_related("documents", "tasks")
+    ).prefetch_related(
+        "documents", "tasks", "partner_types", "contacts", "bank_accounts",
+        "field_values", "events",
+    )
     pagination_class = StandardPagination
     filterset_class = PartnerApplicationFilter
     search_fields = [
@@ -101,10 +117,21 @@ class PartnerApplicationViewSet(viewsets.ModelViewSet):
             return PartnerApplicationUpdateSerializer
         return PartnerApplicationDetailSerializer
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if not user.is_authenticated:
+            return queryset.none()
+        if user.is_superuser or user.has_module_permission("partner_onboarding", "READ") or user.has_module_permission("partner_onboarding", "APPROVE"):
+            return queryset
+        return queryset.filter(submitted_by=user)
+
     def get_permissions(self):
         if self.action == "create":
-            return [permissions.IsAuthenticated()]
-        if self.action in ("update", "partial_update", "destroy"):
+            return [permissions.IsAuthenticated(), CanCreateApplication()]
+        if self.action in ("update", "partial_update"):
+            return [permissions.IsAuthenticated(), IsOwnerOrReviewer()]
+        if self.action == "destroy":
             return [permissions.IsAuthenticated(), IsOwnerOrReviewer()]
         if self.action == "retrieve":
             return [permissions.IsAuthenticated(), IsOwnerOrReviewer()]
@@ -167,9 +194,12 @@ class PartnerApplicationViewSet(viewsets.ModelViewSet):
             )
         serializer = self.get_serializer(application, data=request.data, partial=kwargs.get("partial", False))
         serializer.is_valid(raise_exception=True)
-        for attr, value in serializer.validated_data.items():
-            setattr(application, attr, value)
-        application.save()
+        try:
+            application = ApplicationService.update_draft(
+                application, request.user, serializer.validated_data
+            )
+        except ApplicationValidationError as exc:
+            return _response(message=str(exc), status_code=exc.status_code)
         return _response(
             data=PartnerApplicationDetailSerializer(application).data,
             message="Application updated successfully.",
@@ -182,6 +212,8 @@ class PartnerApplicationViewSet(viewsets.ModelViewSet):
                 message="Only DRAFT or ACTIVE applications can be deleted.",
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
+        if application.submitted_by_id != request.user.id and not request.user.has_module_permission("partner_onboarding", "DELETE"):
+            return _response(message="You do not have permission to delete this application.", status_code=status.HTTP_403_FORBIDDEN)
         application.delete()
         return _response(
             message="Application deleted successfully.",
@@ -207,7 +239,7 @@ class PartnerApplicationViewSet(viewsets.ModelViewSet):
         application = self.get_object()
         try:
             result = ApplicationService.start_review(application, request.user)
-        except ApplicationTransitionError as e:
+        except (ApplicationTransitionError, ApplicationValidationError) as e:
             return _response(message=str(e), status_code=e.status_code)
         return _response(
             data=PartnerApplicationDetailSerializer(result).data,
@@ -222,18 +254,14 @@ class PartnerApplicationViewSet(viewsets.ModelViewSet):
         )
         serializer.is_valid(raise_exception=True)
         try:
-            result = ApplicationService.request_documents(application, request.user)
-        except ApplicationTransitionError as e:
-            return _response(message=str(e), status_code=e.status_code)
-        requested_docs = serializer.validated_data.get("requested_documents", [])
-        for doc_type in requested_docs:
-            PartnerApplicationTask.objects.create(
-                application=result,
-                task_type="DOCUMENT_REQUEST",
-                title=f"Upload {doc_type}",
-                description=f"Please upload the required {doc_type} document.",
-                priority="HIGH",
+            result = ApplicationService.request_documents(
+                application,
+                request.user,
+                requested_documents=serializer.validated_data.get("requested_documents", []),
+                notes=serializer.validated_data.get("notes", ""),
             )
+        except (ApplicationTransitionError, ApplicationValidationError) as e:
+            return _response(message=str(e), status_code=e.status_code)
         return _response(
             data=PartnerApplicationDetailSerializer(result).data,
             message="Documents requested from applicant.",
@@ -247,7 +275,7 @@ class PartnerApplicationViewSet(viewsets.ModelViewSet):
             result = ApplicationService.send_to_compliance(
                 application, request.user, notes=notes,
             )
-        except ApplicationTransitionError as e:
+        except (ApplicationTransitionError, ApplicationValidationError) as e:
             return _response(message=str(e), status_code=e.status_code)
         return _response(
             data=PartnerApplicationDetailSerializer(result).data,
@@ -266,7 +294,7 @@ class PartnerApplicationViewSet(viewsets.ModelViewSet):
             result = ApplicationService.approve(
                 application, request.user, notes=notes,
             )
-        except ApplicationTransitionError as e:
+        except (ApplicationTransitionError, ApplicationValidationError) as e:
             return _response(message=str(e), status_code=e.status_code)
         return _response(
             data=PartnerApplicationDetailSerializer(result).data,
@@ -286,7 +314,7 @@ class PartnerApplicationViewSet(viewsets.ModelViewSet):
             result = ApplicationService.reject(
                 application, request.user, reason=reason, notes=notes,
             )
-        except ApplicationTransitionError as e:
+        except (ApplicationTransitionError, ApplicationValidationError) as e:
             return _response(message=str(e), status_code=e.status_code)
         return _response(
             data=PartnerApplicationDetailSerializer(result).data,
@@ -305,7 +333,7 @@ class PartnerApplicationViewSet(viewsets.ModelViewSet):
             result = ApplicationService.suspend(
                 application, request.user, notes=notes,
             )
-        except ApplicationTransitionError as e:
+        except (ApplicationTransitionError, ApplicationValidationError) as e:
             return _response(message=str(e), status_code=e.status_code)
         return _response(
             data=PartnerApplicationDetailSerializer(result).data,
@@ -320,8 +348,10 @@ class PartnerApplicationViewSet(viewsets.ModelViewSet):
                 message="Only SUSPENDED applications can be resumed.",
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
-        application.status = "COMPLIANCE_CHECK"
-        application.save(update_fields=["status", "updated_at"])
+        try:
+            application = ApplicationService.resume(application, request.user, request.data.get("notes", ""))
+        except (ApplicationTransitionError, ApplicationValidationError) as e:
+            return _response(message=str(e), status_code=e.status_code)
         return _response(
             data=PartnerApplicationDetailSerializer(application).data,
             message="Application resumed and returned to compliance check.",
@@ -336,7 +366,7 @@ class PartnerApplicationViewSet(viewsets.ModelViewSet):
             partner = ApplicationService.convert_to_partner(
                 application, request.user,
             )
-        except (ApplicationTransitionError, PartnerConversionError) as e:
+        except (ApplicationTransitionError, ApplicationValidationError, PartnerConversionError) as e:
             return _response(message=str(e), status_code=e.status_code)
         application.refresh_from_db()
         return _response(
@@ -360,9 +390,19 @@ class PartnerApplicationDocumentViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         application_pk = self.kwargs.get("application_pk")
+        application = get_object_or_404(PartnerApplication, pk=application_pk)
+        if not _can_access_application(self.request.user, application):
+            return PartnerApplicationDocument.objects.none()
         return PartnerApplicationDocument.objects.filter(
             application_id=application_pk,
         ).select_related("uploaded_by", "verified_by")
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["application"] = get_object_or_404(
+            PartnerApplication, pk=self.kwargs.get("application_pk")
+        )
+        return context
 
     def get_permissions(self):
         if self.action == "verify":
@@ -371,6 +411,10 @@ class PartnerApplicationDocumentViewSet(viewsets.ModelViewSet):
 
     def create(self, request, application_pk=None, *args, **kwargs):
         application = get_object_or_404(PartnerApplication, pk=application_pk)
+        if not _can_access_application(request.user, application, write=True):
+            return _response(message="You do not have permission to upload documents for this application.", status_code=status.HTTP_403_FORBIDDEN)
+        if application.status in ("REJECTED", "CONVERTED"):
+            return _response(message="Documents cannot be changed after rejection or conversion.", status_code=status.HTTP_400_BAD_REQUEST)
         serializer = PartnerApplicationDocumentUploadSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         document = PartnerApplicationDocument.objects.create(
@@ -395,6 +439,8 @@ class PartnerApplicationDocumentViewSet(viewsets.ModelViewSet):
             pk=pk,
             application_id=application_pk,
         )
+        if not _can_access_application(request.user, document.application, approve=True):
+            return _response(message="You do not have permission to verify documents.", status_code=status.HTTP_403_FORBIDDEN)
         notes = request.data.get("verification_notes", "")
         document.is_verified = True
         document.verified_by = request.user
@@ -418,15 +464,27 @@ class PartnerApplicationTaskViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         application_pk = self.kwargs.get("application_pk")
+        application = get_object_or_404(PartnerApplication, pk=application_pk)
+        if not _can_access_application(self.request.user, application):
+            return PartnerApplicationTask.objects.none()
         return PartnerApplicationTask.objects.filter(
             application_id=application_pk,
         ).select_related("assigned_to", "completed_by")
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["application"] = get_object_or_404(
+            PartnerApplication, pk=self.kwargs.get("application_pk")
+        )
+        return context
 
     def get_permissions(self):
         return [permissions.IsAuthenticated()]
 
     def create(self, request, application_pk=None, *args, **kwargs):
         application = get_object_or_404(PartnerApplication, pk=application_pk)
+        if not _can_access_application(request.user, application, write=True):
+            return _response(message="You do not have permission to create tasks for this application.", status_code=status.HTTP_403_FORBIDDEN)
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         task = PartnerApplicationTask.objects.create(
@@ -446,6 +504,8 @@ class PartnerApplicationTaskViewSet(viewsets.ModelViewSet):
             pk=pk,
             application_id=application_pk,
         )
+        if not _can_access_application(request.user, task.application, write=True):
+            return _response(message="You do not have permission to manage tasks for this application.", status_code=status.HTTP_403_FORBIDDEN)
         if task.status == "COMPLETED":
             return _response(
                 message="Task is already completed.",
@@ -520,8 +580,13 @@ class ApplicationPartnerTypeViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        application = get_object_or_404(
+            PartnerApplication, pk=self.kwargs.get("application_pk")
+        )
+        if not _can_access_application(self.request.user, application):
+            return ApplicationPartnerType.objects.none()
         return ApplicationPartnerType.objects.filter(
-            application_id=self.kwargs.get("application_pk")
+            application_id=application.id
         ).order_by("-created_at")
 
     def get_serializer_class(self):
@@ -530,7 +595,7 @@ class ApplicationPartnerTypeViewSet(viewsets.ModelViewSet):
         return ApplicationPartnerTypeSerializer
 
     def perform_create(self, serializer):
-        serializer.save(application_id=self.kwargs.get("application_pk"))
+        serializer.save()
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -556,9 +621,21 @@ class ApplicationContactViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        application = get_object_or_404(
+            PartnerApplication, pk=self.kwargs.get("application_pk")
+        )
+        if not _can_access_application(self.request.user, application):
+            return ApplicationContact.objects.none()
         return ApplicationContact.objects.filter(
-            application_id=self.kwargs.get("application_pk")
+            application_id=application.id
         ).order_by("-is_primary", "last_name")
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["application"] = get_object_or_404(
+            PartnerApplication, pk=self.kwargs.get("application_pk")
+        )
+        return context
 
     def perform_create(self, serializer):
         serializer.save(application_id=self.kwargs.get("application_pk"))
@@ -569,9 +646,21 @@ class ApplicationBankAccountViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        application = get_object_or_404(
+            PartnerApplication, pk=self.kwargs.get("application_pk")
+        )
+        if not _can_access_application(self.request.user, application):
+            return ApplicationBankAccount.objects.none()
         return ApplicationBankAccount.objects.filter(
-            application_id=self.kwargs.get("application_pk")
+            application_id=application.id
         ).order_by("-is_primary")
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["application"] = get_object_or_404(
+            PartnerApplication, pk=self.kwargs.get("application_pk")
+        )
+        return context
 
     def perform_create(self, serializer):
         serializer.save(application_id=self.kwargs.get("application_pk"))
@@ -582,16 +671,35 @@ class ApplicationFieldValueViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        application = get_object_or_404(
+            PartnerApplication, pk=self.kwargs.get("application_pk")
+        )
+        if not _can_access_application(self.request.user, application):
+            return ApplicationFieldValue.objects.none()
         return ApplicationFieldValue.objects.filter(
-            application_id=self.kwargs.get("application_pk")
+            application_id=application.id
         ).select_related("field_config")
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["application"] = get_object_or_404(
+            PartnerApplication, pk=self.kwargs.get("application_pk")
+        )
+        return context
 
     def perform_create(self, serializer):
         serializer.save(application_id=self.kwargs.get("application_pk"))
 
     @action(detail=False, methods=["patch"], url_path="batch")
     def batch_update(self, request, application_pk=None):
-        serializer = ApplicationFieldValueBatchSerializer(data=request.data, many=True)
+        application = get_object_or_404(PartnerApplication, pk=application_pk)
+        if not _can_access_application(request.user, application, write=True):
+            return _response(message="You do not have permission to update fields for this application.", status_code=status.HTTP_403_FORBIDDEN)
+        serializer = ApplicationFieldValueBatchSerializer(
+            data=request.data,
+            many=True,
+            context={"request": request, "application": application},
+        )
         serializer.is_valid(raise_exception=True)
         results = []
         for item in serializer.validated_data:

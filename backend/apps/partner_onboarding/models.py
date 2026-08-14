@@ -177,12 +177,68 @@ class PartnerApplication(models.Model):
         self._previous_status = self.status
 
 
+class PartnerApplicationEvent(models.Model):
+    """Immutable business event history for an onboarding application."""
+
+    EVENT_TYPES = [
+        ("CREATED", "Created"),
+        ("UPDATED", "Updated"),
+        ("SUBMITTED", "Submitted"),
+        ("REVIEW_STARTED", "Review Started"),
+        ("DOCUMENTS_REQUESTED", "Documents Requested"),
+        ("SENT_TO_COMPLIANCE", "Sent to Compliance"),
+        ("APPROVED", "Approved"),
+        ("REJECTED", "Rejected"),
+        ("SUSPENDED", "Suspended"),
+        ("RESUMED", "Resumed"),
+        ("CONVERTED", "Converted"),
+        ("DOCUMENT_UPLOADED", "Document Uploaded"),
+        ("DOCUMENT_VERIFIED", "Document Verified"),
+        ("TASK_CREATED", "Task Created"),
+        ("TASK_COMPLETED", "Task Completed"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(
+        PartnerApplication, on_delete=models.CASCADE, related_name="events"
+    )
+    event_type = models.CharField(max_length=40, choices=EVENT_TYPES, db_index=True)
+    from_status = models.CharField(max_length=30, blank=True)
+    to_status = models.CharField(max_length=30, blank=True)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="onboarding_events",
+    )
+    notes = models.TextField(blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "onboarding_partner_application_event"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["application", "-created_at"]),
+            models.Index(fields=["event_type", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.application.application_number} - {self.event_type}"
+
+
 class PartnerApplicationDocument(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     application = models.ForeignKey(
         PartnerApplication,
         on_delete=models.CASCADE,
         related_name="documents",
+    )
+    application_partner_type = models.ForeignKey(
+        "ApplicationPartnerType",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="documents",
+        help_text="Optional assignment scope; null means shared application evidence.",
     )
     document_type = models.CharField(max_length=50, choices=DOCUMENT_TYPE_CHOICES)
     document_name = models.CharField(max_length=255)
@@ -337,6 +393,14 @@ class ApplicationContact(models.Model):
     application = models.ForeignKey(
         PartnerApplication, on_delete=models.CASCADE, related_name="contacts"
     )
+    application_partner_type = models.ForeignKey(
+        "ApplicationPartnerType",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="contacts",
+        help_text="Optional assignment scope; null means shared application contact.",
+    )
     contact_type = models.CharField(max_length=20, choices=CONTACT_TYPE_CHOICES, default="SECONDARY")
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
@@ -353,6 +417,13 @@ class ApplicationContact(models.Model):
         db_table = "onboarding_application_contact"
         verbose_name = "Application Contact"
         verbose_name_plural = "Application Contacts"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["application"],
+                condition=models.Q(is_primary=True),
+                name="uniq_onboarding_primary_contact",
+            ),
+        ]
         ordering = ["-is_primary", "last_name"]
 
     def __str__(self):
@@ -363,6 +434,14 @@ class ApplicationBankAccount(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     application = models.ForeignKey(
         PartnerApplication, on_delete=models.CASCADE, related_name="bank_accounts"
+    )
+    application_partner_type = models.ForeignKey(
+        "ApplicationPartnerType",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="bank_accounts",
+        help_text="Optional assignment scope; null means shared application bank account.",
     )
     bank_name = models.CharField(max_length=200)
     branch_name = models.CharField(max_length=200, blank=True)
@@ -381,6 +460,13 @@ class ApplicationBankAccount(models.Model):
         db_table = "onboarding_application_bank_account"
         verbose_name = "Application Bank Account"
         verbose_name_plural = "Application Bank Accounts"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["application"],
+                condition=models.Q(is_primary=True),
+                name="uniq_onboarding_primary_bank",
+            ),
+        ]
         ordering = ["-is_primary"]
 
     def __str__(self):
@@ -391,6 +477,14 @@ class ApplicationFieldValue(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     application = models.ForeignKey(
         PartnerApplication, on_delete=models.CASCADE, related_name="field_values"
+    )
+    application_partner_type = models.ForeignKey(
+        "ApplicationPartnerType",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="field_values",
+        help_text="Optional assignment scope for this dynamic value.",
     )
     field_config = models.ForeignKey(
         PartnerTypeFieldConfiguration, on_delete=models.CASCADE, related_name="application_field_values"
@@ -403,7 +497,12 @@ class ApplicationFieldValue(models.Model):
         db_table = "onboarding_application_field_value"
         verbose_name = "Application Field Value"
         verbose_name_plural = "Application Field Values"
-        unique_together = [("application", "field_config")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["application", "application_partner_type", "field_config"],
+                name="uniq_onboarding_field_value_scope",
+            ),
+        ]
         ordering = ["field_config__display_order", "field_config__field_code"]
 
     def __str__(self):

@@ -199,7 +199,7 @@ export async function login(credentials: LoginCredentials, otpCode?: string): Pr
   const json: LoginResult = await res.json()
 
   // DEBUG: log what we got back
-  const raw = json as Record<string, unknown>
+  const raw = json as unknown as Record<string, unknown>
   const d = raw.data as Record<string, unknown> | undefined
   console.log("[api.login] response keys:", Object.keys(raw))
   console.log("[api.login] data keys:", d ? Object.keys(d) : "undefined")
@@ -208,15 +208,16 @@ export async function login(credentials: LoginCredentials, otpCode?: string): Pr
 
   // If login succeeded with tokens, persist them
   const data = json.data as LoginSuccessData
-  const token = (data as Record<string, unknown>).accessToken as string | undefined
-    ?? (data as Record<string, unknown>).access_token as string | undefined
+  const dataRecord = data as unknown as Record<string, unknown>
+  const token = dataRecord.accessToken as string | undefined
+    ?? dataRecord.access_token as string | undefined
   if (token) {
     console.log("[api.login] storing token:", token.substring(0, 30) + "...")
     setTokens({
-      accessToken: (data as Record<string, unknown>).accessToken as string ?? (data as Record<string, unknown>).access_token as string,
-      refreshToken: (data as Record<string, unknown>).refreshToken as string ?? (data as Record<string, unknown>).refresh_token as string,
-      accessExpiresIn: Number((data as Record<string, unknown>).accessExpiresIn ?? (data as Record<string, unknown>).access_expires_in ?? 0),
-      refreshExpiresIn: Number((data as Record<string, unknown>).refreshExpiresIn ?? (data as Record<string, unknown>).refresh_expires_in ?? 0),
+      accessToken: dataRecord.accessToken as string ?? dataRecord.access_token as string,
+      refreshToken: dataRecord.refreshToken as string ?? dataRecord.refresh_token as string,
+      accessExpiresIn: Number(dataRecord.accessExpiresIn ?? dataRecord.access_expires_in ?? 0),
+      refreshExpiresIn: Number(dataRecord.refreshExpiresIn ?? dataRecord.refresh_expires_in ?? 0),
     })
   } else {
     console.warn("[api.login] NO token found in response data!")

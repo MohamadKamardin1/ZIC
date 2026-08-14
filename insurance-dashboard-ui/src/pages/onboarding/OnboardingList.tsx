@@ -25,6 +25,7 @@ import { useDataRefresh } from "../../lib/useDataRefresh"
 import type { UnifiedOnboardingRecord, ApplicationStatus, KycStatus } from "../../lib/types"
 import { useWorkflowConfig } from "../../config/ConfigurationHooks"
 import { useChoices } from "../../hooks/useChoices"
+import { useLitProps } from "../../lib/useLitProps"
 
 const STATUSES: { value: ApplicationStatus | ""; label: string }[] = [
   { value: "", label: "All Statuses" },
@@ -176,6 +177,13 @@ export default function OnboardingList() {
 
   const totalPages = Math.ceil(count / pageSize)
   const pageNumbers = useMemo(() => getPageNumbers(page, totalPages), [page, totalPages])
+  const activeOnPage = items.filter((item) => ["DRAFT", "ACTIVE", "SUBMITTED", "UNDER_REVIEW", "PENDING_DOCUMENTS", "COMPLIANCE_CHECK"].includes(item.applicationStatus || "")).length
+  const approvedOnPage = items.filter((item) => item.applicationStatus === "APPROVED").length
+  const convertedOnPage = items.filter((item) => item.recordType === "PARTNER" || item.applicationStatus === "CONVERTED").length
+  const totalStatsRef = useLitProps<HTMLElement>({ label: "Total records", value: String(count), caption: "Across the onboarding register", tone: "blue" })
+  const activeStatsRef = useLitProps<HTMLElement>({ label: "Active pipeline", value: String(activeOnPage), caption: "On the current page", tone: "amber" })
+  const approvedStatsRef = useLitProps<HTMLElement>({ label: "Approved", value: String(approvedOnPage), caption: "On the current page", tone: "green" })
+  const convertedStatsRef = useLitProps<HTMLElement>({ label: "Converted partners", value: String(convertedOnPage), caption: "On the current page", tone: "violet" })
 
   return (
     <div className="flex flex-col gap-4">
@@ -203,6 +211,13 @@ export default function OnboardingList() {
             Add Partner
           </button>
         </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <onboarding-stats-card ref={totalStatsRef} />
+        <onboarding-stats-card ref={activeStatsRef} />
+        <onboarding-stats-card ref={approvedStatsRef} />
+        <onboarding-stats-card ref={convertedStatsRef} />
       </div>
 
       {error && (

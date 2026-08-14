@@ -5,10 +5,12 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 
 from apps.users.models import User
+from apps.partners.models import PartnerType
 from apps.partner_onboarding.models import (
     PartnerApplication,
     PartnerApplicationDocument,
     PartnerApplicationTask,
+    ApplicationPartnerType,
 )
 from apps.partner_onboarding.serializers import (
     PartnerApplicationListSerializer,
@@ -56,6 +58,17 @@ def individual_data(**overrides):
     }
     data.update(overrides)
     return data
+
+
+def attach_test_partner_type(application):
+    partner_type, _ = PartnerType.objects.get_or_create(
+        code="TEST_SERIALIZER",
+        defaults={"name": "Test Serializer Partner Type", "is_active": True},
+    )
+    ApplicationPartnerType.objects.get_or_create(
+        application=application,
+        partner_type=partner_type,
+    )
 
 
 def corporate_data(**overrides):
@@ -221,6 +234,7 @@ class PartnerApplicationSubmitSerializerTest(TestCase):
             gender="MALE",
             nationality="Tanzanian",
         )
+        attach_test_partner_type(self.app)
 
     def test_submit_without_documents_passes(self):
         serializer = PartnerApplicationSubmitSerializer(instance=self.app, data={})
@@ -309,6 +323,7 @@ class PartnerConvertSerializerTest(TestCase):
             status="APPROVED",
             submitted_by=self.user,
         )
+        attach_test_partner_type(self.app)
 
     def test_convert_approved_application(self):
         serializer = PartnerConvertSerializer(instance=self.app, data={})

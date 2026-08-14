@@ -7,23 +7,57 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
-from apps.users.models import User
-from apps.partners.models import Partner
+from apps.users.models import User, UserPermission, UserGroup
+from apps.partners.models import Partner, PartnerType
 from apps.partner_onboarding.models import (
     PartnerApplication,
     PartnerApplicationDocument,
-    PartnerApplicationTask
+    PartnerApplicationTask,
+    ApplicationPartnerType,
 )
 
 
+def grant_onboarding_permissions(user, actions=("READ", "UPDATE", "APPROVE")):
+    group, _ = UserGroup.objects.get_or_create(
+        name=UserGroup.GroupName.MANAGER,
+        defaults={"description": "Test onboarding reviewer group"},
+    )
+    for action in actions:
+        permission, _ = UserPermission.objects.get_or_create(
+            codename=f"test_partner_onboarding_{action.lower()}",
+            defaults={
+                "name": f"Test Partner Onboarding {action}",
+                "module": "partner_onboarding",
+                "action": action,
+            },
+        )
+        group.permissions.add(permission)
+    user.groups.add(group)
+
+
 def create_user(username, email, is_staff=False, is_superuser=False, user_type='PORTAL_USER'):
-    return User.objects.create_user(
+    user = User.objects.create_user(
         username=username,
         email=email,
         password='testpass123',
         user_type=user_type,
         is_staff=is_staff,
         is_superuser=is_superuser,
+    )
+    if is_staff and not is_superuser:
+        grant_onboarding_permissions(user)
+    return user
+
+
+def attach_test_partner_type(app_id):
+    application = PartnerApplication.objects.get(id=app_id)
+    partner_type, _ = PartnerType.objects.get_or_create(
+        code="TEST_INTEGRATION",
+        defaults={"name": "Test Integration Partner Type", "is_active": True},
+    )
+    ApplicationPartnerType.objects.get_or_create(
+        application=application,
+        partner_type=partner_type,
     )
 
 
@@ -49,7 +83,9 @@ def create_draft_app(client, user, **overrides):
         data=json.dumps(data),
         content_type='application/json',
     )
-    return response.json()['data']['id']
+    app_id = response.json()['data']['id']
+    attach_test_partner_type(app_id)
+    return app_id
 
 
 def upload_doc_and_submit(client, app_id):

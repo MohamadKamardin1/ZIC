@@ -6,11 +6,12 @@ from rest_framework.test import APIClient
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from apps.users.models import User
-from apps.partners.models import Partner
+from apps.partners.models import Partner, PartnerType
 from apps.partner_onboarding.models import (
     PartnerApplication,
     PartnerApplicationDocument,
     PartnerApplicationTask,
+    ApplicationPartnerType,
 )
 
 
@@ -55,11 +56,20 @@ def create_individual_app(user, **overrides):
     defaults.update(overrides)
     from apps.partner_onboarding.services import ApplicationService
     app_num = ApplicationService.generate_application_number(defaults.get("partner_type"))
-    return PartnerApplication.objects.create(
+    application = PartnerApplication.objects.create(
         application_number=app_num,
         submitted_by=user,
         **defaults,
     )
+    partner_type, _ = PartnerType.objects.get_or_create(
+        code="TEST_ONBOARDING",
+        defaults={"name": "Test Onboarding Partner Type", "is_active": True},
+    )
+    ApplicationPartnerType.objects.create(
+        application=application,
+        partner_type=partner_type,
+    )
+    return application
 
 
 def add_document(application, user):

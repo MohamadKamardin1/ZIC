@@ -13,6 +13,10 @@ import {
   listContacts,
   listBankAccounts,
   getChoices,
+  uploadDocument,
+  deleteDocument,
+  verifyDocument,
+  requestDocuments,
   submitApplication,
   startReview,
   sendToCompliance,
@@ -31,6 +35,7 @@ import type {
   ChoicesResponse,
 } from "../../lib/types"
 import { useStatusLabel, useStatusColor } from "../../config/ConfigurationHooks"
+import { useLitProps } from "../../lib/useLitProps"
 import FlowBanner from "../../components/shared/FlowBanner"
 import ConfirmDialog from "../../components/shared/ConfirmDialog"
 
@@ -108,12 +113,30 @@ export default function ApplicationDetail() {
   const [partnerTypes, setPartnerTypes] = useState<ApplicationPartnerType[]>([])
   const [contacts, setContacts] = useState<ApplicationContact[]>([])
   const [bankAccounts, setBankAccounts] = useState<ApplicationBankAccount[]>([])
+  const [documents, setDocuments] = useState<PartnerApplicationDetail["documents"]>([])
   const [choices, setChoices] = useState<ChoicesResponse | null>(null)
   const [loading, setLoading] = useState(true)
+  const [workflowBusy, setWorkflowBusy] = useState(false)
+  const [documentUploading, setDocumentUploading] = useState(false)
   const [error, setError] = useState("")
   const [subTab, setSubTab] = useState<"types" | "contacts" | "banks">("types")
 
   /* Confirm dialog state */
+  const timelineRef = useLitProps<HTMLElement>({ status: app?.status ?? "DRAFT", applicationNumber: app?.applicationNumber ?? "" })
+  const eventFeedRef = useLitProps<HTMLElement>({ events: app?.events ?? [], loading })
+  const documentPanelRef = useLitProps<HTMLElement>({
+    documents,
+    documentTypes: choices?.documentTypes ?? [],
+    canUpload: app?.status === "ACTIVE" || app?.status === "DRAFT" || app?.status === "PENDING_DOCUMENTS",
+    canVerify: app?.status === "UNDER_REVIEW" || app?.status === "PENDING_DOCUMENTS" || app?.status === "COMPLIANCE_CHECK",
+    uploading: documentUploading,
+  })
+  const workflowRef = useLitProps<HTMLElement>({
+    status: app?.status ?? "DRAFT",
+    canEdit: app?.status === "ACTIVE" || app?.status === "DRAFT",
+    busy: workflowBusy,
+  })
+
   const [confirmAction, setConfirmAction] = useState<{
     title: string
     message: string
@@ -133,6 +156,7 @@ export default function ApplicationDetail() {
         getChoices(),
       ])
       setApp(appData)
+      setDocuments(appData.documents ?? [])
       setPartnerTypes(pts)
       setContacts(cts)
       setBankAccounts(bks)
@@ -145,6 +169,67 @@ export default function ApplicationDetail() {
   }, [id])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    const element = workflowRef.current
+    if (!element) return
+    const onWorkflowAction = (event: Event) => {
+      const action = (event as CustomEvent<{ action: string }>).detail?.action
+      if (!id || !action) return
+      if (action === "edit") { navigate(`/onboarding/${id}/edit`); return }
+      if (action === "submit") return confirmThen(() => submitApplication(id), "Submit Application", "Submit this application for review? Editing will be locked after submission.")
+      if (action === "review") return confirmThen(() => startReview(id), "Start Review", "Begin reviewing this application?")
+      if (action === "request_documents") {
+        const requested = window.prompt("Enter requested document types, separated by commas:", choices?.documentTypes?.slice(0, 2).map((item) => item.label).join(", ") || "")
+        if (requested === null) return
+        const values = requested.split(",").map((value) => value.trim()).filter(Boolean)
+        if (!values.length) { setError("At least one document must be requested."); return }
+        return confirmThen(() => requestDocuments(id, values), "Request Documents", "Create document tasks for the selected evidence?")
+      }
+      if (action === "send_to_compliance") return confirmThen(() => sendToCompliance(id), "Send to Compliance", "Send this application for compliance review?")
+      if (action === "run_compliance") return handleAction(async () => { await runCompliance(id) })
+      if (action === "approve") return confirmThen(() => approveApplication(id), "Approve Application", "Approve this application?")
+      if (action === "reject") {
+        const reason = window.prompt("Rejection reason:", "Rejected during review")
+        if (reason === null) return
+        return confirmThen(() => rejectApplication(id, reason), "Reject Application", "Reject this application? This decision will be recorded in the event history.")
+      }
+      if (action === "suspend") return confirmThen(() => suspendApplication(id), "Suspend Application", "Suspend this application?")
+      if (action === "resume") return confirmThen(() => resumeApplication(id), "Resume Application", "Resume this application?")
+      if (action === "convert") return confirmThen(() => convertApplication(id), "Convert to Partner", "Create the partner record from this approved application?")
+    }
+    element.addEventListener("onboarding-workflow-action", onWorkflowAction)
+    return () => element.removeEventListener("onboarding-workflow-action", onWorkflowAction)
+  }, [id, navigate, choices])
+
+  useEffect(() => {
+    const element = documentPanelRef.current
+    if (!element) return
+    const onUpload = async (event: Event) => {
+      const detail = (event as CustomEvent<{ file: File; documentType: string }>).detail
+      if (!id || !detail?.file || !detail.documentType) return
+      setDocumentUploading(true)
+      setError("")
+      try { await uploadDocument(id, detail.file, detail.documentType); await load() }
+      catch (reason) { setError(reason instanceof Error ? reason.message : "Document upload failed") }
+      finally { setDocumentUploading(false) }
+    }
+    const onDocumentAction = (event: Event) => {
+      const detail = (event as CustomEvent<{ action: string; document: { id: string; documentName?: string } }>).detail
+      if (!id || !detail?.document?.id) return
+      if (detail.action === "verify") return handleAction(() => verifyDocument(id, detail.document.id))
+      if (detail.action === "delete") return confirmThen(() => deleteDocument(id, detail.document.id), "Remove Document", `Remove ${detail.document.documentName || "this document"}?`)
+    }
+    const onDocumentError = (event: Event) => setError((event as CustomEvent<{ message: string }>).detail?.message || "Document action failed")
+    element.addEventListener("onboarding-document-upload", onUpload)
+    element.addEventListener("onboarding-document-action", onDocumentAction)
+    element.addEventListener("onboarding-document-error", onDocumentError)
+    return () => {
+      element.removeEventListener("onboarding-document-upload", onUpload)
+      element.removeEventListener("onboarding-document-action", onDocumentAction)
+      element.removeEventListener("onboarding-document-error", onDocumentError)
+    }
+  }, [id, load])
 
   /* ── Hooks that must be called before early returns ── */
   const statusLabel = useStatusLabel(app?.status ?? "DRAFT")
@@ -163,13 +248,16 @@ export default function ApplicationDetail() {
   /* ---- Action Handlers ---- */
   async function handleAction(action: () => Promise<unknown>) {
     setError("")
+    setWorkflowBusy(true)
     try {
       await action()
-      load()
+      await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : "Action failed")
+    } finally {
+      setWorkflowBusy(false)
+      setConfirmAction(null)
     }
-    setConfirmAction(null)
   }
 
   function confirmThen(action: () => Promise<unknown>, title: string, message: string) {
@@ -325,63 +413,18 @@ export default function ApplicationDetail() {
         </div>
       )}
 
+      <onboarding-status-timeline ref={timelineRef} />
+
       {/* Flow Banner */}
       <FlowBanner
         title={`Application ${app.applicationNumber} — ${statusLabel}`}
         steps={lifecycleSteps}
-        nextAction={
-          nextAction
-            ? nextAction
-            : app.status === "ACTIVE" || app.status === "DRAFT"
-              ? { label: "Edit Application", onClick: () => navigate(`/onboarding/${id}/edit`) }
-              : undefined
-        }
+        nextAction={undefined}
       />
 
-      {/* Secondary Actions */}
-      {(secondaryActions.length > 0 || app.status === "ACTIVE" || app.status === "DRAFT") && (
-        <div className="flex items-center gap-2">
-          {app.status === "ACTIVE" || app.status === "DRAFT" ? (
-            <button
-              onClick={() => navigate(`/onboarding/${id}/edit`)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary transition-colors"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-              Edit Application
-            </button>
-          ) : null}
-          {secondaryActions.map((action, i) => (
-            <button
-              key={i}
-              onClick={action.onClick}
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
-                action.variant === "danger"
-                  ? "border-destructive/30 text-destructive hover:bg-destructive/5"
-                  : "border-warning/30 text-warning hover:bg-warning/5"
-              }`}
-            >
-              {action.icon}
-              {action.label}
-            </button>
-          ))}
-          {app.status === "COMPLIANCE_CHECK" && (
-            <button
-              onClick={async () => {
-                try {
-                  await runCompliance(id!)
-                  load()
-                } catch (e) {
-                  setError(e instanceof Error ? e.message : "Compliance check failed")
-                }
-              }}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary transition-colors"
-            >
-              <Shield className="h-3.5 w-3.5" />
-              Run Compliance
-            </button>
-          )}
-        </div>
-      )}
+      <div className="rounded-xl border border-border bg-card px-4 py-3">
+        <onboarding-workflow-actions ref={workflowRef} />
+      </div>
 
       {/* ===== TABLE 1: User Info ===== */}
       <div className="rounded-xl border border-border bg-card">
@@ -442,6 +485,11 @@ export default function ApplicationDetail() {
             />
           )}
         </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,.65fr)]">
+        <onboarding-document-panel ref={documentPanelRef} />
+        <onboarding-event-feed ref={eventFeedRef} />
       </div>
 
       {/* ===== TABLE 2: Tabbed (Partner Types / Contacts / Banks) ===== */}

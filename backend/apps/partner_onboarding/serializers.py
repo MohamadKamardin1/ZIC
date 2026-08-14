@@ -7,6 +7,7 @@ from apps.partner_onboarding.models import (
     PartnerApplication,
     PartnerApplicationDocument,
     PartnerApplicationTask,
+    PartnerApplicationEvent,
     ApplicationPartnerType,
     ApplicationContact,
     ApplicationBankAccount,
@@ -78,9 +79,24 @@ class ApplicationPartnerTypeCreateSerializer(serializers.Serializer):
         if not value:
             return None
         try:
-            return Location.objects.get(id=value, is_active=True)
+            return Location.objects.select_related("branch").get(id=value, is_active=True)
         except Location.DoesNotExist:
             raise serializers.ValidationError("Invalid location.")
+
+    def validate(self, attrs):
+        branches = attrs.get("branches", [])
+        location = attrs.get("location")
+        if location and branches and len(branches) > 1:
+            raise serializers.ValidationError(
+                {"location": "A location can only be selected when one branch is selected."}
+            )
+        if location and branches and location.branch_id != branches[0].id:
+            raise serializers.ValidationError(
+                {"location": "The selected location must belong to the selected branch."}
+            )
+        if location and not branches:
+            attrs["branches"] = [location.branch]
+        return attrs
 
     def create(self, validated_data):
         application = self.context["application"]
@@ -97,7 +113,7 @@ class ApplicationPartnerTypeCreateSerializer(serializers.Serializer):
                     application=application,
                     partner_type=partner_type,
                     branch=branch,
-                    location=location if branch == branches[-1] else None,
+                    location=location if location and branch.pk == location.branch_id else None,
                     region=region,
                     share_data_externally=share,
                 )
@@ -125,12 +141,24 @@ class ApplicationContactSerializer(serializers.ModelSerializer):
         exclude = ["application"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
+    def validate_application_partner_type(self, value):
+        application = self.context.get("application")
+        if value and application and value.application_id != application.id:
+            raise serializers.ValidationError("Assignment does not belong to this application.")
+        return value
+
 
 class ApplicationBankAccountSerializer(serializers.ModelSerializer):
     class Meta:
         model = ApplicationBankAccount
         exclude = ["application"]
         read_only_fields = ["id", "is_verified", "created_at", "updated_at"]
+
+    def validate_application_partner_type(self, value):
+        application = self.context.get("application")
+        if value and application and value.application_id != application.id:
+            raise serializers.ValidationError("Assignment does not belong to this application.")
+        return value
 
 
 # ---------------------------------------------------------------------------
@@ -141,7 +169,7 @@ class PartnerApplicationDocumentSerializer(serializers.ModelSerializer):
     class Meta:
         model = PartnerApplicationDocument
         fields = [
-            "id", "application", "document_type", "document_name",
+            "id", "application", "application_partner_type", "document_type", "document_name",
             "file", "file_size", "mime_type", "is_verified",
             "verified_by", "verified_at", "verification_notes",
             "uploaded_by", "created_at",
@@ -157,7 +185,7 @@ class PartnerApplicationDocumentUploadSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PartnerApplicationDocument
-        fields = ["id", "document_type", "document_name", "file"]
+        fields = ["id", "application_partner_type", "document_type", "document_name", "file"]
 
     def validate_file(self, value):
         from apps.system_parameters.services.document_config_service import DocumentConfigService
@@ -246,10 +274,42 @@ class PartnerApplicationListSerializer(serializers.ModelSerializer):
 # Application Detail Serializer (read-only, nested)
 # ---------------------------------------------------------------------------
 
+class PartnerApplicationEventSerializer(serializers.ModelSerializer):
+    actor_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PartnerApplicationEvent
+        fields = [
+            "id", "event_type", "from_status", "to_status", "actor",
+            "actor_name", "notes", "metadata", "created_at",
+        ]
+        read_only_fields = fields
+
+    def get_actor_name(self, obj):
+        if not obj.actor:
+            return None
+        return (f"{obj.actor.first_name} {obj.actor.last_name}").strip() or obj.actor.username
+
+
 class PartnerApplicationDetailSerializer(serializers.ModelSerializer):
     display_name = serializers.ReadOnlyField()
     documents = PartnerApplicationDocumentSerializer(many=True, read_only=True)
     tasks = PartnerApplicationTaskSerializer(many=True, read_only=True)
+    partner_types = ApplicationPartnerTypeSerializer(many=True, read_only=True)
+    contacts = ApplicationContactSerializer(many=True, read_only=True)
+    bank_accounts = ApplicationBankAccountSerializer(many=True, read_only=True)
+    field_values = serializers.SerializerMethodField()
+    events = serializers.SerializerMethodField()
+
+    def get_field_values(self, obj):
+        return ApplicationFieldValueSerializer(
+            obj.field_values.select_related("field_config").all(), many=True
+        ).data
+
+    def get_events(self, obj):
+        return PartnerApplicationEventSerializer(
+            obj.events.select_related("actor").all(), many=True
+        ).data
 
     class Meta:
         model = PartnerApplication
@@ -274,7 +334,8 @@ class PartnerApplicationDetailSerializer(serializers.ModelSerializer):
             "submitted_at", "reviewed_at", "approved_at", "converted_at",
             "created_at", "updated_at",
             # Nested
-            "documents", "tasks",
+            "documents", "tasks", "partner_types", "contacts", "bank_accounts",
+            "field_values", "events",
         ]
         read_only_fields = fields
 
@@ -385,21 +446,12 @@ class PartnerApplicationSubmitSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 "Only DRAFT or ACTIVE applications can be submitted."
             )
-        partner_type = application.partner_type
-        if partner_type == "INDIVIDUAL":
-            individual_fields = ValidationConfigService.get_individual_required_fields()
-            for field in individual_fields:
-                if not getattr(application, field, None):
-                    raise serializers.ValidationError(
-                        {field: f"{field} is required before submission."}
-                    )
-        elif partner_type == "CORPORATE":
-            corporate_fields = ValidationConfigService.get_corporate_required_fields()
-            for field in corporate_fields:
-                if not getattr(application, field, None):
-                    raise serializers.ValidationError(
-                        {field: f"{field} is required before submission."}
-                    )
+        try:
+            from apps.partner_onboarding.services.application_service import ApplicationService
+            ApplicationService.validate_for_submission(application)
+        except Exception as exc:
+            details = getattr(exc, "details", None)
+            raise serializers.ValidationError(details or str(exc)) from exc
         return attrs
 
 
@@ -430,8 +482,11 @@ class PartnerApplicationReviewSerializer(serializers.Serializer):
 class PartnerApplicationComplianceSerializer(serializers.Serializer):
     notes = serializers.CharField(required=False, allow_blank=True)
     rejection_reason = serializers.CharField(required=False, allow_blank=True)
+    reason = serializers.CharField(required=False, allow_blank=True, write_only=True)
 
     def validate(self, attrs):
+        if attrs.get("reason") and not attrs.get("rejection_reason"):
+            attrs["rejection_reason"] = attrs["reason"]
         application = self.instance
         # Allow rejection from review stages, compliance actions from COMPLIANCE_CHECK,
         # and resume from SUSPENDED
@@ -455,10 +510,14 @@ class PartnerConvertSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 "Only APPROVED applications can be converted to partners."
             )
-        from apps.partners.models import Partner
-        if Partner.objects.filter(email=application.email).exists():
+        if not application.partner_types.exists():
             raise serializers.ValidationError(
-                "A partner with this email already exists."
+                {"partner_types": "At least one partner type assignment is required."}
+            )
+        from apps.partners.models import Partner
+        if application.email and Partner.objects.filter(email__iexact=application.email).exists():
+            raise serializers.ValidationError(
+                {"email": "A partner with this email already exists."}
             )
         return attrs
 
@@ -606,8 +665,23 @@ class ApplicationFieldValueBatchSerializer(serializers.Serializer):
 
     def validate_field_config(self, value):
         from apps.partners.models import PartnerTypeFieldConfiguration
-        if not PartnerTypeFieldConfiguration.objects.filter(id=value).exists():
-            raise serializers.ValidationError("Invalid field_config ID")
+        application = self.context.get("application")
+        queryset = PartnerTypeFieldConfiguration.objects.filter(id=value, is_active=True)
+        if application:
+            queryset = queryset.filter(
+                partner_type__in=application.partner_types.values("partner_type_id")
+            )
+        if not queryset.exists():
+            raise serializers.ValidationError(
+                "The field configuration is not active or is not available for this application."
+            )
+        return value
+
+    def validate_value_json(self, value):
+        if value is None:
+            return None
+        if not isinstance(value, (dict, list, str, int, float, bool)):
+            raise serializers.ValidationError("Dynamic field value must be JSON-compatible.")
         return value
 
 

@@ -1,65 +1,74 @@
 from rest_framework import permissions
 
 
-class IsOwnerOrReviewer(permissions.BasePermission):
-    """
-    Allows access only to the owner (submitted_by) or users with review permissions.
-    """
-    def has_object_permission(self, request, view, obj):
-        if request.user.is_superuser:
+class OnboardingPermissionMixin:
+    module_code = "partner_onboarding"
+
+    def has_module_permission(self, request, action):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser:
             return True
-        if obj.submitted_by == request.user:
+        return user.has_module_permission(self.module_code, action)
+
+    def has_object_permission(self, request, view, obj):
+        if obj.submitted_by_id == request.user.id:
             return True
-        if request.user.has_module_permission("partner_onboarding", "review"):
-            return True
-        return False
+        return self.has_module_permission(request, "READ") or self.has_module_permission(
+            request, "UPDATE"
+        ) or self.has_module_permission(request, "APPROVE")
 
 
-class CanSubmitApplication(permissions.BasePermission):
-    """
-    Allows submission only if the application is in DRAFT or ACTIVE status.
-    """
+class IsOwnerOrReviewer(OnboardingPermissionMixin, permissions.BasePermission):
+    """Read access for the owner; reviewer/approver access for authorized staff."""
+
+
+class CanCreateApplication(OnboardingPermissionMixin, permissions.BasePermission):
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated)
+
+
+class CanSubmitApplication(OnboardingPermissionMixin, permissions.BasePermission):
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated)
+
     def has_object_permission(self, request, view, obj):
-        return obj.status in ("DRAFT", "ACTIVE")
+        return obj.submitted_by_id == request.user.id and obj.status in ("DRAFT", "ACTIVE")
 
 
-class CanReviewApplication(permissions.BasePermission):
-    """
-    Allows review actions when the application is in a reviewable status.
-    """
+class CanReviewApplication(OnboardingPermissionMixin, permissions.BasePermission):
+    def has_permission(self, request, view):
+        return self.has_module_permission(request, "UPDATE") or self.has_module_permission(
+            request, "APPROVE"
+        )
+
     def has_object_permission(self, request, view, obj):
-        return obj.status in ("SUBMITTED", "UNDER_REVIEW", "PENDING_DOCUMENTS")
+        return obj.status in ("SUBMITTED", "UNDER_REVIEW", "PENDING_DOCUMENTS") and self.has_permission(request, view)
 
 
-class CanPerformComplianceAction(permissions.BasePermission):
-    """
-    Allows compliance actions (approve, suspend, resume) from appropriate statuses.
-    """
+class CanPerformComplianceAction(OnboardingPermissionMixin, permissions.BasePermission):
+    def has_permission(self, request, view):
+        return self.has_module_permission(request, "APPROVE")
+
     def has_object_permission(self, request, view, obj):
-        return obj.status in ("COMPLIANCE_CHECK", "SUSPENDED")
+        return obj.status in ("COMPLIANCE_CHECK", "SUSPENDED") and self.has_permission(request, view)
 
 
-class CanRejectApplication(permissions.BasePermission):
-    """
-    Allows rejection from UNDER_REVIEW or COMPLIANCE_CHECK status.
-    """
+class CanRejectApplication(CanPerformComplianceAction):
     def has_object_permission(self, request, view, obj):
-        return obj.status in ("UNDER_REVIEW", "COMPLIANCE_CHECK", "PENDING_DOCUMENTS")
+        return obj.status in ("UNDER_REVIEW", "COMPLIANCE_CHECK", "PENDING_DOCUMENTS") and self.has_permission(request, view)
 
 
-class CanConvertApplication(permissions.BasePermission):
-    """
-    Allows conversion only if the application is in APPROVED status.
-    """
+class CanConvertApplication(CanPerformComplianceAction):
     def has_object_permission(self, request, view, obj):
-        return obj.status == "APPROVED"
+        return obj.status == "APPROVED" and self.has_permission(request, view)
 
 
 class HasPartnerManagementPermission(permissions.BasePermission):
-    """
-    Allows access to users with partner_management module permission.
-    """
     def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
         if request.user.is_superuser:
             return True
-        return request.user.has_module_permission("partner_management", "manage")
+        return request.user.has_module_permission("partner_management", "UPDATE")

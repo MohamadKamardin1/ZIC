@@ -56,7 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback(async (email: string, password: string): Promise<boolean> => {
     const result = await apiLogin({ email, password })
-    const data = result.data as Record<string, unknown>
+    const data = result.data as unknown as Record<string, unknown>
 
     // Support both camelCase (with renderer) and snake_case (without)
     const requires2FA = (data.requires2FA ?? data.requires_2fa) === true
@@ -87,7 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const complete2FA = useCallback(async (otpCode: string) => {
     if (!pendingCreds) return
     const result = await apiLogin(pendingCreds, otpCode)
-    const data = result.data as Record<string, unknown>
+    const data = result.data as unknown as Record<string, unknown>
 
     const userObj = data.user as ExtendedAuthUser | undefined
     if (userObj) {

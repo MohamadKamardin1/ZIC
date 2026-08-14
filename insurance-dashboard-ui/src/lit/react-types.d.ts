@@ -14,6 +14,11 @@ declare module "react" {
       "zic-todo-leads": CustomEl
       "zic-todo": CustomEl
       "zic-leads": CustomEl
+      "onboarding-status-timeline": CustomEl
+      "onboarding-event-feed": CustomEl
+      "onboarding-document-panel": CustomEl
+      "onboarding-workflow-actions": CustomEl
+      "onboarding-stats-card": CustomEl
     }
   }
 }
