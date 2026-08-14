@@ -6,7 +6,7 @@ from django.db import transaction
 from rest_framework.exceptions import ValidationError
 
 from apps.common.models import DomainEvent
-from apps.users.models import User, UserActivityLog, UserGroup, UserPermission
+from apps.users.models import ReportCategory, User, UserActivityLog, UserGroup, UserPermission
 
 
 class RBACServiceError(ValidationError):
@@ -197,6 +197,48 @@ class RBACService:
             users,
         )
         return users
+
+    @staticmethod
+    @transaction.atomic
+    def assign_report_categories(*, actor, group, category_ids, request=None):
+        _require_admin(actor)
+        categories = list(ReportCategory.objects.filter(id__in=_normalize_ids(category_ids), is_active=True))
+        if len(categories) != len(set(_normalize_ids(category_ids))):
+            raise RBACServiceError({'report_category_ids': 'One or more report categories are invalid or inactive.'})
+        group.report_categories.add(*categories, through_defaults={'assigned_by': actor})
+        _audit(
+            actor,
+            'iam.group.report_categories_assigned',
+            group,
+            {
+                'group_id': str(group.id),
+                'report_category_ids': [str(category.id) for category in categories],
+                'report_category_codes': [category.code for category in categories],
+            },
+            request,
+            group.users.all(),
+        )
+        return categories
+
+    @staticmethod
+    @transaction.atomic
+    def remove_report_categories(*, actor, group, category_ids, request=None):
+        _require_admin(actor)
+        categories = list(ReportCategory.objects.filter(id__in=_normalize_ids(category_ids)))
+        group.report_categories.remove(*categories)
+        _audit(
+            actor,
+            'iam.group.report_categories_removed',
+            group,
+            {
+                'group_id': str(group.id),
+                'report_category_ids': [str(category.id) for category in categories],
+                'report_category_codes': [category.code for category in categories],
+            },
+            request,
+            group.users.all(),
+        )
+        return categories
 
     @staticmethod
     def permission_check(user, permission_code):

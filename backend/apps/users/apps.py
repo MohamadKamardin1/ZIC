@@ -8,4 +8,4 @@ class UsersConfig(AppConfig):
     verbose_name = 'User Management'
 
     def ready(self):
-        import apps.users.signals
+        from . import signals  # noqa: F401

@@ -4,6 +4,7 @@ from import_export import resources
 from import_export.admin import ImportExportModelAdmin
 
 from apps.authentication import services as iam_services
+from apps.users.models import ReportCategory, UserGroupReportCategory
 from apps.users.rbac import RBACService
 
 from .models import NotificationPreference, PermissionGroup, User, UserGroup, UserPermission
@@ -78,6 +79,13 @@ class UserAdmin(ImportExportModelAdmin, admin.ModelAdmin):
     reset_mfa.short_description = 'Reset MFA for selected users'
 
 
+class UserGroupReportCategoryInline(admin.TabularInline):
+    model = UserGroupReportCategory
+    extra = 0
+    autocomplete_fields = ['report_category']
+    readonly_fields = ['assigned_at', 'assigned_by']
+
+
 @admin.register(UserGroup)
 class UserGroupAdmin(admin.ModelAdmin):
     list_display = ['name', 'code', 'group_type', 'is_active', 'is_system', 'created_at']
@@ -85,6 +93,7 @@ class UserGroupAdmin(admin.ModelAdmin):
     search_fields = ['name', 'code', 'description']
     readonly_fields = ['id', 'created_by', 'updated_by', 'created_at', 'updated_at']
     filter_horizontal = ['permissions']
+    inlines = [UserGroupReportCategoryInline]
     actions = ['deactivate_groups', 'activate_groups']
 
     @admin.action(description='Deactivate selected non-system groups')
@@ -102,6 +111,21 @@ class UserGroupAdmin(admin.ModelAdmin):
     def activate_groups(self, request, queryset):
         updated = queryset.update(is_active=True, updated_by=request.user)
         self.message_user(request, f'{updated} group(s) activated.')
+
+
+@admin.register(ReportCategory)
+class ReportCategoryAdmin(admin.ModelAdmin):
+    list_display = ['code', 'name', 'business_area', 'is_active', 'is_system', 'updated_at']
+    list_filter = ['business_area', 'is_active', 'is_system']
+    search_fields = ['code', 'name', 'description', 'business_area']
+    readonly_fields = ['id', 'created_at', 'updated_at']
+
+    def save_model(self, request, obj, form, change):
+        if change and obj.is_system:
+            original = ReportCategory.objects.get(pk=obj.pk)
+            obj.code = original.code
+            obj.is_system = True
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(UserPermission)

@@ -8,7 +8,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenRefreshView as BaseTokenRefreshView
 
 from apps.users.models import User, UserOTP
-from apps.users.serializers import ChangePasswordSerializer, UserListSerializer
+from apps.users.serializers import ChangePasswordSerializer, ReportCategorySerializer, UserListSerializer
 
 from . import services
 from .serializers import (
@@ -57,6 +57,9 @@ def _user_payload(user):
             seen.add(key)
             user_data['permissions'].append(permission)
     user_data['groups'] = list(user.groups.values_list('name', flat=True))
+    user_data['visible_report_categories'] = ReportCategorySerializer(
+        user.visible_report_categories(), many=True,
+    ).data
     return user_data
 
 

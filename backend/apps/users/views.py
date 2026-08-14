@@ -11,6 +11,7 @@ from apps.core.permissions import HasModulePermission, HasPermission, IsAdminUse
 
 from .models import (
     PermissionGroup,
+    ReportCategory,
     User,
     UserActivityLog,
     UserGroup,
@@ -22,6 +23,7 @@ from .serializers import (
     ChangePasswordSerializer,
     GroupAssignmentSerializer,
     PermissionGroupSerializer,
+    ReportCategorySerializer,
     UserActivityLogSerializer,
     UserCreateSerializer,
     UserDetailSerializer,
@@ -54,7 +56,7 @@ class UserViewSet(viewsets.ModelViewSet):
         return UserDetailSerializer
 
     def get_permissions(self):
-        if self.action in ['me', 'update_profile', 'change_password']:
+        if self.action in ['me', 'update_profile', 'change_password', 'visible_report_categories']:
             return [permissions.IsAuthenticated()]
         if self.action in ['list']:
             return [permissions.IsAuthenticated(), HasModulePermission('users', 'READ')]
@@ -72,6 +74,17 @@ class UserViewSet(viewsets.ModelViewSet):
             'status_code': 200,
             'message': 'Profile retrieved',
             'data': serializer.data,
+            'meta': {'timestamp': timezone.now().isoformat(), 'version': 'v1'},
+        })
+
+    @action(detail=False, methods=['get'], url_path='visible-report-categories')
+    def visible_report_categories(self, request):
+        categories = request.user.visible_report_categories()
+        return Response({
+            'success': True,
+            'status_code': 200,
+            'message': 'Visible report categories retrieved',
+            'data': ReportCategorySerializer(categories, many=True).data,
             'meta': {'timestamp': timezone.now().isoformat(), 'version': 'v1'},
         })
 
@@ -267,6 +280,44 @@ class UserGroupViewSet(viewsets.ModelViewSet):
         )
 
     @action(detail=True, methods=['post'])
+    def assign_report_categories(self, request, pk=None):
+        group = self.get_object()
+        serializer = GroupAssignmentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        assigned = RBACService.assign_report_categories(
+            actor=request.user,
+            group=group,
+            category_ids=serializer.validated_data.get('report_category_ids', []),
+            request=request,
+        )
+        return self._wrapped(
+            f'{len(assigned)} report categories assigned to {group.name}.',
+            {
+                'report_category_ids': [str(category.id) for category in assigned],
+                'report_category_codes': [category.code for category in assigned],
+            },
+        )
+
+    @action(detail=True, methods=['post'])
+    def remove_report_categories(self, request, pk=None):
+        group = self.get_object()
+        serializer = GroupAssignmentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        removed = RBACService.remove_report_categories(
+            actor=request.user,
+            group=group,
+            category_ids=serializer.validated_data.get('report_category_ids', []),
+            request=request,
+        )
+        return self._wrapped(
+            f'{len(removed)} report categories removed from {group.name}.',
+            {
+                'report_category_ids': [str(category.id) for category in removed],
+                'report_category_codes': [category.code for category in removed],
+            },
+        )
+
+    @action(detail=True, methods=['post'])
     def assign_users(self, request, pk=None):
         group = self.get_object()
         serializer = GroupAssignmentSerializer(data=request.data)
@@ -297,6 +348,69 @@ class UserGroupViewSet(viewsets.ModelViewSet):
             f'{len(removed)} users removed from {group.name}.',
             {'user_ids': [str(user.id) for user in removed]},
         )
+
+
+class ReportCategoryViewSet(viewsets.ModelViewSet):
+    queryset = ReportCategory.objects.all()
+    serializer_class = ReportCategorySerializer
+    filterset_fields = ['business_area', 'is_active', 'is_system']
+    search_fields = ['code', 'name', 'description', 'business_area']
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [
+                permissions.IsAuthenticated(),
+                OrPermission(
+                    HasPermission('user_management.view'),
+                    HasModulePermission('users', 'READ'),
+                ),
+            ]
+        return [
+            permissions.IsAuthenticated(),
+            OrPermission(
+                HasPermission('user_management.administer'),
+                HasModulePermission('users', 'MANAGE'),
+            ),
+        ]
+
+    def _wrapped(self, message, data=None, code=200):
+        return Response({
+            'success': True,
+            'status_code': code,
+            'message': message,
+            'data': data,
+            'meta': {'timestamp': timezone.now().isoformat(), 'version': 'v1'},
+        }, status=code)
+
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    def retrieve(self, request, *args, **kwargs):
+        response = super().retrieve(request, *args, **kwargs)
+        return self._wrapped('Report category retrieved.', response.data)
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        category = serializer.save(is_system=False)
+        return self._wrapped('Report category created.', ReportCategorySerializer(category).data, status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        category = self.get_object()
+        if category.is_system and any(field in request.data for field in ('code', 'is_system')):
+            return Response({'detail': 'System report category identity cannot be changed.'}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = self.get_serializer(category, data=request.data, partial=kwargs.pop('partial', False))
+        serializer.is_valid(raise_exception=True)
+        category = serializer.save()
+        return self._wrapped('Report category updated.', ReportCategorySerializer(category).data)
+
+    def destroy(self, request, *args, **kwargs):
+        category = self.get_object()
+        if category.is_system:
+            return Response({'detail': 'System report categories cannot be deleted.'}, status=status.HTTP_400_BAD_REQUEST)
+        category.is_active = False
+        category.save(update_fields=['is_active', 'updated_at'])
+        return self._wrapped('Report category deactivated.', ReportCategorySerializer(category).data)
 
 
 class UserPermissionViewSet(viewsets.ReadOnlyModelViewSet):

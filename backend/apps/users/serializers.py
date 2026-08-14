@@ -7,6 +7,7 @@ from rest_framework import serializers
 from .models import (
     NotificationPreference,
     PermissionGroup,
+    ReportCategory,
     User,
     UserActivityLog,
     UserGroup,
@@ -115,6 +116,7 @@ class UserUpdateSerializer(serializers.ModelSerializer):
 
 class UserProfileSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(read_only=True)
+    visible_report_categories = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -123,11 +125,15 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'phone_number', 'user_type', 'is_2fa_enabled', 'otp_method',
             'email_verified', 'phone_verified',
             'avatar', 'date_of_birth', 'department', 'job_title', 'employee_id',
-            'last_login', 'last_activity', 'date_joined',
+            'last_login', 'last_activity', 'date_joined', 'visible_report_categories',
         ]
         read_only_fields = ['id', 'username', 'email', 'user_type',
                              'email_verified', 'phone_verified',
-                             'date_joined', 'last_login', 'last_activity']
+                             'date_joined', 'last_login', 'last_activity',
+                             'visible_report_categories']
+
+    def get_visible_report_categories(self, obj):
+        return ReportCategorySerializer(obj.visible_report_categories(), many=True).data
 
     def update(self, instance, validated_data):
         if 'first_name' in validated_data:
@@ -142,6 +148,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
 class UserGroupSerializer(serializers.ModelSerializer):
     permission_count = serializers.SerializerMethodField()
+    report_category_count = serializers.SerializerMethodField()
     user_count = serializers.SerializerMethodField()
 
     class Meta:
@@ -149,7 +156,7 @@ class UserGroupSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'code', 'description', 'group_type',
             'is_active', 'is_system', 'is_system_group',
-            'permission_count', 'user_count', 'created_at', 'updated_at',
+            'permission_count', 'report_category_count', 'user_count', 'created_at', 'updated_at',
         ]
         read_only_fields = [
             'id', 'is_system', 'is_system_group', 'permission_count',
@@ -162,19 +169,26 @@ class UserGroupSerializer(serializers.ModelSerializer):
     def get_permission_count(self, obj):
         return obj.permissions.filter(is_active=True).count()
 
+    def get_report_category_count(self, obj):
+        return obj.report_categories.filter(is_active=True).count()
+
     def get_user_count(self, obj):
         return obj.users.filter(is_active=True).count()
 
 
 class UserGroupDetailSerializer(UserGroupSerializer):
     permissions = serializers.SerializerMethodField()
+    report_categories = serializers.SerializerMethodField()
     users = serializers.SerializerMethodField()
 
     class Meta(UserGroupSerializer.Meta):
-        fields = UserGroupSerializer.Meta.fields + ['permissions', 'users']
+        fields = UserGroupSerializer.Meta.fields + ['permissions', 'report_categories', 'users']
 
     def get_permissions(self, obj):
         return UserPermissionSerializer(obj.permissions.all(), many=True).data
+
+    def get_report_categories(self, obj):
+        return ReportCategorySerializer(obj.report_categories.all(), many=True).data
 
     def get_users(self, obj):
         return [
@@ -201,11 +215,27 @@ class UserPermissionSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'code', 'codename', 'created_at']
 
 
+class ReportCategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ReportCategory
+        fields = [
+            'id', 'code', 'name', 'description', 'business_area',
+            'is_active', 'is_system', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def validate_code(self, value):
+        return value.strip().lower().replace(' ', '_')
+
+
 class GroupAssignmentSerializer(serializers.Serializer):
     permission_ids = serializers.ListField(
         child=serializers.UUIDField(), required=False, allow_empty=True,
     )
     user_ids = serializers.ListField(
+        child=serializers.UUIDField(), required=False, allow_empty=True,
+    )
+    report_category_ids = serializers.ListField(
         child=serializers.UUIDField(), required=False, allow_empty=True,
     )
 

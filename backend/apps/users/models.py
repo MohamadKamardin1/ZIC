@@ -265,6 +265,25 @@ class User(AbstractBaseUser, PermissionsMixin):
             permissions__action__iexact=action,
         ).exists()
 
+    def visible_report_categories(self):
+        from .models import ReportCategory
+
+        if not self.is_active or self.status != self.AccountStatus.ACTIVE:
+            return ReportCategory.objects.none()
+        if self.is_superuser:
+            return ReportCategory.objects.filter(is_active=True).order_by('business_area', 'name')
+        return ReportCategory.objects.filter(
+            is_active=True,
+            groups__is_active=True,
+            groups__users=self,
+        ).distinct().order_by('business_area', 'name')
+
+    def can_view_report_category(self, code):
+        normalized = (code or '').strip().lower()
+        if not normalized:
+            return False
+        return self.visible_report_categories().filter(code__iexact=normalized).exists()
+
     def has_module_permission(self, module_code, action='READ'):
         if self.is_superuser:
             return True
@@ -293,6 +312,28 @@ class User(AbstractBaseUser, PermissionsMixin):
         if self.status == self.AccountStatus.LOCKED:
             self.status = self.AccountStatus.ACTIVE if self.is_active else self.AccountStatus.INACTIVE
         self.save(update_fields=['failed_login_attempts', 'account_locked_until', 'status'])
+
+
+class ReportCategory(models.Model):
+    """A separately governed business report visibility entitlement."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    code = models.CharField(max_length=100, unique=True, db_index=True)
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True, default='')
+    business_area = models.CharField(max_length=100, db_index=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+    is_system = models.BooleanField(default=False, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Report Category'
+        verbose_name_plural = 'Report Categories'
+        ordering = ['business_area', 'name']
+
+    def __str__(self):
+        return f'{self.name} ({self.code})'
 
 
 class UserPermission(models.Model):
@@ -393,6 +434,13 @@ class UserGroup(models.Model):
     # Kept as a compatibility alias for older admin and signal code.
     is_system_group = models.BooleanField(default=False)
     permissions = models.ManyToManyField(UserPermission, related_name='groups', blank=True)
+    report_categories = models.ManyToManyField(
+            'ReportCategory',
+            through='UserGroupReportCategory',
+            related_name='groups',
+            blank=True,
+        )
+
     created_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='created_groups'
@@ -419,6 +467,43 @@ class UserGroup(models.Model):
         self.is_system = bool(self.is_system or self.is_system_group or legacy_system)
         self.is_system_group = self.is_system
         super().save(*args, **kwargs)
+
+
+class UserGroupReportCategory(models.Model):
+    """Auditable many-to-many assignment between a group and report category."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    group = models.ForeignKey(UserGroup, on_delete=models.CASCADE, related_name='report_category_assignments')
+    report_category = models.ForeignKey(
+        ReportCategory,
+        on_delete=models.PROTECT,
+        related_name='group_assignments',
+    )
+    assigned_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='assigned_report_categories',
+    )
+    assigned_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        verbose_name = 'Group Report Category Assignment'
+        verbose_name_plural = 'Group Report Category Assignments'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['group', 'report_category'],
+                name='users_group_report_category_unique',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['group', 'report_category']),
+            models.Index(fields=['report_category', 'group']),
+        ]
+
+    def __str__(self):
+        return f'{self.group.code} -> {self.report_category.code}'
 
 
 class UserSession(models.Model):
