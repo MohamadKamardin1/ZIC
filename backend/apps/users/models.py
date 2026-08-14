@@ -265,6 +265,75 @@ class User(AbstractBaseUser, PermissionsMixin):
             permissions__action__iexact=action,
         ).exists()
 
+    def _has_partner_scope_bypass(self):
+        """Return whether this internal or legacy user may view all active partners."""
+        if self.user_type == "PARTNER" or self.partner_id:
+            return False
+        if self.user_type == "PORTAL_USER" and self.partner_links.exists():
+            return False
+        return bool(
+            self.is_superuser
+            or self.is_staff
+            or self.user_type in {
+                "STAFF",
+                "MANAGER",
+                "UNDERWRITER",
+                "SYSTEM_MANAGER",
+                "ZIC_GROUP",
+                "SUPER_ADMIN",
+                # Legacy portal accounts historically had unrestricted partner reads
+                # until explicit partner linkage was introduced.
+                "PORTAL_USER",
+            }
+        )
+
+    def active_partner_links(self):
+        from apps.partners.models import UserPartnerLink
+
+        now = timezone.now()
+        return UserPartnerLink.objects.filter(
+            user=self,
+            link_status="ACTIVE",
+            valid_from__lte=now,
+        ).filter(
+            models.Q(valid_to__isnull=True) | models.Q(valid_to__gte=now),
+            partner__is_active=True,
+            partner__status="ACTIVE",
+        )
+
+    def visible_partners(self):
+        from apps.partners.models import Partner
+
+        active = Partner.objects.filter(is_active=True, status="ACTIVE")
+        if self._has_partner_scope_bypass():
+            return active
+
+        links = self.active_partner_links()
+        if links.exists():
+            return active.filter(user_links__in=links).distinct()
+
+        # Preserve compatibility for legacy users carrying only partner_id.
+        if self.partner_id:
+            return active.filter(pk=self.partner_id)
+        return active.none()
+
+    def can_access_partner(self, partner):
+        partner_id = getattr(partner, "pk", partner)
+        return self.visible_partners().filter(pk=partner_id).exists()
+
+    def current_partner(self):
+        links = self.active_partner_links().select_related("partner")
+        primary = links.filter(is_primary=True).first()
+        if primary:
+            return primary.partner
+        first = links.first()
+        if first:
+            return first.partner
+        if self.partner_id and not links.exists():
+            from apps.partners.models import Partner
+            return Partner.objects.filter(pk=self.partner_id, is_active=True, status="ACTIVE").first()
+        return None
+
     def visible_report_categories(self):
         from .models import ReportCategory
 

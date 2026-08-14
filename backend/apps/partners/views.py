@@ -1,52 +1,62 @@
 import logging
 
-from rest_framework import viewsets, status, permissions
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.utils import timezone
-from django.shortcuts import get_object_or_404
-from django.core.exceptions import ValidationError as DjangoValidationError
+from rest_framework.views import APIView
 
-from apps.core.permissions import IsAdminUser
 from apps.core.pagination import StandardPagination
+from apps.core.permissions import IsAdminUser
+from apps.partners.filters import PartnerFilter
 from apps.partners.models import (
-    Partner, PartnerType, PartnerTypeDocumentRequirement,
-    PartnerTypeFieldConfiguration,
-    PartnerTypeContactRequirement,
-    PartnerTypeBankRequirement,
-    IndividualProfile, CorporateProfile, PartnerTypeAssignment,
+    CorporateProfile,
+    IndividualProfile,
+    Partner,
+    PartnerAssignmentBankAccount,
+    PartnerAssignmentContact,
     PartnerDocument,
     PartnerDynamicFieldValue,
-    PartnerAssignmentContact,
-    PartnerAssignmentBankAccount,
     PartnerKYCProfile,
+    PartnerType,
+    PartnerTypeAssignment,
+    PartnerTypeBankRequirement,
+    PartnerTypeContactRequirement,
+    PartnerTypeDocumentRequirement,
+    PartnerTypeFieldConfiguration,
+    UserPartnerLink,
 )
 from apps.partners.serializers import (
-    PartnerListSerializer,
-    PartnerDetailSerializer,
-    PartnerUpdateSerializer,
-    PartnerTypeSerializer,
-    PartnerTypeDocumentRequirementSerializer,
-    PartnerTypeFieldConfigurationSerializer,
-    PartnerTypeContactRequirementSerializer,
-    PartnerTypeBankRequirementSerializer,
-    IndividualProfileSerializer,
     CorporateProfileSerializer,
-    PartnerTypeAssignmentSerializer,
-    PartnerTypeAssignmentHistorySerializer,
-    PartnerTypeAssignmentCreateSerializer,
+    IndividualProfileSerializer,
+    PartnerAssignmentBankAccountSerializer,
+    PartnerAssignmentContactSerializer,
+    PartnerContextSerializer,
+    PartnerDetailSerializer,
     PartnerDocumentSerializer,
     PartnerDynamicFieldValueSerializer,
-    PartnerAssignmentContactSerializer,
-    PartnerAssignmentBankAccountSerializer,
     PartnerKYCProfileSerializer,
+    PartnerListSerializer,
+    PartnerTypeAssignmentCreateSerializer,
+    PartnerTypeAssignmentHistorySerializer,
+    PartnerTypeAssignmentSerializer,
     PartnerTypeAssignmentSetupSerializer,
+    PartnerTypeBankRequirementSerializer,
+    PartnerTypeContactRequirementSerializer,
+    PartnerTypeDocumentRequirementSerializer,
+    PartnerTypeFieldConfigurationSerializer,
+    PartnerTypeSerializer,
+    PartnerUpdateSerializer,
+    UserPartnerLinkCreateSerializer,
+    UserPartnerLinkRemoveSerializer,
+    UserPartnerLinkSerializer,
 )
-from apps.partners.filters import PartnerFilter
 from apps.partners.services.duplicate_detection import PartnerDuplicateDetectionService
-from apps.partners.services.setup_service import PartnerSetupService
+from apps.partners.services.partner_link_service import PartnerLinkService
 from apps.partners.services.partner_service import PartnerLifecycleService
-from apps.governance.services.audit_service import AuditService
+from apps.partners.services.setup_service import PartnerSetupService
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +98,12 @@ class PartnerViewSet(viewsets.ModelViewSet):
         "created_at", "partner_number", "status", "partner_type",
     ]
     ordering = ["-created_at"]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if self.request.user._has_partner_scope_bypass():
+            return queryset
+        return queryset.filter(pk__in=self.request.user.visible_partners().values("pk"))
 
     def get_serializer_class(self):
         if self.action == "list":
@@ -251,6 +267,95 @@ class PartnerViewSet(viewsets.ModelViewSet):
         return _response(
             data=PartnerDetailSerializer(partner).data,
             message=f"Partner {partner.partner_number} activated.",
+        )
+
+
+class UserPartnerLinkViewSet(viewsets.ModelViewSet):
+    queryset = UserPartnerLink.objects.select_related("user", "partner", "created_by")
+    serializer_class = UserPartnerLinkSerializer
+    pagination_class = StandardPagination
+
+    def get_permissions(self):
+        if self.action == "my_context":
+            return [permissions.IsAuthenticated()]
+        return [permissions.IsAuthenticated(), IsAdminUser()]
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return UserPartnerLinkCreateSerializer
+        if self.action == "deactivate":
+            return UserPartnerLinkRemoveSerializer
+        return UserPartnerLinkSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        link = PartnerLinkService.link_user(
+            actor=request.user,
+            user=serializer.validated_data["user"],
+            partner=serializer.validated_data["partner"],
+            data=serializer.validated_data,
+            request=request,
+        )
+        return _response(
+            data=UserPartnerLinkSerializer(link).data,
+            message="User-partner link created.",
+            status_code=status.HTTP_201_CREATED,
+        )
+
+    def destroy(self, request, *args, **kwargs):
+        return _response(
+            message="User-partner links cannot be deleted. Use deactivate instead.",
+            status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    @action(detail=True, methods=["post"], url_path="deactivate")
+    def deactivate(self, request, pk=None):
+        link = self.get_object()
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        link = PartnerLinkService.unlink_user(
+            actor=request.user,
+            link=link,
+            request=request,
+            reason=serializer.validated_data.get("reason", ""),
+        )
+        return _response(data=UserPartnerLinkSerializer(link).data, message="User-partner link deactivated.")
+
+    @action(detail=True, methods=["post"], url_path="set-primary")
+    def set_primary(self, request, pk=None):
+        link = PartnerLinkService.set_primary(actor=request.user, link=self.get_object(), request=request)
+        return _response(data=UserPartnerLinkSerializer(link).data, message="Primary partner changed.")
+
+    @action(detail=False, methods=["get"], url_path="my-context")
+    def my_context(self, request):
+        visible = request.user.visible_partners()
+        current = request.user.current_partner()
+        return _response(
+            data={
+                "current_partner": PartnerContextSerializer(current).data if current else None,
+                "partners": PartnerContextSerializer(visible, many=True).data,
+                "partner_ids": [str(partner_id) for partner_id in visible.values_list("id", flat=True)],
+                "partner_count": visible.count(),
+            },
+            message="Partner context retrieved.",
+        )
+
+
+class PartnerContextView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        visible = request.user.visible_partners()
+        current = request.user.current_partner()
+        return _response(
+            data={
+                "current_partner": PartnerContextSerializer(current).data if current else None,
+                "partners": PartnerContextSerializer(visible, many=True).data,
+                "partner_ids": [str(partner_id) for partner_id in visible.values_list("id", flat=True)],
+                "partner_count": visible.count(),
+            },
+            message="Partner context retrieved.",
         )
 
 

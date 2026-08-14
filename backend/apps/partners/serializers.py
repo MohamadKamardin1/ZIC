@@ -1,20 +1,26 @@
 from rest_framework import serializers
-from apps.partners.models import (
-    Partner, PartnerContact, PartnerBankAccount,
-    PartnerType, PartnerTypeDocumentRequirement,
-    PartnerTypeFieldConfiguration,
-    PartnerTypeContactRequirement,
-    PartnerTypeBankRequirement,
-    IndividualProfile, CorporateProfile, PartnerTypeAssignment,
-    PartnerTypeAssignmentHistory,
-    PartnerDocument,
 
-    PartnerDynamicFieldValue,
-    PartnerAssignmentContact,
-    PartnerAssignmentBankAccount,
-    PartnerKYCProfile,
-)
 from apps.partner_onboarding.models import Branch, Location
+from apps.partners.models import (
+    CorporateProfile,
+    IndividualProfile,
+    Partner,
+    PartnerAssignmentBankAccount,
+    PartnerAssignmentContact,
+    PartnerBankAccount,
+    PartnerContact,
+    PartnerDocument,
+    PartnerDynamicFieldValue,
+    PartnerKYCProfile,
+    PartnerType,
+    PartnerTypeAssignment,
+    PartnerTypeAssignmentHistory,
+    PartnerTypeBankRequirement,
+    PartnerTypeContactRequirement,
+    PartnerTypeDocumentRequirement,
+    PartnerTypeFieldConfiguration,
+    UserPartnerLink,
+)
 
 
 class IndividualProfileSerializer(serializers.ModelSerializer):
@@ -99,7 +105,7 @@ class PartnerTypeAssignmentCreateSerializer(serializers.Serializer):
         try:
             return PartnerType.objects.get(id=value, is_active=True)
         except PartnerType.DoesNotExist:
-            raise serializers.ValidationError("Invalid or inactive partner type.")
+            raise serializers.ValidationError("Invalid or inactive partner type.") from None
 
     def validate_branch(self, value):
         if not value:
@@ -107,7 +113,7 @@ class PartnerTypeAssignmentCreateSerializer(serializers.Serializer):
         try:
             return Branch.objects.get(id=value, is_active=True)
         except Branch.DoesNotExist:
-            raise serializers.ValidationError("Invalid branch.")
+            raise serializers.ValidationError("Invalid branch.") from None
 
     def validate_branches(self, value):
         if not value:
@@ -123,7 +129,7 @@ class PartnerTypeAssignmentCreateSerializer(serializers.Serializer):
         try:
             return Location.objects.get(id=value, is_active=True)
         except Location.DoesNotExist:
-            raise serializers.ValidationError("Invalid location.")
+            raise serializers.ValidationError("Invalid location.") from None
 
     def validate(self, attrs):
         # Accept the legacy singular field, but never silently discard additional branches.
@@ -173,8 +179,8 @@ class PartnerListSerializer(serializers.ModelSerializer):
         model = Partner
         fields = [
             "id", "partner_number", "partner_type", "partner_category",
-            "display_name",
-            "email", "mobile_number", "status",
+            "party_type", "legal_name", "display_name",
+            "email", "phone", "mobile_number", "status", "is_active",
             "political_risk", "aml_risk", "created_at",
         ]
         read_only_fields = fields
@@ -193,8 +199,8 @@ class PartnerDetailSerializer(serializers.ModelSerializer):
         model = Partner
         fields = [
             "id", "partner_number", "partner_type", "partner_category",
-            "status", "display_name",
-            "identification_type", "identification_number",
+            "party_type", "legal_name", "status", "is_active", "display_name",
+            "identification_type", "identification_number", "national_id", "registration_number",
             "title", "first_name", "other_name", "surname",
             "gender", "date_of_birth", "marital_status",
             "occupation", "nationality",
@@ -202,7 +208,7 @@ class PartnerDetailSerializer(serializers.ModelSerializer):
             "industry", "contact_person", "contact_person_phone",
             "contact_person_email",
             "physical_address", "postal_address",
-            "email", "telephone_number", "mobile_number",
+            "email", "phone", "telephone_number", "mobile_number",
             "political_risk", "aml_risk",
             "created_from_application",
             "individual_profile", "corporate_profile",
@@ -471,3 +477,63 @@ class PartnerTypeAssignmentSetupSerializer(serializers.ModelSerializer):
         except PartnerKYCProfile.DoesNotExist:
             pass
         return None
+
+
+class UserPartnerLinkSerializer(serializers.ModelSerializer):
+    user_name = serializers.ReadOnlyField(source="user.full_name")
+    user_type = serializers.ReadOnlyField(source="user.user_type")
+    partner_number = serializers.ReadOnlyField(source="partner.partner_number")
+    partner_name = serializers.ReadOnlyField(source="partner.display_name")
+    is_current = serializers.ReadOnlyField()
+
+    class Meta:
+        model = UserPartnerLink
+        fields = [
+            "id", "user", "user_name", "user_type", "partner", "partner_number",
+            "partner_name", "link_status", "is_primary", "valid_from", "valid_to",
+            "is_current", "created_by", "created_at", "updated_at",
+        ]
+        read_only_fields = [
+            "id", "user_name", "user_type", "partner_number", "partner_name",
+            "is_current", "created_by", "created_at", "updated_at",
+        ]
+
+
+class UserPartnerLinkCreateSerializer(serializers.Serializer):
+    user_id = serializers.UUIDField()
+    partner_id = serializers.UUIDField()
+    is_primary = serializers.BooleanField(required=False, default=False)
+    valid_from = serializers.DateTimeField(required=False)
+    valid_to = serializers.DateTimeField(required=False, allow_null=True)
+
+    def validate(self, attrs):
+        from apps.users.models import User
+
+        try:
+            attrs["user"] = User.objects.get(pk=attrs.pop("user_id"))
+        except User.DoesNotExist as exc:
+            raise serializers.ValidationError({"user_id": "User not found."}) from exc
+        try:
+            attrs["partner"] = Partner.objects.get(pk=attrs.pop("partner_id"))
+        except Partner.DoesNotExist as exc:
+            raise serializers.ValidationError({"partner_id": "Partner not found."}) from exc
+        if attrs.get("valid_to") and attrs.get("valid_from") and attrs["valid_to"] < attrs["valid_from"]:
+            raise serializers.ValidationError({"valid_to": "valid_to must be on or after valid_from."})
+        return attrs
+
+
+class UserPartnerLinkRemoveSerializer(serializers.Serializer):
+    reason = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class PartnerContextSerializer(serializers.ModelSerializer):
+    display_name = serializers.ReadOnlyField()
+    partner_category = serializers.ReadOnlyField()
+
+    class Meta:
+        model = Partner
+        fields = [
+            "id", "partner_number", "partner_type", "partner_category", "party_type",
+            "legal_name", "display_name", "status", "is_active",
+        ]
+        read_only_fields = fields

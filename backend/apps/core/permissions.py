@@ -74,6 +74,33 @@ def permission_required(permission_code):
     return decorator
 
 
+class HasPartnerAccess(BasePermission):
+    """Allow an authenticated user to access an object belonging to a visible partner."""
+
+    partner_attribute = "partner"
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated)
+
+    def has_object_permission(self, request, view, obj):
+        partner = getattr(obj, self.partner_attribute, None)
+        if partner is None:
+            partner_id = getattr(obj, f"{self.partner_attribute}_id", None)
+            return bool(partner_id and request.user.can_access_partner(partner_id))
+        return request.user.can_access_partner(partner)
+
+
+class PartnerScopedQuerysetMixin:
+    """Reusable queryset scoping for models with a `partner` relation."""
+
+    partner_lookup = "partner"
+
+    def scope_partner_queryset(self, request, queryset):
+        if not request.user or not request.user.is_authenticated:
+            return queryset.none()
+        return queryset.filter(**{f"{self.partner_lookup}__in": request.user.visible_partners()})
+
+
 class OrPermission(BasePermission):
     def __init__(self, *permissions):
         self.permissions = permissions

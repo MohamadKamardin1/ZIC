@@ -9,9 +9,12 @@ from .views import (
     PartnerTypeContactRequirementViewSet,
     PartnerTypeBankRequirementViewSet,
     PartnerTypeAssignmentSetupViewSet,
+    UserPartnerLinkViewSet,
+    PartnerContextView,
 )
 
 router = DefaultRouter()
+router.register(r"links", UserPartnerLinkViewSet, basename="partner-links")
 router.register(r"", PartnerViewSet, basename="partners")
 
 partner_type_list = PartnerTypeViewSet.as_view({
@@ -70,6 +73,7 @@ bank_req_detail = PartnerTypeBankRequirementViewSet.as_view({
 })
 
 urlpatterns = [
+    path("context/", PartnerContextView.as_view(), name="partner-context"),
     path("types/", partner_type_list, name="partner-types-list"),
     path("types/<uuid:pk>/", partner_type_detail, name="partner-types-detail"),
     path(

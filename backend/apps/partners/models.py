@@ -1,8 +1,8 @@
-import uuid
 import logging
+import uuid
 
-from django.db import models
 from django.conf import settings
+from django.db import models
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -15,10 +15,28 @@ PARTNER_CATEGORY_CHOICES = [
 
 # Deprecated — kept for backward compatibility. Use PARTNER_CATEGORY_CHOICES + PartnerTypeAssignment.
 PARTNER_TYPE_CHOICES = [
-    ("INDIVIDUAL", "Individual"),
+    ("CLIENT", "Client"),
+    ("INTERMEDIARY", "Intermediary"),
+    ("SERVICE_PROVIDER", "Service provider"),
+    ("MEDICAL_PRACTITIONER", "Medical practitioner"),
+    ("INSURER", "Insurer"),
+    ("BANK", "Bank"),
     ("CORPORATE", "Corporate"),
+    ("OTHER", "Other"),
+    # Legacy values retained for existing partner records and APIs.
+    ("INDIVIDUAL", "Individual"),
     ("AGENT", "Agent"),
     ("BROKER", "Broker"),
+]
+
+PARTY_TYPE_CHOICES = [
+    ("INDIVIDUAL", "Individual"),
+    ("CORPORATE", "Corporate"),
+]
+
+LINK_STATUS_CHOICES = [
+    ("ACTIVE", "Active"),
+    ("INACTIVE", "Inactive"),
 ]
 
 PARTNER_STATUS_CHOICES = [
@@ -208,12 +226,22 @@ class Partner(models.Model):
     partner_category = models.CharField(
         max_length=20, choices=PARTNER_CATEGORY_CHOICES,
         blank=True, default="",
-        help_text="Classification: INDIVIDUAL or CORPORATE. Preferred over partner_type.",
+        help_text="Legacy classification: INDIVIDUAL or CORPORATE.",
     )
+    party_type = models.CharField(
+        max_length=20,
+        choices=PARTY_TYPE_CHOICES,
+        default="CORPORATE",
+        db_index=True,
+    )
+    legal_name = models.CharField(max_length=255, blank=True, default="")
     status = models.CharField(max_length=20, choices=PARTNER_STATUS_CHOICES, default="ACTIVE")
+    is_active = models.BooleanField(default=True, db_index=True)
 
     identification_type = models.CharField(max_length=30, choices=IDENTIFICATION_TYPE_CHOICES, blank=True)
     identification_number = models.CharField(max_length=100, blank=True)
+    national_id = models.CharField(max_length=100, blank=True, default="")
+    registration_number = models.CharField(max_length=100, blank=True, default="")
     title = models.CharField(max_length=10, choices=TITLE_CHOICES, blank=True)
     first_name = models.CharField(max_length=100, blank=True)
     other_name = models.CharField(max_length=100, blank=True)
@@ -235,6 +263,7 @@ class Partner(models.Model):
     postal_address = models.TextField(blank=True)
 
     email = models.EmailField(unique=True)
+    phone = models.CharField(max_length=20, blank=True, default="")
     telephone_number = models.CharField(max_length=20, blank=True)
     mobile_number = models.CharField(max_length=20)
     political_risk = models.CharField(max_length=20, choices=POLITICAL_RISK_CHOICES, default="LOW")
@@ -250,6 +279,20 @@ class Partner(models.Model):
     activated_at = models.DateTimeField(null=True, blank=True)
     deactivated_at = models.DateTimeField(null=True, blank=True)
     deactivation_reason = models.TextField(blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_partners",
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="updated_partners",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -267,6 +310,10 @@ class Partner(models.Model):
             models.Index(fields=["tin_number"]),
             models.Index(fields=["-created_at"]),
         ]
+
+    @property
+    def is_available_for_partner_access(self):
+        return self.is_active and self.status == "ACTIVE"
 
     @property
     def effective_category(self):
@@ -299,6 +346,81 @@ class Partner(models.Model):
             return self._corporate_profile
         except CorporateProfile.DoesNotExist:
             return None
+
+
+class UserPartnerLink(models.Model):
+    """Auditable, time-bounded association between a user and a partner."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="partner_links",
+    )
+    partner = models.ForeignKey(
+        Partner,
+        on_delete=models.PROTECT,
+        related_name="user_links",
+    )
+    link_status = models.CharField(
+        max_length=20,
+        choices=LINK_STATUS_CHOICES,
+        default="ACTIVE",
+        db_index=True,
+    )
+    is_primary = models.BooleanField(default=False)
+    valid_from = models.DateTimeField(default=timezone.now)
+    valid_to = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_partner_links",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "User Partner Link"
+        verbose_name_plural = "User Partner Links"
+        ordering = ["-is_primary", "-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "partner"],
+                condition=models.Q(link_status="ACTIVE"),
+                name="partners_active_user_partner_unique",
+            ),
+            models.UniqueConstraint(
+                fields=["user"],
+                condition=models.Q(link_status="ACTIVE", is_primary=True),
+                name="partners_active_primary_user_unique",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["user", "link_status"]),
+            models.Index(fields=["partner", "link_status"]),
+            models.Index(fields=["valid_from", "valid_to"]),
+        ]
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        if self.valid_to and self.valid_to < self.valid_from:
+            raise ValidationError({"valid_to": "valid_to must be on or after valid_from."})
+
+    @property
+    def is_current(self):
+        now = timezone.now()
+        return (
+            self.link_status == "ACTIVE"
+            and self.partner.is_available_for_partner_access
+            and self.valid_from <= now
+            and (self.valid_to is None or self.valid_to >= now)
+        )
+
+    def __str__(self):
+        return f"{self.user_id} -> {self.partner.partner_number}"
 
 
 ASSIGNMENT_STATUS_CHOICES = [

@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenRefreshView as BaseTokenRefreshView
 
+from apps.partners.serializers import PartnerContextSerializer
 from apps.users.models import User, UserOTP
 from apps.users.serializers import ChangePasswordSerializer, ReportCategorySerializer, UserListSerializer
 
@@ -60,6 +61,13 @@ def _user_payload(user):
     user_data['visible_report_categories'] = ReportCategorySerializer(
         user.visible_report_categories(), many=True,
     ).data
+    visible_partners = user.visible_partners()
+    current_partner = user.current_partner()
+    user_data['partner_context'] = {
+        'current_partner': PartnerContextSerializer(current_partner).data if current_partner else None,
+        'partner_ids': [str(partner_id) for partner_id in visible_partners.values_list('id', flat=True)],
+        'partner_count': visible_partners.count(),
+    }
     return user_data
 
 
