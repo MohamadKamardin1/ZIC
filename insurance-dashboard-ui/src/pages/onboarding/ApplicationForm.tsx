@@ -28,7 +28,6 @@ import type {
   ChoicesResponse,
 } from "../../lib/types"
 import { useChoiceList } from "../../config/ConfigurationAPI"
-import Stepper from "../../components/shared/Stepper"
 import type { Step } from "../../components/shared/Stepper"
 
 /* ------------------------------------------------------------------ */
@@ -448,50 +447,42 @@ export default function ApplicationForm() {
   /*  Render                                                             */
   /* ------------------------------------------------------------------ */
   return (
-    <div className="mx-auto w-full max-w-5xl">
+    <div className="mx-auto w-full max-w-6xl space-y-5 text-[#1b1b1b]">
       {/* Header */}
-      <div className="mb-4 flex items-center gap-3">
+      <div className="flex flex-col gap-4 border-b border-[#e7e7e7] pb-5 sm:flex-row sm:items-end sm:justify-between">
         <button
           onClick={() => navigate(isEdit ? `/onboarding/${id}` : "/onboarding")}
-          className="rounded-lg p-2 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+          className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[#d9d9d9] bg-white text-[#555] transition hover:border-[#111] hover:text-[#111]"
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
-        <h1 className="text-2xl font-bold text-foreground">
+        <h1 className="text-2xl font-semibold tracking-[-0.03em] text-[#111]">
           {isEdit ? "Edit Application" : "Add Partner"}
         </h1>
       </div>
 
-      {/* Stepper */}
-      <Stepper steps={STEPS} currentStep={step} className="mb-6" />
-
-      {/* Step clickable nav dots */}
-      <div className="flex justify-center gap-1 mb-6">
-        {STEPS.map((_, i) => (
-          <button
-            key={i}
-            onClick={() => handleStepClick(i)}
-            className={`h-2 w-2 rounded-full transition-all duration-300 ${
-              i === step
-                ? "bg-[var(--color-brand-primary)] w-6"
-                : i < step
-                  ? "bg-[var(--color-feedback-success)]"
-                  : "bg-[var(--color-border-default)]"
-            }`}
-          />
-        ))}
+      {/* Progress navigation */}
+      <div className="overflow-x-auto rounded-xl border border-[#dedede] bg-white p-2">
+        <div className="grid min-w-[720px] grid-cols-6 gap-1">
+          {STEPS.map((item, index) => (
+            <button key={item.title} type="button" onClick={() => handleStepClick(index)} className={`relative rounded-lg px-3 py-3 text-left transition ${index === step ? "bg-[#111] text-white" : index < step ? "bg-[#f1f1f1] text-[#222]" : "text-[#777] hover:bg-[#f7f7f7]"}`}>
+              <span className="flex items-center gap-2"><span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs font-bold ${index === step ? "border-white bg-white text-[#111]" : index < step ? "border-[#111] bg-[#111] text-white" : "border-[#cfcfcf]"}`}>{index < step ? "✓" : index + 1}</span><span className="truncate text-xs font-bold">{item.title}</span></span>
+              <span className={`mt-1 block truncate pl-8 text-[10px] ${index === step ? "text-[#d7d7d7]" : "text-[#999]"}`}>{item.description}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Error Banner */}
       {error && (
-        <div className="mb-4 flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+        <div className="mb-4 flex items-center gap-2 rounded-lg border border-[#d4d4d4] bg-[#f6f6f6] px-4 py-3 text-sm text-[#333]">
           <AlertCircle className="h-4 w-4 shrink-0" />
           {error}
         </div>
       )}
 
       {/* Step Content */}
-      <div className="rounded-xl border border-border bg-card shadow-sm">
+      <div className="overflow-hidden rounded-xl border border-[#dedede] bg-white shadow-[0_10px_35px_rgba(0,0,0,0.04)]">
         {step === 0 && (
           <StepClientType
             partnerType={form.partnerType}
@@ -560,13 +551,13 @@ export default function ApplicationForm() {
       </div>
 
       {/* Navigation */}
-      <div className="mt-6 flex items-center justify-between">
+      <div className="flex flex-col-reverse gap-3 border-t border-[#e7e7e7] pt-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
           {!isFirstStep && (
             <button
               onClick={handleBack}
               disabled={busy}
-              className="inline-flex items-center gap-2 rounded-lg border border-border px-5 py-2.5 text-sm font-semibold text-foreground transition hover:bg-secondary disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-lg border border-[#d6d6d6] bg-white px-5 py-2.5 text-sm font-semibold text-[#444] transition hover:border-[#111] hover:text-[#111] disabled:opacity-50"
             >
               <ArrowLeft className="h-4 w-4" />
               Back
@@ -578,7 +569,7 @@ export default function ApplicationForm() {
           <button
             onClick={handleSave}
             disabled={busy}
-            className="inline-flex items-center gap-2 rounded-lg border border-border px-5 py-2.5 text-sm font-semibold text-foreground transition hover:bg-secondary disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg border border-[#d9d9d9] px-5 py-2.5 text-sm font-semibold text-[#222] transition hover:bg-[#f3f3f3] disabled:opacity-50"
           >
             {saving ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -592,7 +583,7 @@ export default function ApplicationForm() {
             <button
               onClick={handleSaveAndSubmit}
               disabled={busy}
-              className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition hover:brightness-110 disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-lg bg-[#111] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#2b2b2b] disabled:opacity-50"
             >
               {submitting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -605,7 +596,7 @@ export default function ApplicationForm() {
             <button
               onClick={handleNext}
               disabled={busy}
-              className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition hover:brightness-110 disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-lg bg-[#111] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#2b2b2b] disabled:opacity-50"
             >
               Next
               <ArrowRight className="h-4 w-4" />
@@ -633,8 +624,8 @@ function StepClientType({
   return (
     <div className="p-6">
       <div className="mb-6 text-center">
-        <h2 className="text-lg font-bold text-foreground">Choose Client Type</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Select whether this partner is an individual person or a company</p>
+        <h2 className="text-lg font-bold text-[#222]">Choose Client Type</h2>
+        <p className="mt-1 text-sm text-[#777]">Select whether this partner is an individual person or a company</p>
       </div>
       <div className="mx-auto grid max-w-2xl grid-cols-2 gap-6">
         {[
@@ -651,18 +642,18 @@ function StepClientType({
               onClick={() => onSelect(type.value as "INDIVIDUAL" | "CORPORATE")}
               className={`relative flex flex-col items-center rounded-xl border-2 p-8 text-center transition-all duration-200 ${
                 isSelected
-                  ? "border-primary bg-primary/5 text-primary shadow-md scale-[1.02]"
-                  : "border-border bg-card text-muted-foreground hover:border-primary/30 hover:bg-accent/50 hover:shadow-sm"
+                  ? "border-[#111] bg-[#111] text-white shadow-md scale-[1.02]"
+                  : "border-[#d9d9d9] bg-white text-[#777] hover:border-[#777] hover:bg-[#fafafa] hover:shadow-sm"
               } ${isEdit ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
             >
-              <Icon className={`mb-3 h-10 w-10 ${isSelected ? "text-primary" : "text-muted-foreground"}`} />
-              <span className={`text-base font-bold ${isSelected ? "text-primary" : "text-foreground"}`}>
+              <Icon className={`mb-3 h-10 w-10 ${isSelected ? "text-white" : "text-[#777]"}`} />
+              <span className={`text-base font-bold ${isSelected ? "text-white" : "text-[#222]"}`}>
                 {type.label}
               </span>
-              <span className="mt-1 text-xs text-muted-foreground">{type.description}</span>
-              <span className="mt-2 text-[11px] leading-tight text-muted-foreground/70">{type.detail}</span>
+              <span className="mt-1 text-xs text-[#777]">{type.description}</span>
+              <span className="mt-2 text-[11px] leading-tight text-[#777]/70">{type.detail}</span>
               {isSelected && (
-                <div className="absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                    <div className="absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full bg-white text-[#111]">
                   <CheckCircle2 className="h-4 w-4" />
                 </div>
               )}
@@ -697,11 +688,11 @@ function StepInformation({
 }) {
   return (
     <>
-      <div className="border-b border-border px-6 py-4">
-        <h2 className="text-base font-semibold text-foreground">
+      <div className="border-b border-[#d9d9d9] px-6 py-4">
+        <h2 className="text-base font-semibold text-[#222]">
           {isCorporate ? "Company Information" : "Personal Information"}
         </h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">
+        <p className="mt-0.5 text-xs text-[#777]">
           {isCorporate
             ? "Enter the company details below. Fields marked with * are required."
             : "Enter the personal details below. Fields marked with * are required."}
@@ -790,9 +781,9 @@ function StepPartnerRoles({
 
   return (
     <>
-      <div className="border-b border-border px-6 py-4">
-        <h2 className="text-base font-semibold text-foreground">Assign Partner Roles</h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">
+      <div className="border-b border-[#d9d9d9] px-6 py-4">
+        <h2 className="text-base font-semibold text-[#222]">Assign Partner Roles</h2>
+        <p className="mt-0.5 text-xs text-[#777]">
           Select one or more partner roles for this application. Each role may require additional information.
         </p>
       </div>
@@ -809,8 +800,8 @@ function StepPartnerRoles({
                 onClick={() => togglePartnerType(pt.value)}
                 className={`rounded-full border px-4 py-1.5 text-sm font-medium transition ${
                   isSelected
-                    ? "border-primary bg-primary text-primary-foreground shadow-sm"
-                    : "border-border bg-card text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                    ? "border-[#111] bg-[#111] text-white shadow-sm"
+                    : "border-[#d9d9d9] bg-white text-[#777] hover:border-[#111]/50 hover:text-[#222]"
                 }`}
               >
                 {pt.label}
@@ -828,13 +819,13 @@ function StepPartnerRoles({
                 (l) => cfg.branches.length === 0 || cfg.branches.includes(l.branchId),
               )
               return (
-                <div key={ptId} className="rounded-lg border border-border bg-card p-4">
+                <div key={ptId} className="rounded-lg border border-[#d9d9d9] bg-white p-4">
                   <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-semibold text-foreground">{ptLabel(ptId)}</h3>
+                    <h3 className="text-sm font-semibold text-[#222]">{ptLabel(ptId)}</h3>
                     <button
                       type="button"
                       onClick={() => togglePartnerType(ptId)}
-                      className="rounded p-1 text-muted-foreground hover:text-destructive transition-colors"
+                      className="rounded p-1 text-[#777] hover:text-[#111] transition-colors"
                     >
                       <X className="h-4 w-4" />
                     </button>
@@ -880,7 +871,7 @@ function StepPartnerRoles({
         )}
 
         {selectedPartnerTypes.length === 0 && (
-          <p className="py-6 text-center text-sm text-muted-foreground">
+          <p className="py-6 text-center text-sm text-[#777]">
             Click a partner role above to configure it.
           </p>
         )}
@@ -888,9 +879,9 @@ function StepPartnerRoles({
 
       {dynamicFieldsConfig.length > 0 && (
         <>
-          <div className="border-t border-border px-6 py-4">
-            <h3 className="text-sm font-semibold text-foreground">Additional Information</h3>
-            <p className="mt-0.5 text-xs text-muted-foreground">
+          <div className="border-t border-[#d9d9d9] px-6 py-4">
+            <h3 className="text-sm font-semibold text-[#222]">Additional Information</h3>
+            <p className="mt-0.5 text-xs text-[#777]">
               Fill in the additional fields required for the selected partner roles.
             </p>
           </div>
@@ -942,18 +933,18 @@ function BranchSelect({
 
   return (
     <div ref={ref} className="relative">
-      <label className="mb-1 block text-sm font-medium text-foreground">Branches</label>
+      <label className="mb-1 block text-sm font-medium text-[#222]">Branches</label>
       {selected.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mb-1.5">
           {selected.map((id) => {
             const b = options.find((o) => o.value === id)
             return (
-              <span key={id} className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2.5 py-0.5 text-xs font-medium">
+              <span key={id} className="inline-flex items-center gap-1 rounded-full bg-[#111]/10 text-[#222] px-2.5 py-0.5 text-xs font-medium">
                 {b?.label ?? id}
                 <button
                   type="button"
                   onClick={() => onChange(selected.filter((v) => v !== id))}
-                  className="hover:text-destructive"
+                  className="hover:text-[#111]"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -963,24 +954,24 @@ function BranchSelect({
         </div>
       )}
       <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[#777] pointer-events-none" />
         <input
           type="text"
           placeholder="Search branches..."
           value={query}
           onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
           onFocus={() => setOpen(true)}
-          className="w-full rounded-lg border border-input bg-background text-foreground pl-9 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
+          className="w-full rounded-lg border border-[#d7d7d7] bg-white text-[#222] pl-9 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#111]/10"
         />
       </div>
       {open && filtered.length > 0 && (
-        <div className="absolute z-20 mt-1 w-full rounded-lg border border-border bg-card shadow-lg max-h-48 overflow-y-auto">
+        <div className="absolute z-20 mt-1 w-full rounded-lg border border-[#d9d9d9] bg-white shadow-lg max-h-48 overflow-y-auto">
           {filtered.map((b) => (
             <button
               key={b.value}
               type="button"
               onClick={() => { onChange([...selected, b.value]); setQuery(""); setOpen(false) }}
-              className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors"
+              className="w-full text-left px-3 py-2 text-sm hover:bg-[#f7f7f7] transition-colors"
             >
               {b.label}
             </button>
@@ -1004,9 +995,9 @@ function StepContactRisk({
 }) {
   return (
     <>
-      <div className="border-b border-border px-6 py-4">
-        <h2 className="text-base font-semibold text-foreground">Contact Information</h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">Provide contact details and risk assessment information.</p>
+      <div className="border-b border-[#d9d9d9] px-6 py-4">
+        <h2 className="text-base font-semibold text-[#222]">Contact Information</h2>
+        <p className="mt-0.5 text-xs text-[#777]">Provide contact details and risk assessment information.</p>
       </div>
       <div className="grid grid-cols-1 gap-x-6 gap-y-4 p-6 sm:grid-cols-2 lg:grid-cols-3">
         <InputField label="Email *" type="email" value={form.email} onChange={(v) => update("email", v)} />
@@ -1016,8 +1007,8 @@ function StepContactRisk({
         <TextAreaField label="Postal Address" value={form.postalAddress} onChange={(v) => update("postalAddress", v)} colSpan={3} />
       </div>
 
-      <div className="border-t border-border px-6 py-4">
-        <h3 className="text-sm font-semibold text-foreground">Risk Assessment</h3>
+      <div className="border-t border-[#d9d9d9] px-6 py-4">
+        <h3 className="text-sm font-semibold text-[#222]">Risk Assessment</h3>
       </div>
       <div className="grid grid-cols-1 gap-x-6 gap-y-4 p-6 pt-2 sm:grid-cols-2">
         <SelectField label="Political Risk" value={form.politicalRisk} onChange={(v) => update("politicalRisk", v)} options={politicalRiskList.options} />
@@ -1042,12 +1033,12 @@ function StepDocuments({
 }) {
   return (
     <>
-      <div className="border-b border-border px-6 py-4">
-        <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
-          <FileCheck className="h-5 w-5 text-primary" />
+      <div className="border-b border-[#d9d9d9] px-6 py-4">
+        <h2 className="flex items-center gap-2 text-base font-semibold text-[#222]">
+          <FileCheck className="h-5 w-5 text-[#222]" />
           Documents
         </h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">
+        <p className="mt-0.5 text-xs text-[#777]">
           {isEdit
             ? "Upload required documents for this application. You can upload multiple documents."
             : "Documents can be uploaded after saving the application draft."}
@@ -1059,13 +1050,13 @@ function StepDocuments({
             <div className="mb-4 flex gap-3">
               <select
                 id="docType"
-                className="rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground"
+                className="rounded-lg border border-[#d7d7d7] bg-white px-3 py-2 text-sm text-[#222]"
               >
                 {(documentTypeList.options ?? []).map((d) => (
                   <option key={d.value} value={d.value}>{d.label}</option>
                 ))}
               </select>
-              <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-input bg-card px-4 py-2 text-sm font-medium text-foreground transition hover:bg-secondary">
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[#d7d7d7] bg-white px-4 py-2 text-sm font-medium text-[#222] transition hover:bg-[#f3f3f3]">
                 <Upload className="h-4 w-4" />
                 Upload
                 <input
@@ -1088,17 +1079,17 @@ function StepDocuments({
               <ul className="divide-y divide-border">
                 {docs.map((d) => (
                   <li key={d.id} className="flex items-center gap-3 py-3">
-                    <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <FileText className="h-4 w-4 shrink-0 text-[#777]" />
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium text-foreground">{d.documentName}</div>
-                      <div className="text-xs text-muted-foreground">
+                      <div className="truncate text-sm font-medium text-[#222]">{d.documentName}</div>
+                      <div className="text-xs text-[#777]">
                         {d.fileSize ? ` · ${(d.fileSize / 1024).toFixed(0)} KB` : ""}
                       </div>
                     </div>
                     {d.isVerified && (
                       <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: "var(--color-feedback-success)" }} />
                     )}
-                    <button onClick={() => onDelete(d.id)} className="rounded p-1 text-muted-foreground hover:text-destructive">
+                    <button onClick={() => onDelete(d.id)} className="rounded p-1 text-[#777] hover:text-[#111]">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </li>
@@ -1106,16 +1097,16 @@ function StepDocuments({
               </ul>
             ) : (
               <div className="py-8 text-center">
-                <FileText className="mx-auto mb-2 h-8 w-8 text-muted-foreground/40" />
-                <p className="text-sm text-muted-foreground">No documents uploaded yet.</p>
+                <FileText className="mx-auto mb-2 h-8 w-8 text-[#777]/40" />
+                <p className="text-sm text-[#777]">No documents uploaded yet.</p>
               </div>
             )}
           </>
         ) : (
           <div className="py-8 text-center">
-            <FileCheck className="mx-auto mb-2 h-8 w-8 text-muted-foreground/40" />
-            <p className="text-sm font-medium text-foreground">Save the application first</p>
-            <p className="mt-1 text-xs text-muted-foreground">
+            <FileCheck className="mx-auto mb-2 h-8 w-8 text-[#777]/40" />
+            <p className="text-sm font-medium text-[#222]">Save the application first</p>
+            <p className="mt-1 text-xs text-[#777]">
               Documents can be uploaded after saving this application as a draft.
             </p>
           </div>
@@ -1147,33 +1138,33 @@ function StepReview({
 
   return (
     <>
-      <div className="border-b border-border px-6 py-4">
-        <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
-          <Eye className="h-5 w-5 text-primary" />
+      <div className="border-b border-[#d9d9d9] px-6 py-4">
+        <h2 className="flex items-center gap-2 text-base font-semibold text-[#222]">
+          <Eye className="h-5 w-5 text-[#222]" />
           Review & Submit
         </h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">
+        <p className="mt-0.5 text-xs text-[#777]">
           Please review all information before submitting. Once submitted, changes will require a new review cycle.
         </p>
       </div>
       <div className="p-6 space-y-6">
         {/* Client Type */}
         <div>
-          <h3 className="text-sm font-semibold text-foreground mb-2">Client Type</h3>
-          <div className="rounded-lg border border-border bg-muted/30 px-4 py-3">
+          <h3 className="text-sm font-semibold text-[#222] mb-2">Client Type</h3>
+          <div className="rounded-lg border border-[#d9d9d9] bg-[#fafafa] px-4 py-3">
             <div className="flex items-center gap-2">
-              {isCorporate ? <Building2 className="h-4 w-4 text-muted-foreground" /> : <User className="h-4 w-4 text-muted-foreground" />}
-              <span className="text-sm font-medium text-foreground">{isCorporate ? "Corporate" : "Individual"}</span>
+              {isCorporate ? <Building2 className="h-4 w-4 text-[#777]" /> : <User className="h-4 w-4 text-[#777]" />}
+              <span className="text-sm font-medium text-[#222]">{isCorporate ? "Corporate" : "Individual"}</span>
             </div>
           </div>
         </div>
 
         {/* Info Summary */}
         <div>
-          <h3 className="text-sm font-semibold text-foreground mb-2">
+          <h3 className="text-sm font-semibold text-[#222] mb-2">
             {isCorporate ? "Company Information" : "Personal Information"}
           </h3>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-2 rounded-lg border border-border bg-muted/30 px-4 py-3">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-2 rounded-lg border border-[#d9d9d9] bg-[#fafafa] px-4 py-3">
             {isCorporate ? (
               <>
                 <ReviewField label="Company Name" value={form.companyName} />
@@ -1204,26 +1195,26 @@ function StepReview({
 
         {/* Partner Roles */}
         <div>
-          <h3 className="text-sm font-semibold text-foreground mb-2">Partner Roles</h3>
-          <div className="rounded-lg border border-border bg-muted/30 px-4 py-3">
+          <h3 className="text-sm font-semibold text-[#222] mb-2">Partner Roles</h3>
+          <div className="rounded-lg border border-[#d9d9d9] bg-[#fafafa] px-4 py-3">
             {ptLabels.length > 0 ? (
               <div className="flex flex-wrap gap-2">
                 {ptLabels.map((label) => (
-                  <span key={label} className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+                  <span key={label} className="rounded-full bg-[#111]/10 px-3 py-1 text-xs font-medium text-[#222]">
                     {label}
                   </span>
                 ))}
               </div>
             ) : (
-              <span className="text-sm text-muted-foreground">None selected</span>
+              <span className="text-sm text-[#777]">None selected</span>
             )}
           </div>
         </div>
 
         {/* Contact */}
         <div>
-          <h3 className="text-sm font-semibold text-foreground mb-2">Contact & Risk</h3>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-2 rounded-lg border border-border bg-muted/30 px-4 py-3">
+          <h3 className="text-sm font-semibold text-[#222] mb-2">Contact & Risk</h3>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-2 rounded-lg border border-[#d9d9d9] bg-[#fafafa] px-4 py-3">
             <ReviewField label="Email" value={form.email} />
             <ReviewField label="Mobile" value={form.mobileNumber} />
             <ReviewField label="Telephone" value={form.telephoneNumber} />
@@ -1236,12 +1227,12 @@ function StepReview({
 
         {/* Documents */}
         <div>
-          <h3 className="text-sm font-semibold text-foreground mb-2">Documents</h3>
-          <div className="rounded-lg border border-border bg-muted/30 px-4 py-3">
+          <h3 className="text-sm font-semibold text-[#222] mb-2">Documents</h3>
+          <div className="rounded-lg border border-[#d9d9d9] bg-[#fafafa] px-4 py-3">
             {isEdit && docs.length > 0 ? (
               <div className="flex flex-wrap gap-2">
                 {docs.map((d) => (
-                  <span key={d.id} className="inline-flex items-center gap-1 rounded-full bg-muted px-3 py-1 text-xs text-foreground">
+                  <span key={d.id} className="inline-flex items-center gap-1 rounded-full bg-muted px-3 py-1 text-xs text-[#222]">
                     <FileText className="h-3 w-3" />
                     {d.documentName}
                     {d.isVerified && <CheckCircle2 className="h-3 w-3 text-success" />}
@@ -1249,7 +1240,7 @@ function StepReview({
                 ))}
               </div>
             ) : (
-              <span className="text-sm text-muted-foreground">No documents uploaded</span>
+              <span className="text-sm text-[#777]">No documents uploaded</span>
             )}
           </div>
         </div>
@@ -1261,8 +1252,8 @@ function StepReview({
 function ReviewField({ label, value, colSpan }: { label: string; value?: string; colSpan?: number }) {
   return (
     <div className={colSpan === 2 ? "col-span-2" : ""}>
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <p className="text-sm font-medium text-foreground">{value || "—"}</p>
+      <span className="text-xs text-[#777]">{label}</span>
+      <p className="text-sm font-medium text-[#222]">{value || "—"}</p>
     </div>
   )
 }
@@ -1276,12 +1267,12 @@ function InputField({ label, value, onChange, type = "text", colSpan }: {
 }) {
   return (
     <div className={colSpan === 3 ? "sm:col-span-2 lg:col-span-3" : ""}>
-      <label className="mb-1.5 block text-sm font-medium text-foreground">{label}</label>
+      <label className="mb-1.5 block text-sm font-medium text-[#222]">{label}</label>
       <input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-lg border border-input bg-card px-3 py-2.5 text-sm text-foreground outline-none transition placeholder:text-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring/40"
+        className="w-full rounded-lg border border-[#d7d7d7] bg-white px-3 py-2.5 text-sm text-[#222] outline-none transition placeholder:text-[#999] focus:border-[#111] focus:ring-2 focus:ring-[#111]/10"
       />
     </div>
   )
@@ -1293,11 +1284,11 @@ function SelectField({ label, value, onChange, options, placeholder, colSpan }: 
 }) {
   return (
     <div className={colSpan === 3 ? "sm:col-span-2 lg:col-span-3" : ""}>
-      <label className="mb-1.5 block text-sm font-medium text-foreground">{label}</label>
+      <label className="mb-1.5 block text-sm font-medium text-[#222]">{label}</label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-lg border border-input bg-card px-3 py-2.5 text-sm text-foreground outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/40"
+        className="w-full rounded-lg border border-[#d7d7d7] bg-white px-3 py-2.5 text-sm text-[#222] outline-none transition focus:border-[#111] focus:ring-2 focus:ring-[#111]/10"
       >
         {placeholder && <option value="">{placeholder}</option>}
         {options?.map((o) => (
@@ -1313,12 +1304,12 @@ function TextAreaField({ label, value, onChange, colSpan }: {
 }) {
   return (
     <div className={colSpan === 3 ? "sm:col-span-2 lg:col-span-3" : ""}>
-      <label className="mb-1.5 block text-sm font-medium text-foreground">{label}</label>
+      <label className="mb-1.5 block text-sm font-medium text-[#222]">{label}</label>
       <textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
         rows={2}
-        className="w-full rounded-lg border border-input bg-card px-3 py-2.5 text-sm text-foreground outline-none transition placeholder:text-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring/40"
+        className="w-full rounded-lg border border-[#d7d7d7] bg-white px-3 py-2.5 text-sm text-[#222] outline-none transition placeholder:text-[#999] focus:border-[#111] focus:ring-2 focus:ring-[#111]/10"
       />
     </div>
   )
