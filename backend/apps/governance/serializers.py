@@ -1,7 +1,10 @@
 from rest_framework import serializers
-from apps.governance.models import AuditLog, ApprovalRequest, ConfigurationVersion
+
+from apps.governance.models import ApprovalRequest, AuditLog, ConfigurationVersion
 from apps.partners.models import (
-    DocumentVersion, KYCReviewHistory, PartnerTypeAssignmentHistory,
+    DocumentVersion,
+    KYCReviewHistory,
+    PartnerTypeAssignmentHistory,
 )
 
 
@@ -13,9 +16,11 @@ class AuditLogSerializer(serializers.ModelSerializer):
         model = AuditLog
         fields = [
             "id", "user", "user_email", "user_name",
-            "action_type", "entity_type", "entity_id", "entity_repr",
-            "before_state", "after_state", "description",
-            "ip_address", "user_agent", "request_id", "timestamp",
+            "action_type", "action", "actor_type",
+            "entity_type", "entity_id", "entity_repr", "app_label", "model_name",
+            "object_id", "object_repr", "before_state", "after_state", "changed_fields",
+            "description", "reason", "source_channel", "ip_address", "user_agent",
+            "request_id", "correlation_id", "timestamp", "created_at",
         ]
         read_only_fields = fields
 
@@ -27,9 +32,16 @@ class AuditLogSerializer(serializers.ModelSerializer):
 
 class AuditLogFilterSerializer(serializers.Serializer):
     entity_type = serializers.CharField(required=False)
+    model_name = serializers.CharField(required=False)
+    app_label = serializers.CharField(required=False)
     entity_id = serializers.UUIDField(required=False)
+    object_id = serializers.CharField(required=False)
     action_type = serializers.CharField(required=False)
+    action = serializers.CharField(required=False)
+    actor_type = serializers.CharField(required=False)
+    source_channel = serializers.CharField(required=False)
     user_id = serializers.UUIDField(required=False)
+    correlation_id = serializers.CharField(required=False)
     date_from = serializers.DateTimeField(required=False)
     date_to = serializers.DateTimeField(required=False)
 

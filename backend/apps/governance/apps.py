@@ -7,5 +7,6 @@ class GovernanceConfig(AppConfig):
     verbose_name = "Enterprise Governance"
 
     def ready(self):
-        import apps.governance.signals
-        import apps.governance.services.audit_service
+        import apps.governance.audit_receivers  # noqa: F401
+        import apps.governance.services.audit_service  # noqa: F401
+        import apps.governance.signals  # noqa: F401

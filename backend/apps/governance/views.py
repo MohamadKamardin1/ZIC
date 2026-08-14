@@ -1,23 +1,23 @@
 import logging
 
-from rest_framework import viewsets, status, permissions
-from rest_framework.decorators import action
-from rest_framework.response import Response
 from django.db import models
 from django.utils import timezone
-from django.shortcuts import get_object_or_404
+from rest_framework import permissions, status, viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
 
-from apps.core.permissions import IsAdminUser
 from apps.core.pagination import StandardPagination
-
+from apps.core.permissions import IsAdminUser
 from apps.governance.models import (
-    AuditLog, ApprovalRequest, ConfigurationVersion,
     AUDIT_ACTION_CHOICES,
+    ApprovalRequest,
+    AuditLog,
+    ConfigurationVersion,
 )
 from apps.governance.serializers import (
-    AuditLogSerializer,
-    ApprovalRequestSerializer,
     ApprovalActionSerializer,
+    ApprovalRequestSerializer,
+    AuditLogSerializer,
     ConfigurationVersionSerializer,
     DocumentVersionSerializer,
     KYCReviewHistorySerializer,
@@ -25,13 +25,12 @@ from apps.governance.serializers import (
 )
 from apps.governance.services.approval_service import ApprovalService
 from apps.governance.services.audit_service import AuditService
-
 from apps.partners.models import (
-    DocumentVersion, KYCReviewHistory, PartnerTypeAssignmentHistory,
-    PartnerDocument, PartnerKYCProfile, PartnerTypeAssignment,
-)
-from apps.partners.serializers import (
-    PartnerDocumentSerializer,
+    DocumentVersion,
+    KYCReviewHistory,
+    PartnerDocument,
+    PartnerKYCProfile,
+    PartnerTypeAssignmentHistory,
 )
 
 logger = logging.getLogger(__name__)
@@ -52,30 +51,55 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = AuditLogSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminUser]
     pagination_class = StandardPagination
-    ordering_fields = ["timestamp", "action_type", "entity_type"]
-    ordering = ["-timestamp"]
-    search_fields = ["entity_type", "entity_repr", "description", "action_type"]
+    ordering_fields = ["timestamp", "created_at", "action_type", "action", "entity_type", "model_name", "source_channel"]
+    ordering = ["-created_at"]
+    search_fields = [
+        "entity_type", "entity_repr", "object_repr", "description", "reason",
+        "action_type", "action", "model_name", "object_id", "correlation_id",
+        "user__email",
+    ]
 
     def get_queryset(self):
         qs = super().get_queryset()
         entity_type = self.request.query_params.get("entity_type")
+        model_name = self.request.query_params.get("model_name")
+        app_label = self.request.query_params.get("app_label")
         entity_id = self.request.query_params.get("entity_id")
+        object_id = self.request.query_params.get("object_id")
         action_type = self.request.query_params.get("action_type")
+        action = self.request.query_params.get("action")
+        actor_type = self.request.query_params.get("actor_type")
+        source_channel = self.request.query_params.get("source_channel")
+        correlation_id = self.request.query_params.get("correlation_id")
         user_id = self.request.query_params.get("user_id")
         date_from = self.request.query_params.get("date_from")
         date_to = self.request.query_params.get("date_to")
         if entity_type:
             qs = qs.filter(entity_type=entity_type)
+        if model_name:
+            qs = qs.filter(model_name=model_name)
+        if app_label:
+            qs = qs.filter(app_label=app_label)
         if entity_id:
             qs = qs.filter(entity_id=entity_id)
+        if object_id:
+            qs = qs.filter(object_id=object_id)
         if action_type:
             qs = qs.filter(action_type=action_type)
+        if action:
+            qs = qs.filter(action=action)
+        if actor_type:
+            qs = qs.filter(actor_type=actor_type)
+        if source_channel:
+            qs = qs.filter(source_channel=source_channel)
+        if correlation_id:
+            qs = qs.filter(correlation_id=correlation_id)
         if user_id:
             qs = qs.filter(user_id=user_id)
         if date_from:
-            qs = qs.filter(timestamp__gte=date_from)
+            qs = qs.filter(created_at__gte=date_from)
         if date_to:
-            qs = qs.filter(timestamp__lte=date_to)
+            qs = qs.filter(created_at__lte=date_to)
         return qs
 
     def list(self, request, *args, **kwargs):
@@ -449,10 +473,10 @@ class ComplianceDashboardViewSet(viewsets.GenericViewSet):
 
     @action(detail=False, methods=["get"])
     def overview(self, request):
+
         from apps.partners.models import (
-            Partner, PartnerKYCProfile, PartnerDocument, PartnerTypeAssignment,
+            Partner,
         )
-        from django.db.models import Count, Q
         total_partners = Partner.objects.count()
         active_partners = Partner.objects.filter(status="ACTIVE").count()
         kyc_pending = PartnerKYCProfile.objects.filter(kyc_status="NOT_SET").count()
@@ -478,7 +502,6 @@ class ComplianceDashboardViewSet(viewsets.GenericViewSet):
 
     @action(detail=False, methods=["get"])
     def expiring_documents(self, request):
-        from apps.partners.models import PartnerDocument
         from django.utils import timezone
         days = int(request.query_params.get("days", 30))
         cutoff = timezone.now().date() + timezone.timedelta(days=days)
@@ -501,7 +524,6 @@ class ComplianceDashboardViewSet(viewsets.GenericViewSet):
 
     @action(detail=False, methods=["get"])
     def high_risk_partners(self, request):
-        from apps.partners.models import PartnerKYCProfile
         qs = PartnerKYCProfile.objects.filter(
             risk_level__in=["HIGH", "CRITICAL"],
         ).select_related("assignment__partner", "assignment__partner_type")

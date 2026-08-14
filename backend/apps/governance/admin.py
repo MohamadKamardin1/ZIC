@@ -1,18 +1,26 @@
 from django.contrib import admin
 
-from .models import AuditLog, ApprovalRequest, ConfigurationVersion
+from .models import ApprovalRequest, AuditLog, ConfigurationVersion
 
 
 @admin.register(AuditLog)
 class AuditLogAdmin(admin.ModelAdmin):
-    list_display = ["action_type", "entity_type", "entity_repr", "user", "timestamp"]
-    list_filter = ["action_type", "entity_type", "timestamp"]
-    search_fields = ["entity_type", "entity_repr", "description", "user__email"]
-    date_hierarchy = "timestamp"
+    list_display = [
+        "action", "model_name", "object_repr", "user", "actor_type",
+        "source_channel", "correlation_id", "created_at",
+    ]
+    list_filter = ["action", "action_type", "actor_type", "source_channel", "app_label", "model_name", "created_at"]
+    search_fields = [
+        "entity_type", "model_name", "object_id", "object_repr", "description",
+        "reason", "correlation_id", "user__email",
+    ]
+    date_hierarchy = "created_at"
     readonly_fields = [
-        "user", "action_type", "entity_type", "entity_id", "entity_repr",
-        "before_state", "after_state", "description",
-        "ip_address", "user_agent", "request_id", "timestamp",
+        "user", "action_type", "action", "actor_type", "entity_type", "entity_id",
+        "entity_repr", "app_label", "model_name", "object_id", "object_repr",
+        "before_state", "after_state", "changed_fields", "description", "reason",
+        "source_channel", "ip_address", "user_agent", "request_id",
+        "correlation_id", "timestamp", "created_at",
     ]
 
     def has_add_permission(self, request):
