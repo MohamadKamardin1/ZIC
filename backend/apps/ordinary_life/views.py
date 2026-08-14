@@ -1,5 +1,12 @@
-from rest_framework import viewsets, filters
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.shortcuts import get_object_or_404
+from rest_framework import filters, serializers, status, viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
+
+from apps.system_parameters.services.numbering_service import NumberingEngine
+from apps.ordinary_life.services.lifecycle_service import OrdinaryLifeWorkflowService
 
 from apps.ordinary_life.models import (
     OLLookupValue,
@@ -161,6 +168,8 @@ from apps.ordinary_life.models import (
     OLWithdrawal,
     OLClaim,
     OLMaturityInstallment,
+    OLBeneficiary,
+    OLWorkflowEvent,
 )
 
 from apps.ordinary_life.serializers import (
@@ -174,7 +183,20 @@ from apps.ordinary_life.serializers import (
     OLWithdrawalSerializer,
     OLClaimSerializer,
     OLMaturityInstallmentSerializer,
+    OLBeneficiarySerializer,
+    OLWorkflowEventSerializer,
 )
+
+def _service_validation_error(exc):
+    detail = getattr(exc, "message_dict", None)
+    if detail is None:
+        detail = {"detail": exc.messages}
+    return serializers.ValidationError(detail)
+
+
+def _action_response(request, instance, serializer_class):
+    return Response(serializer_class(instance, context={"request": request}).data)
+
 
 class OLProductViewSet(viewsets.ModelViewSet):
     queryset = OLProduct.objects.all()
@@ -184,6 +206,7 @@ class OLProductViewSet(viewsets.ModelViewSet):
     filterset_fields = ["is_active"]
     ordering_fields = ["name", "created_at"]
 
+
 class OLClientViewSet(viewsets.ModelViewSet):
     queryset = OLClient.objects.all()
     serializer_class = OLClientSerializer
@@ -191,67 +214,231 @@ class OLClientViewSet(viewsets.ModelViewSet):
     search_fields = ["first_name", "last_name", "id_number", "phone", "email"]
     ordering_fields = ["first_name", "created_at"]
 
+
 class OLQuotationViewSet(viewsets.ModelViewSet):
-    queryset = OLQuotation.objects.all()
+    queryset = OLQuotation.objects.select_related("client", "product").all()
     serializer_class = OLQuotationSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["quotation_number", "client__first_name", "client__last_name"]
     filterset_fields = ["status", "product"]
     ordering_fields = ["created_at"]
 
+    def perform_create(self, serializer):
+        serializer.save(quotation_number=NumberingEngine.generate_number("OL_QUOTATION", OLQuotation, field_name="quotation_number"))
+
+    @action(detail=True, methods=["post"])
+    def submit(self, request, pk=None):
+        try:
+            result = OrdinaryLifeWorkflowService.submit_quotation(self.get_object(), request.data.get("reason", ""))
+        except DjangoValidationError as exc:
+            raise _service_validation_error(exc)
+        return _action_response(request, result, self.get_serializer_class())
+
+    @action(detail=True, methods=["post"], url_path="convert-to-proposal")
+    def convert_to_proposal(self, request, pk=None):
+        try:
+            result = OrdinaryLifeWorkflowService.convert_quotation_to_proposal(
+                self.get_object(), request.data.get("medical_required"), request.data.get("reason", "")
+            )
+        except DjangoValidationError as exc:
+            raise _service_validation_error(exc)
+        return _action_response(request, result, OLProposalSerializer)
+
+
 class OLProposalViewSet(viewsets.ModelViewSet):
-    queryset = OLProposal.objects.all()
+    queryset = OLProposal.objects.select_related("quotation").all()
     serializer_class = OLProposalSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["proposal_number", "quotation__quotation_number"]
     filterset_fields = ["status", "underwriting_status"]
     ordering_fields = ["created_at"]
 
+    def perform_create(self, serializer):
+        serializer.save(proposal_number=NumberingEngine.generate_number("OL_PROPOSAL", OLProposal, field_name="proposal_number"))
+
+    @action(detail=True, methods=["post"])
+    def underwriting(self, request, pk=None):
+        try:
+            result = OrdinaryLifeWorkflowService.complete_underwriting(
+                self.get_object(), request.data.get("decision", ""), request.data.get("reason", "")
+            )
+        except DjangoValidationError as exc:
+            raise _service_validation_error(exc)
+        return _action_response(request, result, self.get_serializer_class())
+
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        try:
+            result = OrdinaryLifeWorkflowService.approve_proposal(self.get_object(), request.data.get("reason", ""))
+        except DjangoValidationError as exc:
+            raise _service_validation_error(exc)
+        return _action_response(request, result, self.get_serializer_class())
+
+    @action(detail=True, methods=["post"])
+    def decline(self, request, pk=None):
+        try:
+            result = OrdinaryLifeWorkflowService.decline_proposal(self.get_object(), request.data.get("reason", ""))
+        except DjangoValidationError as exc:
+            raise _service_validation_error(exc)
+        return _action_response(request, result, self.get_serializer_class())
+
+
 class OLCommitmentViewSet(viewsets.ModelViewSet):
-    queryset = OLCommitment.objects.all()
+    queryset = OLCommitment.objects.select_related("proposal").all()
     serializer_class = OLCommitmentSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["commitment_number", "proposal__proposal_number"]
     filterset_fields = ["status"]
     ordering_fields = ["created_at"]
 
+    def perform_create(self, serializer):
+        serializer.save(commitment_number=NumberingEngine.generate_number("OL_COMMITMENT", OLCommitment, field_name="commitment_number"))
+
+    @action(detail=True, methods=["post"])
+    def settle(self, request, pk=None):
+        try:
+            result = OrdinaryLifeWorkflowService.settle_commitment(
+                self.get_object(), request.data.get("amount_paid"), request.data.get("reason", "")
+            )
+        except DjangoValidationError as exc:
+            raise _service_validation_error(exc)
+        return _action_response(request, result, self.get_serializer_class())
+
+
 class OLPolicyViewSet(viewsets.ModelViewSet):
-    queryset = OLPolicy.objects.all()
+    queryset = OLPolicy.objects.select_related("proposal", "policyholder", "life_assured", "agent").all()
     serializer_class = OLPolicySerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["policy_number", "proposal__proposal_number"]
     filterset_fields = ["status"]
     ordering_fields = ["created_at"]
 
+    @action(detail=False, methods=["post"])
+    def issue(self, request):
+        proposal = get_object_or_404(OLProposal, pk=request.data.get("proposal"))
+        try:
+            result = OrdinaryLifeWorkflowService.issue_policy(
+                proposal,
+                request.data.get("start_date"),
+                request.data.get("end_date"),
+                request.data.get("agent"),
+                request.data.get("reason", ""),
+            )
+        except DjangoValidationError as exc:
+            raise _service_validation_error(exc)
+        return _action_response(request, result, self.get_serializer_class())
+
+
 class OLLoanViewSet(viewsets.ModelViewSet):
-    queryset = OLLoan.objects.all()
+    queryset = OLLoan.objects.select_related("policy").all()
     serializer_class = OLLoanSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["loan_number", "policy__policy_number"]
     filterset_fields = ["status"]
     ordering_fields = ["created_at"]
 
+    def perform_create(self, serializer):
+        serializer.save(loan_number=NumberingEngine.generate_number("OL_LOAN", OLLoan, field_name="loan_number"))
+
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        try:
+            result = OrdinaryLifeWorkflowService.approve_loan(self.get_object(), request.data.get("reason", ""))
+        except DjangoValidationError as exc:
+            raise _service_validation_error(exc)
+        return _action_response(request, result, self.get_serializer_class())
+
+
 class OLWithdrawalViewSet(viewsets.ModelViewSet):
-    queryset = OLWithdrawal.objects.all()
+    queryset = OLWithdrawal.objects.select_related("policy").all()
     serializer_class = OLWithdrawalSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["withdrawal_number", "policy__policy_number"]
     filterset_fields = ["status", "withdrawal_type"]
     ordering_fields = ["created_at"]
 
+    def perform_create(self, serializer):
+        serializer.save(withdrawal_number=NumberingEngine.generate_number("OL_WITHDRAWAL", OLWithdrawal, field_name="withdrawal_number"))
+
+    @action(detail=True, methods=["post"])
+    def pay(self, request, pk=None):
+        try:
+            result = OrdinaryLifeWorkflowService.pay_withdrawal(self.get_object(), request.data.get("reason", ""))
+        except DjangoValidationError as exc:
+            raise _service_validation_error(exc)
+        return _action_response(request, result, self.get_serializer_class())
+
+
 class OLClaimViewSet(viewsets.ModelViewSet):
-    queryset = OLClaim.objects.all()
+    queryset = OLClaim.objects.select_related("policy").all()
     serializer_class = OLClaimSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["claim_number", "policy__policy_number"]
     filterset_fields = ["status"]
     ordering_fields = ["created_at"]
 
+    def perform_create(self, serializer):
+        serializer.save(claim_number=NumberingEngine.generate_number("OL_CLAIM", OLClaim, field_name="claim_number"))
+
+    @action(detail=True, methods=["post"])
+    def submit(self, request, pk=None):
+        try:
+            result = OrdinaryLifeWorkflowService.submit_claim(self.get_object(), request.data.get("reason", ""))
+        except DjangoValidationError as exc:
+            raise _service_validation_error(exc)
+        return _action_response(request, result, self.get_serializer_class())
+
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        try:
+            result = OrdinaryLifeWorkflowService.approve_claim(
+                self.get_object(), request.data.get("approved_amount"), request.data.get("reason", "")
+            )
+        except DjangoValidationError as exc:
+            raise _service_validation_error(exc)
+        return _action_response(request, result, self.get_serializer_class())
+
+    @action(detail=True, methods=["post"])
+    def pay(self, request, pk=None):
+        try:
+            result = OrdinaryLifeWorkflowService.pay_claim(self.get_object(), request.data.get("reason", ""))
+        except DjangoValidationError as exc:
+            raise _service_validation_error(exc)
+        return _action_response(request, result, self.get_serializer_class())
+
+
 class OLMaturityInstallmentViewSet(viewsets.ModelViewSet):
-    queryset = OLMaturityInstallment.objects.all()
+    queryset = OLMaturityInstallment.objects.select_related("policy").all()
     serializer_class = OLMaturityInstallmentSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["installment_number", "policy__policy_number"]
     filterset_fields = ["status"]
     ordering_fields = ["created_at"]
 
+    def perform_create(self, serializer):
+        serializer.save(installment_number=NumberingEngine.generate_number("OL_INSTALLMENT", OLMaturityInstallment, field_name="installment_number"))
+
+    @action(detail=True, methods=["post"])
+    def pay(self, request, pk=None):
+        try:
+            result = OrdinaryLifeWorkflowService.pay_maturity_installment(self.get_object(), request.data.get("reason", ""))
+        except DjangoValidationError as exc:
+            raise _service_validation_error(exc)
+        return _action_response(request, result, self.get_serializer_class())
+
+
+class OLBeneficiaryViewSet(viewsets.ModelViewSet):
+    queryset = OLBeneficiary.objects.select_related("policy", "beneficiary_type").all()
+    serializer_class = OLBeneficiarySerializer
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ["name", "relationship", "id_number"]
+    filterset_fields = ["policy", "beneficiary_type"]
+    ordering_fields = ["name", "created_at"]
+
+
+class OLWorkflowEventViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = OLWorkflowEvent.objects.select_related("actor").all()
+    serializer_class = OLWorkflowEventSerializer
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ["entity_type", "entity_id", "action"]
+    ordering_fields = ["created_at"]

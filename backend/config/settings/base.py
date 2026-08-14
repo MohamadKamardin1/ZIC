@@ -64,7 +64,7 @@ INSTALLED_APPS = [
     'apps.ai_assistant',
     'apps.governance',
     'apps.group_life',
-    'apps.ordinary_life',
+    'apps.ordinary_life.apps.OrdinaryLifeConfig',
     'apps.group_credit',
     'apps.front_office',
 ]

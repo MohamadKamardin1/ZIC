@@ -135,12 +135,22 @@ from apps.ordinary_life.models import (
     OLWithdrawal,
     OLClaim,
     OLMaturityInstallment,
+    OLBeneficiary,
+    OLWorkflowEvent,
 )
 
 class OLProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = OLProduct
         fields = "__all__"
+
+    def validate(self, attrs):
+        minimum, maximum = attrs.get("min_age"), attrs.get("max_age")
+        if minimum is not None and maximum is not None and minimum > maximum:
+            raise serializers.ValidationError({"max_age": "Maximum age must be greater than or equal to minimum age."})
+        if attrs.get("term_length_years") is not None and attrs["term_length_years"] <= 0:
+            raise serializers.ValidationError({"term_length_years": "Term length must be greater than zero."})
+        return attrs
 
 class OLClientSerializer(serializers.ModelSerializer):
     class Meta:
@@ -154,13 +164,25 @@ class OLQuotationSerializer(serializers.ModelSerializer):
     class Meta:
         model = OLQuotation
         fields = "__all__"
+        read_only_fields = ["status", "quotation_number"]
+
+    def validate(self, attrs):
+        if attrs.get("sum_assured", 0) <= 0:
+            raise serializers.ValidationError({"sum_assured": "Sum assured must be greater than zero."})
+        if attrs.get("premium_amount", 0) <= 0:
+            raise serializers.ValidationError({"premium_amount": "Premium amount must be greater than zero."})
+        product = attrs.get("product")
+        if product is not None and not product.is_active:
+            raise serializers.ValidationError({"product": "The selected product is inactive."})
+        return attrs
 
 class OLProposalSerializer(serializers.ModelSerializer):
     quotation_number = serializers.CharField(source="quotation.quotation_number", read_only=True)
-    
+
     class Meta:
         model = OLProposal
         fields = "__all__"
+        read_only_fields = ["status", "underwriting_status", "proposal_number"]
 
 class OLCommitmentSerializer(serializers.ModelSerializer):
     proposal_number = serializers.CharField(source="proposal.proposal_number", read_only=True)
@@ -171,10 +193,12 @@ class OLCommitmentSerializer(serializers.ModelSerializer):
 
 class OLPolicySerializer(serializers.ModelSerializer):
     proposal_number = serializers.CharField(source="proposal.proposal_number", read_only=True)
+    beneficiary_count = serializers.IntegerField(source="beneficiaries.count", read_only=True)
 
     class Meta:
         model = OLPolicy
         fields = "__all__"
+        read_only_fields = ["status", "policy_number"]
 
 class OLLoanSerializer(serializers.ModelSerializer):
     policy_number = serializers.CharField(source="policy.policy_number", read_only=True)
@@ -196,6 +220,12 @@ class OLClaimSerializer(serializers.ModelSerializer):
     class Meta:
         model = OLClaim
         fields = "__all__"
+        read_only_fields = ["status", "claim_number"]
+
+    def validate(self, attrs):
+        if attrs.get("claim_amount", 0) <= 0:
+            raise serializers.ValidationError({"claim_amount": "Claim amount must be greater than zero."})
+        return attrs
 
 class OLMaturityInstallmentSerializer(serializers.ModelSerializer):
     policy_number = serializers.CharField(source="policy.policy_number", read_only=True)
@@ -203,3 +233,32 @@ class OLMaturityInstallmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = OLMaturityInstallment
         fields = "__all__"
+        read_only_fields = ["status", "installment_number"]
+
+
+class OLBeneficiarySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OLBeneficiary
+        fields = "__all__"
+
+    def validate_percentage(self, value):
+        if value <= 0 or value > 100:
+            raise serializers.ValidationError("Percentage must be greater than zero and no more than 100.")
+        return value
+
+
+class OLWorkflowEventSerializer(serializers.ModelSerializer):
+    actor_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OLWorkflowEvent
+        fields = [
+            "id", "entity_type", "entity_id", "action", "previous_status",
+            "new_status", "reason", "actor", "actor_name", "metadata", "created_at",
+        ]
+        read_only_fields = fields
+
+    def get_actor_name(self, obj):
+        if not obj.actor:
+            return "System"
+        return obj.actor.get_full_name() or obj.actor.email or str(obj.actor_id)
