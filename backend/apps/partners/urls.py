@@ -183,5 +183,20 @@ urlpatterns = [
         }),
         name="assignment-setup-kyc",
     ),
+    path(
+        "assignments/<uuid:pk>/history/",
+        PartnerTypeAssignmentSetupViewSet.as_view({"get": "history"}),
+        name="assignment-history",
+    ),
+    path(
+        "assignments/<uuid:pk>/activate/",
+        PartnerTypeAssignmentSetupViewSet.as_view({"post": "activate"}),
+        name="assignment-activate",
+    ),
+    path(
+        "assignments/<uuid:pk>/deactivate/",
+        PartnerTypeAssignmentSetupViewSet.as_view({"post": "deactivate"}),
+        name="assignment-deactivate",
+    ),
     path("", include(router.urls)),
 ]

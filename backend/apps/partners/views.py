@@ -5,6 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
+from django.core.exceptions import ValidationError as DjangoValidationError
 
 from apps.core.permissions import IsAdminUser
 from apps.core.pagination import StandardPagination
@@ -32,6 +33,7 @@ from apps.partners.serializers import (
     IndividualProfileSerializer,
     CorporateProfileSerializer,
     PartnerTypeAssignmentSerializer,
+    PartnerTypeAssignmentHistorySerializer,
     PartnerTypeAssignmentCreateSerializer,
     PartnerDocumentSerializer,
     PartnerDynamicFieldValueSerializer,
@@ -43,9 +45,17 @@ from apps.partners.serializers import (
 from apps.partners.filters import PartnerFilter
 from apps.partners.services.duplicate_detection import PartnerDuplicateDetectionService
 from apps.partners.services.setup_service import PartnerSetupService
+from apps.partners.services.partner_service import PartnerLifecycleService
 from apps.governance.services.audit_service import AuditService
 
 logger = logging.getLogger(__name__)
+
+
+class PartnerReadAdminWriteMixin:
+    def get_permissions(self):
+        if self.request.method in permissions.SAFE_METHODS:
+            return [permissions.IsAuthenticated()]
+        return [permissions.IsAuthenticated(), IsAdminUser()]
 
 
 def _response(data=None, message="", status_code=200):
@@ -218,30 +228,13 @@ class PartnerViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="deactivate")
     def deactivate(self, request, pk=None):
         partner = self.get_object()
-        if partner.status == "INACTIVE":
-            return _response(
-                message="Partner is already inactive.",
-                status_code=status.HTTP_400_BAD_REQUEST,
+        try:
+            partner = PartnerLifecycleService.deactivate_partner(
+                partner, request.data.get("reason", "")
             )
-        reason = request.data.get("reason", "")
-        partner.status = "INACTIVE"
-        partner.deactivated_at = timezone.now()
-        partner.deactivation_reason = reason
-        partner.save(
-            update_fields=["status", "deactivated_at", "deactivation_reason", "updated_at"],
-        )
-        AuditService.log(
-            action_type="DEACTIVATE",
-            entity_type="Partner",
-            entity_id=partner.pk,
-            entity_repr=partner.partner_number,
-            description=f"Partner {partner.partner_number} deactivated: {reason}",
-            after_state={"status": "INACTIVE", "reason": reason},
-        )
-        logger.info(
-            "Partner %s deactivated by %s: %s",
-            partner.partner_number, request.user.email, reason,
-        )
+        except DjangoValidationError as exc:
+            detail = exc.message_dict if hasattr(exc, "message_dict") else exc.messages
+            return _response(message=detail, status_code=status.HTTP_400_BAD_REQUEST)
         return _response(
             data=PartnerDetailSerializer(partner).data,
             message=f"Partner {partner.partner_number} deactivated.",
@@ -250,40 +243,18 @@ class PartnerViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="activate")
     def activate(self, request, pk=None):
         partner = self.get_object()
-        if partner.status == "ACTIVE":
-            return _response(
-                message="Partner is already active.",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
-        partner.status = "ACTIVE"
-        partner.activated_at = timezone.now()
-        partner.deactivated_at = None
-        partner.deactivation_reason = ""
-        partner.save(
-            update_fields=[
-                "status", "activated_at", "deactivated_at",
-                "deactivation_reason", "updated_at",
-            ],
-        )
-        AuditService.log(
-            action_type="ACTIVATE",
-            entity_type="Partner",
-            entity_id=partner.pk,
-            entity_repr=partner.partner_number,
-            description=f"Partner {partner.partner_number} activated.",
-            after_state={"status": "ACTIVE"},
-        )
-        logger.info(
-            "Partner %s activated by %s",
-            partner.partner_number, request.user.email,
-        )
+        try:
+            partner = PartnerLifecycleService.activate_partner(partner)
+        except DjangoValidationError as exc:
+            detail = exc.message_dict if hasattr(exc, "message_dict") else exc.messages
+            return _response(message=detail, status_code=status.HTTP_400_BAD_REQUEST)
         return _response(
             data=PartnerDetailSerializer(partner).data,
             message=f"Partner {partner.partner_number} activated.",
         )
 
 
-class PartnerTypeViewSet(viewsets.ModelViewSet):
+class PartnerTypeViewSet(PartnerReadAdminWriteMixin, viewsets.ModelViewSet):
     queryset = PartnerType.objects.all().order_by("name")
     serializer_class = PartnerTypeSerializer
     pagination_class = StandardPagination
@@ -326,7 +297,7 @@ class PartnerTypeViewSet(viewsets.ModelViewSet):
         PartnerTypeDocumentRequirement.objects.bulk_create(defaults)
 
 
-class PartnerTypeDocumentRequirementViewSet(viewsets.ModelViewSet):
+class PartnerTypeDocumentRequirementViewSet(PartnerReadAdminWriteMixin, viewsets.ModelViewSet):
     serializer_class = PartnerTypeDocumentRequirementSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardPagination
@@ -403,7 +374,7 @@ class PartnerTypeDocumentRequirementViewSet(viewsets.ModelViewSet):
         )
 
 
-class PartnerTypeFieldConfigurationViewSet(viewsets.ModelViewSet):
+class PartnerTypeFieldConfigurationViewSet(PartnerReadAdminWriteMixin, viewsets.ModelViewSet):
     serializer_class = PartnerTypeFieldConfigurationSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardPagination
@@ -456,7 +427,7 @@ class PartnerTypeFieldConfigurationViewSet(viewsets.ModelViewSet):
         return _response(message="Field configuration deleted.", status_code=status.HTTP_200_OK)
 
 
-class PartnerTypeContactRequirementViewSet(viewsets.ModelViewSet):
+class PartnerTypeContactRequirementViewSet(PartnerReadAdminWriteMixin, viewsets.ModelViewSet):
     serializer_class = PartnerTypeContactRequirementSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardPagination
@@ -509,7 +480,7 @@ class PartnerTypeContactRequirementViewSet(viewsets.ModelViewSet):
         return _response(message="Contact requirement deleted.", status_code=status.HTTP_200_OK)
 
 
-class PartnerTypeBankRequirementViewSet(viewsets.ModelViewSet):
+class PartnerTypeBankRequirementViewSet(PartnerReadAdminWriteMixin, viewsets.ModelViewSet):
     serializer_class = PartnerTypeBankRequirementSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardPagination
@@ -562,7 +533,7 @@ class PartnerTypeBankRequirementViewSet(viewsets.ModelViewSet):
         return _response(message="Bank requirement deleted.", status_code=status.HTTP_200_OK)
 
 
-class PartnerTypeAssignmentSetupViewSet(viewsets.GenericViewSet):
+class PartnerTypeAssignmentSetupViewSet(PartnerReadAdminWriteMixin, viewsets.GenericViewSet):
     serializer_class = PartnerTypeAssignmentSetupSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardPagination
@@ -690,6 +661,45 @@ class PartnerTypeAssignmentSetupViewSet(viewsets.GenericViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return _response(data=serializer.data, message="Bank account updated.")
+
+    @action(detail=True, methods=["get"], url_path="history")
+    def history(self, request, pk=None):
+        assignment = self.get_object()
+        history = assignment.status_history.select_related("changed_by").all()
+        return _response(
+            data=PartnerTypeAssignmentHistorySerializer(history, many=True).data,
+            message="Assignment history retrieved.",
+        )
+
+    @action(detail=True, methods=["post"], url_path="deactivate")
+    def deactivate(self, request, pk=None):
+        assignment = self.get_object()
+        try:
+            assignment = PartnerLifecycleService.deactivate_assignment(
+                assignment, request.data.get("reason", "")
+            )
+        except DjangoValidationError as exc:
+            detail = exc.message_dict if hasattr(exc, "message_dict") else exc.messages
+            return _response(message=detail, status_code=status.HTTP_400_BAD_REQUEST)
+        return _response(
+            data=PartnerTypeAssignmentSerializer(assignment).data,
+            message="Partner type assignment deactivated.",
+        )
+
+    @action(detail=True, methods=["post"], url_path="activate")
+    def activate(self, request, pk=None):
+        assignment = self.get_object()
+        try:
+            assignment = PartnerLifecycleService.activate_assignment(
+                assignment, request.data.get("reason", "")
+            )
+        except DjangoValidationError as exc:
+            detail = exc.message_dict if hasattr(exc, "message_dict") else exc.messages
+            return _response(message=detail, status_code=status.HTTP_400_BAD_REQUEST)
+        return _response(
+            data=PartnerTypeAssignmentSerializer(assignment).data,
+            message="Partner type assignment activated.",
+        )
 
     @action(detail=True, methods=["get", "patch"], url_path="kyc")
     def manage_kyc(self, request, pk=None):

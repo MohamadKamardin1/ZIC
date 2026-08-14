@@ -6,7 +6,9 @@ from apps.partners.models import (
     PartnerTypeContactRequirement,
     PartnerTypeBankRequirement,
     IndividualProfile, CorporateProfile, PartnerTypeAssignment,
+    PartnerTypeAssignmentHistory,
     PartnerDocument,
+
     PartnerDynamicFieldValue,
     PartnerAssignmentContact,
     PartnerAssignmentBankAccount,
@@ -38,6 +40,20 @@ class CorporateProfileSerializer(serializers.ModelSerializer):
         read_only_fields = ["id"]
 
 
+class PartnerContactSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PartnerContact
+        fields = "__all__"
+        read_only_fields = ["id", "partner", "created_at", "updated_at"]
+
+
+class PartnerBankAccountSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PartnerBankAccount
+        fields = "__all__"
+        read_only_fields = ["id", "partner", "created_at", "updated_at"]
+
+
 class PartnerTypeAssignmentSerializer(serializers.ModelSerializer):
     partner_type_name = serializers.ReadOnlyField(source="partner_type.name")
     partner_type_code = serializers.ReadOnlyField(source="partner_type.code")
@@ -54,6 +70,21 @@ class PartnerTypeAssignmentSerializer(serializers.ModelSerializer):
             "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class PartnerTypeAssignmentHistorySerializer(serializers.ModelSerializer):
+    changed_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PartnerTypeAssignmentHistory
+        fields = [
+            "id", "assignment", "previous_status", "new_status", "reason",
+            "changed_by", "changed_by_name", "changed_at",
+        ]
+        read_only_fields = fields
+
+    def get_changed_by_name(self, obj):
+        return obj.changed_by.full_name if obj.changed_by else None
 
 
 class PartnerTypeAssignmentCreateSerializer(serializers.Serializer):
@@ -95,9 +126,13 @@ class PartnerTypeAssignmentCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError("Invalid location.")
 
     def validate(self, attrs):
-        # Accept both branch (singular) and branches (plural) for backward compatibility
+        # Accept the legacy singular field, but never silently discard additional branches.
         branch = attrs.get("branch")
         branches = attrs.get("branches", [])
+        if branch and branches and branch not in branches:
+            raise serializers.ValidationError({"branches": "Use either branch or branches, not both with different values."})
+        if len(branches) > 1:
+            raise serializers.ValidationError({"branches": "A partner type may have only one branch assignment."})
         if branch and not branches:
             attrs["branches"] = [branch]
         attrs.pop("branch", None)
@@ -151,6 +186,8 @@ class PartnerDetailSerializer(serializers.ModelSerializer):
     individual_profile = IndividualProfileSerializer(read_only=True, allow_null=True)
     corporate_profile = CorporateProfileSerializer(read_only=True, allow_null=True)
     type_assignments = PartnerTypeAssignmentSerializer(many=True, read_only=True)
+    contacts = PartnerContactSerializer(many=True, read_only=True)
+    bank_accounts = PartnerBankAccountSerializer(many=True, read_only=True)
 
     class Meta:
         model = Partner
@@ -200,20 +237,6 @@ class PartnerUpdateSerializer(serializers.ModelSerializer):
             "identification_type", "identification_number",
             "political_risk", "aml_risk",
         ]
-
-
-class PartnerContactSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = PartnerContact
-        fields = "__all__"
-        read_only_fields = ["id", "partner", "created_at", "updated_at"]
-
-
-class PartnerBankAccountSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = PartnerBankAccount
-        fields = "__all__"
-        read_only_fields = ["id", "partner", "created_at", "updated_at"]
 
 
 class PartnerTypeDocumentRequirementSerializer(serializers.ModelSerializer):

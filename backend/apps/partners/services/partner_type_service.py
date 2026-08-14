@@ -43,8 +43,10 @@ class PartnerTypeAssignmentService:
             },
         )
 
+        # Synchronize any newly activated requirements even when the assignment already exists.
+        PartnerSetupService.generate_setup(assignment)
+
         if created:
-            PartnerSetupService.generate_setup(assignment)
             PartnerTypeAssignmentHistory.objects.create(
                 assignment=assignment,
                 previous_status="",

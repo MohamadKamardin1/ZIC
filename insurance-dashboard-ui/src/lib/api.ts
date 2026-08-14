@@ -25,6 +25,8 @@ import type {
   ApplicationBankAccount,
   ApplicationFieldValue,
   UnifiedOnboardingRecord,
+  PartnerTypeAssignment,
+  PartnerTypeAssignmentHistory,
 } from "./types"
 
 export const API_BASE = import.meta.env.VITE_API_BASE ?? ""
@@ -592,6 +594,65 @@ export async function listApplications(
 
 export async function getPartner(id: string): Promise<PartnerDetail> {
   const res = await apiFetchAuth(`${PARTNERS_API}/${id}/`)
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const json = await res.json()
+  return json.data ?? json
+}
+
+export async function activatePartner(id: string): Promise<PartnerDetail> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/${id}/activate/`, { method: "POST", body: JSON.stringify({}) })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const json = await res.json()
+  return json.data ?? json
+}
+
+export async function deactivatePartner(id: string, reason = ""): Promise<PartnerDetail> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/${id}/deactivate/`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const json = await res.json()
+  return json.data ?? json
+}
+
+export async function getAssignmentHistory(assignmentId: string): Promise<PartnerTypeAssignmentHistory[]> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/assignments/${assignmentId}/history/`)
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const json = await res.json()
+  return Array.isArray(json.data) ? json.data : (Array.isArray(json) ? json : [])
+}
+
+export async function activateAssignment(assignmentId: string, reason = ""): Promise<PartnerTypeAssignment> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/assignments/${assignmentId}/activate/`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const json = await res.json()
+  return json.data ?? json
+}
+
+export async function deactivateAssignment(assignmentId: string, reason = ""): Promise<PartnerTypeAssignment> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/assignments/${assignmentId}/deactivate/`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  })
   if (!res.ok) {
     const body = await res.json().catch(() => null)
     throw new Error(extractError(res, body))

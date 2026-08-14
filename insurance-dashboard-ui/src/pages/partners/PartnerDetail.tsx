@@ -6,6 +6,11 @@ import {
 } from "lucide-react"
 import {
   getPartner,
+  activatePartner,
+  deactivatePartner,
+  getAssignmentHistory,
+  activateAssignment,
+  deactivateAssignment,
   getAssignmentSetupSummary,
   getAssignmentDocuments,
   uploadAssignmentDocumentFile,
@@ -35,6 +40,7 @@ import type {
   PartnerTypeFieldConfiguration,
   PartnerTypeContactRequirement,
   PartnerTypeBankRequirement,
+  PartnerTypeAssignmentHistory,
 } from "../../lib/types"
 
 type SetupTab = "documents" | "fields" | "contacts" | "banks" | "kyc"
@@ -47,7 +53,9 @@ export default function PartnerDetail() {
 
   const [partner, setPartner] = useState<PartnerDetailType | null>(null)
   const [summaries, setSummaries] = useState<Record<string, SetupSummary>>({})
+  const [histories, setHistories] = useState<Record<string, PartnerTypeAssignmentHistory[]>>({})
   const [loading, setLoading] = useState(true)
+  const [actionBusy, setActionBusy] = useState(false)
   const [error, setError] = useState("")
   const [expandedAssign, setExpandedAssign] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<SetupTab>("documents")
@@ -61,17 +69,24 @@ export default function PartnerDetail() {
       setPartner(data)
 
       const summaryMap: Record<string, SetupSummary> = {}
+      const historyMap: Record<string, PartnerTypeAssignmentHistory[]> = {}
       if (data.typeAssignments?.length) {
         const results = await Promise.allSettled(
-          data.typeAssignments.map((a) =>
-            getAssignmentSetupSummary(a.id).then((s) => ({ id: a.id, summary: s })),
-          ),
+          data.typeAssignments.map(async (a) => ({
+            id: a.id,
+            summary: await getAssignmentSetupSummary(a.id),
+            history: await getAssignmentHistory(a.id),
+          })),
         )
         for (const r of results) {
-          if (r.status === "fulfilled") summaryMap[r.value.id] = r.value.summary
+          if (r.status === "fulfilled") {
+            summaryMap[r.value.id] = r.value.summary
+            historyMap[r.value.id] = r.value.history
+          }
         }
       }
       setSummaries(summaryMap)
+      setHistories(historyMap)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load partner")
     } finally {
@@ -80,6 +95,37 @@ export default function PartnerDetail() {
   }, [id])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    const handlePartnerAction = async (event: Event) => {
+      const detail = (event as CustomEvent<{ action?: string; entityId?: string }>).detail
+      if (!detail?.action || !detail.entityId) return
+      const isPartner = detail.entityId === id
+      const assignment = partner?.typeAssignments?.find((item) => item.id === detail.entityId)
+      if (!isPartner && !assignment) return
+      const reason = detail.action === "deactivate"
+        ? window.prompt("Enter the reason for deactivation:", "")
+        : ""
+      if (detail.action === "deactivate" && reason === null) return
+      setActionBusy(true)
+      try {
+        if (isPartner) {
+          if (detail.action === "deactivate") await deactivatePartner(detail.entityId, reason || "")
+          else await activatePartner(detail.entityId)
+        } else if (assignment) {
+          if (detail.action === "deactivate") await deactivateAssignment(detail.entityId, reason || "")
+          else await activateAssignment(detail.entityId)
+        }
+        await load()
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : "Lifecycle action failed")
+      } finally {
+        setActionBusy(false)
+      }
+    }
+    document.addEventListener("partner-action", handlePartnerAction)
+    return () => document.removeEventListener("partner-action", handlePartnerAction)
+  }, [id, load, partner])
 
   if (loading) {
     return (
@@ -134,6 +180,7 @@ export default function PartnerDetail() {
             <Pencil className="h-3.5 w-3.5" />
             Edit
           </button>
+          <partner-lifecycle-actions status={partner.status} entityId={partner.id} busy={actionBusy}></partner-lifecycle-actions>
           {statusBadge(partner.status)}
           <span className="text-sm text-muted-foreground">{partner.partnerCategory || partner.partnerType}</span>
         </div>
@@ -230,8 +277,10 @@ export default function PartnerDetail() {
                           <span className="font-medium text-foreground">{ta.partnerTypeName}</span>
                           <span className="text-sm text-muted-foreground ml-2">({ta.partnerTypeCode})</span>
                         </div>
-                        <div className="flex items-center gap-3">
-                          {summary && (
+                                                  <div className="flex items-center gap-3">
+                            <partner-lifecycle-actions status={ta.status} entityId={ta.id} busy={actionBusy} compact></partner-lifecycle-actions>
+                            {summary && (
+
                             <span className="text-xs text-muted-foreground">
                               Docs {summary.documents.progressPct}% | Fields {summary.fields.progressPct}%
                             </span>
@@ -240,11 +289,14 @@ export default function PartnerDetail() {
                         </div>
                       </div>
                       {isExpanded && (
-                        <SetupManager
-                          assignment={ta}
-                          summary={summary}
-                          onRefresh={() => load()}
-                        />
+                        <div className="space-y-4">
+                          <SetupManager
+                            assignment={ta}
+                            summary={summary}
+                            onRefresh={() => load()}
+                          />
+                          <partner-assignment-history history={histories[ta.id] ?? []}></partner-assignment-history>
+                        </div>
                       )}
                     </div>
                   )

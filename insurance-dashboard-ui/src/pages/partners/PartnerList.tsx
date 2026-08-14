@@ -41,12 +41,25 @@ export default function PartnerList() {
   }, [fetchData, refreshKey])
 
   const totalPages = Math.max(1, Math.ceil(count / pageSize))
+  const visibleActive = items.filter((partner) => partner.status === "ACTIVE").length
+  const visibleInactive = items.filter((partner) => partner.status === "INACTIVE").length
+  const visibleElevatedRisk = items.filter((partner) => ["MEDIUM", "HIGH", "PEP"].includes(partner.politicalRisk) || ["MEDIUM", "HIGH"].includes(partner.amlRisk)).length
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-foreground">Partners</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Partners</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Manage active distribution partners, assignments, and compliance setup.</p>
+        </div>
         <span className="text-sm text-muted-foreground">{count} total</span>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <partner-stats-card label="All partners" value={count} meta="Across the current result set" tone="info" />
+        <partner-stats-card label="Active on page" value={visibleActive} meta={`Page ${page} of ${totalPages}`} tone="success" />
+        <partner-stats-card label="Inactive on page" value={visibleInactive} meta="Requires reactivation review" tone="danger" />
+        <partner-stats-card label="Elevated risk on page" value={visibleElevatedRisk} meta="Political or AML risk flagged" tone="warning" />
       </div>
 
       <div className="relative">
