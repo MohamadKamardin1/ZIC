@@ -8,6 +8,7 @@ import App from "./App"
 import { AuthProvider } from "./lib/auth"
 import { AIProvider } from "./components/ai/AIContext"
 import { ThemeProvider } from "./theme/ThemeProvider"
+import { LanguageProvider } from "./lib/language"
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -23,11 +24,13 @@ createRoot(document.getElementById("root")!).render(
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <ThemeProvider>
-          <AuthProvider>
-            <AIProvider>
-              <App />
-            </AIProvider>
-          </AuthProvider>
+          <LanguageProvider>
+            <AuthProvider>
+              <AIProvider>
+                <App />
+              </AIProvider>
+            </AuthProvider>
+          </LanguageProvider>
         </ThemeProvider>
       </BrowserRouter>
     </QueryClientProvider>

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, type ChangeEvent, type KeyboardEvent } from "react"
-import { Sparkles, X, Send, CheckCircle, AlertCircle, Loader2, Bot, User, ArrowRight } from "lucide-react"
+import { Sparkles, X, Send, CheckCircle, AlertCircle, Loader2, Bot, User, ArrowRight, Maximize2, Minimize2 } from "lucide-react"
 import { useAI, type AIMessage, type AIPartnerResult } from "./AIContext"
 import { emitDataChange } from "../../lib/useDataRefresh"
 
@@ -11,7 +11,7 @@ interface Props {
 
 export function AIAssistantPanel({ onAnalyze, onCreate, onClarify }: Props) {
   const {
-    panelOpen, setPanelOpen, messages, addMessage, clearMessages,
+    panelOpen, setPanelOpen, expanded, setExpanded, messages, addMessage, clearMessages,
     lastResult, setLastResult, awaitingClarification, setAwaitingClarification,
   } = useAI()
   const [input, setInput] = useState("")
@@ -304,7 +304,7 @@ export function AIAssistantPanel({ onAnalyze, onCreate, onClarify }: Props) {
   const handleSubmit = isClarifying ? handleClarifySend : handleSend
 
   return (
-    <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-border bg-background shadow-2xl">
+    <div className={`fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-border bg-background shadow-2xl transition-[max-width] duration-300 ${expanded ? "max-w-3xl" : "max-w-md"}`}>
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2">
@@ -322,7 +322,10 @@ export function AIAssistantPanel({ onAnalyze, onCreate, onClarify }: Props) {
               New Chat
             </button>
           )}
-          <button onClick={() => setPanelOpen(false)} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground">
+          <button onClick={() => setExpanded(!expanded)} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label={expanded ? "Collapse AI assistant" : "Expand AI assistant"}>
+            {expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+          </button>
+          <button onClick={() => { setExpanded(false); setPanelOpen(false) }} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Close AI assistant">
             <X className="h-4 w-4" />
           </button>
         </div>

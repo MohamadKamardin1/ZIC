@@ -30,10 +30,15 @@ import {
   FileSpreadsheet,
   Contact,
   Landmark,
+  ListTodo,
+  BellRing,
+  CircleDollarSign,
+  BarChart3,
   type LucideIcon,
 } from "lucide-react"
 import { ZicLogo } from "../ZicLogo"
 import { useAuth } from "../../lib/auth"
+import { useLanguage } from "../../lib/language"
 
 interface SubNavItem {
   label: string
@@ -114,7 +119,13 @@ const NAV: NavItem[] = [
     { label: "Payments", icon: Banknote, path: "/front-office/payments" },
     { label: "Front Office Parameters", icon: Settings, path: "/front-office/parameters" },
   ] },
-  { label: "Reports", icon: FileText },
+  { label: "Workspace", icon: LayoutDashboard, expandable: true, children: [
+    { label: "Tasks", icon: ListTodo, path: "/tasks" },
+    { label: "Alerts", icon: BellRing, path: "/alerts" },
+    { label: "Notifications", icon: BellRing, path: "/notifications" },
+    { label: "Currencies", icon: CircleDollarSign, path: "/currencies" },
+  ] },
+  { label: "Reports", icon: BarChart3, path: "/reports" },
   {
     label: "System Parameters",
     icon: Settings,
@@ -144,7 +155,7 @@ const NAV: NavItem[] = [
       { label: "Users", icon: User, path: "/user-management/users" },
     ],
   },
-  { label: "Approvals", icon: CheckSquare, expandable: true },
+  { label: "Approvals", icon: CheckSquare, path: "/approvals" },
 ]
 
 function isActivePath(path: string | undefined, current: string): boolean {
@@ -204,6 +215,7 @@ export function Sidebar({ open }: { open: boolean }) {
   const location = useLocation()
   const navigate = useNavigate()
   const { user } = useAuth()
+  const { t } = useLanguage()
   const [expanded, setExpanded] = useState<string[]>(() => {
     const items: string[] = []
     for (const item of NAV) {
@@ -295,11 +307,11 @@ export function Sidebar({ open }: { open: boolean }) {
       </nav>
 
       <div className="border-t border-border p-3">
-        <button className="flex w-full items-center gap-3 whitespace-nowrap rounded-lg border border-border bg-secondary/60 px-3 py-2.5 text-sm font-medium text-sidebar-foreground transition hover:border-primary/30 hover:bg-secondary">
+        <button onClick={() => navigate("/help")} className="flex w-full items-center gap-3 whitespace-nowrap rounded-lg border border-border bg-secondary/60 px-3 py-2.5 text-sm font-medium text-sidebar-foreground transition hover:border-primary/30 hover:bg-secondary">
           <span className="flex h-7 w-7 flex-none items-center justify-center rounded-md bg-accent text-primary">
             <HelpCircle className="h-[18px] w-[18px]" />
           </span>
-          <span className="flex-1 text-left">Help &amp; Support</span>
+          <span className="flex-1 text-left">{t("help")}</span>
         </button>
       </div>
     </aside>

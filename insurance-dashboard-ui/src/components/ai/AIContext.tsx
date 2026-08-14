@@ -20,6 +20,8 @@ export interface AIPartnerResult {
 
 interface AIContextValue {
   panelOpen: boolean
+  expanded: boolean
+  setExpanded: (expanded: boolean) => void
   togglePanel: () => void
   setPanelOpen: (open: boolean) => void
   messages: AIMessage[]
@@ -35,6 +37,7 @@ const AIContext = createContext<AIContextValue | null>(null)
 
 export function AIProvider({ children }: { children: ReactNode }) {
   const [panelOpen, setPanelOpen] = useState(false)
+  const [expanded, setExpanded] = useState(false)
   const [messages, setMessages] = useState<AIMessage[]>([])
   const [lastResult, setLastResult] = useState<AIPartnerResult | null>(null)
   const [awaitingClarification, setAwaitingClarification] = useState(false)
@@ -50,7 +53,7 @@ export function AIProvider({ children }: { children: ReactNode }) {
   return (
     <AIContext.Provider
       value={{
-        panelOpen, togglePanel, setPanelOpen,
+        panelOpen, expanded, setExpanded, togglePanel, setPanelOpen,
         messages, addMessage, clearMessages,
         lastResult, setLastResult,
         awaitingClarification, setAwaitingClarification,

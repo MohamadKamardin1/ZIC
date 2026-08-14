@@ -180,6 +180,76 @@ export interface DashboardData {
   leads: LeadItem[]
 }
 
+export type DashboardTaskStatus = "TODO" | "IN_PROGRESS" | "DONE" | "ARCHIVED"
+export type DashboardTaskPriority = "LOW" | "MEDIUM" | "HIGH" | "URGENT"
+
+export interface DashboardTaskRecord {
+  id: number
+  title: string
+  description: string
+  status: DashboardTaskStatus
+  priority: DashboardTaskPriority
+  dueAt: string | null
+  route: string
+  entityType: string
+  entityId: string
+  completedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type DashboardAlertSeverity = "INFO" | "WARNING" | "CRITICAL"
+export type DashboardAlertStatus = "OPEN" | "ACKNOWLEDGED" | "DISMISSED"
+
+export interface DashboardAlertRecord {
+  id: number
+  title: string
+  message: string
+  severity: DashboardAlertSeverity
+  status: DashboardAlertStatus
+  route: string
+  entityType: string
+  entityId: string
+  acknowledgedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DashboardNotificationRecord {
+  id: number
+  kind: string
+  title: string
+  message: string
+  status: string
+  route: string
+  entityType: string
+  entityId: string
+  isRead: boolean
+  createdAt: string
+}
+
+export interface GlobalSearchResult {
+  id: string
+  type: string
+  kind: string
+  label: string
+  subtitle: string
+  route: string
+}
+
+export interface CurrencyPairRecord {
+  id: number
+  baseCurrency: string
+  quoteCurrency: string
+  isActive: boolean
+  targetRate: string | null
+  latestRate: string | null
+  latestAsOf: string | null
+  isStale: boolean
+  createdAt: string
+  updatedAt: string
+}
+
 // ============================================================================
 // Partner Onboarding types (camelCase — backend uses camelCase renderer)
 // ============================================================================

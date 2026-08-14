@@ -64,6 +64,7 @@ import FOCommissionStatements from "./pages/front-office/FOCommissionStatements"
 import FORequisitions from "./pages/front-office/FORequisitions"
 import FOPayments from "./pages/front-office/FOPayments"
 import FOParameters from "./pages/front-office/FOParameters"
+import WorkspacePage from "./pages/dashboard/WorkspacePage"
 import type { ReactNode } from "react"
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -85,6 +86,13 @@ export default function App() {
         }
       >
         <Route index element={<Dashboard />} />
+        <Route path="tasks" element={<WorkspacePage section="tasks" />} />
+        <Route path="alerts" element={<WorkspacePage section="alerts" />} />
+        <Route path="notifications" element={<WorkspacePage section="notifications" />} />
+        <Route path="currencies" element={<WorkspacePage section="currencies" />} />
+        <Route path="reports" element={<WorkspacePage section="reports" />} />
+        <Route path="approvals" element={<WorkspacePage section="approvals" />} />
+        <Route path="help" element={<WorkspacePage section="help" />} />
         <Route path="onboarding" element={<OnboardingList />} />
         <Route path="onboarding/new" element={<ApplicationForm />} />
         <Route path="onboarding/:id" element={<ApplicationDetail />} />

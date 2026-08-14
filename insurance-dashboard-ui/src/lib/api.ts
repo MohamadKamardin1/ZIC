@@ -5,6 +5,11 @@ import type {
   LoginTokens,
   Setup2FAResult,
   DashboardData,
+  DashboardTaskRecord,
+  DashboardAlertRecord,
+  DashboardNotificationRecord,
+  GlobalSearchResult,
+  CurrencyPairRecord,
   PartnerTypeRecord,
   BranchRecord,
   LocationRecord,
@@ -473,6 +478,89 @@ export async function getDashboard(): Promise<DashboardData> {
   }
   const raw = await res.json()
   return mapDashboard(raw)
+}
+
+// ============================================================================
+// Interactive Dashboard Workspace API
+// ============================================================================
+
+async function dashboardRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await apiFetchAuth(path, init)
+  const json = await res.json().catch(() => null)
+  if (!res.ok) throw new Error(extractError(res, json))
+  return ((json as Record<string, unknown>)?.data ?? json) as T
+}
+
+export async function searchDashboard(query: string, signal?: AbortSignal): Promise<GlobalSearchResult[]> {
+  const params = new URLSearchParams({ q: query })
+  const payload = await dashboardRequest<{ results: GlobalSearchResult[] }>(`/api/v1/dashboard/search/?${params}`, { signal })
+  return payload.results ?? []
+}
+
+export async function listDashboardTasks(status?: string): Promise<DashboardTaskRecord[]> {
+  const query = status ? `?status=${encodeURIComponent(status)}` : ""
+  return dashboardRequest<DashboardTaskRecord[]>(`/api/v1/dashboard/tasks/${query}`)
+}
+
+export async function createDashboardTask(input: Partial<DashboardTaskRecord>): Promise<DashboardTaskRecord> {
+  return dashboardRequest<DashboardTaskRecord>("/api/v1/dashboard/tasks/", {
+    method: "POST",
+    body: JSON.stringify(input),
+  })
+}
+
+export async function updateDashboardTask(id: number, input: Partial<DashboardTaskRecord>): Promise<DashboardTaskRecord> {
+  return dashboardRequest<DashboardTaskRecord>(`/api/v1/dashboard/tasks/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  })
+}
+
+export async function deleteDashboardTask(id: number): Promise<void> {
+  await dashboardRequest<null>(`/api/v1/dashboard/tasks/${id}/`, { method: "DELETE" })
+}
+
+export async function listDashboardAlerts(params: { severity?: string; status?: string } = {}): Promise<DashboardAlertRecord[]> {
+  const search = new URLSearchParams()
+  if (params.severity) search.set("severity", params.severity)
+  if (params.status) search.set("status", params.status)
+  const query = search.toString() ? `?${search}` : ""
+  return dashboardRequest<DashboardAlertRecord[]>(`/api/v1/dashboard/alerts/${query}`)
+}
+
+export async function actOnDashboardAlert(id: number, action: "acknowledge" | "dismiss"): Promise<DashboardAlertRecord> {
+  return dashboardRequest<DashboardAlertRecord>(`/api/v1/dashboard/alerts/${id}/${action}/`, { method: "POST" })
+}
+
+export async function listDashboardNotifications(unreadOnly = false): Promise<DashboardNotificationRecord[]> {
+  return dashboardRequest<DashboardNotificationRecord[]>(`/api/v1/dashboard/notifications/${unreadOnly ? "?unread=true" : ""}`)
+}
+
+export async function markDashboardNotificationRead(id: number): Promise<DashboardNotificationRecord> {
+  return dashboardRequest<DashboardNotificationRecord>(`/api/v1/dashboard/notifications/${id}/read/`, { method: "POST" })
+}
+
+export async function markAllDashboardNotificationsRead(): Promise<void> {
+  await dashboardRequest<null>("/api/v1/dashboard/notifications/read-all/", { method: "POST" })
+}
+
+export async function listCurrencyPairs(): Promise<CurrencyPairRecord[]> {
+  return dashboardRequest<CurrencyPairRecord[]>("/api/v1/dashboard/currencies/")
+}
+
+export async function addCurrencyPair(baseCurrency: string, quoteCurrency: string, targetRate?: string): Promise<CurrencyPairRecord> {
+  return dashboardRequest<CurrencyPairRecord>("/api/v1/dashboard/currencies/", {
+    method: "POST",
+    body: JSON.stringify({ baseCurrency, quoteCurrency, targetRate }),
+  })
+}
+
+export async function removeCurrencyPair(id: number): Promise<void> {
+  await dashboardRequest<null>(`/api/v1/dashboard/currencies/${id}/`, { method: "DELETE" })
+}
+
+export async function refreshCurrencyPairs(): Promise<{ refreshed: string[]; errors: { pair: string; error: string }[] }> {
+  return dashboardRequest<{ refreshed: string[]; errors: { pair: string; error: string }[] }>("/api/v1/dashboard/currencies/refresh/", { method: "POST" })
 }
 
 // ============================================================================
