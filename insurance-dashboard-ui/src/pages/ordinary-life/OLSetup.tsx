@@ -437,7 +437,7 @@ export default function GCSetup() {
       <div className="p-6 max-w-7xl mx-auto">
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-3">
-            <div className="p-2 rounded-xl" style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}>
+            <div className="rounded-xl bg-neutral-950 p-2">
               <Settings className="h-6 w-6 text-white" />
             </div>
             Ordinary Life Parameters
@@ -461,9 +461,9 @@ export default function GCSetup() {
                     onClick={() => loadCategory(cat)}
                     className="group relative overflow-hidden rounded-2xl border border-border bg-card p-5 text-left transition-all duration-300 hover:shadow-xl hover:shadow-primary/5 hover:-translate-y-1 hover:border-primary/30"
                   >
-                    <div className="absolute inset-0 opacity-0 transition-opacity group-hover:opacity-5" style={{ background: cat.gradient }} />
+                    <div className="absolute inset-0 bg-neutral-950 opacity-0 transition-opacity group-hover:opacity-[0.03]" />
                     <div className="flex items-start justify-between">
-                      <div className="rounded-xl p-2.5 shadow-lg" style={{ background: cat.gradient }}>
+                      <div className="rounded-xl bg-neutral-950 p-2.5 shadow-lg">
                         <Icon className="h-5 w-5 text-white" />
                       </div>
                       <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1" />
@@ -492,7 +492,7 @@ export default function GCSetup() {
           <button onClick={() => setActiveCat(null)} className="p-2 rounded-lg border border-border bg-card hover:bg-secondary transition">
             <ChevronRight className="h-4 w-4 rotate-180 text-foreground" />
           </button>
-          <div className="p-2 rounded-xl shadow-lg" style={{ background: activeCat.gradient }}>
+          <div className="rounded-xl bg-neutral-950 p-2 shadow-lg">
             <Icon className="h-5 w-5 text-white" />
           </div>
           <div>
@@ -525,8 +525,7 @@ export default function GCSetup() {
           {activeCat.createFn && (
             <button
               onClick={openCreate}
-              className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-white shadow-lg transition hover:opacity-90"
-              style={{ background: activeCat.gradient }}
+              className="flex items-center gap-2 rounded-xl bg-neutral-950 px-4 py-2.5 text-sm font-medium text-white shadow-lg transition hover:bg-neutral-800"
             >
               <Plus className="h-4 w-4" /> Add
             </button>
@@ -588,8 +587,8 @@ export default function GCSetup() {
                   <td className="px-4 py-3.5">
                     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
                       item.is_active !== false
-                        ? "bg-emerald-500/10 text-emerald-500"
-                        : "bg-red-500/10 text-red-500"
+                        ? "bg-neutral-100 text-neutral-900"
+                        : "bg-neutral-200 text-neutral-500"
                     }`}>
                       {item.is_active !== false ? "Active" : "Inactive"}
                     </span>
@@ -602,7 +601,7 @@ export default function GCSetup() {
                         </button>
                       )}
                       {activeCat.deleteFn && (
-                        <button onClick={() => handleDeleteClick(item)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition">
+                        <button onClick={() => handleDeleteClick(item)} className="p-1.5 rounded-lg text-muted-foreground transition hover:bg-neutral-100 hover:text-neutral-950">
                           <Trash2 className="h-4 w-4" />
                         </button>
                       )}

@@ -38,6 +38,11 @@ import UserGroups from "./pages/user-management/UserGroups"
 import Users from "./pages/user-management/Users"
 import GLSetup from "./pages/group-life/GLSetup"
 import OLSetup from "./pages/ordinary-life/OLSetup"
+import OLApplications from "./pages/ordinary-life/OLApplications"
+import OLDocuments from "./pages/ordinary-life/OLDocuments"
+import OLNotes from "./pages/ordinary-life/OLNotes"
+import OLApprovals from "./pages/ordinary-life/OLApprovals"
+import OLAuditHistory from "./pages/ordinary-life/OLAuditHistory"
 import OLQuotations from "./pages/ordinary-life/OLQuotations"
 import OLCommitments from "./pages/ordinary-life/OLCommitments"
 import OLProposals from "./pages/ordinary-life/OLProposals"
@@ -131,6 +136,7 @@ export default function App() {
 
         {/* Ordinary Life */}
         <Route path="ordinary-life/setup" element={<OLSetup />} />
+        <Route path="ordinary-life/applications" element={<OLApplications />} />
         <Route path="ordinary-life/quotations" element={<OLQuotations />} />
         <Route path="ordinary-life/commitments" element={<OLCommitments />} />
         <Route path="ordinary-life/proposals" element={<OLProposals />} />
@@ -139,6 +145,10 @@ export default function App() {
         <Route path="ordinary-life/withdrawals" element={<OLWithdrawals />} />
         <Route path="ordinary-life/claims" element={<OLClaims />} />
         <Route path="ordinary-life/maturity-installments" element={<OLMaturityInstallments />} />
+        <Route path="ordinary-life/documents" element={<OLDocuments />} />
+        <Route path="ordinary-life/notes" element={<OLNotes />} />
+        <Route path="ordinary-life/approvals" element={<OLApprovals />} />
+        <Route path="ordinary-life/audit-history" element={<OLAuditHistory />} />
         <Route path="group-life/quotations" element={<GLQuotations />} />
         <Route path="group-life/schemes" element={<GLSchemes />} />
         <Route path="group-life/members" element={<GLMembers />} />

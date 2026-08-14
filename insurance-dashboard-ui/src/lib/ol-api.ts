@@ -254,3 +254,54 @@ export const olCore = {
   deleteMaturityInstallment: (id: string) => olDelete(`/core/maturity-installments/${id}/`),
 }
 
+
+
+// ---------------------------------------------------------------------------
+// Phase 8 workflow API
+// ---------------------------------------------------------------------------
+
+export type OrdinaryLifeResource =
+  | "applications"
+  | "quotations"
+  | "proposals"
+  | "underwriting-cases"
+  | "medical-requirements"
+  | "policies"
+  | "endorsements"
+  | "renewals"
+  | "reinstatements"
+  | "premium-schedules"
+  | "documents"
+  | "notes"
+  | "approvals"
+  | "workflow-events"
+  | "audit-history"
+  | "payment-obligations"
+  | "payment-allocations"
+  | "commitments"
+  | "loans"
+  | "withdrawals"
+  | "claims"
+  | "maturity-installments"
+  | "policy-transactions"
+  | "policy-status-history"
+
+export const olWorkflow = {
+  list: (resource: OrdinaryLifeResource, params?: Record<string, string>) =>
+    olList(`/core/${resource}/`, params),
+  get: (resource: OrdinaryLifeResource, id: string) =>
+    olGet(`/core/${resource}/${id}/`),
+  create: (resource: OrdinaryLifeResource, data: Record<string, unknown>) =>
+    olPost(`/core/${resource}/`, data),
+  action: (resource: OrdinaryLifeResource, id: string, action: string, data: Record<string, unknown> = {}) =>
+    olPost(`/core/${resource}/${id}/${action}/`, data),
+  collectionAction: (resource: OrdinaryLifeResource, action: string, data: Record<string, unknown> = {}) =>
+    olPost(`/core/${resource}/${action}/`, data),
+}
+
+export const olReference = {
+  listProducts: (params?: Record<string, string>) => olList("/core/products/", params),
+  listPlans: (params?: Record<string, string>) => olList("/core/plans/", params),
+  listProductVersions: (params?: Record<string, string>) => olList("/core/product-versions/", params),
+  listPartners: (params?: Record<string, string>) => olList("/core/clients/", params),
+}

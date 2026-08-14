@@ -18,6 +18,7 @@ declare module "react" {
       "zic-todo-leads": CustomEl
       "zic-todo": CustomEl
       "zic-leads": CustomEl
+      "zic-ordinary-life-workspace": CustomEl
       "onboarding-status-timeline": CustomEl
       "onboarding-event-feed": CustomEl
       "onboarding-document-panel": CustomEl
