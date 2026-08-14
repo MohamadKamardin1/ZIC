@@ -1213,8 +1213,12 @@ class OLDocumentRecord(models.Model):
     metadata = models.JSONField(default=dict, blank=True)
     uploaded_by = models.ForeignKey("users.User", on_delete=models.PROTECT, null=True, blank=True, related_name="ordinary_life_documents")
     verified_by = models.ForeignKey("users.User", on_delete=models.PROTECT, null=True, blank=True, related_name="verified_ordinary_life_documents")
+    rejected_by = models.ForeignKey("users.User", on_delete=models.PROTECT, null=True, blank=True, related_name="rejected_ordinary_life_documents")
     uploaded_at = models.DateTimeField(null=True, blank=True)
     verified_at = models.DateTimeField(null=True, blank=True)
+    rejected_at = models.DateTimeField(null=True, blank=True)
+    status_reason = models.TextField(blank=True)
+    idempotency_key = models.CharField(max_length=120, unique=True, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -1233,6 +1237,7 @@ class OLNote(models.Model):
     content = models.TextField()
     is_internal = models.BooleanField(default=True)
     created_by = models.ForeignKey("users.User", on_delete=models.PROTECT, related_name="ordinary_life_notes")
+    idempotency_key = models.CharField(max_length=120, unique=True, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
