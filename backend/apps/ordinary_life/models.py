@@ -828,6 +828,28 @@ class OLUnderwritingCase(models.Model):
         indexes = [models.Index(fields=["decision", "created_at"])]
 
 
+class OLUnderwritingDecisionEvent(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    underwriting_case = models.ForeignKey(
+        OLUnderwritingCase, on_delete=models.PROTECT, related_name="decision_events"
+    )
+    previous_decision = models.CharField(max_length=20, blank=True)
+    decision = models.CharField(max_length=20)
+    risk_class = models.CharField(max_length=30, blank=True)
+    reason = models.TextField()
+    actor = models.ForeignKey(
+        "users.User", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="ordinary_life_underwriting_decision_events",
+    )
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "ol_underwriting_decision_event"
+        ordering = ["created_at"]
+        indexes = [models.Index(fields=["underwriting_case", "created_at"])]
+
+
 class OLHealthDeclaration(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     proposal = models.ForeignKey(OLProposal, on_delete=models.PROTECT, related_name="health_declarations")
