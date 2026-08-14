@@ -1,114 +1,78 @@
 import logging
 
-from rest_framework import status, permissions
+from django.contrib.auth import logout
+from django.utils import timezone
+from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView as BaseTokenRefreshView
-from django.utils import timezone
-from django.conf import settings
-from django.contrib.auth import logout
 
-from apps.users.models import User, UserOTP, TwoFactorAuth, UserSession, UserActivityLog
+from apps.users.models import User, UserOTP
+from apps.users.serializers import ChangePasswordSerializer, UserListSerializer
+
+from . import services
 from .serializers import (
-    LoginSerializer, RegisterSerializer, ResetPasswordSerializer,
-    ConfirmResetPasswordSerializer, Setup2FASerializer,
-    Verify2FASerializer, Disable2FASerializer,
-    RequestOTPSerializer, VerifyOTPSerializer,
+    ConfirmResetPasswordSerializer,
+    Disable2FASerializer,
+    LoginSerializer,
+    RegisterSerializer,
+    RequestOTPSerializer,
+    ResetPasswordSerializer,
+    Setup2FASerializer,
+    Verify2FASerializer,
+    VerifyOTPSerializer,
 )
 
 logger = logging.getLogger('apps.authentication.views')
 
 
-def _get_tokens_for_user(user):
-    refresh = RefreshToken.for_user(user)
-    return {
-        'access_token': str(refresh.access_token),
-        'refresh_token': str(refresh),
-        'access_expires_in': settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds(),
-        'refresh_expires_in': settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'].total_seconds(),
-    }
+def _meta():
+    return services.response_meta()
 
 
-def _create_user_session(request, user):
-    session = UserSession.objects.create(
-        user=user,
-        session_key=request.session.session_key or '',
-        ip_address=request.META.get('REMOTE_ADDR'),
-        user_agent=request.META.get('HTTP_USER_AGENT', '')[:255],
-        device_type=_detect_device_type(request),
-    )
-    return session
+def _success(message, data=None, code=status.HTTP_200_OK, **kwargs):
+    return Response({
+        'success': True,
+        'status_code': code,
+        'message': message,
+        'data': data,
+        'meta': _meta(),
+        **kwargs,
+    }, status=code)
 
 
-def _detect_device_type(request):
-    user_agent = request.META.get('HTTP_USER_AGENT', '').lower()
-    if 'mobile' in user_agent or 'android' in user_agent or 'iphone' in user_agent:
-        return 'MOBILE'
-    if 'tablet' in user_agent or 'ipad' in user_agent:
-        return 'TABLET'
-    return 'WEB'
+def _user_payload(user):
+    user_data = UserListSerializer(user).data
+    permissions_list = []
+    for group in user.groups.prefetch_related('permissions').all():
+        permissions_list.extend(
+            {'module': permission.module, 'action': permission.action}
+            for permission in group.permissions.all()
+        )
+    seen = set()
+    user_data['permissions'] = []
+    for permission in permissions_list:
+        key = (permission['module'], permission['action'])
+        if key not in seen:
+            seen.add(key)
+            user_data['permissions'].append(permission)
+    user_data['groups'] = list(user.groups.values_list('name', flat=True))
+    return user_data
 
 
 class LoginView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        serializer = LoginSerializer(
-            data=request.data,
-            context={
-                'request': request,
-                'ip_address': request.META.get('REMOTE_ADDR'),
-                'user_agent': request.META.get('HTTP_USER_AGENT', ''),
-            }
-        )
+        serializer = LoginSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data['user']
-
         if serializer.validated_data.get('requires_2fa'):
-            return Response({
-                'success': True,
-                'status_code': 200,
-                'message': 'OTP code required',
-                'data': {'requires_2fa': True, 'user_id': str(user.id)},
-                'meta': {'timestamp': timezone.now().isoformat(), 'version': 'v1'},
-            })
-
-        tokens = _get_tokens_for_user(user)
-        _create_user_session(request, user)
-
-        from apps.users.serializers import UserListSerializer
-        user_data = UserListSerializer(user).data
-        
-        # Add permissions and groups to login response
-        # Get permissions from user's groups
-        all_permissions = []
-        
-        # Check if user has groups attribute (UserGroup M2M)
-        if hasattr(user, 'groups'):
-            for group in user.groups.all():
-                if hasattr(group, 'permissions'):
-                    for perm in group.permissions.all():
-                        all_permissions.append({'module': perm.module, 'action': perm.action})
-        
-        # Remove duplicates
-        seen = set()
-        unique_permissions = []
-        for perm in all_permissions:
-            key = f"{perm['module']}:{perm['action']}"
-            if key not in seen:
-                seen.add(key)
-                unique_permissions.append(perm)
-        
-        user_data['permissions'] = unique_permissions
-        user_data['groups'] = list(user.groups.values_list('name', flat=True)) if hasattr(user, 'groups') else []
-
-        return Response({
-            'success': True,
-            'status_code': 200,
-            'message': 'Login successful',
-            'data': {**tokens, 'user': user_data},
-            'meta': {'timestamp': timezone.now().isoformat(), 'version': 'v1'},
+            return _success('OTP code required', {'requires_2fa': True, 'user_id': str(user.id)})
+        services.create_session(request, user)
+        return _success('Login successful', {
+            **services.tokens_for_user(user),
+            'user': _user_payload(user),
         })
 
 
@@ -116,47 +80,16 @@ class LogoutView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        try:
-            refresh_token = request.data.get('refresh_token')
-            if refresh_token:
-                token = RefreshToken(refresh_token)
-                token.blacklist()
-
-            UserSession.objects.filter(
-                user=request.user, is_active=True
-            ).update(is_active=False)
-
-            UserActivityLog.objects.create(
-                user=request.user,
-                action_type='LOGOUT',
-                ip_address=request.META.get('REMOTE_ADDR'),
-                user_agent=request.META.get('HTTP_USER_AGENT', '')[:255],
-            )
-
-            logout(request)
-        except Exception as e:
-            logger.error(f'Logout error: {str(e)}')
-
-        return Response({
-            'success': True,
-            'status_code': 200,
-            'message': 'Logged out successfully',
-            'data': None,
-            'meta': {'timestamp': timezone.now().isoformat(), 'version': 'v1'},
-        })
+        services.logout_user(request, request.data.get('refresh_token'))
+        logout(request)
+        return _success('Logged out successfully')
 
 
 class TokenRefreshView(BaseTokenRefreshView):
     def post(self, request, *args, **kwargs):
         response = super().post(request, *args, **kwargs)
-        if response.status_code == 200:
-            return Response({
-                'success': True,
-                'status_code': 200,
-                'message': 'Token refreshed',
-                'data': response.data,
-                'meta': {'timestamp': timezone.now().isoformat(), 'version': 'v1'},
-            })
+        if response.status_code == status.HTTP_200_OK:
+            return _success('Token refreshed', response.data)
         return response
 
 
@@ -167,13 +100,11 @@ class RegisterView(APIView):
         serializer = RegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-        return Response({
-            'success': True,
-            'status_code': 201,
-            'message': 'Registration successful. Awaiting approval.',
-            'data': {'user_id': str(user.id), 'requires_approval': True},
-            'meta': {'timestamp': timezone.now().isoformat(), 'version': 'v1'},
-        }, status=status.HTTP_201_CREATED)
+        return _success(
+            'Registration successful. Awaiting approval.',
+            {'user_id': str(user.id), 'requires_approval': True},
+            status.HTTP_201_CREATED,
+        )
 
 
 class VerifyEmailView(APIView):
@@ -183,24 +114,22 @@ class VerifyEmailView(APIView):
         email = request.data.get('email')
         otp_code = request.data.get('otp_code')
         try:
-            user = User.objects.get(email=email)
-            otp = UserOTP.objects.filter(
-                user=user, otp_code=otp_code,
-                otp_type='EMAIL_VERIFICATION', is_used=False
-            ).last()
-            if otp and otp.is_valid:
-                otp.is_used = True
-                otp.save()
-                return Response({
-                    'success': True,
-                    'status_code': 200,
-                    'message': 'Email verified successfully',
-                    'data': None,
-                    'meta': {'timestamp': timezone.now().isoformat(), 'version': 'v1'},
-                })
-            return Response({'error': 'Invalid or expired OTP'}, status=400)
+            user = User.objects.get(email__iexact=email)
         except User.DoesNotExist:
-            return Response({'error': 'User not found'}, status=404)
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        otp = UserOTP.objects.filter(
+            user=user, otp_code=otp_code,
+            otp_type=UserOTP.OTPType.EMAIL_VERIFICATION,
+            is_used=False, expires_at__gt=timezone.now(),
+        ).last()
+        if otp is None:
+            return Response({'error': 'Invalid or expired OTP'}, status=status.HTTP_400_BAD_REQUEST)
+        otp.is_used = True
+        otp.save(update_fields=['is_used'])
+        user.email_verified = True
+        user.email_verified_at = timezone.now()
+        user.save(update_fields=['email_verified', 'email_verified_at'])
+        return _success('Email verified successfully')
 
 
 class ResetPasswordView(APIView):
@@ -209,20 +138,8 @@ class ResetPasswordView(APIView):
     def post(self, request):
         serializer = ResetPasswordSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        email = serializer.validated_data['email']
-        try:
-            user = User.objects.get(email=email)
-            otp = UserOTP.generate_otp(user, 'PASSWORD_RESET')
-            logger.info(f'Password reset OTP sent to {email}: {otp.otp_code}')
-        except User.DoesNotExist:
-            pass
-        return Response({
-            'success': True,
-            'status_code': 200,
-            'message': 'If the email exists, an OTP has been sent.',
-            'data': None,
-            'meta': {'timestamp': timezone.now().isoformat(), 'version': 'v1'},
-        })
+        services.request_password_reset(serializer.validated_data['email'])
+        return _success('If the email exists, an OTP has been sent.')
 
 
 class ConfirmResetPasswordView(APIView):
@@ -231,80 +148,39 @@ class ConfirmResetPasswordView(APIView):
     def post(self, request):
         serializer = ConfirmResetPasswordSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        token = serializer.validated_data['token']
-        new_password = serializer.validated_data['new_password']
         try:
-            otp = UserOTP.objects.get(
-                otp_code=token, otp_type='PASSWORD_RESET',
-                is_used=False, expires_at__gt=timezone.now()
+            services.confirm_password_reset(
+                serializer.validated_data['token'],
+                serializer.validated_data['new_password'],
+                request,
             )
-            otp.is_used = True
-            otp.save()
-            otp.user.set_password(new_password)
-            otp.user.save()
-            return Response({
-                'success': True,
-                'status_code': 200,
-                'message': 'Password reset successfully',
-                'data': None,
-                'meta': {'timestamp': timezone.now().isoformat(), 'version': 'v1'},
-            })
-        except UserOTP.DoesNotExist:
-            return Response({'error': 'Invalid or expired token'}, status=400)
+        except services.IAMServiceError as exc:
+            return Response({'error': exc.message}, status=status.HTTP_400_BAD_REQUEST)
+        return _success('Password reset successfully')
 
 
 class ChangePasswordView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        from apps.users.serializers import ChangePasswordSerializer
         serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
-        request.user.set_password(serializer.validated_data['new_password'])
-        request.user.password_changed_at = timezone.now()
-        request.user.save()
-        UserActivityLog.objects.create(
-            user=request.user,
-            action_type='PASSWORD_CHANGE',
-            ip_address=request.META.get('REMOTE_ADDR'),
-            user_agent=request.META.get('HTTP_USER_AGENT', '')[:255],
-        )
-        return Response({
-            'success': True,
-            'status_code': 200,
-            'message': 'Password changed successfully',
-            'data': None,
-            'meta': {'timestamp': timezone.now().isoformat(), 'version': 'v1'},
-        })
+        try:
+            services.set_password(request.user, serializer.validated_data['new_password'], request)
+        except services.IAMServiceError as exc:
+            return Response({'error': exc.message}, status=status.HTTP_400_BAD_REQUEST)
+        return _success('Password changed successfully')
 
 
 class Setup2FAView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        two_factor, created = TwoFactorAuth.objects.get_or_create(user=request.user)
-        setup_serializer = Setup2FASerializer()
-        secret, otp_uri = setup_serializer.get_otp_uri(request.user)
-        qr_code = setup_serializer.get_qr_code(otp_uri)
-        two_factor.app_secret = secret
-        two_factor.save()
-        backup_codes = two_factor.generate_backup_codes()
-        UserActivityLog.objects.create(
-            user=request.user,
-            action_type='TWO_FA_SETUP',
-            ip_address=request.META.get('REMOTE_ADDR'),
-            user_agent=request.META.get('HTTP_USER_AGENT', '')[:255],
-        )
-        return Response({
-            'success': True,
-            'status_code': 200,
-            'message': '2FA setup initiated',
-            'data': {
-                'qr_code_url': qr_code,
-                'secret': secret,
-                'backup_codes': backup_codes,
-            },
-            'meta': {'timestamp': timezone.now().isoformat(), 'version': 'v1'},
+        secret, otp_uri, backup_codes = services.setup_totp(request.user)
+        return _success('2FA setup initiated', {
+            'qr_code_url': Setup2FASerializer().get_qr_code(otp_uri),
+            'secret': secret,
+            'backup_codes': backup_codes,
         })
 
 
@@ -314,27 +190,11 @@ class Verify2FAView(APIView):
     def post(self, request):
         serializer = Verify2FASerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        otp_code = serializer.validated_data['otp_code']
         try:
-            two_factor = TwoFactorAuth.objects.get(user=request.user)
-            import pyotp
-            totp = pyotp.TOTP(two_factor.app_secret)
-            if totp.verify(otp_code):
-                two_factor.is_active = True
-                two_factor.setup_completed_at = timezone.now()
-                two_factor.save()
-                request.user.is_2fa_enabled = True
-                request.user.save(update_fields=['is_2fa_enabled'])
-                return Response({
-                    'success': True,
-                    'status_code': 200,
-                    'message': '2FA enabled successfully',
-                    'data': {'backup_codes': two_factor.backup_codes},
-                    'meta': {'timestamp': timezone.now().isoformat(), 'version': 'v1'},
-                })
-            return Response({'error': 'Invalid OTP code'}, status=400)
-        except TwoFactorAuth.DoesNotExist:
-            return Response({'error': '2FA not set up. Call setup-2fa first.'}, status=400)
+            services.verify_totp(request.user, serializer.validated_data['otp_code'], request)
+        except services.IAMServiceError as exc:
+            return Response({'error': exc.message}, status=status.HTTP_400_BAD_REQUEST)
+        return _success('2FA enabled successfully', {'enabled': True})
 
 
 class Disable2FAView(APIView):
@@ -343,24 +203,8 @@ class Disable2FAView(APIView):
     def post(self, request):
         serializer = Disable2FASerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
-        TwoFactorAuth.objects.filter(user=request.user).update(
-            is_active=False, app_secret=None, backup_codes=[]
-        )
-        request.user.is_2fa_enabled = False
-        request.user.save(update_fields=['is_2fa_enabled'])
-        UserActivityLog.objects.create(
-            user=request.user,
-            action_type='TWO_FA_DISABLE',
-            ip_address=request.META.get('REMOTE_ADDR'),
-            user_agent=request.META.get('HTTP_USER_AGENT', '')[:255],
-        )
-        return Response({
-            'success': True,
-            'status_code': 200,
-            'message': '2FA disabled successfully',
-            'data': None,
-            'meta': {'timestamp': timezone.now().isoformat(), 'version': 'v1'},
-        })
+        services.disable_totp(request.user, request)
+        return _success('2FA disabled successfully')
 
 
 class RequestOTPView(APIView):
@@ -369,24 +213,12 @@ class RequestOTPView(APIView):
     def post(self, request):
         serializer = RequestOTPSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        email_or_phone = serializer.validated_data['email_or_phone']
-        method = serializer.validated_data['method']
-        try:
-            if '@' in email_or_phone:
-                user = User.objects.get(email=email_or_phone)
-            else:
-                user = User.objects.get(phone_number=email_or_phone)
-            otp = UserOTP.generate_otp(user, 'LOGIN')
-            logger.info(f'OTP for {email_or_phone} ({method}): {otp.otp_code}')
-        except User.DoesNotExist:
-            pass
-        return Response({
-            'success': True,
-            'status_code': 200,
-            'message': 'If the contact exists, an OTP has been sent.',
-            'data': None,
-            'meta': {'timestamp': timezone.now().isoformat(), 'version': 'v1'},
-        })
+        contact = serializer.validated_data['email_or_phone']
+        user = User.objects.filter(email__iexact=contact).first() if '@' in contact else User.objects.filter(phone_number=contact).first()
+        if user:
+            otp = UserOTP.generate_otp(user, UserOTP.OTPType.LOGIN)
+            logger.info('OTP generated', extra={'otp_id': str(otp.id), 'method': serializer.validated_data['method']})
+        return _success('If the contact exists, an OTP has been sent.')
 
 
 class VerifyOTPView(APIView):
@@ -395,75 +227,24 @@ class VerifyOTPView(APIView):
     def post(self, request):
         serializer = VerifyOTPSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        email_or_phone = serializer.validated_data['email_or_phone']
-        otp_code = serializer.validated_data['otp_code']
-        try:
-            if '@' in email_or_phone:
-                user = User.objects.get(email=email_or_phone)
-            else:
-                user = User.objects.get(phone_number=email_or_phone)
+        contact = serializer.validated_data['email_or_phone']
+        user = User.objects.filter(email__iexact=contact).first() if '@' in contact else User.objects.filter(phone_number=contact).first()
+        otp = None
+        if user:
             otp = UserOTP.objects.filter(
-                user=user, otp_code=otp_code,
-                otp_type='LOGIN', is_used=False,
-                expires_at__gt=timezone.now()
+                user=user, otp_code=serializer.validated_data['otp_code'],
+                otp_type=UserOTP.OTPType.LOGIN, is_used=False,
+                expires_at__gt=timezone.now(),
             ).last()
-            if otp:
-                otp.is_used = True
-                otp.save()
-                return Response({
-                    'success': True,
-                    'status_code': 200,
-                    'message': 'OTP verified',
-                    'data': None,
-                    'meta': {'timestamp': timezone.now().isoformat(), 'version': 'v1'},
-                })
-        except User.DoesNotExist:
-            pass
-            return Response({'error': 'Invalid or expired OTP'}, status=400)
+        if otp is None:
+            return Response({'error': 'Invalid or expired OTP'}, status=status.HTTP_400_BAD_REQUEST)
+        otp.is_used = True
+        otp.save(update_fields=['is_used'])
+        return _success('OTP verified')
 
 
 class MeView(APIView):
-    """Get current authenticated user info with permissions"""
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        user = request.user
-        from apps.users.serializers import UserListSerializer
-        user_data = UserListSerializer(user).data
-        
-        # Add permissions and groups
-        user_permissions = [
-            {'module': perm.module, 'action': perm.action}
-            for perm in user.user_permissions.all()
-        ] if hasattr(user, 'user_permissions') else []
-        
-        group_permissions = []
-        if hasattr(user, 'groups'):
-            for group in user.groups.all():
-                if hasattr(group, 'permissions'):
-                    for perm in group.permissions.all():
-                        group_permissions.append({'module': perm.module, 'action': perm.action})
-        
-        all_permissions = user_permissions + group_permissions
-        seen = set()
-        unique_permissions = []
-        for perm in all_permissions:
-            key = f"{perm['module']}:{perm['action']}"
-            if key not in seen:
-                seen.add(key)
-                unique_permissions.append(perm)
-        
-        user_data['permissions'] = unique_permissions
-        user_data['groups'] = list(user.groups.values_list('name', flat=True)) if hasattr(user, 'groups') else []
-        
-        return Response({
-            'success': True,
-            'status_code': 200,
-            'message': 'User info retrieved',
-            'data': {'user': user_data},
-            'meta': {'timestamp': timezone.now().isoformat(), 'version': 'v1'},
-        })
-
-
-class CustomTokenObtainPairSerializer:
-    pass
+        return _success('User info retrieved', {'user': _user_payload(request.user)})

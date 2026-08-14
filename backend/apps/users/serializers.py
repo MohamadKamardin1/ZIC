@@ -1,12 +1,17 @@
 import logging
 
-from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
 from django.core import exceptions as django_exceptions
+from rest_framework import serializers
 
 from .models import (
-    User, UserGroup, UserPermission, PermissionGroup,
-    UserSession, UserActivityLog, UserOTP, NotificationPreference,
+    NotificationPreference,
+    PermissionGroup,
+    User,
+    UserActivityLog,
+    UserGroup,
+    UserPermission,
+    UserSession,
 )
 
 logger = logging.getLogger('apps.users.serializers')
@@ -21,8 +26,9 @@ class UserListSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name', 'full_name',
-            'phone_number', 'user_type', 'is_active', 'is_approved',
-            'is_2fa_enabled', 'email_verified', 'phone_verified',
+            'phone_number', 'user_type', 'status', 'partner_id', 'is_active', 'is_approved',
+            'is_2fa_enabled', 'mfa_required', 'sso_provider', 'sso_subject',
+            'last_password_changed_at', 'email_verified', 'phone_verified',
             'department', 'job_title', 'employee_id',
             'last_login', 'last_activity', 'date_joined',
             'active_sessions_count', 'groups',
@@ -39,8 +45,9 @@ class UserDetailSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name', 'full_name',
-            'phone_number', 'user_type', 'is_active', 'is_approved',
-            'is_2fa_enabled', 'otp_method', 'is_account_locked',
+            'phone_number', 'user_type', 'status', 'partner_id', 'is_active', 'is_approved',
+            'is_2fa_enabled', 'mfa_required', 'sso_provider', 'sso_subject',
+            'last_password_changed_at', 'otp_method', 'is_account_locked',
             'is_password_expired', 'email_verified', 'email_verified_at',
             'phone_verified', 'phone_verified_at',
             'failed_login_attempts', 'account_locked_until',
@@ -72,7 +79,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
         try:
             validate_password(attrs['password'])
         except django_exceptions.ValidationError as e:
-            raise serializers.ValidationError({'password': list(e.messages)})
+            raise serializers.ValidationError({'password': list(e.messages)}) from e
         return attrs
 
     def create(self, validated_data):
@@ -235,7 +242,7 @@ class ChangePasswordSerializer(serializers.Serializer):
         try:
             validate_password(attrs['new_password'], self.context['request'].user)
         except django_exceptions.ValidationError as e:
-            raise serializers.ValidationError({'new_password': list(e.messages)})
+            raise serializers.ValidationError({'new_password': list(e.messages)}) from e
         return attrs
 
 

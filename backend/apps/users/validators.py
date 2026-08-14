@@ -1,6 +1,7 @@
 import re
-import hashlib
 
+from django.conf import settings
+from django.contrib.auth.hashers import check_password
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext as _
 
@@ -36,29 +37,24 @@ class ComplexPasswordValidator:
 
 
 class PasswordHistoryValidator:
-    def __init__(self, history_count=5):
-        self.history_count = history_count
+    def __init__(self, history_count=None):
+        self.history_count = history_count or getattr(settings, 'PASSWORD_HISTORY_COUNT', 5)
 
     def validate(self, password, user=None):
-        if user is None:
-            return
-        if user.pk is None:
+        if user is None or user.pk is None:
             return
 
-        from .models import UserActivityLog
-        recent_changes = UserActivityLog.objects.filter(
+        from .models import UserPasswordHistory
+
+        recent_changes = UserPasswordHistory.objects.filter(
             user=user,
-            action_type='PASSWORD_CHANGE',
-        ).order_by('-timestamp')[:self.history_count]
+        ).order_by('-created_at')[:self.history_count]
 
-        for log in recent_changes:
-            if log.details and 'password_hash' in log.details:
-                old_hash = log.details['password_hash']
-                if hashlib.sha256(password.encode()).hexdigest() == old_hash:
-                    raise ValidationError(
-                        _('You cannot reuse a recently used password.'),
-                        code='password_reused',
-                    )
+        if any(check_password(password, password_hash) for password_hash in recent_changes.values_list('password_hash', flat=True)):
+            raise ValidationError(
+                _('You cannot reuse a recently used password.'),
+                code='password_reused',
+            )
 
     def get_help_text(self):
         return _(f'You cannot reuse any of your last {self.history_count} passwords.')

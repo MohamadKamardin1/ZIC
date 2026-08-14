@@ -1,17 +1,15 @@
-import uuid
-import random
-import string
-import logging
-
-from django.db import models
-from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
-from django.utils import timezone
-from django.core.validators import MinLengthValidator, MinValueValidator, MaxValueValidator
-from django.conf import settings
-
-from cryptography.fernet import Fernet
 import base64
 import hashlib
+import logging
+import random
+import string
+import uuid
+
+from cryptography.fernet import Fernet
+from django.conf import settings
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.db import models
+from django.utils import timezone
 
 logger = logging.getLogger('apps.users.models')
 
@@ -53,6 +51,10 @@ class UserManager(BaseUserManager):
         email = self.normalize_email(email)
         user = self.model(username=username, email=email, **extra_fields)
         user.set_password(password)
+        # A newly provisioned account has no verified password-change event yet;
+        # IAM records timestamps when the password is changed after creation.
+        user.password_changed_at = None
+        user.last_password_changed_at = None
         user.save(using=self._db)
         return user
 
@@ -61,6 +63,7 @@ class UserManager(BaseUserManager):
         extra_fields.setdefault('is_superuser', True)
         extra_fields.setdefault('is_active', True)
         extra_fields.setdefault('is_approved', True)
+        extra_fields.setdefault('status', User.AccountStatus.ACTIVE)
         extra_fields.setdefault('user_type', 'SUPER_ADMIN')
         return self.create_user(username, email, password, **extra_fields)
 
@@ -80,6 +83,12 @@ class User(AbstractBaseUser, PermissionsMixin):
         SMS = 'SMS', 'SMS'
         EMAIL = 'EMAIL', 'Email'
 
+    class AccountStatus(models.TextChoices):
+        ACTIVE = 'ACTIVE', 'Active'
+        INACTIVE = 'INACTIVE', 'Inactive'
+        LOCKED = 'LOCKED', 'Locked'
+        PENDING_ACTIVATION = 'PENDING_ACTIVATION', 'Pending activation'
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     username = models.CharField(max_length=150, unique=True)
     email = models.EmailField(unique=True)
@@ -87,21 +96,47 @@ class User(AbstractBaseUser, PermissionsMixin):
     last_name = models.CharField(max_length=150, blank=True)
     phone_number = models.CharField(max_length=20, blank=True)
     user_type = models.CharField(
-        max_length=30, choices=UserType.choices, default=UserType.PORTAL_USER
+        max_length=30,
+        choices=[
+            ('STAFF', 'Staff'),
+            ('PARTNER', 'Partner'),
+            *UserType.choices,
+        ],
+        default=UserType.PORTAL_USER,
     )
+    status = models.CharField(
+        max_length=30,
+        choices=AccountStatus.choices,
+        default=AccountStatus.ACTIVE,
+        db_index=True,
+    )
+    # UUID link avoids a migration cycle because partners already depends on users.
+    partner_id = models.UUIDField(null=True, blank=True, db_index=True)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     is_superuser = models.BooleanField(default=False)
     is_approved = models.BooleanField(default=False)
     is_2fa_enabled = models.BooleanField(default=False)
+    mfa_required = models.BooleanField(default=False)
     otp_secret = models.TextField(blank=True, null=True)
+    sso_provider = models.CharField(max_length=100, blank=True, default='')
+    sso_subject = models.CharField(max_length=255, blank=True, default='', db_index=True)
     otp_method = models.CharField(
         max_length=20, choices=OTPMethod.choices, default=OTPMethod.EMAIL
     )
     failed_login_attempts = models.IntegerField(default=0)
     account_locked_until = models.DateTimeField(null=True, blank=True)
     password_changed_at = models.DateTimeField(null=True, blank=True)
+    last_password_changed_at = models.DateTimeField(null=True, blank=True)
     must_change_password = models.BooleanField(default=False)
+    created_by = models.ForeignKey(
+        'self', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='created_users',
+    )
+    updated_by = models.ForeignKey(
+        'self', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='updated_users',
+    )
     last_ip_address = models.GenericIPAddressField(blank=True, null=True)
     user_agent = models.CharField(max_length=500, blank=True)
     last_activity = models.DateTimeField(null=True, blank=True)
@@ -153,12 +188,19 @@ class User(AbstractBaseUser, PermissionsMixin):
         return f'{self.username} ({self.email})'
 
     def clean(self):
-        from django.core.exceptions import ValidationError
         if self.email:
             self.email = self.__class__.objects.normalize_email(self.email)
 
+    def set_password(self, raw_password):
+        super().set_password(raw_password)
+        now = timezone.now()
+        self.password_changed_at = now
+        self.last_password_changed_at = now
+
     def save(self, *args, **kwargs):
         is_new = self._state.adding
+        if self.status == self.AccountStatus.LOCKED and self.account_locked_until is None and self.is_active:
+            self.status = self.AccountStatus.ACTIVE
         super().save(*args, **kwargs)
         if is_new:
             logger.info(f'User created: {self.email} (ID: {self.id})')
@@ -168,10 +210,27 @@ class User(AbstractBaseUser, PermissionsMixin):
         return f'{self.first_name} {self.last_name}'.strip()
 
     @property
+    def locked_until(self):
+        return self.account_locked_until
+
+    @locked_until.setter
+    def locked_until(self, value):
+        self.account_locked_until = value
+
+    @property
+    def mfa_enabled(self):
+        return self.is_2fa_enabled
+
+    @mfa_enabled.setter
+    def mfa_enabled(self, value):
+        self.is_2fa_enabled = value
+
+    @property
     def is_account_locked(self):
-        if self.account_locked_until and timezone.now() < self.account_locked_until:
-            return True
-        return False
+        lock_until = self.account_locked_until
+        if lock_until:
+            return timezone.now() < lock_until
+        return self.status == self.AccountStatus.LOCKED
 
     @property
     def active_sessions_count(self):
@@ -202,15 +261,22 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def record_failed_login(self):
         self.failed_login_attempts += 1
-        if self.failed_login_attempts >= 5:
-            self.account_locked_until = timezone.now() + timezone.timedelta(minutes=15)
-            logger.warning(f'Account locked for {self.email} due to 5 failed login attempts')
-        self.save(update_fields=['failed_login_attempts', 'account_locked_until'])
+        update_fields = ['failed_login_attempts']
+        max_attempts = getattr(settings, 'LOGIN_MAX_FAILED_ATTEMPTS', 5)
+        lockout_minutes = getattr(settings, 'LOGIN_LOCKOUT_MINUTES', 15)
+        if self.failed_login_attempts >= max_attempts:
+            self.account_locked_until = timezone.now() + timezone.timedelta(minutes=lockout_minutes)
+            self.status = self.AccountStatus.LOCKED
+            update_fields.extend(['account_locked_until', 'status'])
+            logger.warning('Account locked after repeated failed login attempts', extra={'user_id': str(self.id)})
+        self.save(update_fields=update_fields)
 
     def reset_failed_login(self):
         self.failed_login_attempts = 0
         self.account_locked_until = None
-        self.save(update_fields=['failed_login_attempts', 'account_locked_until'])
+        if self.status == self.AccountStatus.LOCKED:
+            self.status = self.AccountStatus.ACTIVE if self.is_active else self.AccountStatus.INACTIVE
+        self.save(update_fields=['failed_login_attempts', 'account_locked_until', 'status'])
 
 
 class UserPermission(models.Model):
@@ -432,13 +498,15 @@ class TwoFactorAuth(models.Model):
         return f'{self.user.username} - 2FA: {self.is_active}'
 
     def generate_backup_codes(self, count=8):
-        codes = []
+        plaintext_codes = []
+        hashed_codes = []
         for _ in range(count):
             code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
-            codes.append(hashlib.sha256(code.encode()).hexdigest())
-        self.backup_codes = codes
+            plaintext_codes.append(code)
+            hashed_codes.append(hashlib.sha256(code.encode()).hexdigest())
+        self.backup_codes = hashed_codes
         self.save(update_fields=['backup_codes'])
-        return codes
+        return plaintext_codes
 
     def verify_backup_code(self, code):
         hashed = hashlib.sha256(code.encode()).hexdigest()
@@ -468,3 +536,57 @@ class NotificationPreference(models.Model):
 
     def __str__(self):
         return f'{self.user.username} preferences'
+
+
+class UserPasswordHistory(models.Model):
+    """One-way password history used to prevent recent password reuse."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='password_history')
+    password_hash = models.CharField(max_length=256)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['user', '-created_at'])]
+
+    def __str__(self):
+        return f'{self.user.username} password history ({self.created_at})'
+
+
+class SSOProviderConfig(models.Model):
+    """Database-backed OIDC/SAML readiness configuration; disabled by default."""
+
+    class Provider(models.TextChoices):
+        OIDC = 'OIDC', 'OpenID Connect'
+        SAML = 'SAML', 'SAML 2.0'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=100, unique=True)
+    provider = models.CharField(max_length=20, choices=Provider.choices, default=Provider.OIDC)
+    enabled = models.BooleanField(default=False)
+    issuer_url = models.URLField(blank=True, default='')
+    authorization_url = models.URLField(blank=True, default='')
+    token_url = models.URLField(blank=True, default='')
+    client_id = models.CharField(max_length=255, blank=True, default='')
+    client_secret_encrypted = models.TextField(blank=True, default='')
+    scopes = models.JSONField(default=list, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_sso_configs'
+    )
+    updated_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='updated_sso_configs'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return f'{self.name} ({self.provider})'
+
+    @property
+    def is_configured(self):
+        return bool(self.enabled and self.client_id and self.issuer_url)

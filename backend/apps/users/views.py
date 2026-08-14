@@ -1,24 +1,35 @@
 import logging
 
-from rest_framework import viewsets, generics, status, permissions
+from django.utils import timezone
+from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.utils import timezone
-from django.db import transaction
 
-from apps.core.permissions import IsAdminUser, IsOwnerOrAdmin, HasModulePermission, OrPermission
+from apps.authentication import services as iam_services
 from apps.core.pagination import StandardPagination
+from apps.core.permissions import HasModulePermission, IsAdminUser, IsOwnerOrAdmin, OrPermission
+
 from .models import (
-    User, UserGroup, UserPermission, PermissionGroup,
-    UserSession, UserActivityLog,
+    PermissionGroup,
+    User,
+    UserActivityLog,
+    UserGroup,
+    UserPermission,
+    UserSession,
 )
 from .serializers import (
-    UserListSerializer, UserDetailSerializer, UserCreateSerializer,
-    UserUpdateSerializer, UserProfileSerializer,
-    UserGroupSerializer, UserGroupDetailSerializer,
-    UserPermissionSerializer, PermissionGroupSerializer,
-    UserSessionSerializer, UserActivityLogSerializer,
     ChangePasswordSerializer,
+    PermissionGroupSerializer,
+    UserActivityLogSerializer,
+    UserCreateSerializer,
+    UserDetailSerializer,
+    UserGroupDetailSerializer,
+    UserGroupSerializer,
+    UserListSerializer,
+    UserPermissionSerializer,
+    UserProfileSerializer,
+    UserSessionSerializer,
+    UserUpdateSerializer,
 )
 
 logger = logging.getLogger('apps.users.views')
@@ -85,22 +96,31 @@ class UserViewSet(viewsets.ModelViewSet):
     def change_password(self, request):
         serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
-        request.user.set_password(serializer.validated_data['new_password'])
-        request.user.must_change_password = False
-        request.user.password_changed_at = timezone.now()
-        request.user.save()
-        UserActivityLog.objects.create(
-            user=request.user,
-            action_type='PASSWORD_CHANGE',
-            ip_address=request.META.get('REMOTE_ADDR'),
-            user_agent=request.META.get('HTTP_USER_AGENT', '')[:255],
-            details={'password_changed_at': timezone.now().isoformat()},
-        )
+        try:
+            iam_services.set_password(request.user, serializer.validated_data['new_password'], request)
+        except iam_services.IAMServiceError as exc:
+            return Response({'error': exc.message}, status=status.HTTP_400_BAD_REQUEST)
         return Response({
             'success': True,
             'status_code': 200,
             'message': 'Password changed successfully',
             'data': None,
+            'meta': {'timestamp': timezone.now().isoformat(), 'version': 'v1'},
+        })
+
+    @action(detail=True, methods=['post'])
+    def reset_mfa(self, request, pk=None):
+        user = self.get_object()
+        try:
+            iam_services.reset_user_mfa(actor=request.user, user=user, request=request)
+        except iam_services.IAMServiceError as exc:
+            code = status.HTTP_403_FORBIDDEN if exc.code == 'forbidden' else status.HTTP_400_BAD_REQUEST
+            return Response({'error': exc.message}, status=code)
+        return Response({
+            'success': True,
+            'status_code': 200,
+            'message': f'MFA reset for {user.username}',
+            'data': {'user_id': str(user.id), 'mfa_enabled': False, 'mfa_required': False},
             'meta': {'timestamp': timezone.now().isoformat(), 'version': 'v1'},
         })
 

@@ -1,8 +1,8 @@
 import os
 from datetime import timedelta
+from pathlib import Path
 
 import environ
-from pathlib import Path
 
 env = environ.Env(
     DEBUG=(bool, False),
@@ -17,6 +17,12 @@ env.read_env(os.path.join(BASE_DIR, '.env'))
 DEBUG = env('DEBUG')
 SECRET_KEY = env('DJANGO_SECRET_KEY', default='insecure-dev-key-change-in-production')
 ZIC_RELEASE_VERSION = env('ZIC_RELEASE_VERSION', default='1.0.0')
+PASSWORD_HISTORY_COUNT = env.int('PASSWORD_HISTORY_COUNT', default=5)
+LOGIN_MAX_FAILED_ATTEMPTS = env.int('LOGIN_MAX_FAILED_ATTEMPTS', default=5)
+LOGIN_LOCKOUT_MINUTES = env.int('LOGIN_LOCKOUT_MINUTES', default=15)
+MFA_REQUIRED_FOR_STAFF = env.bool('MFA_REQUIRED_FOR_STAFF', default=False)
+SSO_ENABLED = env.bool('SSO_ENABLED', default=False)
+SSO_DEFAULT_PROVIDER = env('SSO_DEFAULT_PROVIDER', default='')
 
 ALLOWED_HOSTS = env('ALLOWED_HOSTS')
 
