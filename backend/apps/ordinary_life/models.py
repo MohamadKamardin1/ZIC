@@ -913,6 +913,13 @@ class OLPaymentObligation(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     proposal = models.ForeignKey(OLProposal, on_delete=models.PROTECT, related_name="payment_obligations", null=True, blank=True)
     policy = models.ForeignKey(OLPolicy, on_delete=models.PROTECT, related_name="payment_obligations", null=True, blank=True)
+    installment = models.ForeignKey(
+        "OLPremiumInstallment",
+        on_delete=models.PROTECT,
+        related_name="payment_obligations",
+        null=True,
+        blank=True,
+    )
     obligation_type = models.CharField(max_length=30, choices=OBLIGATION_CHOICES)
     amount = models.DecimalField(max_digits=14, decimal_places=2)
     allocated_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
@@ -925,7 +932,13 @@ class OLPaymentObligation(models.Model):
     class Meta:
         db_table = "ol_payment_obligation"
         constraints = [
-            models.CheckConstraint(check=Q(proposal__isnull=False) | Q(policy__isnull=False), name="ol_payment_obligation_has_parent"),
+            models.CheckConstraint(
+                check=(
+                    Q(proposal__isnull=False, policy__isnull=True)
+                    | Q(proposal__isnull=True, policy__isnull=False)
+                ),
+                name="ol_payment_obligation_exactly_one_parent",
+            ),
             models.CheckConstraint(check=Q(amount__gt=0), name="ol_payment_obligation_positive_amount"),
             models.CheckConstraint(check=Q(allocated_amount__gte=0) & Q(allocated_amount__lte=F("amount")), name="ol_payment_obligation_valid_allocation"),
         ]
@@ -1013,7 +1026,7 @@ class OLPremiumInstallment(models.Model):
 
 
 class OLPolicyTransaction(models.Model):
-    TYPE_CHOICES = (("ISSUANCE", "Issuance"), ("ENDORSEMENT", "Endorsement"), ("PAYMENT", "Payment"), ("LOAN", "Loan"), ("WITHDRAWAL", "Withdrawal"), ("SURRENDER", "Surrender"), ("PAID_UP", "Paid up"), ("REINSTATEMENT", "Reinstatement"), ("RENEWAL", "Renewal"), ("MATURITY", "Maturity"), ("CANCELLATION", "Cancellation"))
+    TYPE_CHOICES = (("ISSUANCE", "Issuance"), ("ENDORSEMENT", "Endorsement"), ("PAYMENT", "Payment"), ("LOAN", "Loan"), ("WITHDRAWAL", "Withdrawal"), ("SURRENDER", "Surrender"), ("PAID_UP", "Paid up"), ("REINSTATEMENT", "Reinstatement"), ("RENEWAL", "Renewal"), ("MATURITY", "Maturity"), ("CANCELLATION", "Cancellation"), ("STATUS_CHANGE", "Status change"))
     STATUS_CHOICES = (("PENDING", "Pending"), ("APPROVED", "Approved"), ("POSTED", "Posted"), ("REVERSED", "Reversed"), ("CANCELLED", "Cancelled"))
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     transaction_number = models.CharField(max_length=100, unique=True)
@@ -1027,6 +1040,9 @@ class OLPolicyTransaction(models.Model):
     idempotency_key = models.CharField(max_length=120, null=True, blank=True, unique=True)
     before_snapshot = models.JSONField(default=dict, blank=True)
     after_snapshot = models.JSONField(default=dict, blank=True)
+    source_channel = models.CharField(max_length=20, default="SYSTEM")
+    correlation_id = models.CharField(max_length=100, blank=True)
+    external_reference = models.CharField(max_length=120, blank=True)
     created_by = models.ForeignKey("users.User", on_delete=models.PROTECT, null=True, blank=True, related_name="ordinary_life_policy_transactions")
     created_at = models.DateTimeField(auto_now_add=True)
     posted_at = models.DateTimeField(null=True, blank=True)
@@ -1054,6 +1070,15 @@ class OLEndorsement(models.Model):
     approved_by = models.ForeignKey("users.User", on_delete=models.PROTECT, null=True, blank=True, related_name="approved_ordinary_life_endorsements")
     approved_at = models.DateTimeField(null=True, blank=True)
     applied_at = models.DateTimeField(null=True, blank=True)
+    before_snapshot = models.JSONField(default=dict, blank=True)
+    after_snapshot = models.JSONField(default=dict, blank=True)
+    applied_transaction = models.ForeignKey(
+        "OLPolicyTransaction",
+        on_delete=models.PROTECT,
+        related_name="applied_endorsements",
+        null=True,
+        blank=True,
+    )
     created_by = models.ForeignKey("users.User", on_delete=models.PROTECT, null=True, blank=True, related_name="created_ordinary_life_endorsements")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1061,6 +1086,103 @@ class OLEndorsement(models.Model):
     class Meta:
         db_table = "ol_endorsement"
         ordering = ["-created_at"]
+        indexes = [models.Index(fields=["policy", "status"])]
+
+
+class OLPolicyRenewal(models.Model):
+    STATUS_CHOICES = (
+        ("DRAFT", "Draft"),
+        ("SUBMITTED", "Submitted"),
+        ("APPROVAL_PENDING", "Approval pending"),
+        ("APPROVED", "Approved"),
+        ("DECLINED", "Declined"),
+        ("APPLIED", "Applied"),
+        ("CANCELLED", "Cancelled"),
+    )
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    renewal_number = models.CharField(max_length=100, unique=True)
+    policy = models.ForeignKey(OLPolicy, on_delete=models.PROTECT, related_name="renewals")
+    requested_effective_date = models.DateField()
+    new_end_date = models.DateField()
+    premium_amount = models.DecimalField(max_digits=14, decimal_places=2)
+    currency = models.CharField(max_length=3, default="TZS")
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default="DRAFT")
+    reason = models.TextField(blank=True)
+    before_snapshot = models.JSONField(default=dict, blank=True)
+    after_snapshot = models.JSONField(default=dict, blank=True)
+    approved_by = models.ForeignKey(
+        "users.User", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="approved_ordinary_life_renewals",
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    applied_at = models.DateTimeField(null=True, blank=True)
+    applied_transaction = models.ForeignKey(
+        "OLPolicyTransaction", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="applied_renewals",
+    )
+    payment_obligation = models.ForeignKey(
+        "OLPaymentObligation", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="renewal_requests",
+    )
+    created_by = models.ForeignKey(
+        "users.User", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="created_ordinary_life_renewals",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "ol_policy_renewal"
+        ordering = ["-created_at"]
+        constraints = [models.CheckConstraint(check=Q(premium_amount__gt=0), name="ol_policy_renewal_positive_premium")]
+        indexes = [models.Index(fields=["policy", "status"])]
+
+
+class OLReinstatementRequest(models.Model):
+    STATUS_CHOICES = (
+        ("DRAFT", "Draft"),
+        ("SUBMITTED", "Submitted"),
+        ("APPROVAL_PENDING", "Approval pending"),
+        ("APPROVED", "Approved"),
+        ("DECLINED", "Declined"),
+        ("APPLIED", "Applied"),
+        ("CANCELLED", "Cancelled"),
+    )
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    request_number = models.CharField(max_length=100, unique=True)
+    policy = models.ForeignKey(OLPolicy, on_delete=models.PROTECT, related_name="reinstatement_requests")
+    requested_effective_date = models.DateField()
+    arrears_amount = models.DecimalField(max_digits=14, decimal_places=2)
+    currency = models.CharField(max_length=3, default="TZS")
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default="DRAFT")
+    reason = models.TextField(blank=True)
+    before_snapshot = models.JSONField(default=dict, blank=True)
+    after_snapshot = models.JSONField(default=dict, blank=True)
+    approved_by = models.ForeignKey(
+        "users.User", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="approved_ordinary_life_reinstatements",
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    applied_at = models.DateTimeField(null=True, blank=True)
+    applied_transaction = models.ForeignKey(
+        "OLPolicyTransaction", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="applied_reinstatements",
+    )
+    payment_obligation = models.ForeignKey(
+        "OLPaymentObligation", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="reinstatement_requests",
+    )
+    created_by = models.ForeignKey(
+        "users.User", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="created_ordinary_life_reinstatements",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "ol_reinstatement_request"
+        ordering = ["-created_at"]
+        constraints = [models.CheckConstraint(check=Q(arrears_amount__gt=0), name="ol_reinstatement_positive_arrears")]
         indexes = [models.Index(fields=["policy", "status"])]
 
 
