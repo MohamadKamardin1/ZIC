@@ -14,6 +14,20 @@ import {
   listContacts,
   listBankAccounts,
   getChoices,
+  fetchDocumentRequirements,
+  fetchFieldConfigurations,
+  fetchContactRequirements,
+  fetchBankRequirements,
+  getAssignmentFieldValues,
+  updateAssignmentFieldValues,
+  getAssignmentContacts,
+  createAssignmentContact,
+  updateAssignmentContact,
+  deleteAssignmentContact,
+  getAssignmentBankAccounts,
+  createAssignmentBankAccount,
+  updateAssignmentBankAccount,
+  deleteAssignmentBankAccount,
   uploadDocument,
   deleteDocument,
   verifyDocument,
@@ -33,6 +47,13 @@ import type {
   ApplicationPartnerType,
   ApplicationContact,
   ApplicationBankAccount,
+  ApplicationFieldValue,
+  PartnerTypeDocumentRequirement,
+  PartnerTypeFieldConfiguration,
+  PartnerTypeContactRequirement,
+  PartnerTypeBankRequirement,
+  PartnerAssignmentContact,
+  PartnerAssignmentBankAccount,
   ChoicesResponse,
 } from "../../lib/types"
 import { useStatusLabel, useStatusColor } from "../../config/ConfigurationHooks"
@@ -693,7 +714,6 @@ function PartnerTypeTab({
           onClose={() => setEditing(null)}
           onRefresh={onRefresh}
           onSaved={async () => {
-            setEditing(null)
             await onRefresh()
           }}
         />
@@ -734,6 +754,170 @@ function PartnerTypeSetupModal({
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const locations = (choices?.locations ?? []).filter((item) => !branch || item.branchId === branch)
   const assignmentDocuments = documents.filter((document) => document.applicationPartnerType === assignment.id)
+  const [activeSection, setActiveSection] = useState<"overview" | "documents" | "contacts" | "banks" | "fields">("overview")
+  const [setupLoading, setSetupLoading] = useState(true)
+  const [documentRequirements, setDocumentRequirements] = useState<PartnerTypeDocumentRequirement[]>([])
+  const [fieldConfigurations, setFieldConfigurations] = useState<PartnerTypeFieldConfiguration[]>([])
+  const [contactRequirements, setContactRequirements] = useState<PartnerTypeContactRequirement[]>([])
+  const [bankRequirements, setBankRequirements] = useState<PartnerTypeBankRequirement[]>([])
+  const [fieldValues, setFieldValues] = useState<Record<string, unknown>>({})
+  const [assignmentContacts, setAssignmentContacts] = useState<PartnerAssignmentContact[]>([])
+  const [assignmentBanks, setAssignmentBanks] = useState<PartnerAssignmentBankAccount[]>([])
+  const [contactDraft, setContactDraft] = useState({ requirement: "", firstName: "", lastName: "", email: "", phone: "", mobile: "", designation: "", isPrimary: false, notes: "" })
+  const [bankDraft, setBankDraft] = useState({ requirement: "", bankName: "", branchName: "", accountName: "", accountNumber: "", swiftCode: "", currency: "TZS", isPrimary: false, notes: "" })
+
+  const loadAssignmentSetup = useCallback(async () => {
+    setSetupLoading(true)
+    try {
+      const [docs, fields, contactsReqs, banksReqs, values, savedContacts, savedBanks] = await Promise.all([
+        fetchDocumentRequirements(assignment.partnerType),
+        fetchFieldConfigurations(assignment.partnerType),
+        fetchContactRequirements(assignment.partnerType),
+        fetchBankRequirements(assignment.partnerType),
+        getAssignmentFieldValues(assignment.id),
+        getAssignmentContacts(assignment.id),
+        getAssignmentBankAccounts(assignment.id),
+      ])
+      setDocumentRequirements(docs.filter((item) => item.isActive))
+      setFieldConfigurations(fields.filter((item) => item.isActive).sort((a, b) => a.displayOrder - b.displayOrder))
+      setContactRequirements(contactsReqs.filter((item) => item.isActive).sort((a, b) => a.displayOrder - b.displayOrder))
+      setBankRequirements(banksReqs.filter((item) => item.isActive).sort((a, b) => a.displayOrder - b.displayOrder))
+      setFieldValues(Object.fromEntries(values.map((item) => [item.fieldConfig, item.valueJson])))
+      setAssignmentContacts(savedContacts)
+      setAssignmentBanks(savedBanks)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to load configured partner-type requirements")
+    } finally {
+      setSetupLoading(false)
+    }
+  }, [assignment.id, assignment.partnerType])
+
+  useEffect(() => { void loadAssignmentSetup() }, [loadAssignmentSetup])
+
+  async function saveConfiguredFields() {
+    const missing = fieldConfigurations.find((config) => config.isRequired && (fieldValues[config.id] === undefined || fieldValues[config.id] === null || String(fieldValues[config.id]).trim() === ""))
+    if (missing) {
+      setError(`Complete the required field: ${missing.fieldName}.`)
+      return
+    }
+    try {
+      await updateAssignmentFieldValues(assignment.id, fieldConfigurations.map((config) => ({
+        field_config: config.id,
+        value_json: fieldValues[config.id] ?? null,
+      })))
+      setError("")
+      await loadAssignmentSetup()
+      await onRefresh()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to save configured fields")
+    }
+  }
+
+  async function saveContact() {
+    if (!contactDraft.requirement || !contactDraft.firstName.trim() || !contactDraft.lastName.trim()) {
+      setError("Select the configured contact requirement and provide the contact name.")
+      return
+    }
+    try {
+      const requirement = contactRequirements.find((item) => item.id === contactDraft.requirement)
+      await createAssignmentContact(assignment.id, {
+        contact_requirement: contactDraft.requirement,
+        contact_type: requirement?.contactType ?? "OTHER",
+        first_name: contactDraft.firstName.trim(),
+        last_name: contactDraft.lastName.trim(),
+        email: contactDraft.email.trim(),
+        phone: contactDraft.phone.trim(),
+        mobile: contactDraft.mobile.trim(),
+        designation: contactDraft.designation.trim(),
+        is_primary: contactDraft.isPrimary,
+        notes: contactDraft.notes.trim(),
+      })
+      setContactDraft({ requirement: "", firstName: "", lastName: "", email: "", phone: "", mobile: "", designation: "", isPrimary: false, notes: "" })
+      setError("")
+      await loadAssignmentSetup()
+      await onRefresh()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to save contact")
+    }
+  }
+
+  async function saveBank() {
+    if (!bankDraft.requirement || !bankDraft.bankName.trim() || !bankDraft.accountName.trim() || !bankDraft.accountNumber.trim()) {
+      setError("Select the configured bank requirement and provide bank, account name, and account number.")
+      return
+    }
+    try {
+      const requirement = bankRequirements.find((item) => item.id === bankDraft.requirement)
+      await createAssignmentBankAccount(assignment.id, {
+        bank_requirement: bankDraft.requirement,
+        bank_type: requirement?.bankType ?? "OTHER",
+        bank_name: bankDraft.bankName.trim(),
+        branch_name: bankDraft.branchName.trim(),
+        account_name: bankDraft.accountName.trim(),
+        account_number: bankDraft.accountNumber.trim(),
+        swift_code: bankDraft.swiftCode.trim(),
+        currency: bankDraft.currency.trim() || "TZS",
+        is_primary: bankDraft.isPrimary,
+        notes: bankDraft.notes.trim(),
+      })
+      setBankDraft({ requirement: "", bankName: "", branchName: "", accountName: "", accountNumber: "", swiftCode: "", currency: "TZS", isPrimary: false, notes: "" })
+      setError("")
+      await loadAssignmentSetup()
+      await onRefresh()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to save bank account")
+    }
+  }
+
+  async function removeContact(contact: PartnerAssignmentContact) {
+    try {
+      await deleteAssignmentContact(assignment.id, contact.id)
+      await loadAssignmentSetup()
+      await onRefresh()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to remove contact")
+    }
+  }
+
+  async function removeBank(bank: PartnerAssignmentBankAccount) {
+    try {
+      await deleteAssignmentBankAccount(assignment.id, bank.id)
+      await loadAssignmentSetup()
+      await onRefresh()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to remove bank account")
+    }
+  }
+
+  async function editContact(contact: PartnerAssignmentContact) {
+    const firstName = window.prompt("First name", contact.firstName)
+    if (firstName === null) return
+    const lastName = window.prompt("Last name", contact.lastName)
+    if (lastName === null) return
+    const email = window.prompt("Email", contact.email)
+    if (email === null) return
+    try {
+      await updateAssignmentContact(assignment.id, contact.id, { first_name: firstName.trim(), last_name: lastName.trim(), email: email.trim() })
+      await loadAssignmentSetup()
+      await onRefresh()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to update contact")
+    }
+  }
+
+  async function editBank(bank: PartnerAssignmentBankAccount) {
+    const accountName = window.prompt("Account name", bank.accountName)
+    if (accountName === null) return
+    const accountNumber = window.prompt("Account number", bank.accountNumber)
+    if (accountNumber === null) return
+    try {
+      await updateAssignmentBankAccount(assignment.id, bank.id, { account_name: accountName.trim(), account_number: accountNumber.trim() })
+      await loadAssignmentSetup()
+      await onRefresh()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to update bank account")
+    }
+  }
 
   async function uploadAssignmentDocument() {
     if (!selectedFile || !documentType) {
@@ -788,7 +972,7 @@ function PartnerTypeSetupModal({
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/45 p-4" role="dialog" aria-modal="true" aria-label="Partner type setup">
-      <div className="flex max-h-[min(760px,calc(100vh-2rem))] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+      <div className="flex max-h-[calc(100vh-1rem)] w-full max-w-[96vw] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl sm:max-h-[calc(100vh-2rem)] 2xl:max-w-[1800px]">
         <div className="flex items-start justify-between border-b border-border px-6 py-5">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Assigned partner type</p>
@@ -799,7 +983,14 @@ function PartnerTypeSetupModal({
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="grid gap-6 overflow-y-auto p-6 md:grid-cols-[1.1fr_.9fr]">
+        <div className="border-b border-border bg-secondary/20 px-6 py-3">
+          <div className="flex flex-wrap gap-2" role="tablist" aria-label="Partner type setup sections">
+            {([ ["overview", "Overview"], ["documents", `Documents (${assignmentDocuments.length}/${documentRequirements.length})`], ["contacts", `Contacts (${assignmentContacts.length}/${contactRequirements.length})`], ["banks", `Banks (${assignmentBanks.length}/${bankRequirements.length})`], ["fields", `Other information (${fieldConfigurations.length})`] ] as const).map(([key, label]) => (
+              <button key={key} type="button" onClick={() => setActiveSection(key)} className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${activeSection === key ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground hover:bg-secondary hover:text-foreground"}`} role="tab" aria-selected={activeSection === key}>{label}</button>
+            ))}
+          </div>
+        </div>
+        <div className="grid min-h-0 flex-1 gap-6 overflow-y-auto p-4 sm:p-6 2xl:grid-cols-[minmax(0,1.75fr)_minmax(360px,.65fr)]">
           <div className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="space-y-1.5 text-sm font-medium text-foreground">
@@ -839,7 +1030,7 @@ function PartnerTypeSetupModal({
               <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
                 <select value={documentType} onChange={(event) => setDocumentType(event.target.value)} className="rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30">
                   <option value="">Select document type</option>
-                  {(choices?.documentTypes ?? []).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                  {documentRequirements.map((item) => <option key={item.id} value={item.code}>{item.code}{item.isRequired || item.isMandatory ? " · Required" : ""}</option>)}
                 </select>
                 <input type="file" onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} className="min-w-0 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground file:mr-3 file:border-0 file:bg-transparent file:text-sm file:font-medium" />
                 <button onClick={uploadAssignmentDocument} disabled={uploading || !selectedFile || !documentType} className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50">
@@ -863,6 +1054,85 @@ function PartnerTypeSetupModal({
                 ))}
               </div>
             </section>
+            <section className="rounded-xl border border-border bg-background p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground">Configured information</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">Complete the fields configured for {assignment.partnerTypeName}. Required fields are marked.</p>
+                </div>
+                <button type="button" onClick={saveConfiguredFields} disabled={setupLoading || fieldConfigurations.length === 0} className="rounded-lg border border-border px-3 py-2 text-xs font-semibold text-foreground transition hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50">Save information</button>
+              </div>
+              {fieldConfigurations.length === 0 ? (
+                <p className="mt-4 rounded-lg border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">No additional information has been configured for this partner type.</p>
+              ) : (
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  {fieldConfigurations.map((config) => {
+                    const value = fieldValues[config.id] ?? config.defaultValue ?? ""
+                    const inputType = config.fieldType === "NUMBER" || config.fieldType === "CURRENCY" || config.fieldType === "PERCENTAGE" ? "number" : config.fieldType === "DATE" ? "date" : "text"
+                    return (
+                      <label key={config.id} className="space-y-1.5 text-sm font-medium text-foreground">
+                        <span>{config.fieldName}{config.isRequired ? <span className="ml-1 text-muted-foreground">*</span> : null}</span>
+                        {config.fieldType === "BOOLEAN" ? (
+                          <span className="flex items-center gap-2 rounded-lg border border-input px-3 py-2.5 font-normal"><input type="checkbox" checked={Boolean(value)} onChange={(event) => setFieldValues((prev) => ({ ...prev, [config.id]: event.target.checked }))} className="h-4 w-4 accent-black" /> Yes</span>
+                        ) : config.fieldType === "MULTI_SELECT" ? (
+                          <input value={Array.isArray(value) ? value.join(", ") : String(value)} onChange={(event) => setFieldValues((prev) => ({ ...prev, [config.id]: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) }))} placeholder="Enter values separated by commas" className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/30" />
+                        ) : (
+                          <input type={inputType} value={String(value)} onChange={(event) => setFieldValues((prev) => ({ ...prev, [config.id]: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/30" />
+                        )}
+                        <span className="block text-[11px] font-normal uppercase tracking-wide text-muted-foreground">{config.fieldCode} · {config.fieldType}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
+            </section>
+
+            <section className="rounded-xl border border-border bg-background p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground">Configured contacts</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">Capture the contact roles required by the parameter configuration.</p>
+                </div>
+                <span className="rounded-full border border-border px-2 py-1 text-xs font-semibold text-foreground">{assignmentContacts.length}/{contactRequirements.length}</span>
+              </div>
+              <div className="mt-4 grid gap-3 rounded-lg border border-dashed border-border p-3 sm:grid-cols-2 lg:grid-cols-4">
+                <select value={contactDraft.requirement} onChange={(event) => setContactDraft((prev) => ({ ...prev, requirement: event.target.value }))} className="rounded-lg border border-input bg-background px-3 py-2 text-sm"><option value="">Contact requirement</option>{contactRequirements.map((item) => <option key={item.id} value={item.id}>{item.contactType}{item.isRequired ? " · Required" : ""}</option>)}</select>
+                <input value={contactDraft.firstName} onChange={(event) => setContactDraft((prev) => ({ ...prev, firstName: event.target.value }))} placeholder="First name" className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+                <input value={contactDraft.lastName} onChange={(event) => setContactDraft((prev) => ({ ...prev, lastName: event.target.value }))} placeholder="Last name" className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+                <input value={contactDraft.designation} onChange={(event) => setContactDraft((prev) => ({ ...prev, designation: event.target.value }))} placeholder="Designation" className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+                <input value={contactDraft.email} onChange={(event) => setContactDraft((prev) => ({ ...prev, email: event.target.value }))} placeholder="Email" type="email" className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+                <input value={contactDraft.phone} onChange={(event) => setContactDraft((prev) => ({ ...prev, phone: event.target.value }))} placeholder="Telephone" className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+                <input value={contactDraft.mobile} onChange={(event) => setContactDraft((prev) => ({ ...prev, mobile: event.target.value }))} placeholder="Mobile" className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+                <button type="button" onClick={saveContact} className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground"><Plus className="h-4 w-4" />Add contact</button>
+              </div>
+              <div className="mt-4 overflow-x-auto rounded-lg border border-border">
+                {assignmentContacts.length === 0 ? <p className="px-3 py-4 text-sm text-muted-foreground">No contacts captured yet.</p> : <table className="w-full min-w-[640px] text-sm"><thead className="bg-secondary/30 text-left text-xs uppercase tracking-wide text-muted-foreground"><tr><th className="border-r border-border px-3 py-2">Requirement</th><th className="border-r border-border px-3 py-2">Contact</th><th className="border-r border-border px-3 py-2">Email</th><th className="px-3 py-2 text-right">Actions</th></tr></thead><tbody className="divide-y divide-border">{assignmentContacts.map((contact) => <tr key={contact.id}><td className="border-r border-border px-3 py-2">{contactRequirements.find((item) => item.id === contact.contactRequirement)?.contactType ?? contact.configContactType}</td><td className="border-r border-border px-3 py-2 font-medium">{contact.firstName} {contact.lastName}{contact.isPrimary ? " · Primary" : ""}</td><td className="border-r border-border px-3 py-2 text-muted-foreground">{contact.email || contact.mobile || contact.phone || "—"}</td><td className="px-3 py-2 text-right"><button type="button" onClick={() => editContact(contact)} className="mr-2 text-xs font-semibold underline">Edit</button><button type="button" onClick={() => removeContact(contact)} className="text-xs font-semibold text-muted-foreground underline">Remove</button></td></tr>)}</tbody></table>}
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-border bg-background p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground">Configured bank information</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">Store the bank accounts required for this assigned partner type.</p>
+                </div>
+                <span className="rounded-full border border-border px-2 py-1 text-xs font-semibold text-foreground">{assignmentBanks.length}/{bankRequirements.length}</span>
+              </div>
+              <div className="mt-4 grid gap-3 rounded-lg border border-dashed border-border p-3 sm:grid-cols-2 lg:grid-cols-4">
+                <select value={bankDraft.requirement} onChange={(event) => setBankDraft((prev) => ({ ...prev, requirement: event.target.value }))} className="rounded-lg border border-input bg-background px-3 py-2 text-sm"><option value="">Bank requirement</option>{bankRequirements.map((item) => <option key={item.id} value={item.id}>{item.bankType}{item.isRequired ? " · Required" : ""}</option>)}</select>
+                <input value={bankDraft.bankName} onChange={(event) => setBankDraft((prev) => ({ ...prev, bankName: event.target.value }))} placeholder="Bank name" className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+                <input value={bankDraft.branchName} onChange={(event) => setBankDraft((prev) => ({ ...prev, branchName: event.target.value }))} placeholder="Branch" className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+                <input value={bankDraft.accountName} onChange={(event) => setBankDraft((prev) => ({ ...prev, accountName: event.target.value }))} placeholder="Account name" className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+                <input value={bankDraft.accountNumber} onChange={(event) => setBankDraft((prev) => ({ ...prev, accountNumber: event.target.value }))} placeholder="Account number" className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+                <input value={bankDraft.swiftCode} onChange={(event) => setBankDraft((prev) => ({ ...prev, swiftCode: event.target.value }))} placeholder="SWIFT code" className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+                <input value={bankDraft.currency} onChange={(event) => setBankDraft((prev) => ({ ...prev, currency: event.target.value }))} placeholder="Currency" className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+                <button type="button" onClick={saveBank} className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground"><Plus className="h-4 w-4" />Add bank account</button>
+              </div>
+              <div className="mt-4 overflow-x-auto rounded-lg border border-border">
+                {assignmentBanks.length === 0 ? <p className="px-3 py-4 text-sm text-muted-foreground">No bank accounts captured yet.</p> : <table className="w-full min-w-[720px] text-sm"><thead className="bg-secondary/30 text-left text-xs uppercase tracking-wide text-muted-foreground"><tr><th className="border-r border-border px-3 py-2">Requirement</th><th className="border-r border-border px-3 py-2">Bank</th><th className="border-r border-border px-3 py-2">Account</th><th className="px-3 py-2 text-right">Actions</th></tr></thead><tbody className="divide-y divide-border">{assignmentBanks.map((bank) => <tr key={bank.id}><td className="border-r border-border px-3 py-2">{bankRequirements.find((item) => item.id === bank.bankRequirement)?.bankType ?? bank.configBankType}</td><td className="border-r border-border px-3 py-2 font-medium">{bank.bankName} · {bank.branchName || "No branch"}</td><td className="border-r border-border px-3 py-2 text-muted-foreground">{bank.accountName} · {bank.accountNumber}{bank.isPrimary ? " · Primary" : ""}</td><td className="px-3 py-2 text-right"><button type="button" onClick={() => editBank(bank)} className="mr-2 text-xs font-semibold underline">Edit</button><button type="button" onClick={() => removeBank(bank)} className="text-xs font-semibold text-muted-foreground underline">Remove</button></td></tr>)}</tbody></table>}
+              </div>
+            </section>
+
             {error && <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</div>}
           </div>
           <div className="rounded-xl border border-border bg-secondary/30 p-4">

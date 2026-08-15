@@ -1742,6 +1742,23 @@ export async function createAssignmentContact(
   return json.data ?? json
 }
 
+export async function updateAssignmentContact(
+  assignmentId: string,
+  contactId: string,
+  data: Record<string, unknown>,
+): Promise<PartnerAssignmentContact> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/assignments/${assignmentId}/setup/contacts/${contactId}/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const json = await res.json()
+  return json.data ?? json
+}
+
 export async function deleteAssignmentContact(assignmentId: string, contactId: string): Promise<void> {
   const res = await apiFetchAuth(`${PARTNERS_API}/assignments/${assignmentId}/setup/contacts/${contactId}/`, {
     method: "DELETE",
@@ -1763,6 +1780,23 @@ export async function createAssignmentBankAccount(
 ): Promise<PartnerAssignmentBankAccount> {
   const res = await apiFetchAuth(`${PARTNERS_API}/assignments/${assignmentId}/setup/bank-accounts/`, {
     method: "POST",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const json = await res.json()
+  return json.data ?? json
+}
+
+export async function updateAssignmentBankAccount(
+  assignmentId: string,
+  bankId: string,
+  data: Record<string, unknown>,
+): Promise<PartnerAssignmentBankAccount> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/assignments/${assignmentId}/setup/bank-accounts/${bankId}/`, {
+    method: "PATCH",
     body: JSON.stringify(data),
   })
   if (!res.ok) {
