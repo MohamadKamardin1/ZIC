@@ -743,19 +743,26 @@ function PartnerTypeSetupModal({
   onRefresh: () => Promise<void>
   onSaved: () => Promise<void>
 }) {
+  type SetupSection = "documents" | "attributes" | "contacts" | "banks"
+  const steps: { key: SetupSection; label: string; shortLabel: string; icon: React.ReactNode }[] = [
+    { key: "documents", label: "Partner Type Documents", shortLabel: "Documents", icon: <FileCheck className="h-4 w-4" /> },
+    { key: "attributes", label: "Partner Type Attributes Form", shortLabel: "Attributes Form", icon: <Pencil className="h-4 w-4" /> },
+    { key: "contacts", label: "Partner Type Contacts", shortLabel: "Contacts", icon: <Phone className="h-4 w-4" /> },
+    { key: "banks", label: "Partner Type Banks", shortLabel: "Banks", icon: <Landmark className="h-4 w-4" /> },
+  ]
+
   const [branch, setBranch] = useState(assignment.branch ?? "")
   const [region, setRegion] = useState(assignment.region ?? "")
   const [location, setLocation] = useState(assignment.location ?? "")
   const [shareData, setShareData] = useState(assignment.shareDataExternally)
+  const [activeSection, setActiveSection] = useState<SetupSection>("documents")
   const [saving, setSaving] = useState(false)
+  const [setupLoading, setSetupLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState("")
+  const [notice, setNotice] = useState("")
   const [documentType, setDocumentType] = useState("")
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const locations = (choices?.locations ?? []).filter((item) => !branch || item.branchId === branch)
-  const assignmentDocuments = documents.filter((document) => document.applicationPartnerType === assignment.id)
-  const [activeSection, setActiveSection] = useState<"overview" | "documents" | "contacts" | "banks" | "fields">("overview")
-  const [setupLoading, setSetupLoading] = useState(true)
   const [documentRequirements, setDocumentRequirements] = useState<PartnerTypeDocumentRequirement[]>([])
   const [fieldConfigurations, setFieldConfigurations] = useState<PartnerTypeFieldConfiguration[]>([])
   const [contactRequirements, setContactRequirements] = useState<PartnerTypeContactRequirement[]>([])
@@ -763,8 +770,21 @@ function PartnerTypeSetupModal({
   const [fieldValues, setFieldValues] = useState<Record<string, unknown>>({})
   const [assignmentContacts, setAssignmentContacts] = useState<PartnerAssignmentContact[]>([])
   const [assignmentBanks, setAssignmentBanks] = useState<PartnerAssignmentBankAccount[]>([])
+  const [editingContactId, setEditingContactId] = useState<string | null>(null)
+  const [editingBankId, setEditingBankId] = useState<string | null>(null)
   const [contactDraft, setContactDraft] = useState({ requirement: "", firstName: "", lastName: "", email: "", phone: "", mobile: "", designation: "", isPrimary: false, notes: "" })
   const [bankDraft, setBankDraft] = useState({ requirement: "", bankName: "", branchName: "", accountName: "", accountNumber: "", swiftCode: "", currency: "TZS", isPrimary: false, notes: "" })
+
+  const locations = (choices?.locations ?? []).filter((item) => !branch || item.branchId === branch)
+  const assignmentDocuments = documents.filter((document) => document.applicationPartnerType === assignment.id)
+  const activeStepIndex = steps.findIndex((step) => step.key === activeSection)
+  const completedDocuments = documentRequirements.filter((requirement) => assignmentDocuments.some((document) => document.documentType === requirement.code || document.documentName === requirement.code)).length
+  const completedFields = fieldConfigurations.filter((config) => {
+    const value = fieldValues[config.id]
+    return value !== undefined && value !== null && (Array.isArray(value) ? value.length > 0 : String(value).trim() !== "")
+  }).length
+  const completedContacts = contactRequirements.filter((requirement) => assignmentContacts.some((contact) => contact.contactRequirement === requirement.id)).length
+  const completedBanks = bankRequirements.filter((requirement) => assignmentBanks.some((bank) => bank.bankRequirement === requirement.id)).length
 
   const loadAssignmentSetup = useCallback(async () => {
     setSetupLoading(true)
@@ -778,7 +798,7 @@ function PartnerTypeSetupModal({
         getAssignmentContacts(assignment.id),
         getAssignmentBankAccounts(assignment.id),
       ])
-      setDocumentRequirements(docs.filter((item) => item.isActive))
+      setDocumentRequirements(docs.filter((item) => item.isActive).sort((a, b) => a.sortOrder - b.sortOrder))
       setFieldConfigurations(fields.filter((item) => item.isActive).sort((a, b) => a.displayOrder - b.displayOrder))
       setContactRequirements(contactsReqs.filter((item) => item.isActive).sort((a, b) => a.displayOrder - b.displayOrder))
       setBankRequirements(banksReqs.filter((item) => item.isActive).sort((a, b) => a.displayOrder - b.displayOrder))
@@ -794,143 +814,196 @@ function PartnerTypeSetupModal({
 
   useEffect(() => { void loadAssignmentSetup() }, [loadAssignmentSetup])
 
-  async function saveConfiguredFields() {
-    const missing = fieldConfigurations.find((config) => config.isRequired && (fieldValues[config.id] === undefined || fieldValues[config.id] === null || String(fieldValues[config.id]).trim() === ""))
-    if (missing) {
-      setError(`Complete the required field: ${missing.fieldName}.`)
-      return
+  function clearFeedback() {
+    setError("")
+    setNotice("")
+  }
+
+  function isBlankValue(value: unknown) {
+    return value === undefined || value === null || (Array.isArray(value) ? value.length === 0 : String(value).trim() === "")
+  }
+
+  function fieldOptions(config: PartnerTypeFieldConfiguration): { value: string; label: string }[] {
+    const raw = config.validationRules?.options
+    if (!Array.isArray(raw)) return []
+    return raw.map((option) => {
+      if (typeof option === "object" && option !== null) {
+        const item = option as Record<string, unknown>
+        return { value: String(item.value ?? item.code ?? item.label ?? ""), label: String(item.label ?? item.name ?? item.value ?? "") }
+      }
+      return { value: String(option), label: String(option) }
+    }).filter((option) => option.value)
+  }
+
+  function validateField(config: PartnerTypeFieldConfiguration, value: unknown): string | null {
+    if (config.isRequired && isBlankValue(value)) return `${config.fieldName} is required.`
+    if (isBlankValue(value)) return null
+    const rules = config.validationRules ?? {}
+    const textValue = Array.isArray(value) ? value.join(",") : String(value)
+    if (typeof rules.minLength === "number" && textValue.length < rules.minLength) return `${config.fieldName} must be at least ${rules.minLength} characters.`
+    if (typeof rules.maxLength === "number" && textValue.length > rules.maxLength) return `${config.fieldName} must not exceed ${rules.maxLength} characters.`
+    if (typeof rules.pattern === "string") {
+      try {
+        if (!new RegExp(rules.pattern).test(textValue)) return `${config.fieldName} has an invalid format.`
+      } catch {
+        // Invalid configuration should not make the entire workspace unusable.
+      }
+    }
+    return null
+  }
+
+  function coerceFieldValue(config: PartnerTypeFieldConfiguration, value: string) {
+    if (["NUMBER", "CURRENCY", "PERCENTAGE"].includes(config.fieldType)) return value === "" ? "" : Number(value)
+    return value
+  }
+
+  async function saveConfiguredFields(): Promise<boolean> {
+    clearFeedback()
+    const invalid = fieldConfigurations.map((config) => validateField(config, fieldValues[config.id])).find(Boolean)
+    if (invalid) {
+      setError(invalid)
+      setActiveSection("attributes")
+      return false
     }
     try {
       await updateAssignmentFieldValues(assignment.id, fieldConfigurations.map((config) => ({
         field_config: config.id,
         value_json: fieldValues[config.id] ?? null,
       })))
-      setError("")
       await loadAssignmentSetup()
       await onRefresh()
+      setNotice("Attributes saved and synchronized.")
+      return true
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Unable to save configured fields")
+      setError(reason instanceof Error ? reason.message : "Unable to save configured attributes")
+      return false
     }
   }
 
+  function resetContactDraft() {
+    setEditingContactId(null)
+    setContactDraft({ requirement: "", firstName: "", lastName: "", email: "", phone: "", mobile: "", designation: "", isPrimary: false, notes: "" })
+  }
+
+  function resetBankDraft() {
+    setEditingBankId(null)
+    setBankDraft({ requirement: "", bankName: "", branchName: "", accountName: "", accountNumber: "", swiftCode: "", currency: "TZS", isPrimary: false, notes: "" })
+  }
+
   async function saveContact() {
+    clearFeedback()
     if (!contactDraft.requirement || !contactDraft.firstName.trim() || !contactDraft.lastName.trim()) {
       setError("Select the configured contact requirement and provide the contact name.")
       return
     }
+    const requirement = contactRequirements.find((item) => item.id === contactDraft.requirement)
+    const payload = {
+      contact_requirement: contactDraft.requirement,
+      contact_type: requirement?.contactType ?? "OTHER",
+      first_name: contactDraft.firstName.trim(),
+      last_name: contactDraft.lastName.trim(),
+      email: contactDraft.email.trim(),
+      phone: contactDraft.phone.trim(),
+      mobile: contactDraft.mobile.trim(),
+      designation: contactDraft.designation.trim(),
+      is_primary: contactDraft.isPrimary,
+      notes: contactDraft.notes.trim(),
+    }
     try {
-      const requirement = contactRequirements.find((item) => item.id === contactDraft.requirement)
-      await createAssignmentContact(assignment.id, {
-        contact_requirement: contactDraft.requirement,
-        contact_type: requirement?.contactType ?? "OTHER",
-        first_name: contactDraft.firstName.trim(),
-        last_name: contactDraft.lastName.trim(),
-        email: contactDraft.email.trim(),
-        phone: contactDraft.phone.trim(),
-        mobile: contactDraft.mobile.trim(),
-        designation: contactDraft.designation.trim(),
-        is_primary: contactDraft.isPrimary,
-        notes: contactDraft.notes.trim(),
-      })
-      setContactDraft({ requirement: "", firstName: "", lastName: "", email: "", phone: "", mobile: "", designation: "", isPrimary: false, notes: "" })
-      setError("")
+      if (editingContactId) await updateAssignmentContact(assignment.id, editingContactId, payload)
+      else await createAssignmentContact(assignment.id, payload)
+      resetContactDraft()
       await loadAssignmentSetup()
       await onRefresh()
+      setNotice(editingContactId ? "Contact updated and synchronized." : "Contact added and synchronized.")
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to save contact")
     }
   }
 
   async function saveBank() {
+    clearFeedback()
     if (!bankDraft.requirement || !bankDraft.bankName.trim() || !bankDraft.accountName.trim() || !bankDraft.accountNumber.trim()) {
       setError("Select the configured bank requirement and provide bank, account name, and account number.")
       return
     }
+    const requirement = bankRequirements.find((item) => item.id === bankDraft.requirement)
+    const payload = {
+      bank_requirement: bankDraft.requirement,
+      bank_type: requirement?.bankType ?? "OTHER",
+      bank_name: bankDraft.bankName.trim(),
+      branch_name: bankDraft.branchName.trim(),
+      account_name: bankDraft.accountName.trim(),
+      account_number: bankDraft.accountNumber.trim(),
+      swift_code: bankDraft.swiftCode.trim(),
+      currency: bankDraft.currency.trim() || "TZS",
+      is_primary: bankDraft.isPrimary,
+      notes: bankDraft.notes.trim(),
+    }
     try {
-      const requirement = bankRequirements.find((item) => item.id === bankDraft.requirement)
-      await createAssignmentBankAccount(assignment.id, {
-        bank_requirement: bankDraft.requirement,
-        bank_type: requirement?.bankType ?? "OTHER",
-        bank_name: bankDraft.bankName.trim(),
-        branch_name: bankDraft.branchName.trim(),
-        account_name: bankDraft.accountName.trim(),
-        account_number: bankDraft.accountNumber.trim(),
-        swift_code: bankDraft.swiftCode.trim(),
-        currency: bankDraft.currency.trim() || "TZS",
-        is_primary: bankDraft.isPrimary,
-        notes: bankDraft.notes.trim(),
-      })
-      setBankDraft({ requirement: "", bankName: "", branchName: "", accountName: "", accountNumber: "", swiftCode: "", currency: "TZS", isPrimary: false, notes: "" })
-      setError("")
+      if (editingBankId) await updateAssignmentBankAccount(assignment.id, editingBankId, payload)
+      else await createAssignmentBankAccount(assignment.id, payload)
+      resetBankDraft()
       await loadAssignmentSetup()
       await onRefresh()
+      setNotice(editingBankId ? "Bank account updated and synchronized." : "Bank account added and synchronized.")
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to save bank account")
     }
   }
 
+  function editContact(contact: PartnerAssignmentContact) {
+    clearFeedback()
+    setEditingContactId(contact.id)
+    setContactDraft({ requirement: contact.contactRequirement, firstName: contact.firstName, lastName: contact.lastName, email: contact.email, phone: contact.phone, mobile: contact.mobile, designation: contact.designation, isPrimary: contact.isPrimary, notes: contact.notes })
+    setActiveSection("contacts")
+  }
+
+  function editBank(bank: PartnerAssignmentBankAccount) {
+    clearFeedback()
+    setEditingBankId(bank.id)
+    setBankDraft({ requirement: bank.bankRequirement, bankName: bank.bankName, branchName: bank.branchName, accountName: bank.accountName, accountNumber: bank.accountNumber, swiftCode: bank.swiftCode, currency: bank.currency, isPrimary: bank.isPrimary, notes: bank.notes })
+    setActiveSection("banks")
+  }
+
   async function removeContact(contact: PartnerAssignmentContact) {
+    clearFeedback()
     try {
       await deleteAssignmentContact(assignment.id, contact.id)
       await loadAssignmentSetup()
       await onRefresh()
+      setNotice("Contact removed and synchronized.")
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to remove contact")
     }
   }
 
   async function removeBank(bank: PartnerAssignmentBankAccount) {
+    clearFeedback()
     try {
       await deleteAssignmentBankAccount(assignment.id, bank.id)
       await loadAssignmentSetup()
       await onRefresh()
+      setNotice("Bank account removed and synchronized.")
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to remove bank account")
     }
   }
 
-  async function editContact(contact: PartnerAssignmentContact) {
-    const firstName = window.prompt("First name", contact.firstName)
-    if (firstName === null) return
-    const lastName = window.prompt("Last name", contact.lastName)
-    if (lastName === null) return
-    const email = window.prompt("Email", contact.email)
-    if (email === null) return
-    try {
-      await updateAssignmentContact(assignment.id, contact.id, { first_name: firstName.trim(), last_name: lastName.trim(), email: email.trim() })
-      await loadAssignmentSetup()
-      await onRefresh()
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Unable to update contact")
-    }
-  }
-
-  async function editBank(bank: PartnerAssignmentBankAccount) {
-    const accountName = window.prompt("Account name", bank.accountName)
-    if (accountName === null) return
-    const accountNumber = window.prompt("Account number", bank.accountNumber)
-    if (accountNumber === null) return
-    try {
-      await updateAssignmentBankAccount(assignment.id, bank.id, { account_name: accountName.trim(), account_number: accountNumber.trim() })
-      await loadAssignmentSetup()
-      await onRefresh()
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Unable to update bank account")
-    }
-  }
-
   async function uploadAssignmentDocument() {
+    clearFeedback()
     if (!selectedFile || !documentType) {
-      setError("Select a document type and file before uploading.")
+      setError("Select a configured document requirement and file before uploading.")
       return
     }
     setUploading(true)
-    setError("")
     try {
       await uploadDocument(applicationId, selectedFile, documentType, selectedFile.name, assignment.id)
       await onRefresh()
+      await loadAssignmentSetup()
       setSelectedFile(null)
       setDocumentType("")
+      setNotice("Document uploaded and synchronized.")
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to upload the assigned document")
     } finally {
@@ -940,11 +1013,13 @@ function PartnerTypeSetupModal({
 
   async function removeAssignmentDocument(documentId: string, documentName: string) {
     if (!window.confirm(`Remove ${documentName}? This action will be recorded in the event history.`)) return
+    clearFeedback()
     setUploading(true)
-    setError("")
     try {
       await deleteDocument(applicationId, documentId)
       await onRefresh()
+      await loadAssignmentSetup()
+      setNotice("Document removed and synchronized.")
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to remove the assigned document")
     } finally {
@@ -952,9 +1027,9 @@ function PartnerTypeSetupModal({
     }
   }
 
-  async function save() {
+  async function saveAssignment() {
+    clearFeedback()
     setSaving(true)
-    setError("")
     try {
       await updatePartnerType(applicationId, assignment.id, {
         branch: branch || null,
@@ -963,6 +1038,7 @@ function PartnerTypeSetupModal({
         share_data_externally: shareData,
       })
       await onSaved()
+      setNotice("Assignment settings saved and synchronized.")
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to update partner type")
     } finally {
@@ -970,189 +1046,117 @@ function PartnerTypeSetupModal({
     }
   }
 
+  async function moveToStep(nextIndex: number) {
+    if (nextIndex < 0 || nextIndex >= steps.length) return
+    if (activeSection === "attributes") {
+      const saved = await saveConfiguredFields()
+      if (!saved) return
+    }
+    clearFeedback()
+    setActiveSection(steps[nextIndex].key)
+  }
+
+  function renderDynamicField(config: PartnerTypeFieldConfiguration) {
+    const value = fieldValues[config.id] ?? config.defaultValue ?? ""
+    const options = fieldOptions(config)
+    const rules = config.validationRules ?? {}
+    const common = {
+      className: "w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none transition focus:border-foreground focus:ring-2 focus:ring-foreground/15",
+      required: config.isRequired,
+    }
+    if (config.fieldType === "BOOLEAN") {
+      return <label className="flex min-h-11 items-center gap-3 rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal"><input type="checkbox" checked={Boolean(value)} onChange={(event) => setFieldValues((prev) => ({ ...prev, [config.id]: event.target.checked }))} className="h-4 w-4 accent-black" /> Yes</label>
+    }
+    if (config.fieldType === "DROPDOWN") {
+      return <select {...common} value={String(value)} onChange={(event) => setFieldValues((prev) => ({ ...prev, [config.id]: event.target.value }))}><option value="">Select {config.fieldName}</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
+    }
+    if (config.fieldType === "MULTI_SELECT" && options.length > 0) {
+      const selected = Array.isArray(value) ? value.map(String) : []
+      return <div className="grid gap-2 rounded-lg border border-input bg-background p-3 sm:grid-cols-2">{options.map((option) => <label key={option.value} className="flex items-center gap-2 text-sm font-normal"><input type="checkbox" checked={selected.includes(option.value)} onChange={(event) => setFieldValues((prev) => ({ ...prev, [config.id]: event.target.checked ? [...selected, option.value] : selected.filter((item) => item !== option.value) }))} className="h-4 w-4 accent-black" />{option.label}</label>)}</div>
+    }
+    if (config.fieldType === "MULTI_SELECT") {
+      return <input {...common} value={Array.isArray(value) ? value.join(", ") : String(value)} onChange={(event) => setFieldValues((prev) => ({ ...prev, [config.id]: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) }))} placeholder="Enter values separated by commas" />
+    }
+    if (config.fieldType === "FILE") {
+      return <div className="space-y-2"><input type="file" {...common} onChange={(event) => setFieldValues((prev) => ({ ...prev, [config.id]: event.target.files?.[0]?.name ?? "" }))} /><p className="text-[11px] font-normal text-muted-foreground">File evidence is uploaded from the Documents step; this configured value stores the reference.</p></div>
+    }
+    const inputType = config.fieldType === "NUMBER" || config.fieldType === "CURRENCY" || config.fieldType === "PERCENTAGE" ? "number" : config.fieldType === "DATE" ? "date" : "text"
+    return <input {...common} type={inputType} value={String(value)} min={typeof rules.min === "number" ? rules.min : undefined} max={typeof rules.max === "number" ? rules.max : undefined} maxLength={typeof rules.maxLength === "number" ? rules.maxLength : undefined} onChange={(event) => setFieldValues((prev) => ({ ...prev, [config.id]: coerceFieldValue(config, event.target.value) }))} />
+  }
+
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/45 p-4" role="dialog" aria-modal="true" aria-label="Partner type setup">
-      <div className="flex max-h-[calc(100vh-1rem)] w-full max-w-[96vw] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl sm:max-h-[calc(100vh-2rem)] 2xl:max-w-[1800px]">
-        <div className="flex items-start justify-between border-b border-border px-6 py-5">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Assigned partner type</p>
-            <h2 className="mt-1 text-xl font-semibold text-foreground">{assignment.partnerTypeName}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Review and update assignment information without leaving this application.</p>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-0 sm:p-4" role="dialog" aria-modal="true" aria-label="Partner type setup">
+      <div className="flex h-full max-h-[100vh] w-full flex-col overflow-hidden border border-border bg-card shadow-2xl sm:h-auto sm:max-h-[calc(100vh-2rem)] sm:rounded-2xl 2xl:max-w-[1800px]">
+        <div className="flex flex-col gap-4 border-b border-border px-4 py-4 sm:px-6 sm:py-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground"><span>Partner</span><span>/</span><span>Partner Type Setup</span></div>
+            <h2 className="mt-1 truncate text-xl font-semibold text-foreground sm:text-2xl">{assignment.partnerTypeName}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Complete the parameterized setup steps for this assigned partner type.</p>
           </div>
-          <button onClick={onClose} className="rounded-lg border border-border p-2 text-muted-foreground transition hover:bg-secondary hover:text-foreground" aria-label="Close">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="border-b border-border bg-secondary/20 px-6 py-3">
-          <div className="flex flex-wrap gap-2" role="tablist" aria-label="Partner type setup sections">
-            {([ ["overview", "Overview"], ["documents", `Documents (${assignmentDocuments.length}/${documentRequirements.length})`], ["contacts", `Contacts (${assignmentContacts.length}/${contactRequirements.length})`], ["banks", `Banks (${assignmentBanks.length}/${bankRequirements.length})`], ["fields", `Other information (${fieldConfigurations.length})`] ] as const).map(([key, label]) => (
-              <button key={key} type="button" onClick={() => setActiveSection(key)} className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${activeSection === key ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground hover:bg-secondary hover:text-foreground"}`} role="tab" aria-selected={activeSection === key}>{label}</button>
-            ))}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs font-semibold text-muted-foreground"><Shield className="h-3.5 w-3.5" /> KYC: Not Set</span>
+            <button type="button" onClick={onClose} className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground transition hover:bg-secondary"><ArrowLeft className="h-4 w-4" /> Back to Partner View</button>
           </div>
         </div>
-        <div className="grid min-h-0 flex-1 gap-6 overflow-y-auto p-4 sm:p-6 2xl:grid-cols-[minmax(0,1.75fr)_minmax(360px,.65fr)]">
-          <div className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="space-y-1.5 text-sm font-medium text-foreground">
-                Branch
-                <select value={branch} onChange={(event) => { setBranch(event.target.value); setLocation("") }} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/30">
-                  <option value="">No branch</option>
-                  {(choices?.branches ?? []).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-                </select>
-              </label>
-              <label className="space-y-1.5 text-sm font-medium text-foreground">
-                Region
-                <select value={region} onChange={(event) => setRegion(event.target.value)} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/30">
-                  <option value="">No region</option>
-                  {(choices?.regions ?? []).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-                </select>
-              </label>
+
+        <div className="border-b border-border bg-secondary/20 px-4 py-3 sm:px-6">
+          <div className="flex gap-2 overflow-x-auto" role="tablist" aria-label="Partner type setup steps">
+            {steps.map((step, index) => {
+              const count = step.key === "documents" ? `${completedDocuments}/${documentRequirements.length}` : step.key === "attributes" ? `${completedFields}/${fieldConfigurations.length}` : step.key === "contacts" ? `${completedContacts}/${contactRequirements.length}` : `${completedBanks}/${bankRequirements.length}`
+              return <button key={step.key} type="button" onClick={() => { clearFeedback(); setActiveSection(step.key) }} className={`flex min-w-max items-center gap-2 rounded-lg border px-3 py-2.5 text-left transition sm:px-4 ${activeSection === step.key ? "border-foreground bg-foreground text-background" : "border-border bg-background text-muted-foreground hover:bg-secondary hover:text-foreground"}`} role="tab" aria-selected={activeSection === step.key}><span className="flex h-6 w-6 items-center justify-center rounded-full border border-current text-xs font-bold">{index + 1}</span><span><span className="block text-xs font-semibold sm:text-sm">{step.label}</span><span className="block text-[10px] font-normal uppercase tracking-wide opacity-70">{count} configured</span></span>{step.icon}</button>
+            })}
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto bg-background p-4 sm:p-6">
+          <div className="mx-auto grid max-w-[1640px] gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
+            <div className="space-y-5">
+              <section className="rounded-xl border border-border bg-card p-4 sm:p-5">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                  <div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Assignment context</p><p className="mt-1 text-sm text-muted-foreground">These values are also controlled by the partner and branch parameter configuration.</p></div>
+                  <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground"><span className="h-2 w-2 rounded-full bg-foreground" /> Assignment active</div>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <label className="space-y-1.5 text-sm font-medium text-foreground">Branch<select value={branch} onChange={(event) => { setBranch(event.target.value); setLocation("") }} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-foreground/15"><option value="">No branch</option>{(choices?.branches ?? []).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+                  <label className="space-y-1.5 text-sm font-medium text-foreground">Region<select value={region} onChange={(event) => setRegion(event.target.value)} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-foreground/15"><option value="">No region</option>{(choices?.regions ?? []).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+                  <label className="space-y-1.5 text-sm font-medium text-foreground">Location<select value={location} onChange={(event) => setLocation(event.target.value)} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-foreground/15"><option value="">No location</option>{locations.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+                  <label className="flex items-center gap-3 rounded-lg border border-input bg-background px-3 py-2.5 text-sm"><input type="checkbox" checked={shareData} onChange={(event) => setShareData(event.target.checked)} className="h-4 w-4 accent-black" /><span><span className="block font-medium text-foreground">Share data externally</span><span className="block text-[11px] font-normal text-muted-foreground">Approved downstream use</span></span></label>
+                </div>
+              </section>
+
+              {setupLoading && <div className="flex items-center gap-3 rounded-xl border border-dashed border-border bg-card px-4 py-5 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading requirements from parameter settings...</div>}
+
+              {!setupLoading && activeSection === "documents" && <section className="rounded-xl border border-border bg-card">
+                <div className="flex flex-col gap-3 border-b border-border px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-5"><div><h3 className="text-base font-semibold text-foreground">Partner Type Documents</h3><p className="mt-1 text-sm text-muted-foreground">Every row below comes from the document requirements configured for this partner type.</p></div><span className="rounded-full border border-border px-3 py-1 text-xs font-semibold text-foreground">{completedDocuments}/{documentRequirements.length} uploaded</span></div>
+                <div className="border-b border-border bg-secondary/20 p-4 sm:p-5"><div className="grid gap-3 lg:grid-cols-[minmax(220px,.8fr)_minmax(260px,1fr)_auto]"><label className="space-y-1.5 text-sm font-medium text-foreground">Configured document<select value={documentType} onChange={(event) => setDocumentType(event.target.value)} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-foreground/15"><option value="">Select document requirement</option>{documentRequirements.map((item) => <option key={item.id} value={item.code}>{item.code} · {item.description || "Document"}{item.isRequired || item.isMandatory ? " · Required" : ""}</option>)}</select></label><label className="space-y-1.5 text-sm font-medium text-foreground">Evidence file<input id={`partner-document-file-${assignment.id}`} type="file" onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground file:mr-3 file:border-0 file:bg-transparent file:font-medium" /></label><button onClick={uploadAssignmentDocument} disabled={uploading || !selectedFile || !documentType} className="inline-flex items-end justify-center gap-2 rounded-lg bg-foreground px-4 py-2.5 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-50"><Plus className="h-4 w-4" />{uploading ? "Uploading..." : "Upload"}</button></div></div>
+                <div className="overflow-x-auto"><table className="w-full min-w-[980px] border-collapse text-sm"><thead className="bg-secondary/30"><tr className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"><th className="border-r border-border px-3 py-3">No.</th><th className="border-r border-border px-3 py-3">Code</th><th className="border-r border-border px-3 py-3">Description</th><th className="border-r border-border px-3 py-3">Required</th><th className="border-r border-border px-3 py-3">Mandatory</th><th className="border-r border-border px-3 py-3">Uploaded by</th><th className="border-r border-border px-3 py-3">Uploaded</th><th className="px-3 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-border">{documentRequirements.length === 0 ? <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-muted-foreground">No active document requirements are configured for this partner type.</td></tr> : documentRequirements.map((requirement, index) => { const matches = assignmentDocuments.filter((document) => document.documentType === requirement.code || document.documentName === requirement.code); const latest = matches[0]; return <tr key={requirement.id} className="transition hover:bg-secondary/20"><td className="border-r border-border px-3 py-3 text-muted-foreground">{index + 1}</td><td className="border-r border-border px-3 py-3 font-semibold text-foreground">{requirement.code}</td><td className="border-r border-border px-3 py-3 text-foreground">{requirement.description || "—"}</td><td className="border-r border-border px-3 py-3">{requirement.isRequired ? <span className="font-semibold text-foreground">Yes</span> : "No"}</td><td className="border-r border-border px-3 py-3">{requirement.isMandatory ? <span className="font-semibold text-foreground">Yes</span> : "No"}</td><td className="border-r border-border px-3 py-3 text-muted-foreground">{latest?.uploadedBy || "—"}</td><td className="border-r border-border px-3 py-3">{latest ? <span className="font-semibold text-foreground">Yes</span> : <span className="font-semibold text-muted-foreground">No</span>}</td><td className="px-3 py-3 text-right">{latest ? <div className="flex justify-end gap-2"><a href={latest.file} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1.5 text-xs font-semibold hover:bg-secondary"><Eye className="h-3.5 w-3.5" />View</a><button onClick={() => removeAssignmentDocument(latest.id, latest.documentName)} disabled={uploading} className="rounded-md border border-border px-2 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50">Remove</button></div> : <button onClick={() => { setDocumentType(requirement.code); document.getElementById(`partner-document-file-${assignment.id}`)?.focus() }} className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1.5 text-xs font-semibold hover:bg-secondary"><Plus className="h-3.5 w-3.5" />Upload</button>}</td></tr> })}</tbody></table></div>
+              </section>}
+
+              {!setupLoading && activeSection === "attributes" && <section className="rounded-xl border border-border bg-card">
+                <div className="flex flex-col gap-3 border-b border-border px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-5"><div><h3 className="text-base font-semibold text-foreground">Partner Type Attributes Form</h3><p className="mt-1 text-sm text-muted-foreground">All fields are rendered from the active field configurations under system parameters.</p></div><button type="button" onClick={() => void saveConfiguredFields()} disabled={fieldConfigurations.length === 0} className="inline-flex items-center justify-center gap-2 rounded-lg bg-foreground px-3 py-2 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-50"><Save className="h-4 w-4" />Save attributes</button></div>
+                <div className="p-4 sm:p-5">{fieldConfigurations.length === 0 ? <p className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">No active attribute fields are configured for this partner type.</p> : <div className="grid gap-5 md:grid-cols-2">{fieldConfigurations.map((config) => <label key={config.id} className="space-y-2 text-sm font-medium text-foreground"><span className="flex items-center justify-between gap-3"><span>{config.fieldName}{config.isRequired ? <span className="ml-1 text-foreground">*</span> : null}</span><span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{config.fieldCode} · {config.fieldType}</span></span>{renderDynamicField(config)}{config.visibilityRules && Object.keys(config.visibilityRules).length > 0 ? <span className="block text-[11px] font-normal text-muted-foreground">Visibility is controlled by the configured parameter rules.</span> : null}</label>)}</div>}</div>
+              </section>}
+
+              {!setupLoading && activeSection === "contacts" && <section className="rounded-xl border border-border bg-card">
+                <div className="flex flex-col gap-3 border-b border-border px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-5"><div><h3 className="text-base font-semibold text-foreground">Partner Type Contacts</h3><p className="mt-1 text-sm text-muted-foreground">Contact roles, requiredness, ordering, and multiplicity come from parameter settings.</p></div><span className="rounded-full border border-border px-3 py-1 text-xs font-semibold text-foreground">{completedContacts}/{contactRequirements.length} requirements covered</span></div>
+                <div className="border-b border-border bg-secondary/20 p-4 sm:p-5"><div className="mb-3 flex items-center justify-between gap-3"><p className="text-sm font-semibold text-foreground">{editingContactId ? "Update contact" : "Add contact"}</p>{editingContactId ? <button type="button" onClick={resetContactDraft} className="text-xs font-semibold text-muted-foreground underline">Cancel edit</button> : null}</div><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Configured role<select value={contactDraft.requirement} onChange={(event) => setContactDraft((prev) => ({ ...prev, requirement: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground"><option value="">Select role</option>{contactRequirements.filter((item) => item.multipleAllowed || editingContactId || !assignmentContacts.some((contact) => contact.contactRequirement === item.id)).map((item) => <option key={item.id} value={item.id}>{item.contactType}{item.isRequired ? " · Required" : ""}{item.multipleAllowed ? " · Multiple" : ""}</option>)}</select></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">First name<input value={contactDraft.firstName} onChange={(event) => setContactDraft((prev) => ({ ...prev, firstName: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Last name<input value={contactDraft.lastName} onChange={(event) => setContactDraft((prev) => ({ ...prev, lastName: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Designation<input value={contactDraft.designation} onChange={(event) => setContactDraft((prev) => ({ ...prev, designation: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Email<input value={contactDraft.email} onChange={(event) => setContactDraft((prev) => ({ ...prev, email: event.target.value }))} type="email" className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Telephone<input value={contactDraft.phone} onChange={(event) => setContactDraft((prev) => ({ ...prev, phone: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Mobile<input value={contactDraft.mobile} onChange={(event) => setContactDraft((prev) => ({ ...prev, mobile: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="flex items-center gap-2 rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal"><input type="checkbox" checked={contactDraft.isPrimary} onChange={(event) => setContactDraft((prev) => ({ ...prev, isPrimary: event.target.checked }))} className="h-4 w-4 accent-black" /> Primary contact</label></div><div className="mt-3 flex justify-end"><button type="button" onClick={() => void saveContact()} className="inline-flex items-center gap-2 rounded-lg bg-foreground px-4 py-2.5 text-sm font-semibold text-background"><Plus className="h-4 w-4" />{editingContactId ? "Update contact" : "Add contact"}</button></div></div>
+                <div className="overflow-x-auto"><table className="w-full min-w-[820px] border-collapse text-sm"><thead className="bg-secondary/30"><tr className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"><th className="border-r border-border px-3 py-3">Configured role</th><th className="border-r border-border px-3 py-3">Contact</th><th className="border-r border-border px-3 py-3">Designation</th><th className="border-r border-border px-3 py-3">Email / Mobile</th><th className="px-3 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-border">{assignmentContacts.length === 0 ? <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">No contacts captured for this partner type yet.</td></tr> : assignmentContacts.map((contact) => <tr key={contact.id} className="transition hover:bg-secondary/20"><td className="border-r border-border px-3 py-3 font-medium">{contactRequirements.find((item) => item.id === contact.contactRequirement)?.contactType ?? contact.configContactType}</td><td className="border-r border-border px-3 py-3">{contact.firstName} {contact.lastName}{contact.isPrimary ? <span className="ml-2 rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold">Primary</span> : null}</td><td className="border-r border-border px-3 py-3 text-muted-foreground">{contact.designation || "—"}</td><td className="border-r border-border px-3 py-3 text-muted-foreground">{contact.email || contact.mobile || contact.phone || "—"}</td><td className="px-3 py-3 text-right"><button type="button" onClick={() => editContact(contact)} className="mr-3 inline-flex items-center gap-1 text-xs font-semibold underline"><Pencil className="h-3.5 w-3.5" />Edit</button><button type="button" onClick={() => void removeContact(contact)} className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground underline"><Trash2 className="h-3.5 w-3.5" />Remove</button></td></tr>)}</tbody></table></div>
+              </section>}
+
+              {!setupLoading && activeSection === "banks" && <section className="rounded-xl border border-border bg-card">
+                <div className="flex flex-col gap-3 border-b border-border px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-5"><div><h3 className="text-base font-semibold text-foreground">Partner Type Banks</h3><p className="mt-1 text-sm text-muted-foreground">Bank roles and validation rules are loaded from the partner type parameter configuration.</p></div><span className="rounded-full border border-border px-3 py-1 text-xs font-semibold text-foreground">{completedBanks}/{bankRequirements.length} requirements covered</span></div>
+                <div className="border-b border-border bg-secondary/20 p-4 sm:p-5"><div className="mb-3 flex items-center justify-between gap-3"><p className="text-sm font-semibold text-foreground">{editingBankId ? "Update bank account" : "Add bank account"}</p>{editingBankId ? <button type="button" onClick={resetBankDraft} className="text-xs font-semibold text-muted-foreground underline">Cancel edit</button> : null}</div><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Configured bank role<select value={bankDraft.requirement} onChange={(event) => setBankDraft((prev) => ({ ...prev, requirement: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground"><option value="">Select role</option>{bankRequirements.filter((item) => item.multipleAllowed || editingBankId || !assignmentBanks.some((bank) => bank.bankRequirement === item.id)).map((item) => <option key={item.id} value={item.id}>{item.bankType}{item.isRequired ? " · Required" : ""}{item.multipleAllowed ? " · Multiple" : ""}</option>)}</select></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Bank name<input value={bankDraft.bankName} onChange={(event) => setBankDraft((prev) => ({ ...prev, bankName: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Branch<input value={bankDraft.branchName} onChange={(event) => setBankDraft((prev) => ({ ...prev, branchName: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Account name<input value={bankDraft.accountName} onChange={(event) => setBankDraft((prev) => ({ ...prev, accountName: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Account number<input value={bankDraft.accountNumber} onChange={(event) => setBankDraft((prev) => ({ ...prev, accountNumber: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">SWIFT code<input value={bankDraft.swiftCode} onChange={(event) => setBankDraft((prev) => ({ ...prev, swiftCode: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Currency<input value={bankDraft.currency} onChange={(event) => setBankDraft((prev) => ({ ...prev, currency: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="flex items-center gap-2 rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal"><input type="checkbox" checked={bankDraft.isPrimary} onChange={(event) => setBankDraft((prev) => ({ ...prev, isPrimary: event.target.checked }))} className="h-4 w-4 accent-black" /> Primary account</label></div><div className="mt-3 flex justify-end"><button type="button" onClick={() => void saveBank()} className="inline-flex items-center gap-2 rounded-lg bg-foreground px-4 py-2.5 text-sm font-semibold text-background"><Plus className="h-4 w-4" />{editingBankId ? "Update bank account" : "Add bank account"}</button></div></div>
+                <div className="overflow-x-auto"><table className="w-full min-w-[900px] border-collapse text-sm"><thead className="bg-secondary/30"><tr className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"><th className="border-r border-border px-3 py-3">Configured role</th><th className="border-r border-border px-3 py-3">Bank</th><th className="border-r border-border px-3 py-3">Account</th><th className="border-r border-border px-3 py-3">Currency</th><th className="px-3 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-border">{assignmentBanks.length === 0 ? <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">No bank accounts captured for this partner type yet.</td></tr> : assignmentBanks.map((bank) => <tr key={bank.id} className="transition hover:bg-secondary/20"><td className="border-r border-border px-3 py-3 font-medium">{bankRequirements.find((item) => item.id === bank.bankRequirement)?.bankType ?? bank.configBankType}</td><td className="border-r border-border px-3 py-3">{bank.bankName}<span className="block text-xs text-muted-foreground">{bank.branchName || "No branch"}</span></td><td className="border-r border-border px-3 py-3">{bank.accountName}<span className="block text-xs text-muted-foreground">{bank.accountNumber}{bank.isPrimary ? " · Primary" : ""}</span></td><td className="border-r border-border px-3 py-3 text-muted-foreground">{bank.currency || "—"}</td><td className="px-3 py-3 text-right"><button type="button" onClick={() => editBank(bank)} className="mr-3 inline-flex items-center gap-1 text-xs font-semibold underline"><Pencil className="h-3.5 w-3.5" />Edit</button><button type="button" onClick={() => void removeBank(bank)} className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground underline"><Trash2 className="h-3.5 w-3.5" />Remove</button></td></tr>)}</tbody></table></div>
+              </section>}
+
+              {(error || notice) && <div className={`rounded-lg border px-3 py-2.5 text-sm ${error ? "border-destructive/30 bg-destructive/5 text-destructive" : "border-border bg-secondary/30 text-foreground"}`}>{error || notice}</div>}
             </div>
-            <label className="block space-y-1.5 text-sm font-medium text-foreground">
-              Location
-              <select value={location} onChange={(event) => setLocation(event.target.value)} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/30">
-                <option value="">No location</option>
-                {locations.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-              </select>
-            </label>
-            <label className="flex items-start gap-3 rounded-xl border border-border p-4 text-sm">
-              <input type="checkbox" checked={shareData} onChange={(event) => setShareData(event.target.checked)} className="mt-0.5 h-4 w-4 accent-black" />
-              <span><span className="block font-medium text-foreground">Share data externally</span><span className="mt-1 block text-muted-foreground">Allow approved downstream processes to use this assignment data.</span></span>
-            </label>
-            <section className="rounded-xl border border-border bg-background p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h3 className="text-sm font-semibold text-foreground">Required documents for this assignment</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">Upload evidence directly against {assignment.partnerTypeName}. Changes are synchronized immediately.</p>
-                </div>
-                <span className="rounded-full border border-border px-2 py-1 text-xs font-semibold text-foreground">{assignmentDocuments.length}</span>
-              </div>
-              <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
-                <select value={documentType} onChange={(event) => setDocumentType(event.target.value)} className="rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30">
-                  <option value="">Select document type</option>
-                  {documentRequirements.map((item) => <option key={item.id} value={item.code}>{item.code}{item.isRequired || item.isMandatory ? " · Required" : ""}</option>)}
-                </select>
-                <input type="file" onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} className="min-w-0 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground file:mr-3 file:border-0 file:bg-transparent file:text-sm file:font-medium" />
-                <button onClick={uploadAssignmentDocument} disabled={uploading || !selectedFile || !documentType} className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50">
-                  {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Upload
-                </button>
-              </div>
-              <div className="mt-4 overflow-hidden rounded-lg border border-border">
-                {assignmentDocuments.length === 0 ? (
-                  <p className="px-3 py-4 text-sm text-muted-foreground">No assignment-specific documents uploaded yet.</p>
-                ) : assignmentDocuments.map((document) => (
-                  <div key={document.id} className="flex items-center justify-between gap-3 border-b border-border px-3 py-3 last:border-b-0">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-foreground">{document.documentName}</p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">{document.documentType} · {document.isVerified ? "Verified" : "Pending verification"}</p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <a href={document.file} target="_blank" rel="noreferrer" className="rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-secondary">View</a>
-                      <button onClick={() => removeAssignmentDocument(document.id, document.documentName)} disabled={uploading} className="rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50">Remove</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-            <section className="rounded-xl border border-border bg-background p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h3 className="text-sm font-semibold text-foreground">Configured information</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">Complete the fields configured for {assignment.partnerTypeName}. Required fields are marked.</p>
-                </div>
-                <button type="button" onClick={saveConfiguredFields} disabled={setupLoading || fieldConfigurations.length === 0} className="rounded-lg border border-border px-3 py-2 text-xs font-semibold text-foreground transition hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50">Save information</button>
-              </div>
-              {fieldConfigurations.length === 0 ? (
-                <p className="mt-4 rounded-lg border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">No additional information has been configured for this partner type.</p>
-              ) : (
-                <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                  {fieldConfigurations.map((config) => {
-                    const value = fieldValues[config.id] ?? config.defaultValue ?? ""
-                    const inputType = config.fieldType === "NUMBER" || config.fieldType === "CURRENCY" || config.fieldType === "PERCENTAGE" ? "number" : config.fieldType === "DATE" ? "date" : "text"
-                    return (
-                      <label key={config.id} className="space-y-1.5 text-sm font-medium text-foreground">
-                        <span>{config.fieldName}{config.isRequired ? <span className="ml-1 text-muted-foreground">*</span> : null}</span>
-                        {config.fieldType === "BOOLEAN" ? (
-                          <span className="flex items-center gap-2 rounded-lg border border-input px-3 py-2.5 font-normal"><input type="checkbox" checked={Boolean(value)} onChange={(event) => setFieldValues((prev) => ({ ...prev, [config.id]: event.target.checked }))} className="h-4 w-4 accent-black" /> Yes</span>
-                        ) : config.fieldType === "MULTI_SELECT" ? (
-                          <input value={Array.isArray(value) ? value.join(", ") : String(value)} onChange={(event) => setFieldValues((prev) => ({ ...prev, [config.id]: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) }))} placeholder="Enter values separated by commas" className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/30" />
-                        ) : (
-                          <input type={inputType} value={String(value)} onChange={(event) => setFieldValues((prev) => ({ ...prev, [config.id]: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/30" />
-                        )}
-                        <span className="block text-[11px] font-normal uppercase tracking-wide text-muted-foreground">{config.fieldCode} · {config.fieldType}</span>
-                      </label>
-                    )
-                  })}
-                </div>
-              )}
-            </section>
 
-            <section className="rounded-xl border border-border bg-background p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h3 className="text-sm font-semibold text-foreground">Configured contacts</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">Capture the contact roles required by the parameter configuration.</p>
-                </div>
-                <span className="rounded-full border border-border px-2 py-1 text-xs font-semibold text-foreground">{assignmentContacts.length}/{contactRequirements.length}</span>
-              </div>
-              <div className="mt-4 grid gap-3 rounded-lg border border-dashed border-border p-3 sm:grid-cols-2 lg:grid-cols-4">
-                <select value={contactDraft.requirement} onChange={(event) => setContactDraft((prev) => ({ ...prev, requirement: event.target.value }))} className="rounded-lg border border-input bg-background px-3 py-2 text-sm"><option value="">Contact requirement</option>{contactRequirements.map((item) => <option key={item.id} value={item.id}>{item.contactType}{item.isRequired ? " · Required" : ""}</option>)}</select>
-                <input value={contactDraft.firstName} onChange={(event) => setContactDraft((prev) => ({ ...prev, firstName: event.target.value }))} placeholder="First name" className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-                <input value={contactDraft.lastName} onChange={(event) => setContactDraft((prev) => ({ ...prev, lastName: event.target.value }))} placeholder="Last name" className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-                <input value={contactDraft.designation} onChange={(event) => setContactDraft((prev) => ({ ...prev, designation: event.target.value }))} placeholder="Designation" className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-                <input value={contactDraft.email} onChange={(event) => setContactDraft((prev) => ({ ...prev, email: event.target.value }))} placeholder="Email" type="email" className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-                <input value={contactDraft.phone} onChange={(event) => setContactDraft((prev) => ({ ...prev, phone: event.target.value }))} placeholder="Telephone" className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-                <input value={contactDraft.mobile} onChange={(event) => setContactDraft((prev) => ({ ...prev, mobile: event.target.value }))} placeholder="Mobile" className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-                <button type="button" onClick={saveContact} className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground"><Plus className="h-4 w-4" />Add contact</button>
-              </div>
-              <div className="mt-4 overflow-x-auto rounded-lg border border-border">
-                {assignmentContacts.length === 0 ? <p className="px-3 py-4 text-sm text-muted-foreground">No contacts captured yet.</p> : <table className="w-full min-w-[640px] text-sm"><thead className="bg-secondary/30 text-left text-xs uppercase tracking-wide text-muted-foreground"><tr><th className="border-r border-border px-3 py-2">Requirement</th><th className="border-r border-border px-3 py-2">Contact</th><th className="border-r border-border px-3 py-2">Email</th><th className="px-3 py-2 text-right">Actions</th></tr></thead><tbody className="divide-y divide-border">{assignmentContacts.map((contact) => <tr key={contact.id}><td className="border-r border-border px-3 py-2">{contactRequirements.find((item) => item.id === contact.contactRequirement)?.contactType ?? contact.configContactType}</td><td className="border-r border-border px-3 py-2 font-medium">{contact.firstName} {contact.lastName}{contact.isPrimary ? " · Primary" : ""}</td><td className="border-r border-border px-3 py-2 text-muted-foreground">{contact.email || contact.mobile || contact.phone || "—"}</td><td className="px-3 py-2 text-right"><button type="button" onClick={() => editContact(contact)} className="mr-2 text-xs font-semibold underline">Edit</button><button type="button" onClick={() => removeContact(contact)} className="text-xs font-semibold text-muted-foreground underline">Remove</button></td></tr>)}</tbody></table>}
-              </div>
-            </section>
-
-            <section className="rounded-xl border border-border bg-background p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h3 className="text-sm font-semibold text-foreground">Configured bank information</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">Store the bank accounts required for this assigned partner type.</p>
-                </div>
-                <span className="rounded-full border border-border px-2 py-1 text-xs font-semibold text-foreground">{assignmentBanks.length}/{bankRequirements.length}</span>
-              </div>
-              <div className="mt-4 grid gap-3 rounded-lg border border-dashed border-border p-3 sm:grid-cols-2 lg:grid-cols-4">
-                <select value={bankDraft.requirement} onChange={(event) => setBankDraft((prev) => ({ ...prev, requirement: event.target.value }))} className="rounded-lg border border-input bg-background px-3 py-2 text-sm"><option value="">Bank requirement</option>{bankRequirements.map((item) => <option key={item.id} value={item.id}>{item.bankType}{item.isRequired ? " · Required" : ""}</option>)}</select>
-                <input value={bankDraft.bankName} onChange={(event) => setBankDraft((prev) => ({ ...prev, bankName: event.target.value }))} placeholder="Bank name" className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-                <input value={bankDraft.branchName} onChange={(event) => setBankDraft((prev) => ({ ...prev, branchName: event.target.value }))} placeholder="Branch" className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-                <input value={bankDraft.accountName} onChange={(event) => setBankDraft((prev) => ({ ...prev, accountName: event.target.value }))} placeholder="Account name" className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-                <input value={bankDraft.accountNumber} onChange={(event) => setBankDraft((prev) => ({ ...prev, accountNumber: event.target.value }))} placeholder="Account number" className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-                <input value={bankDraft.swiftCode} onChange={(event) => setBankDraft((prev) => ({ ...prev, swiftCode: event.target.value }))} placeholder="SWIFT code" className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-                <input value={bankDraft.currency} onChange={(event) => setBankDraft((prev) => ({ ...prev, currency: event.target.value }))} placeholder="Currency" className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-                <button type="button" onClick={saveBank} className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground"><Plus className="h-4 w-4" />Add bank account</button>
-              </div>
-              <div className="mt-4 overflow-x-auto rounded-lg border border-border">
-                {assignmentBanks.length === 0 ? <p className="px-3 py-4 text-sm text-muted-foreground">No bank accounts captured yet.</p> : <table className="w-full min-w-[720px] text-sm"><thead className="bg-secondary/30 text-left text-xs uppercase tracking-wide text-muted-foreground"><tr><th className="border-r border-border px-3 py-2">Requirement</th><th className="border-r border-border px-3 py-2">Bank</th><th className="border-r border-border px-3 py-2">Account</th><th className="px-3 py-2 text-right">Actions</th></tr></thead><tbody className="divide-y divide-border">{assignmentBanks.map((bank) => <tr key={bank.id}><td className="border-r border-border px-3 py-2">{bankRequirements.find((item) => item.id === bank.bankRequirement)?.bankType ?? bank.configBankType}</td><td className="border-r border-border px-3 py-2 font-medium">{bank.bankName} · {bank.branchName || "No branch"}</td><td className="border-r border-border px-3 py-2 text-muted-foreground">{bank.accountName} · {bank.accountNumber}{bank.isPrimary ? " · Primary" : ""}</td><td className="px-3 py-2 text-right"><button type="button" onClick={() => editBank(bank)} className="mr-2 text-xs font-semibold underline">Edit</button><button type="button" onClick={() => removeBank(bank)} className="text-xs font-semibold text-muted-foreground underline">Remove</button></td></tr>)}</tbody></table>}
-              </div>
-            </section>
-
-            {error && <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</div>}
-          </div>
-          <div className="rounded-xl border border-border bg-secondary/30 p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Current assignment</p>
-            <dl className="mt-4 space-y-3 text-sm">
-              <div className="flex justify-between gap-4 border-b border-border pb-3"><dt className="text-muted-foreground">Partner type</dt><dd className="text-right font-medium text-foreground">{assignment.partnerTypeName}</dd></div>
-              <div className="flex justify-between gap-4 border-b border-border pb-3"><dt className="text-muted-foreground">Branch</dt><dd className="text-right font-medium text-foreground">{assignment.branchName || "Not assigned"}</dd></div>
-              <div className="flex justify-between gap-4 border-b border-border pb-3"><dt className="text-muted-foreground">Region</dt><dd className="text-right font-medium text-foreground">{assignment.region || "Not assigned"}</dd></div>
-              <div className="flex justify-between gap-4"><dt className="text-muted-foreground">Data sharing</dt><dd className="text-right font-medium text-foreground">{assignment.shareDataExternally ? "Enabled" : "Disabled"}</dd></div>
-            </dl>
-            <p className="mt-5 text-xs leading-5 text-muted-foreground">Every update is recorded in the application event history and central audit log with before-and-after values.</p>
+            <aside className="h-fit rounded-xl border border-border bg-card p-4 sm:p-5 xl:sticky xl:top-0"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Setup progress</p><h3 className="mt-1 text-base font-semibold text-foreground">{assignment.partnerTypeName}</h3><div className="mt-5 space-y-3">{steps.map((step) => { const current = step.key === activeSection; const count = step.key === "documents" ? `${completedDocuments}/${documentRequirements.length}` : step.key === "attributes" ? `${completedFields}/${fieldConfigurations.length}` : step.key === "contacts" ? `${completedContacts}/${contactRequirements.length}` : `${completedBanks}/${bankRequirements.length}`; return <button key={step.key} type="button" onClick={() => setActiveSection(step.key)} className={`flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-3 text-left transition ${current ? "border-foreground bg-foreground text-background" : "border-border hover:bg-secondary"}`}><span className="flex items-center gap-2">{step.icon}<span className="text-sm font-semibold">{step.shortLabel}</span></span><span className="text-xs font-semibold opacity-75">{count}</span></button> })}</div><div className="mt-5 border-t border-border pt-4"><dl className="space-y-3 text-sm"><div className="flex justify-between gap-3"><dt className="text-muted-foreground">Branch</dt><dd className="text-right font-medium text-foreground">{assignment.branchName || "Not assigned"}</dd></div><div className="flex justify-between gap-3"><dt className="text-muted-foreground">Region</dt><dd className="text-right font-medium text-foreground">{assignment.region || "Not assigned"}</dd></div><div className="flex justify-between gap-3"><dt className="text-muted-foreground">Data sharing</dt><dd className="text-right font-medium text-foreground">{shareData ? "Enabled" : "Disabled"}</dd></div></dl></div><p className="mt-5 text-xs leading-5 text-muted-foreground">Configuration is read from system parameters. Every nested update is synchronized with the assignment and recorded in the audit/event history.</p></aside>
           </div>
         </div>
-        <div className="flex items-center justify-between border-t border-border px-6 py-4">
-          <span className="text-xs text-muted-foreground">Changes are saved immediately.</span>
-          <div className="flex gap-2">
-            <button onClick={onClose} disabled={saving} className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition hover:bg-secondary disabled:opacity-50">Cancel</button>
-            <button onClick={save} disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{saving ? "Saving..." : "Save changes"}</button>
-          </div>
-        </div>
+
+        <div className="flex flex-col gap-3 border-t border-border bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6"><div className="flex items-center gap-2"><button type="button" onClick={() => void moveToStep(activeStepIndex - 1)} disabled={activeStepIndex <= 0 || setupLoading} className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-2 text-xs font-semibold text-foreground transition hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-40"><ArrowLeft className="h-3.5 w-3.5" />Previous</button><button type="button" onClick={() => void moveToStep(activeStepIndex + 1)} disabled={activeStepIndex >= steps.length - 1 || setupLoading} className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-2 text-xs font-semibold text-foreground transition hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-40">Next</button><span className="hidden text-xs text-muted-foreground sm:inline">Step {activeStepIndex + 1} of {steps.length}</span></div><div className="flex items-center justify-end gap-2"><button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition hover:bg-secondary disabled:opacity-50">Close</button><button type="button" onClick={() => void saveAssignment()} disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-semibold text-background transition hover:opacity-90 disabled:opacity-50">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{saving ? "Saving..." : "Save assignment"}</button></div></div>
       </div>
     </div>
   )
