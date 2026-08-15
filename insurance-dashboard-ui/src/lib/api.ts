@@ -1083,11 +1083,13 @@ export async function uploadDocument(
   file: File,
   documentType: string,
   documentName?: string,
+  applicationPartnerTypeId?: string,
 ): Promise<ApplicationDocument> {
   const formData = new FormData()
   formData.append("file", file)
   formData.append("document_type", documentType)
   formData.append("document_name", documentName || file.name)
+  if (applicationPartnerTypeId) formData.append("application_partner_type", applicationPartnerTypeId)
 
   const headers = new Headers()
   const token = getAccessToken()
@@ -1249,6 +1251,25 @@ export async function createPartnerType(
   })
   if (!res.ok) throw new Error("Failed to add partner type")
   return (await res.json()).data
+}
+
+export async function updatePartnerType(
+  applicationId: string,
+  id: string,
+  data: Partial<{
+    branch: string | null
+    location: string | null
+    region: string
+    share_data_externally: boolean
+  }>,
+): Promise<ApplicationPartnerType> {
+  const res = await apiFetchAuth(`${ONBOARDING}/applications/${applicationId}/partner-types/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  })
+  const json = await res.json().catch(() => null)
+  if (!res.ok) throw new Error(extractError(res, json))
+  return ((json as Record<string, unknown>)?.data ?? json) as ApplicationPartnerType
 }
 
 export async function deletePartnerType(applicationId: string, id: string): Promise<void> {

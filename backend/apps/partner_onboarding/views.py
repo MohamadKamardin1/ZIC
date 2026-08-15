@@ -23,6 +23,7 @@ from apps.partner_onboarding.models import (
     Branch,
     Location,
     UnifiedOnboardingRecord,
+    PartnerApplicationEvent,
 )
 from apps.partner_onboarding.serializers import (
     PartnerApplicationListSerializer,
@@ -48,6 +49,7 @@ from apps.partner_onboarding.serializers import (
     UnifiedOnboardingRecordSerializer,
 )
 from apps.partner_onboarding.services import ApplicationService, ComplianceService
+from apps.governance.services.audit_service import AuditService
 from apps.partner_onboarding.exceptions import (
     ApplicationTransitionError,
     ApplicationValidationError,
@@ -575,6 +577,21 @@ class LocationViewSet(viewsets.ModelViewSet):
         return qs
 
 
+def _application_partner_type_snapshot(instance):
+    return {
+        "id": str(instance.id),
+        "application_id": str(instance.application_id),
+        "partner_type_id": str(instance.partner_type_id),
+        "partner_type": instance.partner_type.name,
+        "branch_id": str(instance.branch_id) if instance.branch_id else None,
+        "branch": instance.branch.name if instance.branch else None,
+        "location_id": str(instance.location_id) if instance.location_id else None,
+        "location": instance.location.name if instance.location else None,
+        "region": instance.region,
+        "share_data_externally": instance.share_data_externally,
+    }
+
+
 class ApplicationPartnerTypeViewSet(viewsets.ModelViewSet):
     serializer_class = ApplicationPartnerTypeSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -587,7 +604,7 @@ class ApplicationPartnerTypeViewSet(viewsets.ModelViewSet):
             return ApplicationPartnerType.objects.none()
         return ApplicationPartnerType.objects.filter(
             application_id=application.id
-        ).order_by("-created_at")
+        ).select_related("partner_type", "branch", "location").order_by("-created_at")
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -595,7 +612,33 @@ class ApplicationPartnerTypeViewSet(viewsets.ModelViewSet):
         return ApplicationPartnerTypeSerializer
 
     def perform_create(self, serializer):
-        serializer.save()
+        instances = serializer.save()
+        created = instances if isinstance(instances, list) else [instances]
+        for instance in created:
+            snapshot = _application_partner_type_snapshot(instance)
+            PartnerApplicationEvent.objects.create(
+                application=instance.application,
+                event_type="UPDATED",
+                actor=self.request.user,
+                notes="Assigned partner type created.",
+                metadata={"entity": "application_partner_type", "action": "created", "after": snapshot},
+            )
+            AuditService.log(
+                action_type="CREATE",
+                entity_type="partner_onboarding.ApplicationPartnerType",
+                entity_id=instance.id,
+                entity_repr=str(instance),
+                after_state=snapshot,
+                description="Assigned partner type created.",
+                actor=self.request.user,
+                request=self.request,
+                app_label="partner_onboarding",
+                model_name="ApplicationPartnerType",
+                object_id=str(instance.id),
+                object_repr=str(instance),
+                changed_fields=list(snapshot.keys()),
+                reason="Assigned partner type created.",
+            )
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -607,6 +650,72 @@ class ApplicationPartnerTypeViewSet(viewsets.ModelViewSet):
         else:
             result = ApplicationPartnerTypeSerializer(instances, context=self.get_serializer_context()).data
         return _response(data=result, message="Partner type added successfully.", status_code=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        before = _application_partner_type_snapshot(instance)
+        partial = kwargs.pop("partial", False)
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        instance.refresh_from_db()
+        after = _application_partner_type_snapshot(instance)
+        changed = [key for key in after if before.get(key) != after.get(key)]
+        PartnerApplicationEvent.objects.create(
+            application=instance.application,
+            event_type="UPDATED",
+            actor=self.request.user,
+            notes="Assigned partner type updated.",
+            metadata={"entity": "application_partner_type", "action": "updated", "before": before, "after": after, "changed_fields": changed},
+        )
+        AuditService.log(
+            action_type="UPDATE",
+            entity_type="partner_onboarding.ApplicationPartnerType",
+            entity_id=instance.id,
+            entity_repr=str(instance),
+            before_state=before,
+            after_state=after,
+            changed_fields=changed,
+            description="Assigned partner type updated.",
+            actor=self.request.user,
+            request=self.request,
+            app_label="partner_onboarding",
+            model_name="ApplicationPartnerType",
+            object_id=str(instance.id),
+            object_repr=str(instance),
+            reason="Assigned partner type updated.",
+        )
+        return _response(data=ApplicationPartnerTypeSerializer(instance, context=self.get_serializer_context()).data, message="Partner type updated successfully.")
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        before = _application_partner_type_snapshot(instance)
+        application = instance.application
+        response = super().destroy(request, *args, **kwargs)
+        PartnerApplicationEvent.objects.create(
+            application=application,
+            event_type="UPDATED",
+            actor=request.user,
+            notes="Assigned partner type removed.",
+            metadata={"entity": "application_partner_type", "action": "deleted", "before": before},
+        )
+        AuditService.log(
+            action_type="DELETE",
+            entity_type="partner_onboarding.ApplicationPartnerType",
+            entity_id=instance.id,
+            entity_repr=before.get("partner_type", "Assigned partner type"),
+            before_state=before,
+            description="Assigned partner type removed.",
+            actor=request.user,
+            request=request,
+            app_label="partner_onboarding",
+            model_name="ApplicationPartnerType",
+            object_id=str(instance.id),
+            object_repr=before.get("partner_type", "Assigned partner type"),
+            changed_fields=list(before.keys()),
+            reason="Assigned partner type removed.",
+        )
+        return response
 
     def get_serializer_context(self):
         ctx = super().get_serializer_context()

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import {
-  ArrowLeft, Plus, Trash2, Loader2, X, Search,
+  ArrowLeft, Plus, Trash2, Loader2, X, Search, Eye, RefreshCw, Save,
   User, Building2, Landmark, Phone, Mail, MapPin, Send, CheckCircle2,
   XCircle, AlertTriangle, Shield, FileCheck, Pencil,
 } from "lucide-react"
@@ -9,6 +9,7 @@ import {
   getApplication,
   listPartnerTypes,
   createPartnerType,
+  updatePartnerType,
   deletePartnerType,
   listContacts,
   listBankAccounts,
@@ -521,9 +522,12 @@ export default function ApplicationDetail() {
             <PartnerTypeTab
               partnerTypes={partnerTypes}
               applicationId={id!}
-              choices={choices}
+                            choices={choices}
+              documents={documents}
               onAdd={(pts) => setPartnerTypes((prev) => [...prev, ...pts])}
+
               onDelete={handleDeletePartnerType}
+              onRefresh={load}
             />
           )}
           {subTab === "contacts" && (
@@ -556,14 +560,19 @@ export default function ApplicationDetail() {
 
 function InfoTable({ rows }: { rows: { label: string; value: string }[] }) {
   return (
-    <dl className="grid grid-cols-1 gap-x-8 gap-y-2.5 sm:grid-cols-2">
-      {rows.map((r) => (
-        <div key={r.label} className="flex gap-2 text-sm">
-          <dt className="w-36 shrink-0 font-medium text-muted-foreground">{r.label}</dt>
-          <dd className="text-foreground">{r.value || "—"}</dd>
-        </div>
-      ))}
-    </dl>
+    <div className="overflow-hidden rounded-xl border border-border bg-background">
+      <dl className="grid grid-cols-1 divide-y divide-border sm:grid-cols-2 sm:divide-y-0">
+        {rows.map((r, index) => (
+          <div
+            key={r.label}
+            className={`grid min-h-12 grid-cols-[minmax(7rem,38%)_1fr] items-center gap-3 px-4 py-3 text-sm ${index % 2 === 1 ? "sm:border-l sm:border-border" : ""} ${index < rows.length - 2 ? "border-b border-border" : ""}`}
+          >
+            <dt className="font-medium text-muted-foreground">{r.label}</dt>
+            <dd className="break-words border-l border-border pl-3 font-medium text-foreground">{r.value || "—"}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   )
 }
 
@@ -575,18 +584,22 @@ function PartnerTypeTab({
   partnerTypes,
   applicationId,
   choices,
+  documents,
   onAdd,
   onDelete,
+  onRefresh,
 }: {
   partnerTypes: ApplicationPartnerType[]
   applicationId: string
   choices: ChoicesResponse | null
+  documents: PartnerApplicationDetail["documents"]
   onAdd: (pts: ApplicationPartnerType[]) => void
   onDelete: (id: string) => void
+  onRefresh: () => Promise<void>
 }) {
   const [showPopup, setShowPopup] = useState(false)
+  const [editing, setEditing] = useState<ApplicationPartnerType | null>(null)
   const [adding, setAdding] = useState(false)
-  const navigateSetup = useNavigate()
 
   return (
     <div>
@@ -606,34 +619,44 @@ function PartnerTypeTab({
       {partnerTypes.length === 0 ? (
         <p className="py-6 text-center text-sm text-muted-foreground">No partner types assigned yet.</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
+        <div className="overflow-x-auto rounded-xl border border-border">
+          <table className="w-full border-collapse text-sm">
+            <thead className="bg-secondary/40">
               <tr className="border-b border-border text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                <th className="px-3 py-2">Partner Type</th>
-                <th className="px-3 py-2">Branch</th>
-                <th className="px-3 py-2">Region</th>
-                <th className="px-3 py-2">Location</th>
-                <th className="px-3 py-2">Share Data</th>
-                <th className="w-14 px-2 py-2 text-right">Actions</th>
+                <th className="border-r border-border px-3 py-3">Partner Type</th>
+                <th className="border-r border-border px-3 py-3">Branch</th>
+                <th className="border-r border-border px-3 py-3">Region</th>
+                <th className="border-r border-border px-3 py-3">Location</th>
+                <th className="border-r border-border px-3 py-3">Share Data</th>
+                <th className="w-28 px-3 py-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-border">
               {partnerTypes.map((pt) => (
-                <tr key={pt.id} className="border-b border-border/50 last:border-b-0">
-                  <td className="px-3 py-2.5 font-medium text-foreground">{pt.partnerTypeName}</td>
-                  <td className="px-3 py-2.5 text-muted-foreground">{pt.branchName || "—"}</td>
-                  <td className="px-3 py-2.5 text-muted-foreground">{pt.region || "—"}</td>
-                  <td className="px-3 py-2.5 text-muted-foreground">{pt.locationName || "—"}</td>
-                  <td className="px-3 py-2.5 text-muted-foreground">{pt.shareDataExternally ? "Yes" : "No"}</td>
-                  <td className="px-2 py-2.5 text-right">
-                    <button
-                      onClick={() => onDelete(pt.id)}
-                      className="rounded p-1 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
-                      title="Remove"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                <tr key={pt.id} className="transition-colors hover:bg-secondary/30">
+                  <td className="border-r border-border px-3 py-3 font-medium text-foreground">{pt.partnerTypeName}</td>
+                  <td className="border-r border-border px-3 py-3 text-muted-foreground">{pt.branchName || "—"}</td>
+                  <td className="border-r border-border px-3 py-3 text-muted-foreground">{pt.region || "—"}</td>
+                  <td className="border-r border-border px-3 py-3 text-muted-foreground">{pt.locationName || "—"}</td>
+                  <td className="border-r border-border px-3 py-3 text-muted-foreground">{pt.shareDataExternally ? "Yes" : "No"}</td>
+                  <td className="px-3 py-3 text-right">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        onClick={() => setEditing(pt)}
+                        className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1.5 text-xs font-medium text-foreground transition hover:bg-secondary"
+                        title="View and update setup"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        View / Edit
+                      </button>
+                      <button
+                        onClick={() => onDelete(pt.id)}
+                        className="rounded-md border border-border p-1.5 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                        title="Remove"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -651,7 +674,7 @@ function PartnerTypeTab({
             const result = await createPartnerType(applicationId, data)
             onAdd(result)
             setShowPopup(false)
-            navigateSetup(`/system-parameters/partner/partner-types/${data.partner_type}/setup?applicationId=${applicationId}`)
+            await onRefresh()
           } catch (e) {
             throw e
           } finally {
@@ -661,6 +684,206 @@ function PartnerTypeTab({
         choices={choices}
         loading={adding}
       />
+      {editing && (
+        <PartnerTypeSetupModal
+          assignment={editing}
+          choices={choices}
+          applicationId={applicationId}
+          documents={documents}
+          onClose={() => setEditing(null)}
+          onRefresh={onRefresh}
+          onSaved={async () => {
+            setEditing(null)
+            await onRefresh()
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+/*  PartnerTypeSetupModal                                                      */
+/* -------------------------------------------------------------------------- */
+
+function PartnerTypeSetupModal({
+  assignment,
+  choices,
+  applicationId,
+  documents,
+  onClose,
+  onRefresh,
+  onSaved,
+}: {
+  assignment: ApplicationPartnerType
+  choices: ChoicesResponse | null
+  applicationId: string
+  documents: PartnerApplicationDetail["documents"]
+  onClose: () => void
+  onRefresh: () => Promise<void>
+  onSaved: () => Promise<void>
+}) {
+  const [branch, setBranch] = useState(assignment.branch ?? "")
+  const [region, setRegion] = useState(assignment.region ?? "")
+  const [location, setLocation] = useState(assignment.location ?? "")
+  const [shareData, setShareData] = useState(assignment.shareDataExternally)
+  const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState("")
+  const [documentType, setDocumentType] = useState("")
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const locations = (choices?.locations ?? []).filter((item) => !branch || item.branchId === branch)
+  const assignmentDocuments = documents.filter((document) => document.applicationPartnerType === assignment.id)
+
+  async function uploadAssignmentDocument() {
+    if (!selectedFile || !documentType) {
+      setError("Select a document type and file before uploading.")
+      return
+    }
+    setUploading(true)
+    setError("")
+    try {
+      await uploadDocument(applicationId, selectedFile, documentType, selectedFile.name, assignment.id)
+      await onRefresh()
+      setSelectedFile(null)
+      setDocumentType("")
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to upload the assigned document")
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  async function removeAssignmentDocument(documentId: string, documentName: string) {
+    if (!window.confirm(`Remove ${documentName}? This action will be recorded in the event history.`)) return
+    setUploading(true)
+    setError("")
+    try {
+      await deleteDocument(applicationId, documentId)
+      await onRefresh()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to remove the assigned document")
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  async function save() {
+    setSaving(true)
+    setError("")
+    try {
+      await updatePartnerType(applicationId, assignment.id, {
+        branch: branch || null,
+        region,
+        location: location || null,
+        share_data_externally: shareData,
+      })
+      await onSaved()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to update partner type")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/45 p-4" role="dialog" aria-modal="true" aria-label="Partner type setup">
+      <div className="flex max-h-[min(760px,calc(100vh-2rem))] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+        <div className="flex items-start justify-between border-b border-border px-6 py-5">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Assigned partner type</p>
+            <h2 className="mt-1 text-xl font-semibold text-foreground">{assignment.partnerTypeName}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Review and update assignment information without leaving this application.</p>
+          </div>
+          <button onClick={onClose} className="rounded-lg border border-border p-2 text-muted-foreground transition hover:bg-secondary hover:text-foreground" aria-label="Close">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="grid gap-6 overflow-y-auto p-6 md:grid-cols-[1.1fr_.9fr]">
+          <div className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="space-y-1.5 text-sm font-medium text-foreground">
+                Branch
+                <select value={branch} onChange={(event) => { setBranch(event.target.value); setLocation("") }} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/30">
+                  <option value="">No branch</option>
+                  {(choices?.branches ?? []).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                </select>
+              </label>
+              <label className="space-y-1.5 text-sm font-medium text-foreground">
+                Region
+                <select value={region} onChange={(event) => setRegion(event.target.value)} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/30">
+                  <option value="">No region</option>
+                  {(choices?.regions ?? []).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                </select>
+              </label>
+            </div>
+            <label className="block space-y-1.5 text-sm font-medium text-foreground">
+              Location
+              <select value={location} onChange={(event) => setLocation(event.target.value)} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/30">
+                <option value="">No location</option>
+                {locations.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+              </select>
+            </label>
+            <label className="flex items-start gap-3 rounded-xl border border-border p-4 text-sm">
+              <input type="checkbox" checked={shareData} onChange={(event) => setShareData(event.target.checked)} className="mt-0.5 h-4 w-4 accent-black" />
+              <span><span className="block font-medium text-foreground">Share data externally</span><span className="mt-1 block text-muted-foreground">Allow approved downstream processes to use this assignment data.</span></span>
+            </label>
+            <section className="rounded-xl border border-border bg-background p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground">Required documents for this assignment</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">Upload evidence directly against {assignment.partnerTypeName}. Changes are synchronized immediately.</p>
+                </div>
+                <span className="rounded-full border border-border px-2 py-1 text-xs font-semibold text-foreground">{assignmentDocuments.length}</span>
+              </div>
+              <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                <select value={documentType} onChange={(event) => setDocumentType(event.target.value)} className="rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30">
+                  <option value="">Select document type</option>
+                  {(choices?.documentTypes ?? []).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                </select>
+                <input type="file" onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} className="min-w-0 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground file:mr-3 file:border-0 file:bg-transparent file:text-sm file:font-medium" />
+                <button onClick={uploadAssignmentDocument} disabled={uploading || !selectedFile || !documentType} className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50">
+                  {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Upload
+                </button>
+              </div>
+              <div className="mt-4 overflow-hidden rounded-lg border border-border">
+                {assignmentDocuments.length === 0 ? (
+                  <p className="px-3 py-4 text-sm text-muted-foreground">No assignment-specific documents uploaded yet.</p>
+                ) : assignmentDocuments.map((document) => (
+                  <div key={document.id} className="flex items-center justify-between gap-3 border-b border-border px-3 py-3 last:border-b-0">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-foreground">{document.documentName}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">{document.documentType} · {document.isVerified ? "Verified" : "Pending verification"}</p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <a href={document.file} target="_blank" rel="noreferrer" className="rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-secondary">View</a>
+                      <button onClick={() => removeAssignmentDocument(document.id, document.documentName)} disabled={uploading} className="rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50">Remove</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+            {error && <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</div>}
+          </div>
+          <div className="rounded-xl border border-border bg-secondary/30 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Current assignment</p>
+            <dl className="mt-4 space-y-3 text-sm">
+              <div className="flex justify-between gap-4 border-b border-border pb-3"><dt className="text-muted-foreground">Partner type</dt><dd className="text-right font-medium text-foreground">{assignment.partnerTypeName}</dd></div>
+              <div className="flex justify-between gap-4 border-b border-border pb-3"><dt className="text-muted-foreground">Branch</dt><dd className="text-right font-medium text-foreground">{assignment.branchName || "Not assigned"}</dd></div>
+              <div className="flex justify-between gap-4 border-b border-border pb-3"><dt className="text-muted-foreground">Region</dt><dd className="text-right font-medium text-foreground">{assignment.region || "Not assigned"}</dd></div>
+              <div className="flex justify-between gap-4"><dt className="text-muted-foreground">Data sharing</dt><dd className="text-right font-medium text-foreground">{assignment.shareDataExternally ? "Enabled" : "Disabled"}</dd></div>
+            </dl>
+            <p className="mt-5 text-xs leading-5 text-muted-foreground">Every update is recorded in the application event history and central audit log with before-and-after values.</p>
+          </div>
+        </div>
+        <div className="flex items-center justify-between border-t border-border px-6 py-4">
+          <span className="text-xs text-muted-foreground">Changes are saved immediately.</span>
+          <div className="flex gap-2">
+            <button onClick={onClose} disabled={saving} className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition hover:bg-secondary disabled:opacity-50">Cancel</button>
+            <button onClick={save} disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{saving ? "Saving..." : "Save changes"}</button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

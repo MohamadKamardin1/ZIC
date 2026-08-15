@@ -90,7 +90,12 @@ urlpatterns = [
     ),
     path(
         "applications/<uuid:application_pk>/partner-types/<uuid:pk>/",
-        ApplicationPartnerTypeViewSet.as_view({"delete": "destroy"}),
+        ApplicationPartnerTypeViewSet.as_view({
+            "get": "retrieve",
+            "put": "update",
+            "patch": "partial_update",
+            "delete": "destroy",
+        }),
         name="application-partner-type-detail",
     ),
     path(

@@ -308,6 +308,7 @@ export interface PartnerApplicationList {
 
 export interface ApplicationDocument {
   id: string
+  applicationPartnerType?: string | null
   documentType: string
   documentName: string
   file: string
