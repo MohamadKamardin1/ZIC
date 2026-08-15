@@ -112,6 +112,11 @@ DATABASES = {
     'default': env.db('DATABASE_URL', default='sqlite:///db.sqlite3')
 }
 
+if DATABASES['default']['ENGINE'].endswith('sqlite3'):
+    DATABASES['default']['OPTIONS'] = {
+        'timeout': 30,
+    }
+
 AUTH_USER_MODEL = 'users.User'
 
 AUTH_PASSWORD_VALIDATORS = [
@@ -366,6 +371,9 @@ JAZZMIN_UI_TWEAKS = {
 }
 
 IMPORT_EXPORT_USE_TRANSACTIONS = True
+
+LOGGING_DIR = BASE_DIR / 'logs'
+LOGGING_DIR.mkdir(exist_ok=True)
 
 LOGGING = {
     'version': 1,

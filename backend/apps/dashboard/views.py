@@ -1,6 +1,7 @@
 from decimal import Decimal, InvalidOperation
 
 import requests
+from django.db import transaction
 from django.db.models import Count, Q
 from django.utils import timezone
 from rest_framework import status
@@ -195,14 +196,21 @@ class DashboardOverviewView(APIView):
     def _get_notifications_data(self, user):
         """Get persisted notifications and synchronize recent onboarding events."""
         _sync_application_notifications(user)
-        persisted = DashboardNotification.objects.filter(owner=user).order_by("-created_at")[:5]
+        user_notifications = DashboardNotification.objects.filter(owner=user)
+        recent = user_notifications.order_by("-created_at")
+        request_count = user_notifications.filter(status__in=["PENDING", "SUBMITTED"]).count()
+        approved = user_notifications.filter(status="APPROVED").count()
+        rejected = user_notifications.filter(status="REJECTED").count()
+        cancelled = user_notifications.filter(status="CANCELLED").count()
+        unread_count = user_notifications.filter(is_read=False).count()
+        persisted = recent[:5]
         if persisted.exists():
             return {
-                "request": persisted.filter(status__in=["PENDING", "SUBMITTED"]).count(),
-                "approved": persisted.filter(status="APPROVED").count(),
-                "rejected": persisted.filter(status="REJECTED").count(),
-                "cancelled": persisted.filter(status="CANCELLED").count(),
-                "unreadCount": DashboardNotification.objects.filter(owner=user, is_read=False).count(),
+                "request": request_count,
+                "approved": approved,
+                "rejected": rejected,
+                "cancelled": cancelled,
+                "unreadCount": unread_count,
                 "notifications": [
                     {
                         "id": str(item.id),
@@ -438,21 +446,22 @@ class DashboardNotificationReadAllView(APIView):
 
 def _sync_application_notifications(user):
     recent_apps = PartnerApplication.objects.order_by("-created_at")[:20]
-    for application in recent_apps:
-        display_name = application.display_name or application.application_number
-        DashboardNotification.objects.update_or_create(
-            owner=user,
-            external_key=f"onboarding:{application.pk}",
-            defaults={
-                "kind": "ONBOARDING",
-                "title": f"Partner application {application.application_number}",
-                "message": f"{display_name} is {application.get_status_display()}.",
-                "status": application.status,
-                "route": f"/onboarding/{application.pk}",
-                "entity_type": "PartnerApplication",
-                "entity_id": str(application.pk),
-            },
-        )
+    with transaction.atomic():
+        for application in recent_apps:
+            display_name = application.display_name or application.application_number
+            DashboardNotification.objects.update_or_create(
+                owner=user,
+                external_key=f"onboarding:{application.pk}",
+                defaults={
+                    "kind": "ONBOARDING",
+                    "title": f"Partner application {application.application_number}",
+                    "message": f"{display_name} is {application.get_status_display()}.",
+                    "status": application.status,
+                    "route": f"/onboarding/{application.pk}",
+                    "entity_type": "PartnerApplication",
+                    "entity_id": str(application.pk),
+                },
+            )
 
 
 class GlobalSearchView(APIView):
