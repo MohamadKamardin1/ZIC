@@ -57,6 +57,7 @@ import type {
   ChoicesResponse,
 } from "../../lib/types"
 import { useStatusLabel, useStatusColor } from "../../config/ConfigurationHooks"
+import { getConfiguredParameterValue, usePartnerOnboardingConfiguration } from "../../config/ConfigurationAPI"
 import { useLitProps } from "../../lib/useLitProps"
 import FlowBanner from "../../components/shared/FlowBanner"
 import ConfirmDialog from "../../components/shared/ConfirmDialog"
@@ -773,7 +774,9 @@ function PartnerTypeSetupModal({
   const [editingContactId, setEditingContactId] = useState<string | null>(null)
   const [editingBankId, setEditingBankId] = useState<string | null>(null)
   const [contactDraft, setContactDraft] = useState({ requirement: "", firstName: "", lastName: "", email: "", phone: "", mobile: "", designation: "", isPrimary: false, notes: "" })
-  const [bankDraft, setBankDraft] = useState({ requirement: "", bankName: "", branchName: "", accountName: "", accountNumber: "", swiftCode: "", currency: "TZS", isPrimary: false, notes: "" })
+  const [bankDraft, setBankDraft] = useState({ requirement: "", bankName: "", branchName: "", accountName: "", accountNumber: "", swiftCode: "", currency: "", isPrimary: false, notes: "" })
+  const { configuration: onboardingConfiguration } = usePartnerOnboardingConfiguration()
+  const configuredCurrency = String(getConfiguredParameterValue(onboardingConfiguration, "DEFAULT_CURRENCY", "TZS"))
 
   const locations = (choices?.locations ?? []).filter((item) => !branch || item.branchId === branch)
   const assignmentDocuments = documents.filter((document) => document.applicationPartnerType === assignment.id)
@@ -813,6 +816,10 @@ function PartnerTypeSetupModal({
   }, [assignment.id, assignment.partnerType])
 
   useEffect(() => { void loadAssignmentSetup() }, [loadAssignmentSetup])
+
+  useEffect(() => {
+    setBankDraft((current) => current.currency ? current : { ...current, currency: configuredCurrency })
+  }, [configuredCurrency])
 
   function clearFeedback() {
     setError("")
@@ -887,7 +894,7 @@ function PartnerTypeSetupModal({
 
   function resetBankDraft() {
     setEditingBankId(null)
-    setBankDraft({ requirement: "", bankName: "", branchName: "", accountName: "", accountNumber: "", swiftCode: "", currency: "TZS", isPrimary: false, notes: "" })
+    setBankDraft({ requirement: "", bankName: "", branchName: "", accountName: "", accountNumber: "", swiftCode: "", currency: configuredCurrency, isPrimary: false, notes: "" })
   }
 
   async function saveContact() {
@@ -936,7 +943,7 @@ function PartnerTypeSetupModal({
       account_name: bankDraft.accountName.trim(),
       account_number: bankDraft.accountNumber.trim(),
       swift_code: bankDraft.swiftCode.trim(),
-      currency: bankDraft.currency.trim() || "TZS",
+      currency: bankDraft.currency.trim() || configuredCurrency,
       is_primary: bankDraft.isPrimary,
       notes: bankDraft.notes.trim(),
     }

@@ -40,7 +40,8 @@ import type {
   ApplicationBankAccount,
   ChoicesResponse,
 } from "../../lib/types"
-import { useChoiceList } from "../../config/ConfigurationAPI"
+import { useChoiceList, usePartnerOnboardingConfiguration } from "../../config/ConfigurationAPI"
+import type { PartnerOnboardingConfiguration } from "../../config/ConfigurationTypes"
 import type { Step } from "../../components/shared/Stepper"
 
 /* ------------------------------------------------------------------ */
@@ -186,6 +187,76 @@ function toPayload(f: FormState): Record<string, unknown> {
   return payload
 }
 
+function configuredOptions(
+  configuration: PartnerOnboardingConfiguration | null,
+  codes: string[],
+  fallback: { value: string; label: string }[],
+) {
+  const list = configuration?.choiceLists.find((item) => codes.includes(item.code))
+  if (!list) return fallback
+  return list.options.filter((option) => option.isActive).sort((a, b) => a.sortOrder - b.sortOrder).map((option) => ({ value: option.code, label: option.label }))
+}
+
+function configuredDefault(
+  configuration: PartnerOnboardingConfiguration | null,
+  codes: string[],
+  fallback: string,
+) {
+  const list = configuration?.choiceLists.find((item) => codes.includes(item.code))
+  return list?.options.find((option) => option.isActive && option.isDefault)?.code ?? fallback
+}
+
+function configuredParameter(configuration: PartnerOnboardingConfiguration | null, code: string): unknown {
+  for (const group of configuration?.groups ?? []) {
+    const direct = group.parameters.find((parameter) => parameter.code === code)
+    if (direct) return direct.value
+    for (const child of group.children) {
+      const nested = child.parameters.find((parameter) => parameter.code === code)
+      if (nested) return nested.value
+    }
+  }
+  return undefined
+}
+
+function requiredFieldList(configuration: PartnerOnboardingConfiguration | null, partnerType: string) {
+  const code = partnerType === "INDIVIDUAL" ? "INDIVIDUAL_REQUIRED_FIELDS" : "CORPORATE_REQUIRED_FIELDS"
+  const value = configuredParameter(configuration, code)
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []
+}
+
+function formValueForParameter(form: FormState, code: string): unknown {
+  const fields: Record<string, keyof FormState> = {
+    identification_type: "identificationType",
+    identification_number: "identificationNumber",
+    first_name: "firstName",
+    other_name: "otherName",
+    surname: "surname",
+    title: "title",
+    gender: "gender",
+    date_of_birth: "dateOfBirth",
+    marital_status: "maritalStatus",
+    occupation: "occupation",
+    nationality: "nationality",
+    company_name: "companyName",
+    tin_number: "tinNumber",
+    incorporation_date: "incorporationDate",
+    company_incorporation: "companyIncorporation",
+    industry: "industry",
+    contact_person: "contactPerson",
+    contact_person_phone: "contactPersonPhone",
+    contact_person_email: "contactPersonEmail",
+    email: "email",
+    telephone_number: "telephoneNumber",
+    mobile_number: "mobileNumber",
+    physical_address: "physicalAddress",
+    postal_address: "postalAddress",
+    political_risk: "politicalRisk",
+    aml_risk: "amlRisk",
+  }
+  const field = fields[code]
+  return field ? form[field] : undefined
+}
+
 /* ------------------------------------------------------------------ */
 /*  Main Component                                                     */
 /* ------------------------------------------------------------------ */
@@ -215,6 +286,7 @@ export default function ApplicationForm() {
   const [dynamicFieldValues, setDynamicFieldValues] = useState<Record<string, unknown>>({})
   const [choices, setChoices] = useState<ChoicesResponse | null>(null)
   const [roleConfigs, setRoleConfigs] = useState<Record<string, PartnerRoleConfig>>({})
+  const { configuration: onboardingConfiguration } = usePartnerOnboardingConfiguration()
 
   /* ------------------ Choice Lists ------------------ */
   const titleList = useChoiceList("TITLE_CHOICES")
@@ -228,7 +300,29 @@ export default function ApplicationForm() {
   const documentTypeList = useChoiceList("DOCUMENT_TYPE_CHOICES")
   const systemPartnerTypeList = useChoiceList("system_partner_types")
 
+  const titleOptions = configuredOptions(onboardingConfiguration, ["TITLE_CHOICES"], titleList.options)
+  const idTypeOptions = configuredOptions(onboardingConfiguration, ["IDENTIFICATION_TYPE_CHOICES"], idTypeList.options)
+  const genderOptions = configuredOptions(onboardingConfiguration, ["GENDER_CHOICES"], genderList.options)
+  const maritalStatusOptions = configuredOptions(onboardingConfiguration, ["MARITAL_STATUS_CHOICES"], maritalStatusList.options)
+  const nationalityOptions = configuredOptions(onboardingConfiguration, ["NATIONALITY_CHOICES"], nationalityList.options)
+  const industryOptions = configuredOptions(onboardingConfiguration, ["INDUSTRY_CHOICES"], industryList.options)
+  const politicalRiskOptions = configuredOptions(onboardingConfiguration, ["POLITICAL_RISK_CHOICES"], politicalRiskList.options)
+  const amlRiskOptions = configuredOptions(onboardingConfiguration, ["AML_RISK_CHOICES"], amlRiskList.options)
+  const documentTypeOptions = configuredOptions(onboardingConfiguration, ["DOCUMENT_TYPE_CHOICES"], documentTypeList.options)
+  const systemPartnerTypeOptions = configuredOptions(onboardingConfiguration, ["PARTNER_TYPE_CHOICES", "SYSTEM_PARTNER_TYPE_CHOICES", "system_partner_types"], systemPartnerTypeList.options.length > 0 ? systemPartnerTypeList.options : choices?.systemPartnerTypes ?? [])
+  const defaultCurrency = String(configuredParameter(onboardingConfiguration, "DEFAULT_CURRENCY") ?? "TZS")
+
   /* ------------------ Effects ------------------ */
+  useEffect(() => {
+    if (isEdit || !onboardingConfiguration) return
+    setForm((current) => ({
+      ...current,
+      title: current.title === INITIAL.title ? configuredDefault(onboardingConfiguration, ["TITLE_CHOICES"], INITIAL.title) : current.title,
+      politicalRisk: current.politicalRisk === INITIAL.politicalRisk ? configuredDefault(onboardingConfiguration, ["POLITICAL_RISK_CHOICES"], INITIAL.politicalRisk) : current.politicalRisk,
+      amlRisk: current.amlRisk === INITIAL.amlRisk ? configuredDefault(onboardingConfiguration, ["AML_RISK_CHOICES"], INITIAL.amlRisk) : current.amlRisk,
+    }))
+  }, [isEdit, onboardingConfiguration])
+
   useEffect(() => {
     if (!isEdit) return
     let active = true
@@ -266,7 +360,7 @@ export default function ApplicationForm() {
       setDocs(d.documents || [])
     })
     return () => { active = false }
-  }, [id, isEdit])
+  }, [id, isEdit, defaultCurrency])
 
   useEffect(() => {
     if (!isEdit || !id) return
@@ -340,7 +434,7 @@ export default function ApplicationForm() {
         accountNumber: account.accountNumber || "",
         swiftCode: account.swiftCode || "",
         iban: account.iban || "",
-        currency: account.currency || "TZS",
+        currency: account.currency || defaultCurrency,
         isPrimary: account.isPrimary,
         notes: account.notes || "",
       })))
@@ -389,21 +483,41 @@ export default function ApplicationForm() {
       case 0:
         if (!form.partnerType) return "Select a client type"
         break
-      case 1:
-        if (form.partnerType === "INDIVIDUAL") {
-          if (!form.firstName) return "First name is required"
-          if (!form.surname) return "Surname is required"
-        } else {
-          if (!form.companyName) return "Company name is required"
-          if (!form.tinNumber) return "TIN number is required"
-          if (!form.contactPerson) return "Contact person is required"
-        }
+      case 1: {
+        const configuredFields = requiredFieldList(onboardingConfiguration, form.partnerType)
+        const informationFields = form.partnerType === "INDIVIDUAL"
+          ? new Set(["identification_type", "identification_number", "first_name", "other_name", "surname", "title", "gender", "date_of_birth", "marital_status", "occupation", "nationality"])
+          : new Set(["company_name", "tin_number", "incorporation_date", "company_incorporation", "industry", "contact_person"])
+        const requiredFields = configuredFields.length > 0
+          ? configuredFields.filter((field) => informationFields.has(field))
+          : form.partnerType === "INDIVIDUAL" ? ["first_name", "surname"] : ["company_name", "tin_number", "contact_person"]
+        const missingField = requiredFields.find((field) => {
+          const value = formValueForParameter(form, field)
+          return value === undefined || value === null || String(value).trim() === ""
+        })
+        if (missingField) return `Complete the required field: ${missingField.replace(/_/g, " ")}`
         break
-      case 2:
+      }
+      case 2: {
+        const missingDynamicField = dynamicFieldsConfig.find((field) => {
+          if (!field.isRequired) return false
+          const value = dynamicFieldValues[field.id]
+          return value === undefined || value === null || (Array.isArray(value) ? value.length === 0 : String(value).trim() === "")
+        })
+        if (missingDynamicField) return `Complete the required partner attribute: ${missingDynamicField.fieldName}`
         break
+      }
       case 3: {
-        if (!form.email) return "Email is required"
-        if (!form.mobileNumber) return "Mobile number is required"
+        const configuredFields = requiredFieldList(onboardingConfiguration, form.partnerType)
+        const contactFields = new Set(["email", "telephone_number", "mobile_number", "physical_address", "postal_address", "contact_person_phone", "contact_person_email"])
+        const requiredContactFields = configuredFields.length > 0
+          ? configuredFields.filter((field) => contactFields.has(field))
+          : ["email", "mobile_number"]
+        const missingContactField = requiredContactFields.find((field) => {
+          const value = formValueForParameter(form, field)
+          return value === undefined || value === null || String(value).trim() === ""
+        })
+        if (missingContactField) return `Complete the required field: ${missingContactField.replace(/_/g, " ")}`
         const requiredContactTypes = contactRequirements.filter((item) => item.isRequired).map((item) => item.contactType)
         const presentContactTypes = new Set(contacts.map((contact) => contact.contactType))
         const missingContacts = requiredContactTypes.filter((type) => !presentContactTypes.has(type))
@@ -687,12 +801,12 @@ export default function ApplicationForm() {
             form={form}
             isCorporate={isCorporate}
             update={update}
-            titleList={titleList}
-            idTypeList={idTypeList}
-            genderList={genderList}
-            maritalStatusList={maritalStatusList}
-            nationalityList={nationalityList}
-            industryList={industryList}
+            titleList={{ ...titleList, options: titleOptions }}
+            idTypeList={{ ...idTypeList, options: idTypeOptions }}
+            genderList={{ ...genderList, options: genderOptions }}
+            maritalStatusList={{ ...maritalStatusList, options: maritalStatusOptions }}
+            nationalityList={{ ...nationalityList, options: nationalityOptions }}
+            industryList={{ ...industryList, options: industryOptions }}
           />
         )}
 
@@ -705,7 +819,7 @@ export default function ApplicationForm() {
             dynamicFieldsConfig={dynamicFieldsConfig}
             dynamicFieldValues={dynamicFieldValues}
             setDynamicFieldValues={setDynamicFieldValues}
-            systemPartnerTypeList={systemPartnerTypeList}
+            systemPartnerTypeList={{ ...systemPartnerTypeList, options: systemPartnerTypeOptions }}
             choices={choices}
           />
         )}
@@ -714,14 +828,15 @@ export default function ApplicationForm() {
           <StepContactRisk
             form={form}
             update={update}
-            politicalRiskList={politicalRiskList}
-            amlRiskList={amlRiskList}
+            politicalRiskList={{ ...politicalRiskList, options: politicalRiskOptions }}
+            amlRiskList={{ ...amlRiskList, options: amlRiskOptions }}
             contacts={contacts}
             setContacts={setContacts}
             bankAccounts={bankAccounts}
             setBankAccounts={setBankAccounts}
             contactRequirements={contactRequirements}
             bankRequirements={bankRequirements}
+            defaultCurrency={defaultCurrency}
           />
         )}
 
@@ -730,7 +845,7 @@ export default function ApplicationForm() {
             isEdit={isEdit}
             docs={docs}
             documentRequirements={documentRequirements}
-            documentTypeList={documentTypeList}
+            documentTypeList={{ ...documentTypeList, options: documentTypeOptions }}
             onUpload={handleUpload}
             onDelete={handleDeleteDoc}
             onVerify={handleVerifyDoc}
@@ -742,7 +857,7 @@ export default function ApplicationForm() {
             form={form}
             isCorporate={isCorporate}
             selectedPartnerTypes={selectedPartnerTypes}
-            systemPartnerTypeList={systemPartnerTypeList}
+            systemPartnerTypeList={{ ...systemPartnerTypeList, options: systemPartnerTypeOptions }}
             docs={docs}
             isEdit={isEdit}
           />
@@ -1192,6 +1307,7 @@ function StepContactRisk({
   setBankAccounts,
   contactRequirements,
   bankRequirements,
+  defaultCurrency,
 }: {
   form: FormState
   update: <K extends keyof FormState>(k: K, v: FormState[K]) => void
@@ -1203,6 +1319,7 @@ function StepContactRisk({
   setBankAccounts: Dispatch<SetStateAction<BankDraft[]>>
   contactRequirements: PartnerTypeContactRequirement[]
   bankRequirements: PartnerTypeBankRequirement[]
+  defaultCurrency: string
 }) {
   const addContact = (contactType = contactRequirements[0]?.contactType || "SECONDARY") => {
     setContacts((current) => [...current, {
@@ -1225,7 +1342,7 @@ function StepContactRisk({
       accountNumber: "",
       swiftCode: "",
       iban: "",
-      currency: "TZS",
+      currency: defaultCurrency,
       isPrimary: current.length === 0,
       notes: "",
     }])

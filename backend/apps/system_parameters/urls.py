@@ -8,6 +8,7 @@ from .views import (
     ChoiceOptionViewSet,
 )
 from .views_config import (
+    config_partner_onboarding,
     config_choices_list,
     config_choices_detail,
     config_workflow,
@@ -24,6 +25,11 @@ router.register(r"choice-options", ChoiceOptionViewSet, basename="choice-options
 urlpatterns = [
     path("", include(router.urls)),
     # Configuration API
+    path(
+        "configuration/partner-onboarding/",
+        config_partner_onboarding,
+        name="config-partner-onboarding",
+    ),
     path("configuration/choices/", config_choices_list, name="config-choices-list"),
     path(
         "configuration/choices/<str:code>/",

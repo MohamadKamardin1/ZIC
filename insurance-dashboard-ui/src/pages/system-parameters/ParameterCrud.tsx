@@ -38,7 +38,7 @@ interface ParamForm {
   integerValue: number | null
   floatValue: number | null
   booleanValue: boolean | null
-  jsonValue: Record<string, unknown> | null
+  jsonValue: unknown
   sortOrder: number
 }
 
@@ -65,7 +65,7 @@ function paramToForm(p: SystemParameter): ParamForm {
     integerValue: p.integerValue,
     floatValue: p.floatValue,
     booleanValue: p.booleanValue,
-    jsonValue: p.jsonValue as Record<string, unknown> | null,
+    jsonValue: p.jsonValue,
     sortOrder: p.sortOrder ?? 0,
   }
 }
@@ -74,33 +74,32 @@ function formToPayload(
   form: ParamForm,
   groupId: string,
 ): Record<string, unknown> {
-  const base: Record<string, unknown> = {
+  const value = (() => {
+    switch (form.valueType) {
+      case "STRING":
+      case "TEXT":
+        return form.stringValue ?? ""
+      case "INTEGER":
+        return form.integerValue
+      case "FLOAT":
+        return form.floatValue
+      case "BOOLEAN":
+        return form.booleanValue
+      case "JSON":
+        return form.jsonValue
+      default:
+        return null
+    }
+  })()
+  return {
     group: groupId,
-    code: form.code,
+    code: form.code.trim().toUpperCase(),
     name: form.name,
     description: form.description,
     value_type: form.valueType,
+    value,
     sort_order: form.sortOrder,
   }
-  switch (form.valueType) {
-    case "STRING":
-    case "TEXT":
-      base.string_value = form.stringValue ?? ""
-      break
-    case "INTEGER":
-      base.integer_value = form.integerValue
-      break
-    case "FLOAT":
-      base.float_value = form.floatValue
-      break
-    case "BOOLEAN":
-      base.boolean_value = form.booleanValue
-      break
-    case "JSON":
-      base.json_value = form.jsonValue
-      break
-  }
-  return base
 }
 
 function ValueEditor({

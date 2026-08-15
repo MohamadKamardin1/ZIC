@@ -1,175 +1,195 @@
 import { Link } from "react-router-dom"
 import {
-  Scale,
-  Grip,
-  FileCheck,
-  ShieldCheck,
-  Columns,
-  Users,
-  Landmark,
+  ArrowRight,
   BookOpen,
+  Building2,
+  CheckSquare,
+  Clock3,
+  FileCheck2,
   Hash,
-  Clock,
-  ChevronRight,
+  Landmark,
+  ListFilter,
+  Loader2,
+  RefreshCw,
+  Scale,
+  Settings2,
+  ShieldCheck,
+  Users,
+  type LucideIcon,
 } from "lucide-react"
 import { PageHeader } from "./SharedComponents"
+import { usePartnerOnboardingConfiguration } from "../../config/ConfigurationAPI"
 
-const PARTNER_GROUPS = [
+const CONFIGURATION_SECTIONS = [
   {
-    label: "Workflow & Statuses",
-    description: "State machine transitions, allowed statuses, and permission rules",
+    label: "Workflow & lifecycle",
+    description: "Statuses, transitions, terminal states, and workflow controls.",
     icon: Scale,
     path: "/system-parameters/partner/workflow",
-    items: ["Status transition rules", "Permission-controlled actions", "Terminal statuses"],
+    key: "workflow",
   },
   {
-    label: "Dropdown Choices",
-    description: "All selectable options: ID types, titles, genders, industries, nationalities, etc.",
-    icon: Grip,
+    label: "Choice catalogues",
+    description: "Controlled values used by every onboarding dropdown and validation rule.",
+    icon: ListFilter,
     path: "/system-parameters/partner/choices",
-    items: [
-      "Identification types",
-      "Titles, Genders, Marital statuses",
-      "Industries, Nationalities",
-      "Document types, Task types/statuses/priorities",
-      "Contact types, Political/AML risk levels",
-    ],
+    key: "choices",
   },
   {
-    label: "Numbering Formats",
-    description: "Application and partner number prefixes, formats, and sequences",
+    label: "Numbering & schedules",
+    description: "Application numbers, partner numbers, sequence formats, and scheduled jobs.",
     icon: Hash,
     path: "/system-parameters/partner/numbering",
-    items: [
-      "Individual app prefix (PA)",
-      "Corporate app prefix (CO)",
-      "Partner number prefix (PN)",
-      "Year format inclusion",
-      "Sequence digit padding",
-    ],
+    key: "numbering",
   },
   {
-    label: "Doc Config per Type",
-    description: "Required documents per partner type with file type, size, and upload rules",
-    icon: FileCheck,
+    label: "Documents by partner type",
+    description: "Required evidence, mandatory status, upload multiplicity, and document rules.",
+    icon: FileCheck2,
     path: "/system-parameters/partner/documents",
-    items: [
-      "AGENT: TIRA license, commission agreement, ID, proof of address",
-      "AGENCY: Agency license, corporate registration, TIRA agreement",
-      "BANCASSURANCE: Bancassurance license, MoU, board resolution",
-      "TAKAFUL: Shariah compliance cert, Takaful license, fund guarantee",
-    ],
+    key: "documents",
   },
   {
-    label: "Field Config per Type",
-    description: "Custom form fields, validation rules, and data types per partner type",
-    icon: Columns,
+    label: "Attributes by partner type",
+    description: "Dynamic fields, defaults, visibility, data types, and validation rules.",
+    icon: Settings2,
     path: "/system-parameters/partner/fields",
-    items: [
-      "AGENT: License number, commission rate, territory, tax ID",
-      "AGENCY: Registration number, override rate, agent count, contract dates",
-      "BANCASSURANCE: License number, MoU dates, product lines, revenue share",
-      "TAKAFUL: Shariah board info, fund details, Wakaful fee",
-    ],
+    key: "attributes",
   },
   {
-    label: "Contact Config per Type",
-    description: "Required contact types and multiplicity per partner type",
+    label: "Contacts by partner type",
+    description: "Contact roles, requiredness, multiplicity, and display order.",
     icon: Users,
     path: "/system-parameters/partner/contact-types",
-    items: [
-      "AGENT: PRIMARY, SECONDARY",
-      "AGENCY: PRIMARY, TECHNICAL, BILLING, COMPLIANCE",
-      "BANCASSURANCE: PRIMARY, TECHNICAL, BILLING, LEGAL",
-      "TAKAFUL: PRIMARY, SHARIAH, BILLING",
-    ],
+    key: "contacts",
   },
   {
-    label: "Bank Config per Type",
-    description: "Required bank account types and validation rules per partner type",
+    label: "Banks by partner type",
+    description: "Bank account roles and type-specific validation requirements.",
     icon: Landmark,
     path: "/system-parameters/partner/bank-types",
-    items: [
-      "AGENT: COMMISSION account",
-      "AGENCY: OPERATIONS + COMMISSION accounts",
-      "BANCASSURANCE: OPERATIONS + COMMISSION (with SWIFT)",
-      "TAKAFUL: OPERATIONS + TAKAFUL_FUND (segregated)",
-    ],
+    key: "banks",
   },
   {
-    label: "Compliance Rules",
-    description: "Risk scoring weights, thresholds, and high-risk industry flags",
+    label: "Compliance & risk",
+    description: "Risk weights, thresholds, high-risk industries, and screening rules.",
     icon: ShieldCheck,
     path: "/system-parameters/partner/compliance",
-    items: [
-      "Political/AML risk weights",
-      "High-risk thresholds per partner type",
-      "High-risk industries list",
-      "PEP bonus score",
-    ],
+    key: "compliance",
   },
   {
-    label: "Field Validation",
-    description: "Required fields per partner type, age validation, and data rules",
+    label: "Field validation",
+    description: "Required base fields, age rules, uniqueness rules, and validation policies.",
     icon: BookOpen,
     path: "/system-parameters/partner/validation",
-    items: [
-      "Individual required fields",
-      "Corporate required fields",
-      "Minimum age requirement",
-      "Email uniqueness rules",
-    ],
+    key: "validation",
   },
   {
-    label: "Scheduled Tasks",
-    description: "Intervals for automated jobs: draft cleanup, reminders, reports",
-    icon: Clock,
+    label: "Scheduled tasks",
+    description: "Draft cleanup, reminders, and compliance reporting windows.",
+    icon: Clock3,
     path: "/system-parameters/partner/schedules",
-    items: [
-      "Expired draft cleanup period (days)",
-      "Pending document reminder interval (days)",
-      "Compliance report window (days)",
-    ],
+    key: "schedules",
   },
 ]
 
+function countParameters(groups: Array<{ parameters: unknown[]; children: Array<{ parameters: unknown[]; children: unknown[] }> }>): number {
+  return groups.reduce((total, group) => (
+    total + group.parameters.length + group.children.reduce((childTotal, child) => childTotal + child.parameters.length, 0)
+  ), 0)
+}
+
 export default function PartnerParameters() {
+  const { configuration, loading, error } = usePartnerOnboardingConfiguration()
+  const partnerTypes = configuration?.partnerTypes ?? []
+  const choiceLists = configuration?.choiceLists ?? []
+  const scalarParameterCount = countParameters(configuration?.groups ?? [])
+  const requirementCounts = partnerTypes.reduce((total, type) => total + type.documents.length + type.attributes.length + type.contacts.length + type.banks.length, 0)
+
   return (
-    <div>
-      <PageHeader title="Partner Parameters" description="All configurable settings for partner onboarding" />
-      <div className="grid gap-5 md:grid-cols-2">
-        {PARTNER_GROUPS.map((group) => {
-          const Icon = group.icon
+    <div className="space-y-6 text-[#1b1b1b]">
+      <PageHeader
+        title="Partner Onboarding Parameters"
+        description="One governed configuration workspace for every dynamic onboarding field, rule, and requirement."
+      />
+
+      <section className="rounded-xl border border-[#dedede] bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#737373]">Configuration control centre</p>
+            <h2 className="mt-1 text-xl font-semibold tracking-tight">Everything onboarding reads is managed here</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-[#666]">
+              Changes are stored by the backend, audited, and reflected in new and existing onboarding forms after the configuration cache refreshes.
+            </p>
+          </div>
+          <div className="inline-flex items-center gap-2 rounded-lg border border-[#dedede] px-3 py-2 text-xs font-medium text-[#555]">
+            <RefreshCw className="h-3.5 w-3.5" />
+            <span>{configuration?.version ?? "partner-onboarding.v1"}</span>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="mt-6 flex items-center gap-2 border-t border-[#eeeeee] pt-5 text-sm text-[#666]">
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading live configuration summary…
+          </div>
+        ) : error ? (
+          <div className="mt-6 border-t border-[#eeeeee] pt-5 text-sm text-[#555]">
+            The configuration summary could not be loaded. The domain editors remain available and use their protected CRUD endpoints.
+          </div>
+        ) : (
+          <div className="mt-6 grid gap-3 border-t border-[#eeeeee] pt-5 sm:grid-cols-2 xl:grid-cols-4">
+            {([
+              { label: "Partner types", value: partnerTypes.length, Icon: Building2 },
+              { label: "Choice catalogues", value: choiceLists.length, Icon: ListFilter },
+              { label: "Dynamic requirements", value: requirementCounts, Icon: CheckSquare },
+              { label: "Scalar parameters", value: scalarParameterCount, Icon: Settings2 },
+            ] as Array<{ label: string; value: number; Icon: LucideIcon }>).map(({ label, value, Icon: SummaryIcon }) => {
+              return (
+                <div key={String(label)} className="rounded-lg border border-[#e5e5e5] bg-[#fafafa] px-4 py-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium uppercase tracking-[0.12em] text-[#777]">{label}</span>
+                    <SummaryIcon className="h-4 w-4 text-[#555]" />
+                  </div>
+                  <p className="mt-2 text-2xl font-semibold tabular-nums">{String(value)}</p>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {CONFIGURATION_SECTIONS.map((section) => {
+          const Icon = section.icon
+          let count: number | null = null
+          if (section.key === "choices") count = choiceLists.length
+          if (section.key === "documents") count = partnerTypes.reduce((total, type) => total + type.documents.length, 0)
+          if (section.key === "attributes") count = partnerTypes.reduce((total, type) => total + type.attributes.length, 0)
+          if (section.key === "contacts") count = partnerTypes.reduce((total, type) => total + type.contacts.length, 0)
+          if (section.key === "banks") count = partnerTypes.reduce((total, type) => total + type.banks.length, 0)
           return (
             <Link
-              key={group.path}
-              to={group.path}
-              className="group rounded-lg border border-border bg-card p-5 transition hover:border-primary/30 hover:shadow-sm"
+              key={section.path}
+              to={section.path}
+              className="group rounded-xl border border-[#dedede] bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[#999] hover:shadow-md"
             >
-              <div className="flex items-start gap-4">
-                <div className="flex h-10 w-10 flex-none items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-[#dedede] bg-[#fafafa] text-[#333]">
                   <Icon className="h-5 w-5" />
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-base font-semibold">{group.label}</h2>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground transition group-hover:translate-x-0.5" />
-                  </div>
-                  <p className="mt-0.5 text-xs text-muted-foreground">{group.description}</p>
-                  <ul className="mt-3 space-y-1">
-                    {group.items.map((item) => (
-                      <li key={item} className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <span className="h-1 w-1 flex-none rounded-full bg-primary/40" />
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
+                <ArrowRight className="h-4 w-4 text-[#999] transition group-hover:translate-x-1 group-hover:text-[#222]" />
+              </div>
+              <div className="mt-5 flex items-end justify-between gap-4">
+                <div>
+                  <h2 className="text-base font-semibold">{section.label}</h2>
+                  <p className="mt-1 text-sm leading-5 text-[#666]">{section.description}</p>
                 </div>
+                {count !== null && <span className="text-2xl font-semibold tabular-nums text-[#333]">{count}</span>}
               </div>
             </Link>
           )
         })}
-      </div>
+      </section>
     </div>
   )
 }

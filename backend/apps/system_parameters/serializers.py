@@ -41,42 +41,66 @@ class SystemParameterSerializer(serializers.ModelSerializer):
 
 
 class SystemParameterWriteSerializer(serializers.ModelSerializer):
+    # A typed write surface used by the organized Settings workspace. The
+    # legacy storage columns remain available for backwards compatibility.
+    value = serializers.JSONField(required=False, write_only=True)
+
     class Meta:
         model = SystemParameter
         fields = [
             "id", "group", "name", "code", "description",
-            "value_type", "string_value", "integer_value",
-            "float_value", "boolean_value", "json_value",
+            "value_type", "value",
+            "string_value", "integer_value", "float_value",
+            "boolean_value", "json_value",
             "is_active", "is_encrypted", "sort_order",
         ]
+        read_only_fields = ["id"]
 
     def validate(self, attrs):
         value_type = attrs.get("value_type")
-        if value_type == "STRING":
-            attrs["integer_value"] = None
-            attrs["float_value"] = None
-            attrs["boolean_value"] = None
-            attrs["json_value"] = None
-        elif value_type == "INTEGER":
-            attrs["string_value"] = None
-            attrs["float_value"] = None
-            attrs["boolean_value"] = None
-            attrs["json_value"] = None
-        elif value_type == "FLOAT":
-            attrs["string_value"] = None
-            attrs["integer_value"] = None
-            attrs["boolean_value"] = None
-            attrs["json_value"] = None
-        elif value_type == "BOOLEAN":
-            attrs["string_value"] = None
-            attrs["integer_value"] = None
-            attrs["float_value"] = None
-            attrs["json_value"] = None
-        elif value_type == "JSON":
-            attrs["string_value"] = None
-            attrs["integer_value"] = None
-            attrs["float_value"] = None
-            attrs["boolean_value"] = None
+        if value_type is None and self.instance is not None:
+            value_type = self.instance.value_type
+        if value_type not in dict(SystemParameter.VALUE_TYPE_CHOICES):
+            raise serializers.ValidationError({"value_type": "Unsupported parameter value type."})
+
+        if "value" in attrs:
+            typed_value = attrs.pop("value")
+            if value_type in {"STRING", "TEXT"}:
+                attrs["string_value"] = None if typed_value is None else str(typed_value)
+            elif value_type == "INTEGER":
+                try:
+                    attrs["integer_value"] = None if typed_value is None else int(typed_value)
+                except (TypeError, ValueError) as exc:
+                    raise serializers.ValidationError({"value": "Value must be an integer."}) from exc
+            elif value_type == "FLOAT":
+                try:
+                    attrs["float_value"] = None if typed_value is None else float(typed_value)
+                except (TypeError, ValueError) as exc:
+                    raise serializers.ValidationError({"value": "Value must be numeric."}) from exc
+            elif value_type == "BOOLEAN":
+                if isinstance(typed_value, str):
+                    typed_value = typed_value.strip().lower() in {"true", "1", "yes", "on"}
+                attrs["boolean_value"] = None if typed_value is None else bool(typed_value)
+            elif value_type == "JSON":
+                attrs["json_value"] = typed_value
+            elif value_type == "FILE":
+                raise serializers.ValidationError({"value": "File parameters must be uploaded through the file field."})
+
+        # Clear stale values whenever the type changes, including partial
+        # updates where the caller only submits a new typed value.
+        value_fields = {
+            "string_value", "integer_value", "float_value", "boolean_value", "json_value"
+        }
+        active_field = {
+            "STRING": "string_value",
+            "TEXT": "string_value",
+            "INTEGER": "integer_value",
+            "FLOAT": "float_value",
+            "BOOLEAN": "boolean_value",
+            "JSON": "json_value",
+        }.get(value_type)
+        for field in value_fields - ({active_field} if active_field else set()):
+            attrs[field] = None
         return attrs
 
 
