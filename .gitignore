@@ -17,17 +17,27 @@ env/
 !.env.example
 
 # Django/runtime
-backend/db.sqlite3
+# Local SQLite databases must never be committed or replaced by a pull.
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
+db.sqlite3
 backend/*.sqlite3
 backend/media/
 backend/staticfiles/
-backend/logs/
-backend/*.log
+
+# Runtime logs
+**/logs/
+*.log
+*.log.*
 
 # Node/frontend
 insurance-dashboard-ui/node_modules/
 insurance-dashboard-ui/dist/
 insurance-dashboard-ui/.vite/
+**/dist/
+**/tsconfig.tsbuildinfo
 
 # IDE/OS
 .vscode/
