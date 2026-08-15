@@ -1247,7 +1247,7 @@ export async function listContacts(applicationId: string): Promise<ApplicationCo
 
 export async function createContact(
   applicationId: string,
-  data: Partial<ApplicationContact>
+  data: Partial<ApplicationContact> | Record<string, unknown>
 ): Promise<ApplicationContact> {
   const res = await apiFetchAuth(`${ONBOARDING}/applications/${applicationId}/contacts/`, {
     method: "POST",
@@ -1276,7 +1276,7 @@ export async function listBankAccounts(applicationId: string): Promise<Applicati
 
 export async function createBankAccount(
   applicationId: string,
-  data: Partial<ApplicationBankAccount>
+  data: Partial<ApplicationBankAccount> | Record<string, unknown>
 ): Promise<ApplicationBankAccount> {
   const res = await apiFetchAuth(`${ONBOARDING}/applications/${applicationId}/bank-accounts/`, {
     method: "POST",

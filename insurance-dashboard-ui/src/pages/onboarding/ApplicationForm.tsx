@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react"
-import { useNavigate, useParams } from "react-router-dom"
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react"
+import { useLocation, useNavigate, useParams } from "react-router-dom"
 import {
   ArrowLeft, ArrowRight, Loader2, Save, Send, Upload, Trash2,
   FileText, CheckCircle2, Building2, User, AlertCircle, FileCheck,
@@ -19,12 +19,25 @@ import {
   listFieldValues,
   batchUpdateFieldValues,
   fetchFieldConfigurations,
+  fetchDocumentRequirements,
+  fetchContactRequirements,
+  fetchBankRequirements,
+  listContacts,
+  createContact,
+  listBankAccounts,
+  createBankAccount,
+  verifyDocument,
   getChoices,
 } from "../../lib/api"
 import type {
   PartnerApplicationDetail,
   ApplicationDocument,
   PartnerTypeFieldConfiguration,
+  PartnerTypeDocumentRequirement,
+  PartnerTypeContactRequirement,
+  PartnerTypeBankRequirement,
+  ApplicationContact,
+  ApplicationBankAccount,
   ChoicesResponse,
 } from "../../lib/types"
 import { useChoiceList } from "../../config/ConfigurationAPI"
@@ -38,6 +51,32 @@ interface PartnerRoleConfig {
   region: string
   location: string | null
   shareDataExternally: boolean
+}
+
+interface ContactDraft {
+  id?: string
+  contactType: string
+  firstName: string
+  lastName: string
+  email: string
+  phone: string
+  mobile: string
+  designation: string
+  isPrimary: boolean
+  notes: string
+}
+
+interface BankDraft {
+  id?: string
+  bankName: string
+  branchName: string
+  accountName: string
+  accountNumber: string
+  swiftCode: string
+  iban: string
+  currency: string
+  isPrimary: boolean
+  notes: string
 }
 
 interface FormState {
@@ -153,14 +192,23 @@ function toPayload(f: FormState): Record<string, unknown> {
 export default function ApplicationForm() {
   const { id } = useParams<{ id: string }>()
   const isEdit = !!id
+  const location = useLocation()
   const navigate = useNavigate()
 
   const [form, setForm] = useState<FormState>(INITIAL)
-  const [step, setStep] = useState(0)
+  const [step, setStep] = useState(() => {
+    const requestedStep = Number((location.state as { step?: number } | null)?.step ?? 0)
+    return Number.isInteger(requestedStep) ? Math.max(0, Math.min(requestedStep, STEPS.length - 1)) : 0
+  })
   const [saving, setSaving] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState("")
   const [docs, setDocs] = useState<ApplicationDocument[]>([])
+  const [documentRequirements, setDocumentRequirements] = useState<PartnerTypeDocumentRequirement[]>([])
+  const [contactRequirements, setContactRequirements] = useState<PartnerTypeContactRequirement[]>([])
+  const [bankRequirements, setBankRequirements] = useState<PartnerTypeBankRequirement[]>([])
+  const [contacts, setContacts] = useState<ContactDraft[]>([])
+  const [bankAccounts, setBankAccounts] = useState<BankDraft[]>([])
 
   const [selectedPartnerTypes, setSelectedPartnerTypes] = useState<string[]>([])
   const [dynamicFieldsConfig, setDynamicFieldsConfig] = useState<PartnerTypeFieldConfiguration[]>([])
@@ -255,8 +303,10 @@ export default function ApplicationForm() {
     Promise.all([
       listApplicationPartnerTypes(id),
       listFieldValues(id),
+      listContacts(id),
+      listBankAccounts(id),
       getChoices(),
-    ]).then(([ptypes, fvalues, chs]) => {
+    ]).then(([ptypes, fvalues, existingContacts, existingBanks, chs]) => {
       if (!active) return
       setSelectedPartnerTypes(ptypes.map(pt => pt.partnerType))
       const rc: Record<string, PartnerRoleConfig> = {}
@@ -270,12 +320,62 @@ export default function ApplicationForm() {
       })
       setRoleConfigs(rc)
       setChoices(chs)
+      setContacts(existingContacts.map((contact) => ({
+        id: contact.id,
+        contactType: contact.contactType || "SECONDARY",
+        firstName: contact.firstName || "",
+        lastName: contact.lastName || "",
+        email: contact.email || "",
+        phone: contact.phone || "",
+        mobile: contact.mobile || "",
+        designation: contact.designation || "",
+        isPrimary: contact.isPrimary,
+        notes: contact.notes || "",
+      })))
+      setBankAccounts(existingBanks.map((account) => ({
+        id: account.id,
+        bankName: account.bankName || "",
+        branchName: account.branchName || "",
+        accountName: account.accountName || "",
+        accountNumber: account.accountNumber || "",
+        swiftCode: account.swiftCode || "",
+        iban: account.iban || "",
+        currency: account.currency || "TZS",
+        isPrimary: account.isPrimary,
+        notes: account.notes || "",
+      })))
       const fvMap: Record<string, unknown> = {}
       fvalues.forEach(fv => { fvMap[fv.fieldConfig] = fv.valueJson })
       setDynamicFieldValues(fvMap)
     }).catch(() => {})
     return () => { active = false }
   }, [id, isEdit])
+
+  useEffect(() => {
+    let active = true
+    const loadRequirements = async () => {
+      if (selectedPartnerTypes.length === 0) {
+        setDocumentRequirements([])
+        setContactRequirements([])
+        setBankRequirements([])
+        return
+      }
+      const results = await Promise.all(selectedPartnerTypes.map(async (partnerTypeId) => {
+        const [documents, contactReqs, bankReqs] = await Promise.all([
+          fetchDocumentRequirements(partnerTypeId).catch(() => [] as PartnerTypeDocumentRequirement[]),
+          fetchContactRequirements(partnerTypeId).catch(() => [] as PartnerTypeContactRequirement[]),
+          fetchBankRequirements(partnerTypeId).catch(() => [] as PartnerTypeBankRequirement[]),
+        ])
+        return { documents, contactReqs, bankReqs }
+      }))
+      if (!active) return
+      setDocumentRequirements(results.flatMap((result) => result.documents.filter((item) => item.isActive)))
+      setContactRequirements(results.flatMap((result) => result.contactReqs.filter((item) => item.isActive)))
+      setBankRequirements(results.flatMap((result) => result.bankReqs.filter((item) => item.isActive)))
+    }
+    loadRequirements().catch(() => {})
+    return () => { active = false }
+  }, [selectedPartnerTypes])
 
   /* ------------------ Helpers ------------------ */
   const update = useCallback(
@@ -301,15 +401,36 @@ export default function ApplicationForm() {
         break
       case 2:
         break
-      case 3:
+      case 3: {
         if (!form.email) return "Email is required"
         if (!form.mobileNumber) return "Mobile number is required"
+        const requiredContactTypes = contactRequirements.filter((item) => item.isRequired).map((item) => item.contactType)
+        const presentContactTypes = new Set(contacts.map((contact) => contact.contactType))
+        const missingContacts = requiredContactTypes.filter((type) => !presentContactTypes.has(type))
+        if (missingContacts.length > 0) return `Add the required contact(s): ${missingContacts.join(", ")}`
+        const incompleteContact = contacts.find((contact) => !contact.firstName.trim() || !contact.lastName.trim())
+        if (incompleteContact) return "Complete the first and last name for every added contact"
+        const requiredBanks = bankRequirements.filter((item) => item.isRequired)
+        if (requiredBanks.length > 0 && bankAccounts.length === 0) return "Add at least one required bank account"
+        const incompleteBank = bankAccounts.find((account) => !account.bankName.trim() || !account.accountName.trim() || !account.accountNumber.trim() || !account.currency.trim())
+        if (incompleteBank) return "Complete the bank name, account name, account number, and currency for every added account"
         break
-      case 4:
+      }
+      case 4: {
+        const requiredDocumentTypes = documentRequirements.filter((item) => item.isRequired).map((item) => item.code)
+        if (requiredDocumentTypes.length > 0 && !isEdit) return "Save the application draft before uploading required documents"
+        const presentDocumentTypes = new Set(docs.map((doc) => doc.documentType))
+        const missingDocuments = requiredDocumentTypes.filter((code) => !presentDocumentTypes.has(code))
+        if (missingDocuments.length > 0) return `Upload the required document(s): ${missingDocuments.join(", ")}`
         break
-      case 5:
-        if (isEdit && docs.length === 0) return "At least one document must be uploaded before submitting"
+      }
+      case 5: {
+        const requiredDocumentTypes = documentRequirements.filter((item) => item.isRequired).map((item) => item.code)
+        const verifiedDocumentTypes = new Set(docs.filter((doc) => doc.isVerified).map((doc) => doc.documentType))
+        const unverifiedDocuments = requiredDocumentTypes.filter((code) => !verifiedDocumentTypes.has(code))
+        if (unverifiedDocuments.length > 0) return `Verify the required document(s) before submitting: ${unverifiedDocuments.join(", ")}`
         break
+      }
     }
     return null
   }
@@ -318,11 +439,23 @@ export default function ApplicationForm() {
     return validateStep(s) === null
   }
 
-  function handleNext() {
+  async function handleNext() {
     const err = validateStep(step)
     if (err) { setError(err); return }
     setError("")
-    setStep((s) => Math.min(s + 1, STEPS.length - 1))
+    setSaving(true)
+    try {
+      if (!isEdit && step >= 2) {
+        const appId = await ensureDraft()
+        navigate(`/onboarding/${appId}/edit`, { state: { step: Math.min(step + 1, STEPS.length - 1) }, replace: true })
+        return
+      }
+      setStep((s) => Math.min(s + 1, STEPS.length - 1))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save this phase")
+    } finally {
+      setSaving(false)
+    }
   }
 
   function handleBack() {
@@ -360,6 +493,49 @@ export default function ApplicationForm() {
     }
   }
 
+  async function saveNestedRecords(appId: string) {
+    const unsavedContacts = contacts.filter((contact) => !contact.id)
+    for (const contact of unsavedContacts) {
+      const created = await createContact(appId, {
+        contact_type: contact.contactType,
+        first_name: contact.firstName,
+        last_name: contact.lastName,
+        email: contact.email,
+        phone: contact.phone,
+        mobile: contact.mobile,
+        designation: contact.designation,
+        is_primary: contact.isPrimary,
+        notes: contact.notes,
+      } as unknown as Partial<ApplicationContact>)
+      setContacts((current) => current.map((item) => item === contact ? { ...item, id: created.id } : item))
+    }
+
+    const unsavedBanks = bankAccounts.filter((account) => !account.id)
+    for (const account of unsavedBanks) {
+      const created = await createBankAccount(appId, {
+        bank_name: account.bankName,
+        branch_name: account.branchName,
+        account_name: account.accountName,
+        account_number: account.accountNumber,
+        swift_code: account.swiftCode,
+        iban: account.iban,
+        currency: account.currency,
+        is_primary: account.isPrimary,
+        notes: account.notes,
+      } as unknown as Partial<ApplicationBankAccount>)
+      setBankAccounts((current) => current.map((item) => item === account ? { ...item, id: created.id } : item))
+    }
+  }
+
+  async function ensureDraft(): Promise<string> {
+    if (isEdit && id) return id
+    const created = await createApplication(toPayload(form))
+    const appId = (created as PartnerApplicationDetail).id
+    await savePartnerTypesAndFields(appId)
+    await saveNestedRecords(appId)
+    return appId
+  }
+
   async function handleSave() {
     const err = validateStep(step)
     if (err) { setError(err); return }
@@ -369,10 +545,10 @@ export default function ApplicationForm() {
       if (isEdit) {
         await updateApplication(id!, toPayload(form))
         await savePartnerTypesAndFields(id!)
+        await saveNestedRecords(id!)
       } else {
-        const result = await createApplication(toPayload(form))
-        await savePartnerTypesAndFields((result as PartnerApplicationDetail).id)
-        navigate(`/onboarding/${(result as PartnerApplicationDetail).id}`)
+        const appId = await ensureDraft()
+        navigate(`/onboarding/${appId}/edit`, { state: { step }, replace: true })
         return
       }
     } catch (e) {
@@ -388,11 +564,16 @@ export default function ApplicationForm() {
     setError("")
     setSubmitting(true)
     try {
-      const appId = isEdit
-        ? id!
-        : ((await createApplication(toPayload(form))) as PartnerApplicationDetail).id
-      if (isEdit) await updateApplication(appId, toPayload(form))
+      if (!isEdit) {
+        const appId = await ensureDraft()
+        setError("Draft created. Continue through the Documents phase, upload and verify the required evidence, then submit.")
+        navigate(`/onboarding/${appId}/edit`, { state: { step: 4 }, replace: true })
+        return
+      }
+      const appId = id!
+      await updateApplication(appId, toPayload(form))
       await savePartnerTypesAndFields(appId)
+      await saveNestedRecords(appId)
       await submitApplication(appId)
       navigate(`/onboarding/${appId}`)
     } catch (e) {
@@ -419,6 +600,16 @@ export default function ApplicationForm() {
       setDocs((d) => d.filter((x) => x.id !== docId))
     } catch (e) {
       setError(e instanceof Error ? e.message : "Delete failed")
+    }
+  }
+
+  async function handleVerifyDoc(docId: string) {
+    if (!isEdit) return
+    try {
+      const verified = await verifyDocument(id!, docId)
+      setDocs((current) => current.map((document) => document.id === docId ? verified : document))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Verification failed")
     }
   }
 
@@ -525,6 +716,12 @@ export default function ApplicationForm() {
             update={update}
             politicalRiskList={politicalRiskList}
             amlRiskList={amlRiskList}
+            contacts={contacts}
+            setContacts={setContacts}
+            bankAccounts={bankAccounts}
+            setBankAccounts={setBankAccounts}
+            contactRequirements={contactRequirements}
+            bankRequirements={bankRequirements}
           />
         )}
 
@@ -532,9 +729,11 @@ export default function ApplicationForm() {
           <StepDocuments
             isEdit={isEdit}
             docs={docs}
+            documentRequirements={documentRequirements}
             documentTypeList={documentTypeList}
             onUpload={handleUpload}
             onDelete={handleDeleteDoc}
+            onVerify={handleVerifyDoc}
           />
         )}
 
@@ -987,17 +1186,55 @@ function StepContactRisk({
   update,
   politicalRiskList,
   amlRiskList,
+  contacts,
+  setContacts,
+  bankAccounts,
+  setBankAccounts,
+  contactRequirements,
+  bankRequirements,
 }: {
   form: FormState
   update: <K extends keyof FormState>(k: K, v: FormState[K]) => void
   politicalRiskList: { options: { value: string; label: string }[] }
   amlRiskList: { options: { value: string; label: string }[] }
+  contacts: ContactDraft[]
+  setContacts: Dispatch<SetStateAction<ContactDraft[]>>
+  bankAccounts: BankDraft[]
+  setBankAccounts: Dispatch<SetStateAction<BankDraft[]>>
+  contactRequirements: PartnerTypeContactRequirement[]
+  bankRequirements: PartnerTypeBankRequirement[]
 }) {
+  const addContact = (contactType = contactRequirements[0]?.contactType || "SECONDARY") => {
+    setContacts((current) => [...current, {
+      contactType,
+      firstName: "",
+      lastName: "",
+      email: "",
+      phone: "",
+      mobile: "",
+      designation: "",
+      isPrimary: current.length === 0,
+      notes: "",
+    }])
+  }
+  const addBankAccount = () => {
+    setBankAccounts((current) => [...current, {
+      bankName: "",
+      branchName: "",
+      accountName: "",
+      accountNumber: "",
+      swiftCode: "",
+      iban: "",
+      currency: "TZS",
+      isPrimary: current.length === 0,
+      notes: "",
+    }])
+  }
   return (
     <>
       <div className="border-b border-[#d9d9d9] px-6 py-4">
         <h2 className="text-base font-semibold text-[#222]">Contact Information</h2>
-        <p className="mt-0.5 text-xs text-[#777]">Provide contact details and risk assessment information.</p>
+        <p className="mt-0.5 text-xs text-[#777]">Provide the primary contact details, configured contacts, bank accounts, and risk assessment information.</p>
       </div>
       <div className="grid grid-cols-1 gap-x-6 gap-y-4 p-6 sm:grid-cols-2 lg:grid-cols-3">
         <InputField label="Email *" type="email" value={form.email} onChange={(v) => update("email", v)} />
@@ -1007,9 +1244,61 @@ function StepContactRisk({
         <TextAreaField label="Postal Address" value={form.postalAddress} onChange={(v) => update("postalAddress", v)} colSpan={3} />
       </div>
 
-      <div className="border-t border-[#d9d9d9] px-6 py-4">
-        <h3 className="text-sm font-semibold text-[#222]">Risk Assessment</h3>
+      <div className="border-t border-[#d9d9d9] px-6 py-4 flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-[#222]">Required contacts</h3>
+          <p className="mt-0.5 text-xs text-[#777]">Add one contact for every configured required contact type.</p>
+        </div>
+        <button type="button" onClick={() => addContact()} className="inline-flex items-center gap-2 rounded-lg border border-[#cfcfcf] px-3 py-2 text-xs font-semibold text-[#222] hover:bg-[#f5f5f5]"><Plus className="h-3.5 w-3.5" /> Add contact</button>
       </div>
+      <div className="space-y-4 p-6 pt-3">
+        {contacts.map((contact, index) => (
+          <div key={contact.id || index} className="rounded-lg border border-[#e0e0e0] p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#666]">Contact {index + 1}</span>
+              {!contact.id && <button type="button" onClick={() => setContacts((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="text-[#666] hover:text-[#111]" aria-label="Remove contact"><Trash2 className="h-4 w-4" /></button>}
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <SelectField label="Contact type" value={contact.contactType} onChange={(value) => setContacts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, contactType: value } : item))} options={contactRequirements.length > 0 ? contactRequirements.map((item) => ({ value: item.contactType, label: item.contactType })) : [{ value: "SECONDARY", label: "Secondary" }, { value: "BILLING", label: "Billing" }, { value: "TECHNICAL", label: "Technical" }, { value: "OTHER", label: "Other" }]} />
+              <InputField label="First name" value={contact.firstName} onChange={(value) => setContacts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, firstName: value } : item))} />
+              <InputField label="Last name" value={contact.lastName} onChange={(value) => setContacts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, lastName: value } : item))} />
+              <InputField label="Designation" value={contact.designation} onChange={(value) => setContacts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, designation: value } : item))} />
+              <InputField label="Email" type="email" value={contact.email} onChange={(value) => setContacts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, email: value } : item))} />
+              <InputField label="Phone" value={contact.phone} onChange={(value) => setContacts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, phone: value } : item))} />
+              <InputField label="Mobile" value={contact.mobile} onChange={(value) => setContacts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, mobile: value } : item))} />
+              <label className="flex items-center gap-2 self-end pb-2 text-xs text-[#555]"><input type="checkbox" checked={contact.isPrimary} onChange={(event) => setContacts((current) => current.map((item, itemIndex) => ({ ...item, isPrimary: itemIndex === index ? event.target.checked : event.target.checked ? false : item.isPrimary })))} /> Primary contact</label>
+            </div>
+          </div>
+        ))}
+        {contacts.length === 0 && <p className="rounded-lg border border-dashed border-[#d8d8d8] px-4 py-5 text-center text-xs text-[#777]">No additional contacts added yet.</p>}
+      </div>
+
+      <div className="border-t border-[#d9d9d9] px-6 py-4 flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-[#222]">Bank accounts</h3>
+          <p className="mt-0.5 text-xs text-[#777]">{bankRequirements.length > 0 ? "Add the account required by the selected partner role." : "Add settlement details when applicable."}</p>
+        </div>
+        <button type="button" onClick={addBankAccount} className="inline-flex items-center gap-2 rounded-lg border border-[#cfcfcf] px-3 py-2 text-xs font-semibold text-[#222] hover:bg-[#f5f5f5]"><Plus className="h-3.5 w-3.5" /> Add bank account</button>
+      </div>
+      <div className="space-y-4 p-6 pt-3">
+        {bankAccounts.map((account, index) => (
+          <div key={account.id || index} className="rounded-lg border border-[#e0e0e0] p-4">
+            <div className="mb-3 flex items-center justify-between"><span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#666]">Bank account {index + 1}</span>{!account.id && <button type="button" onClick={() => setBankAccounts((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="text-[#666] hover:text-[#111]" aria-label="Remove bank account"><Trash2 className="h-4 w-4" /></button>}</div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <InputField label="Bank name" value={account.bankName} onChange={(value) => setBankAccounts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, bankName: value } : item))} />
+              <InputField label="Branch" value={account.branchName} onChange={(value) => setBankAccounts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, branchName: value } : item))} />
+              <InputField label="Account name" value={account.accountName} onChange={(value) => setBankAccounts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, accountName: value } : item))} />
+              <InputField label="Account number" value={account.accountNumber} onChange={(value) => setBankAccounts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, accountNumber: value } : item))} />
+              <InputField label="Currency" value={account.currency} onChange={(value) => setBankAccounts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, currency: value.toUpperCase() } : item))} />
+              <InputField label="SWIFT code" value={account.swiftCode} onChange={(value) => setBankAccounts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, swiftCode: value } : item))} />
+              <InputField label="IBAN" value={account.iban} onChange={(value) => setBankAccounts((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, iban: value } : item))} />
+              <label className="flex items-center gap-2 self-end pb-2 text-xs text-[#555]"><input type="checkbox" checked={account.isPrimary} onChange={(event) => setBankAccounts((current) => current.map((item, itemIndex) => ({ ...item, isPrimary: itemIndex === index ? event.target.checked : item.isPrimary })))} /> Primary account</label>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="border-t border-[#d9d9d9] px-6 py-4"><h3 className="text-sm font-semibold text-[#222]">Risk Assessment</h3></div>
       <div className="grid grid-cols-1 gap-x-6 gap-y-4 p-6 pt-2 sm:grid-cols-2">
         <SelectField label="Political Risk" value={form.politicalRisk} onChange={(v) => update("politicalRisk", v)} options={politicalRiskList.options} />
         <SelectField label="AML Risk" value={form.amlRisk} onChange={(v) => update("amlRisk", v)} options={amlRiskList.options} />
@@ -1021,15 +1310,19 @@ function StepContactRisk({
 function StepDocuments({
   isEdit,
   docs,
+  documentRequirements,
   documentTypeList,
   onUpload,
   onDelete,
+  onVerify,
 }: {
   isEdit: boolean
   docs: ApplicationDocument[]
+  documentRequirements: PartnerTypeDocumentRequirement[]
   documentTypeList: { options: { value: string; label: string }[] }
   onUpload: (file: File, docType: string) => Promise<void>
   onDelete: (docId: string) => Promise<void>
+  onVerify: (docId: string) => Promise<void>
 }) {
   return (
     <>
@@ -1040,7 +1333,9 @@ function StepDocuments({
         </h2>
         <p className="mt-0.5 text-xs text-[#777]">
           {isEdit
-            ? "Upload required documents for this application. You can upload multiple documents."
+            ? documentRequirements.length > 0
+              ? `Upload and verify: ${documentRequirements.filter((item) => item.isRequired).map((item) => item.code).join(", ") || "configured evidence"}.`
+              : "Upload required documents for this application. You can upload multiple documents."
             : "Documents can be uploaded after saving the application draft."}
         </p>
       </div>
@@ -1052,7 +1347,10 @@ function StepDocuments({
                 id="docType"
                 className="rounded-lg border border-[#d7d7d7] bg-white px-3 py-2 text-sm text-[#222]"
               >
-                {(documentTypeList.options ?? []).map((d) => (
+                {(documentRequirements.length > 0
+                  ? documentRequirements.map((requirement) => ({ value: requirement.code, label: requirement.description ? `${requirement.code} — ${requirement.description}` : requirement.code }))
+                  : (documentTypeList.options ?? [])
+                ).map((d) => (
                   <option key={d.value} value={d.value}>{d.label}</option>
                 ))}
               </select>
@@ -1086,10 +1384,12 @@ function StepDocuments({
                         {d.fileSize ? ` · ${(d.fileSize / 1024).toFixed(0)} KB` : ""}
                       </div>
                     </div>
-                    {d.isVerified && (
-                      <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: "var(--color-feedback-success)" }} />
+                    {d.isVerified ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#222]"><CheckCircle2 className="h-4 w-4 shrink-0" /> Verified</span>
+                    ) : (
+                      <button type="button" onClick={() => onVerify(d.id)} className="rounded-md border border-[#cfcfcf] px-2 py-1 text-xs font-semibold text-[#222] hover:bg-[#f3f3f3]">Verify</button>
                     )}
-                    <button onClick={() => onDelete(d.id)} className="rounded p-1 text-[#777] hover:text-[#111]">
+                    <button type="button" onClick={() => onDelete(d.id)} className="rounded p-1 text-[#777] hover:text-[#111]">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </li>
