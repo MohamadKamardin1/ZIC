@@ -720,7 +720,29 @@ export async function getAssignmentHistory(assignmentId: string): Promise<Partne
     throw new Error(extractError(res, body))
   }
   const json = await res.json()
-  return Array.isArray(json.data) ? json.data : (Array.isArray(json) ? json : [])
+  const rows = Array.isArray(json.data) ? json.data : (Array.isArray(json) ? json : [])
+  return rows.map((row: Record<string, unknown>) => ({
+    id: String(row.id ?? ""),
+    assignment: String(row.assignment ?? assignmentId),
+    previousStatus: String(row.previous_status ?? row.previousStatus ?? ""),
+    newStatus: String(row.new_status ?? row.newStatus ?? row.action ?? ""),
+    reason: String(row.reason ?? ""),
+    changedBy: row.changed_by ? String(row.changed_by) : null,
+    changedByEmail: row.changed_by_email ? String(row.changed_by_email) : null,
+    changedByName: row.changed_by_name ? String(row.changed_by_name) : (row.actor_name ? String(row.actor_name) : null),
+    changedAt: String(row.changed_at ?? row.created_at ?? ""),
+    eventType: row.event_type === "AUDIT" ? "AUDIT" : "STATUS",
+    action: row.action ? String(row.action) : undefined,
+    description: row.description ? String(row.description) : undefined,
+    actorName: row.actor_name ? String(row.actor_name) : null,
+    createdAt: row.created_at ? String(row.created_at) : undefined,
+    entityType: row.entity_type ? String(row.entity_type) : undefined,
+    objectId: row.object_id ? String(row.object_id) : undefined,
+    changedFields: Array.isArray(row.changed_fields) ? row.changed_fields.map(String) : undefined,
+    beforeState: (row.before_state as Record<string, unknown> | null | undefined) ?? null,
+    afterState: (row.after_state as Record<string, unknown> | null | undefined) ?? null,
+    sourceChannel: row.source_channel ? String(row.source_channel) : undefined,
+  }))
 }
 
 export async function activateAssignment(assignmentId: string, reason = ""): Promise<PartnerTypeAssignment> {
@@ -1639,6 +1661,16 @@ export async function updateAssignmentDocument(
   }
   const json = await res.json()
   return json.data ?? json
+}
+
+export async function deleteAssignmentDocument(assignmentId: string, docId: string): Promise<void> {
+  const res = await apiFetchAuth(`${PARTNERS_API}/assignments/${assignmentId}/setup/documents/${docId}/`, {
+    method: "DELETE",
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
 }
 
 // --- Field Values ---

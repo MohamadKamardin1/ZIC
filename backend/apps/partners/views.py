@@ -10,6 +10,8 @@ from rest_framework.views import APIView
 
 from apps.core.pagination import StandardPagination
 from apps.core.permissions import IsAdminUser
+from apps.governance.models import AuditLog
+from apps.governance.services.audit_service import AuditService
 from apps.partners.filters import PartnerFilter
 from apps.partners.models import (
     CorporateProfile,
@@ -714,19 +716,39 @@ class PartnerTypeAssignmentSetupViewSet(PartnerReadAdminWriteMixin, viewsets.Gen
             return _response(data=serializer.data, message="Documents retrieved.")
         serializer = PartnerDocumentSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(assignment=assignment)
-        return _response(data=serializer.data, message="Document created.", status_code=status.HTTP_201_CREATED)
+        document = serializer.save(assignment=assignment, uploaded_by=request.user)
+        AuditService.log_create(document, actor=request.user, request=request, reason="Partner assignment document uploaded.")
+        return _response(data=PartnerDocumentSerializer(document).data, message="Document created.", status_code=status.HTTP_201_CREATED)
 
-    @action(detail=True, methods=["get", "patch"], url_path="documents/(?P<document_pk>[^/.]+)")
+    @action(detail=True, methods=["get", "patch", "delete"], url_path="documents/(?P<document_pk>[^/.]+)")
     def manage_document_detail(self, request, pk=None, document_pk=None):
         assignment = self.get_object()
         document = get_object_or_404(PartnerDocument, id=document_pk, assignment=assignment)
         if request.method == "GET":
             serializer = PartnerDocumentSerializer(document)
             return _response(data=serializer.data, message="Document retrieved.")
+        if request.method == "DELETE":
+            before = AuditService.snapshot(document)
+            document_repr = str(document)
+            AuditService.log(
+                action_type="DELETE",
+                action="DELETE",
+                entity_type=AuditService.entity_type(document),
+                entity_id=document.pk,
+                entity_repr=document_repr,
+                before_state=before,
+                reason="Partner assignment document removed.",
+                actor=request.user,
+                request=request,
+                **AuditService.model_metadata(document),
+            )
+            document.delete()
+            return _response(message="Document deleted.")
+        before = AuditService.snapshot(document)
         serializer = PartnerDocumentSerializer(document, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        document = serializer.save()
+        AuditService.log_update(document, before_state=before, actor=request.user, request=request, reason="Partner assignment document updated.")
         return _response(data=serializer.data, message="Document updated.")
 
     @action(detail=True, methods=["get", "patch"], url_path="field-values")
@@ -739,18 +761,29 @@ class PartnerTypeAssignmentSetupViewSet(PartnerReadAdminWriteMixin, viewsets.Gen
         if isinstance(data, list):
             results = []
             for item in data:
-                fv, _ = PartnerDynamicFieldValue.objects.update_or_create(
+                fv, created = PartnerDynamicFieldValue.objects.update_or_create(
                     assignment=assignment,
                     field_config_id=item.get("field_config"),
                     defaults={"value_json": item.get("value_json", {})},
                 )
+                if created:
+                    AuditService.log_create(fv, actor=request.user, request=request, reason="Partner assignment field value created.")
+                else:
+                    AuditService.log_action(
+                        "UPDATE", fv, actor=request.user, request=request,
+                        after_state=AuditService.snapshot(fv),
+                        reason="Partner assignment field value updated.",
+                        changed_fields=["value_json"],
+                    )
                 results.append(PartnerDynamicFieldValueSerializer(fv).data)
             return _response(data=results, message="Field values updated.")
         serializer = PartnerDynamicFieldValueSerializer(
             assignment.field_values.all(), data=data, many=True, partial=True,
         )
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        values = serializer.save()
+        for value in values:
+            AuditService.log_action("UPDATE", value, actor=request.user, request=request, reason="Partner assignment field value updated.")
         return _response(data=serializer.data, message="Field values updated.")
 
     @action(detail=True, methods=["get", "post"], url_path="contacts")
@@ -761,8 +794,9 @@ class PartnerTypeAssignmentSetupViewSet(PartnerReadAdminWriteMixin, viewsets.Gen
             return _response(data=serializer.data, message="Contacts retrieved.")
         serializer = PartnerAssignmentContactSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(assignment=assignment)
-        return _response(data=serializer.data, message="Contact created.", status_code=status.HTTP_201_CREATED)
+        contact = serializer.save(assignment=assignment)
+        AuditService.log_create(contact, actor=request.user, request=request, reason="Partner assignment contact created.")
+        return _response(data=PartnerAssignmentContactSerializer(contact).data, message="Contact created.", status_code=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["get", "patch", "delete"], url_path="contacts/(?P<contact_pk>[^/.]+)")
     def manage_contact_detail(self, request, pk=None, contact_pk=None):
@@ -772,11 +806,14 @@ class PartnerTypeAssignmentSetupViewSet(PartnerReadAdminWriteMixin, viewsets.Gen
             serializer = PartnerAssignmentContactSerializer(contact)
             return _response(data=serializer.data, message="Contact retrieved.")
         if request.method == "DELETE":
+            AuditService.log_delete(contact, actor=request.user, request=request, reason="Partner assignment contact deleted.")
             contact.delete()
             return _response(message="Contact deleted.")
+        before = AuditService.snapshot(contact)
         serializer = PartnerAssignmentContactSerializer(contact, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        contact = serializer.save()
+        AuditService.log_update(contact, before_state=before, actor=request.user, request=request, reason="Partner assignment contact updated.")
         return _response(data=serializer.data, message="Contact updated.")
 
     @action(detail=True, methods=["get", "post"], url_path="bank-accounts")
@@ -789,8 +826,9 @@ class PartnerTypeAssignmentSetupViewSet(PartnerReadAdminWriteMixin, viewsets.Gen
             return _response(data=serializer.data, message="Bank accounts retrieved.")
         serializer = PartnerAssignmentBankAccountSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(assignment=assignment)
-        return _response(data=serializer.data, message="Bank account created.", status_code=status.HTTP_201_CREATED)
+        bank = serializer.save(assignment=assignment)
+        AuditService.log_create(bank, actor=request.user, request=request, reason="Partner assignment bank account created.")
+        return _response(data=PartnerAssignmentBankAccountSerializer(bank).data, message="Bank account created.", status_code=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["get", "patch", "delete"], url_path="bank-accounts/(?P<bank_pk>[^/.]+)")
     def manage_bank_detail(self, request, pk=None, bank_pk=None):
@@ -800,21 +838,69 @@ class PartnerTypeAssignmentSetupViewSet(PartnerReadAdminWriteMixin, viewsets.Gen
             serializer = PartnerAssignmentBankAccountSerializer(bank)
             return _response(data=serializer.data, message="Bank account retrieved.")
         if request.method == "DELETE":
+            AuditService.log_delete(bank, actor=request.user, request=request, reason="Partner assignment bank account deleted.")
             bank.delete()
             return _response(message="Bank account deleted.")
+        before = AuditService.snapshot(bank)
         serializer = PartnerAssignmentBankAccountSerializer(bank, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        bank = serializer.save()
+        AuditService.log_update(bank, before_state=before, actor=request.user, request=request, reason="Partner assignment bank account updated.")
         return _response(data=serializer.data, message="Bank account updated.")
 
     @action(detail=True, methods=["get"], url_path="history")
     def history(self, request, pk=None):
         assignment = self.get_object()
         history = assignment.status_history.select_related("changed_by").all()
-        return _response(
-            data=PartnerTypeAssignmentHistorySerializer(history, many=True).data,
-            message="Assignment history retrieved.",
-        )
+        status_events = []
+        for event in PartnerTypeAssignmentHistorySerializer(history, many=True).data:
+            status_events.append({
+                **event,
+                "event_type": "STATUS",
+                "action": "STATUS_CHANGE",
+                "description": event.get("reason") or f"Assignment status changed to {event.get('new_status')}",
+                "actor_name": event.get("changed_by_name"),
+                "created_at": event.get("changed_at"),
+            })
+
+        tracked_ids = {str(assignment.id)}
+        for queryset in (
+            assignment.documents.all(),
+            assignment.field_values.all(),
+            assignment.assignment_contacts.all(),
+            assignment.assignment_bank_accounts.all(),
+            assignment.kyc_profiles.all(),
+        ):
+            tracked_ids.update(str(value) for value in queryset.values_list("id", flat=True))
+
+        audit_events = []
+        logs = AuditLog.objects.filter(object_id__in=tracked_ids).select_related("user").order_by("-created_at")
+        for log in logs:
+            audit_events.append({
+                "id": str(log.id),
+                "assignment": str(assignment.id),
+                "previous_status": "",
+                "new_status": log.action or log.action_type,
+                "reason": log.reason or log.description,
+                "changed_by": str(log.user_id) if log.user_id else None,
+                "changed_by_name": getattr(log.user, "full_name", None) if log.user else None,
+                "changed_at": log.created_at.isoformat() if log.created_at else None,
+                "event_type": "AUDIT",
+                "action": log.action or log.action_type,
+                "description": log.description or log.reason or str(log),
+                "actor_name": getattr(log.user, "full_name", None) if log.user else log.actor_type,
+                "created_at": log.created_at.isoformat() if log.created_at else None,
+                "entity_type": log.entity_type,
+                "object_id": log.object_id,
+                "changed_fields": log.changed_fields or [],
+                "before_state": log.before_state,
+                "after_state": log.after_state,
+                "source_channel": log.source_channel,
+            })
+
+        events = status_events + audit_events
+        events.sort(key=lambda item: item.get("created_at") or "", reverse=True)
+        return _response(data=events, message="Assignment event history retrieved.")
 
     @action(detail=True, methods=["post"], url_path="deactivate")
     def deactivate(self, request, pk=None):
@@ -849,14 +935,19 @@ class PartnerTypeAssignmentSetupViewSet(PartnerReadAdminWriteMixin, viewsets.Gen
     @action(detail=True, methods=["get", "patch"], url_path="kyc")
     def manage_kyc(self, request, pk=None):
         assignment = self.get_object()
-        kyc, _ = PartnerKYCProfile.objects.get_or_create(
+        kyc, created = PartnerKYCProfile.objects.get_or_create(
             assignment=assignment,
             defaults={"kyc_status": "NOT_SET"},
         )
         if request.method == "GET":
             serializer = PartnerKYCProfileSerializer(kyc)
             return _response(data=serializer.data, message="KYC profile retrieved.")
+        before = AuditService.snapshot(kyc)
         serializer = PartnerKYCProfileSerializer(kyc, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        kyc = serializer.save(reviewed_by=request.user, last_review_date=timezone.now())
+        if created:
+            AuditService.log_create(kyc, actor=request.user, request=request, reason="Partner assignment KYC profile created.")
+        else:
+            AuditService.log_update(kyc, before_state=before, actor=request.user, request=request, reason="Partner assignment KYC profile updated.")
         return _response(data=serializer.data, message="KYC profile updated.")

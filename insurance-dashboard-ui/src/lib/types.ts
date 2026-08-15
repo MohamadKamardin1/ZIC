@@ -1018,6 +1018,17 @@ export interface PartnerTypeAssignmentHistory {
   changedByEmail: string | null
   changedByName: string | null
   changedAt: string
+  eventType?: "STATUS" | "AUDIT"
+  action?: string
+  description?: string
+  actorName?: string | null
+  createdAt?: string
+  entityType?: string
+  objectId?: string
+  changedFields?: string[]
+  beforeState?: Record<string, unknown> | null
+  afterState?: Record<string, unknown> | null
+  sourceChannel?: string
 }
 
 export interface ComplianceOverview {

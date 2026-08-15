@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import {
   ArrowLeft, User, Building2, Shield, FileText, Loader2, Pencil,
   FileSpreadsheet, Contact, Landmark, CheckCircle, XCircle, Plus, Trash2, Upload,
-  ChevronDown, Search, X, Save, MapPin, CalendarDays, Mail, Phone, Eye,
+  ChevronDown, Search, X, Save, MapPin, CalendarDays, Mail, Phone, Eye, RefreshCw,
 } from "lucide-react"
 import {
   getPartner,
@@ -16,6 +16,7 @@ import {
   getAssignmentDocuments,
   uploadAssignmentDocumentFile,
   updateAssignmentDocument,
+  deleteAssignmentDocument,
   getAssignmentFieldValues,
   updateAssignmentFieldValues,
   getAssignmentContacts,
@@ -68,7 +69,7 @@ export default function PartnerDetail() {
   const [loading, setLoading] = useState(true)
   const [actionBusy, setActionBusy] = useState(false)
   const [error, setError] = useState("")
-  const [expandedAssign, setExpandedAssign] = useState<string | null>(null)
+  const [setupAssignmentId, setSetupAssignmentId] = useState<string | null>(null)
   const [detailTab, setDetailTab] = useState<"types" | "contacts" | "banks">("types")
   const [assignmentSearch, setAssignmentSearch] = useState("")
   const [typeModalOpen, setTypeModalOpen] = useState(false)
@@ -163,11 +164,7 @@ export default function PartnerDetail() {
   }
 
   function openAssignmentSetup(assignmentId: string) {
-    setDetailTab("types")
-    setExpandedAssign(assignmentId)
-    window.setTimeout(() => {
-      document.getElementById(`assignment-${assignmentId}`)?.scrollIntoView({ behavior: "smooth", block: "center" })
-    }, 80)
+    setSetupAssignmentId(assignmentId)
   }
 
   if (loading) {
@@ -194,7 +191,7 @@ export default function PartnerDetail() {
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(query))
   })
-  const expandedAssignment = assignments.find((assignment) => assignment.id === expandedAssign)
+  const setupAssignment = assignments.find((assignment) => assignment.id === setupAssignmentId)
   const activeAssignments = assignments.filter((assignment) => assignment.status === "ACTIVE").length
 
   return (
@@ -219,7 +216,8 @@ export default function PartnerDetail() {
           </div>
           <div className="flex items-center gap-3 text-right"><div><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#999]">Status</p><p className="mt-1 text-sm font-semibold text-[#222]">{partner.status}</p></div><span className="h-8 w-px bg-[#e4e4e4]" /><div><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#999]">Active Types</p><p className="mt-1 text-sm font-semibold text-[#222]">{activeAssignments}</p></div></div>
         </div>
-        <div className="grid grid-cols-1 divide-y divide-[#ededed] md:grid-cols-3 md:divide-x md:divide-y-0">
+        <div className="flex items-center justify-between border-t border-[#e8e8e8] bg-[#fafafa] px-5 py-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#777]">Partner Information</p><p className="mt-0.5 text-xs text-[#999]">Core identity, contact, risk, and lifecycle information</p></div><span className="rounded-full border border-[#d7d7d7] bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-[#666]">Read only</span></div>
+        <div className="grid grid-cols-1 divide-y divide-[#dedede] border-t border-[#dedede] md:grid-cols-3 md:divide-x md:divide-y-0">
           <InfoColumn rows={[
             ["Partner Number", partner.partnerNumber],
             ["Client Type", partner.partnerCategory || partner.partnerType],
@@ -285,7 +283,7 @@ export default function PartnerDetail() {
               </table>
             </div>
             {visibleAssignments.length === 0 && <div className="px-5 py-14 text-center"><Shield className="mx-auto h-8 w-8 text-[#bbb]" /><p className="mt-3 text-sm font-semibold text-[#444]">No partner types found</p><p className="mt-1 text-sm text-[#999]">Assign a partner type or change the search term.</p></div>}
-            {expandedAssignment && <div className="border-t border-[#e8e8e8] bg-[#fafafa]"><div className="flex items-center justify-between px-5 py-4"><div><p className="text-sm font-bold text-[#222]">Setup workspace · {expandedAssignment.partnerTypeName}</p><p className="mt-0.5 text-xs text-[#777]">Manage documents, fields, contacts, banks, and KYC for this assignment.</p></div><button onClick={() => setExpandedAssign(null)} className="rounded-md p-1.5 text-[#777] hover:bg-[#eee] hover:text-[#111]"><X className="h-4 w-4" /></button></div><SetupManager assignment={expandedAssignment} summary={summaries[expandedAssignment.id]} onRefresh={load} /><partner-assignment-history history={histories[expandedAssignment.id] ?? []}></partner-assignment-history></div>}
+            {setupAssignment && <AssignmentSetupModal assignment={setupAssignment} summary={summaries[setupAssignment.id]} history={histories[setupAssignment.id] ?? []} onClose={() => setSetupAssignmentId(null)} onRefresh={load} />}
           </>
         )}
 
@@ -297,8 +295,62 @@ export default function PartnerDetail() {
   )
 }
 
+function AssignmentSetupModal({ assignment, summary, history, onClose, onRefresh }: { assignment: PartnerTypeAssignment; summary?: SetupSummary; history: PartnerTypeAssignmentHistory[]; onClose: () => void; onRefresh: () => Promise<void> }) {
+  const [activeTab, setActiveTab] = useState<"overview" | "documents" | "contacts" | "banks" | "history">("overview")
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState("")
+
+  async function refresh() {
+    setBusy(true)
+    setMessage("")
+    try {
+      await onRefresh()
+      setMessage("Assignment information synchronized.")
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to synchronize assignment information.")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const tabs = [
+    ["overview", "Overview"],
+    ["documents", "Required documents"],
+    ["contacts", "Contacts"],
+    ["banks", "Bank accounts"],
+    ["history", "Event history"],
+  ] as const
+
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="assignment-setup-title">
+    <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-[#d7d7d7] bg-white shadow-[0_24px_80px_rgba(0,0,0,0.22)]">
+      <div className="flex items-start justify-between gap-4 border-b border-[#e6e6e6] px-5 py-4 sm:px-7">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#999]">Assigned partner type</p>
+          <h2 id="assignment-setup-title" className="mt-1 text-xl font-bold tracking-tight text-[#111]">{assignment.partnerTypeName}</h2>
+          <p className="mt-1 text-sm text-[#777]">{assignment.partnerTypeCode} · {assignment.locationName || assignment.branchName || "Location not set"}</p>
+        </div>
+        <button onClick={onClose} aria-label="Close assignment workspace" className="rounded-lg border border-[#d7d7d7] p-2 text-[#555] hover:bg-[#f4f4f4] hover:text-[#111]"><X className="h-4 w-4" /></button>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e6e6e6] px-5 pt-3 sm:px-7">
+        <div className="flex min-w-0 gap-1 overflow-x-auto">
+          {tabs.map(([value, label]) => <button key={value} onClick={() => setActiveTab(value)} className={`whitespace-nowrap border-b-2 px-3 pb-3 text-xs font-bold ${activeTab === value ? "border-[#111] text-[#111]" : "border-transparent text-[#888] hover:text-[#333]"}`}>{label}</button>)}
+        </div>
+        <button onClick={refresh} disabled={busy} className="mb-2 inline-flex items-center gap-2 rounded-lg border border-[#d7d7d7] px-3 py-2 text-xs font-bold text-[#333] hover:bg-[#f4f4f4] disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${busy ? "animate-spin" : ""}`} />Sync now</button>
+      </div>
+      {message && <div className="border-b border-[#e6e6e6] bg-[#fafafa] px-5 py-2.5 text-xs font-semibold text-[#555] sm:px-7">{message}</div>}
+      <div className="min-h-0 flex-1 overflow-y-auto bg-[#fafafa] p-4 sm:p-6">
+        {activeTab === "overview" && <div className="grid gap-4 md:grid-cols-3"><div className="rounded-xl border border-[#dedede] bg-white p-4"><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#999]">Assignment status</p><p className="mt-2 text-lg font-bold text-[#111]">{assignment.status}</p><p className="mt-1 text-xs text-[#777]">Created {formatDate(assignment.createdAt)}</p></div><div className="rounded-xl border border-[#dedede] bg-white p-4"><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#999]">Documents</p><p className="mt-2 text-lg font-bold text-[#111]">{summary?.documents?.submitted ?? 0} / {summary?.documents?.total ?? 0}</p><p className="mt-1 text-xs text-[#777]">Submitted requirements</p></div><div className="rounded-xl border border-[#dedede] bg-white p-4"><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#999]">KYC</p><p className="mt-2 text-lg font-bold text-[#111]">{summary?.kyc?.status || "NOT SET"}</p><p className="mt-1 text-xs text-[#777]">Use the update workspace below to maintain evidence.</p></div></div>}
+        {activeTab === "documents" && <SetupManager assignment={assignment} summary={summary} initialTab="documents" onRefresh={onRefresh} />}
+        {activeTab === "contacts" && <SetupManager assignment={assignment} summary={summary} initialTab="contacts" onRefresh={onRefresh} />}
+        {activeTab === "banks" && <SetupManager assignment={assignment} summary={summary} initialTab="banks" onRefresh={onRefresh} />}
+        {activeTab === "history" && <partner-assignment-history history={history}></partner-assignment-history>}
+      </div>
+    </div>
+  </div>
+}
+
 function InfoColumn({ rows }: { rows: [string, string | null | undefined][] }) {
-  return <div className="px-5 py-3">{rows.map(([label, value]) => <div key={label} className="grid grid-cols-[minmax(130px,0.9fr)_minmax(0,1.1fr)] gap-3 border-b border-[#f0f0f0] py-2.5 last:border-b-0"><span className="text-xs font-bold text-[#333]">{label}:</span><span className="truncate text-sm text-[#666]">{value || "—"}</span></div>)}</div>
+  return <div className="px-5 py-2">{rows.map(([label, value]) => <div key={label} className="grid grid-cols-[minmax(130px,0.9fr)_minmax(0,1.1fr)] gap-3 border-b border-[#ededed] py-3 last:border-b-0"><span className="text-[11px] font-bold uppercase tracking-wide text-[#555]">{label}</span><span className="truncate text-sm text-[#333]" title={value || "—"}>{value || "—"}</span></div>)}</div>
 }
 
 function RelatedAssignmentTab({ tab, assignments, summaries, onManage }: { tab: "contacts" | "banks"; assignments: PartnerTypeAssignment[]; summaries: Record<string, SetupSummary>; onManage: (id: string) => void }) {
@@ -361,13 +413,16 @@ function SelectField({ label, value, onChange, options, placeholder, disabled = 
 function SetupManager({
   assignment,
   summary,
+  initialTab = "documents",
   onRefresh,
 }: {
   assignment: PartnerTypeAssignment
   summary?: SetupSummary
-  onRefresh: () => void
+  initialTab?: SetupTab
+  onRefresh: () => void | Promise<void>
 }) {
-  const [tab, setTab] = useState<SetupTab>("documents")
+  const [tab, setTab] = useState<SetupTab>(initialTab)
+  useEffect(() => { setTab(initialTab) }, [initialTab, assignment.id])
 
   const tabs: { key: SetupTab; label: string; icon: React.ReactNode }[] = [
     { key: "documents", label: "Documents", icon: <FileText className="h-3.5 w-3.5" /> },
@@ -412,6 +467,7 @@ function DocumentsTab({ assignmentId, partnerTypeId, onRefresh }: { assignmentId
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState("")
   const [uploading, setUploading] = useState<string | null>(null)
+  const [actionError, setActionError] = useState("")
   const fileRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
   const [manualMode, setManualMode] = useState(false)
@@ -442,41 +498,64 @@ function DocumentsTab({ assignmentId, partnerTypeId, onRefresh }: { assignmentId
 
   async function handleFilePick(reqId: string, file: File) {
     setUploading(reqId)
+    setActionError("")
     try {
       await uploadAssignmentDocumentFile(assignmentId, reqId, file)
-      load()
-      onRefresh()
-    } catch {}
-    setUploading(null)
+      await Promise.all([load(), onRefresh()])
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Document upload failed")
+    } finally {
+      setUploading(null)
+    }
   }
 
   async function handleManualUpload() {
     if (!manualReqId || !manualFileRef.current?.files?.[0]) return
     setUploading("manual")
+    setActionError("")
     try {
       await uploadAssignmentDocumentFile(assignmentId, manualReqId, manualFileRef.current.files[0])
       setManualReqId("")
       if (manualFileRef.current) manualFileRef.current.value = ""
-      load()
-      onRefresh()
-    } catch {}
-    setUploading(null)
+      await Promise.all([load(), onRefresh()])
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Document upload failed")
+    } finally {
+      setUploading(null)
+    }
   }
 
   async function handleVerify(docId: string) {
+    setActionError("")
     try {
       await updateAssignmentDocument(assignmentId, docId, { status: "APPROVED" })
-      load()
-      onRefresh()
-    } catch {}
+      await Promise.all([load(), onRefresh()])
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Document verification failed")
+    }
   }
 
   async function handleReject(docId: string) {
+    setActionError("")
     try {
       await updateAssignmentDocument(assignmentId, docId, { status: "REJECTED" })
-      load()
-      onRefresh()
-    } catch {}
+      await Promise.all([load(), onRefresh()])
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Document rejection failed")
+    }
+  }
+
+  async function handleDelete(docId: string) {
+    setUploading(`delete-${docId}`)
+    setActionError("")
+    try {
+      await deleteAssignmentDocument(assignmentId, docId)
+      await Promise.all([load(), onRefresh()])
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Document removal failed")
+    } finally {
+      setUploading(null)
+    }
   }
 
   if (loading) return <Loader2 className="h-5 w-5 animate-spin text-muted-foreground mx-auto" />
@@ -485,9 +564,9 @@ function DocumentsTab({ assignmentId, partnerTypeId, onRefresh }: { assignmentId
 
   return (
     <div className="space-y-3">
-      {loadError && (
-        <div className="p-2 rounded bg-[var(--color-bg-warning-soft)] text-xs text-[var(--color-text-warning-soft)]">
-          {loadError}
+      {(loadError || actionError) && (
+        <div className="rounded-lg border border-[#d7d7d7] bg-[#f7f7f7] px-3 py-2 text-xs font-semibold text-[#444]">
+          {loadError || actionError}
         </div>
       )}
 
@@ -505,22 +584,19 @@ function DocumentsTab({ assignmentId, partnerTypeId, onRefresh }: { assignmentId
                 <div className="flex items-center gap-3 flex-none ml-4">
                   {doc ? (
                     <>
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${
-                        doc.status === "APPROVED" ? "bg-[var(--color-bg-success-soft)] text-[var(--color-text-success-soft)]" :
-                        doc.status === "REJECTED" || doc.status === "EXPIRED" ? "bg-[var(--color-bg-destructive-soft)] text-[var(--color-text-destructive-soft)]" :
-                        "bg-[var(--color-bg-warning-soft)] text-[var(--color-text-warning-soft)]"
-                      }`}>{doc.status}</span>
+                                                <span className="inline-flex items-center rounded-full border border-[#d7d7d7] bg-[#fafafa] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#444]">{doc.status}</span>
+
                       {doc.status === "UPLOADED" || doc.status === "NOT_SUBMITTED" ? (
                         <>
-                          <button onClick={() => handleVerify(doc.id)} className="p-1 text-[var(--color-feedback-success)] hover:bg-[var(--color-bg-success-soft)] rounded" title="Approve"><CheckCircle className="h-4 w-4" /></button>
-                          <button onClick={() => handleReject(doc.id)} className="p-1 text-[var(--color-feedback-destructive)] hover:bg-[var(--color-bg-destructive-soft)] rounded" title="Reject"><XCircle className="h-4 w-4" /></button>
+                          <button onClick={() => handleVerify(doc.id)} className="rounded-md border border-[#d7d7d7] p-1.5 text-[#333] hover:bg-[#f1f1f1]" title="Approve"><CheckCircle className="h-4 w-4" /></button>
+                          <button onClick={() => handleReject(doc.id)} className="rounded-md border border-[#d7d7d7] p-1.5 text-[#333] hover:bg-[#f1f1f1]" title="Reject"><XCircle className="h-4 w-4" /></button>
                         </>
                       ) : null}
                     </>
                   ) : (
                     <>
                       <input type="file" ref={(el) => { fileRefs.current[req.id] = el }} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFilePick(req.id, f) }} className="hidden" accept=".pdf,.jpg,.jpeg,.png" />
-                      <button onClick={() => fileRefs.current[req.id]?.click()} disabled={uploading === req.id} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors">
+                      <button onClick={() => fileRefs.current[req.id]?.click()} disabled={uploading === req.id} className="flex items-center gap-1.5 rounded-lg bg-[#111] px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-[#2b2b2b] disabled:opacity-50">
                         {uploading === req.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
                         Upload
                       </button>
@@ -557,11 +633,7 @@ function DocumentsTab({ assignmentId, partnerTypeId, onRefresh }: { assignmentId
             {docs.map((doc) => (
               <div key={doc.id} className="flex items-center justify-between rounded border border-border px-3 py-2 text-xs">
                 <span className="text-foreground truncate">{doc.documentRequirementName || doc.documentRequirementCode || doc.id}</span>
-                <span className={`ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium flex-none ${
-                  doc.status === "APPROVED" ? "bg-[var(--color-bg-success-soft)] text-[var(--color-text-success-soft)]" :
-                  doc.status === "REJECTED" || doc.status === "EXPIRED" ? "bg-[var(--color-bg-destructive-soft)] text-[var(--color-text-destructive-soft)]" :
-                  "bg-[var(--color-bg-warning-soft)] text-[var(--color-text-warning-soft)]"
-                }`}>{doc.status}</span>
+                <div className="ml-2 flex flex-none items-center gap-2"><span className="rounded-full border border-[#d7d7d7] bg-[#fafafa] px-1.5 py-0.5 text-[10px] font-bold uppercase text-[#444]">{doc.status}</span><button onClick={() => handleDelete(doc.id)} disabled={uploading === `delete-${doc.id}`} className="rounded-md border border-[#d7d7d7] p-1 text-[#666] hover:bg-[#f1f1f1] hover:text-[#111] disabled:opacity-50" title="Remove document"><Trash2 className="h-3.5 w-3.5" /></button></div>
               </div>
             ))}
           </div>
