@@ -14,10 +14,6 @@ import {
   listContacts,
   listBankAccounts,
   getChoices,
-  fetchDocumentRequirements,
-  fetchFieldConfigurations,
-  fetchContactRequirements,
-  fetchBankRequirements,
   getApplicationPartnerTypeFieldValues,
   updateApplicationPartnerTypeFieldValues,
   getApplicationPartnerTypeContacts,
@@ -55,7 +51,7 @@ import type {
   ChoicesResponse,
 } from "../../lib/types"
 import { useStatusLabel, useStatusColor } from "../../config/ConfigurationHooks"
-import { getConfiguredParameterValue, usePartnerOnboardingConfiguration } from "../../config/ConfigurationAPI"
+import { fetchPartnerOnboardingConfiguration, getConfiguredParameterValue, usePartnerOnboardingConfiguration } from "../../config/ConfigurationAPI"
 import { useLitProps } from "../../lib/useLitProps"
 import FlowBanner from "../../components/shared/FlowBanner"
 import ConfirmDialog from "../../components/shared/ConfirmDialog"
@@ -789,29 +785,112 @@ function PartnerTypeSetupModal({
 
   const loadAssignmentSetup = useCallback(async () => {
     setSetupLoading(true)
+    setError("")
     try {
-      const [docs, fields, contactsReqs, banksReqs, values, savedContacts, savedBanks] = await Promise.all([
-        fetchDocumentRequirements(assignment.partnerType),
-        fetchFieldConfigurations(assignment.partnerType),
-        fetchContactRequirements(assignment.partnerType),
-        fetchBankRequirements(assignment.partnerType),
+      const [configuration, values, savedContacts, savedBanks] = await Promise.all([
+        // This is the same authoritative projection used by Partner Parameters.
+        // It is intentionally fetched fresh here so changes made in Settings are
+        // visible immediately when the setup popup is opened or refreshed.
+        fetchPartnerOnboardingConfiguration(),
         getApplicationPartnerTypeFieldValues(applicationId, assignment.id),
         getApplicationPartnerTypeContacts(applicationId, assignment.id),
         getApplicationPartnerTypeBankAccounts(applicationId, assignment.id),
       ])
-      setDocumentRequirements(docs.filter((item) => item.isActive).sort((a, b) => a.sortOrder - b.sortOrder))
-      setFieldConfigurations(fields.filter((item) => item.isActive).sort((a, b) => a.displayOrder - b.displayOrder))
-      setContactRequirements(contactsReqs.filter((item) => item.isActive).sort((a, b) => a.displayOrder - b.displayOrder))
-      setBankRequirements(banksReqs.filter((item) => item.isActive).sort((a, b) => a.displayOrder - b.displayOrder))
+      const configuredType = configuration.partnerTypes.find((item) =>
+        item.id === assignment.partnerType || item.code === assignment.partnerType,
+      )
+      if (!configuredType) {
+        throw new Error(`No active Partner Parameters configuration was found for ${assignment.partnerTypeName}. Configure this partner type under Partner Parameters first.`)
+      }
+
+      const docs: PartnerTypeDocumentRequirement[] = configuredType.documents
+        .filter((item) => item.isActive)
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((item) => ({
+          id: item.id,
+          partnerType: configuredType.id,
+          partnerTypeName: configuredType.name,
+          code: item.code,
+          description: item.description,
+          isRequired: item.isRequired,
+          isMandatory: item.isMandatory,
+          sortOrder: item.sortOrder,
+          isActive: item.isActive,
+          createdBy: null,
+          createdByName: null,
+          updatedBy: null,
+          updatedByName: null,
+          createdAt: "",
+          updatedAt: "",
+        }))
+      const fields: PartnerTypeFieldConfiguration[] = configuredType.attributes
+        .filter((item) => item.isActive)
+        .sort((a, b) => a.displayOrder - b.displayOrder)
+        .map((item) => ({
+          id: item.id,
+          partnerType: configuredType.id,
+          partnerTypeName: configuredType.name,
+          fieldName: item.fieldName,
+          fieldCode: item.fieldCode,
+          fieldType: item.fieldType as PartnerTypeFieldConfiguration["fieldType"],
+          defaultValue: item.defaultValue ?? "",
+          isRequired: item.isRequired,
+          validationRules: item.validationRules ?? {},
+          displayOrder: item.displayOrder,
+          visibilityRules: item.visibilityRules ?? {},
+          isActive: item.isActive,
+          createdAt: "",
+          updatedAt: "",
+        }))
+      const contactsReqs: PartnerTypeContactRequirement[] = configuredType.contacts
+        .filter((item) => item.isActive)
+        .sort((a, b) => a.displayOrder - b.displayOrder)
+        .map((item) => ({
+          id: item.id,
+          partnerType: configuredType.id,
+          partnerTypeName: configuredType.name,
+          contactType: item.contactType,
+          isRequired: item.isRequired,
+          multipleAllowed: item.multipleAllowed,
+          displayOrder: item.displayOrder,
+          isActive: item.isActive,
+          createdAt: "",
+          updatedAt: "",
+        }))
+      const banksReqs: PartnerTypeBankRequirement[] = configuredType.banks
+        .filter((item) => item.isActive)
+        .sort((a, b) => a.displayOrder - b.displayOrder)
+        .map((item) => ({
+          id: item.id,
+          partnerType: configuredType.id,
+          partnerTypeName: configuredType.name,
+          bankType: item.bankType,
+          isRequired: item.isRequired,
+          multipleAllowed: item.multipleAllowed,
+          validationRules: item.validationRules ?? {},
+          displayOrder: item.displayOrder,
+          isActive: item.isActive,
+          createdAt: "",
+          updatedAt: "",
+        }))
+
+      setDocumentRequirements(docs)
+      setFieldConfigurations(fields)
+      setContactRequirements(contactsReqs)
+      setBankRequirements(banksReqs)
       setFieldValues(Object.fromEntries(values.map((item) => [item.fieldConfig, item.valueJson])))
       setAssignmentContacts(savedContacts)
       setAssignmentBanks(savedBanks)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to load configured partner-type requirements")
+      setDocumentRequirements([])
+      setFieldConfigurations([])
+      setContactRequirements([])
+      setBankRequirements([])
     } finally {
       setSetupLoading(false)
     }
-  }, [applicationId, assignment.id, assignment.partnerType])
+  }, [applicationId, assignment.id, assignment.partnerType, assignment.partnerTypeName])
 
   useEffect(() => { void loadAssignmentSetup() }, [loadAssignmentSetup])
 
