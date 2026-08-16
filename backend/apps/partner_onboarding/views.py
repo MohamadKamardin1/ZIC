@@ -5,6 +5,7 @@ from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.exceptions import PermissionDenied
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from django.conf import settings
@@ -819,6 +820,169 @@ class ApplicationFieldValueViewSet(viewsets.ModelViewSet):
             )
             results.append(ApplicationFieldValueSerializer(fv).data)
         return _response(data=results, message="Field values updated.")
+
+
+class ApplicationPartnerTypeSetupViewSet(viewsets.GenericViewSet):
+    """Scoped setup API for one assigned partner type inside an application.
+
+    ApplicationPartnerType is intentionally separate from the partner-master
+    PartnerTypeAssignment model. These endpoints prevent the onboarding popup
+    from accidentally querying the post-conversion partner namespace.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def _get_scope(self, request, application_pk, pk, write=False):
+        application = get_object_or_404(PartnerApplication, pk=application_pk)
+        if not _can_access_application(request.user, application, write=write):
+            raise PermissionDenied("You do not have permission to access this application setup.")
+        assignment = get_object_or_404(
+            ApplicationPartnerType,
+            pk=pk,
+            application_id=application.id,
+        )
+        return application, assignment
+
+    @staticmethod
+    def _scoped_payload(request, assignment):
+        payload = request.data.copy()
+        payload["application_partner_type"] = str(assignment.id)
+        return payload
+
+    def field_values(self, request, application_pk=None, pk=None):
+        application, assignment = self._get_scope(request, application_pk, pk, write=request.method == "PATCH")
+        queryset = ApplicationFieldValue.objects.filter(
+            application_id=application.id,
+            application_partner_type_id=assignment.id,
+        ).select_related("field_config")
+        if request.method == "GET":
+            return _response(
+                data=ApplicationFieldValueSerializer(queryset, many=True).data,
+                message="Configured field values retrieved.",
+            )
+
+        if not isinstance(request.data, list):
+            return _response(message="Field values must be submitted as a list.", status_code=status.HTTP_400_BAD_REQUEST)
+        serializer = ApplicationFieldValueBatchSerializer(
+            data=[{**item, "application_partner_type": str(assignment.id)} for item in request.data],
+            many=True,
+            context={
+                "request": request,
+                "application": application,
+                "application_partner_type": assignment,
+            },
+        )
+        serializer.is_valid(raise_exception=True)
+        results = []
+        for item in serializer.validated_data:
+            field_value, created = ApplicationFieldValue.objects.update_or_create(
+                application_id=application.id,
+                application_partner_type_id=assignment.id,
+                field_config_id=item["field_config"],
+                defaults={"value_json": item.get("value_json")},
+            )
+            if created:
+                AuditService.log_create(
+                    field_value,
+                    actor=request.user,
+                    request=request,
+                    reason="Partner-type dynamic field value created.",
+                )
+            else:
+                AuditService.log_action(
+                    "UPDATE",
+                    field_value,
+                    actor=request.user,
+                    request=request,
+                    reason="Partner-type dynamic field value updated.",
+                )
+            results.append(field_value)
+        return _response(
+            data=ApplicationFieldValueSerializer(results, many=True).data,
+            message="Configured field values updated.",
+        )
+
+    def contacts(self, request, application_pk=None, pk=None):
+        application, assignment = self._get_scope(request, application_pk, pk, write=request.method == "POST")
+        queryset = ApplicationContact.objects.filter(
+            application_id=application.id,
+            application_partner_type_id=assignment.id,
+        )
+        if request.method == "GET":
+            return _response(data=ApplicationContactSerializer(queryset, many=True).data, message="Partner-type contacts retrieved.")
+        serializer = ApplicationContactSerializer(
+            data=self._scoped_payload(request, assignment),
+            context={"request": request, "application": application},
+        )
+        serializer.is_valid(raise_exception=True)
+        contact = serializer.save(application=application, application_partner_type=assignment)
+        AuditService.log_create(contact, actor=request.user, request=request, reason="Partner-type contact created.")
+        return _response(data=ApplicationContactSerializer(contact).data, message="Partner-type contact created.", status_code=status.HTTP_201_CREATED)
+
+    def contact_detail(self, request, application_pk=None, pk=None, contact_pk=None):
+        application, assignment = self._get_scope(request, application_pk, pk, write=request.method in {"PATCH", "PUT", "DELETE"})
+        contact = get_object_or_404(
+            ApplicationContact,
+            pk=contact_pk,
+            application_id=application.id,
+            application_partner_type_id=assignment.id,
+        )
+        if request.method == "DELETE":
+            AuditService.log_delete(contact, actor=request.user, request=request, reason="Partner-type contact deleted.")
+            contact.delete()
+            return _response(message="Partner-type contact deleted.")
+        before = AuditService.snapshot(contact)
+        serializer = ApplicationContactSerializer(
+            contact,
+            data=self._scoped_payload(request, assignment),
+            partial=True,
+            context={"request": request, "application": application},
+        )
+        serializer.is_valid(raise_exception=True)
+        contact = serializer.save(application=application, application_partner_type=assignment)
+        AuditService.log_update(contact, before_state=before, actor=request.user, request=request, reason="Partner-type contact updated.")
+        return _response(data=ApplicationContactSerializer(contact).data, message="Partner-type contact updated.")
+
+    def banks(self, request, application_pk=None, pk=None):
+        application, assignment = self._get_scope(request, application_pk, pk, write=request.method == "POST")
+        queryset = ApplicationBankAccount.objects.filter(
+            application_id=application.id,
+            application_partner_type_id=assignment.id,
+        )
+        if request.method == "GET":
+            return _response(data=ApplicationBankAccountSerializer(queryset, many=True).data, message="Partner-type bank accounts retrieved.")
+        serializer = ApplicationBankAccountSerializer(
+            data=self._scoped_payload(request, assignment),
+            context={"request": request, "application": application},
+        )
+        serializer.is_valid(raise_exception=True)
+        account = serializer.save(application=application, application_partner_type=assignment)
+        AuditService.log_create(account, actor=request.user, request=request, reason="Partner-type bank account created.")
+        return _response(data=ApplicationBankAccountSerializer(account).data, message="Partner-type bank account created.", status_code=status.HTTP_201_CREATED)
+
+    def bank_detail(self, request, application_pk=None, pk=None, bank_pk=None):
+        application, assignment = self._get_scope(request, application_pk, pk, write=request.method in {"PATCH", "PUT", "DELETE"})
+        account = get_object_or_404(
+            ApplicationBankAccount,
+            pk=bank_pk,
+            application_id=application.id,
+            application_partner_type_id=assignment.id,
+        )
+        if request.method == "DELETE":
+            AuditService.log_delete(account, actor=request.user, request=request, reason="Partner-type bank account deleted.")
+            account.delete()
+            return _response(message="Partner-type bank account deleted.")
+        before = AuditService.snapshot(account)
+        serializer = ApplicationBankAccountSerializer(
+            account,
+            data=self._scoped_payload(request, assignment),
+            partial=True,
+            context={"request": request, "application": application},
+        )
+        serializer.is_valid(raise_exception=True)
+        account = serializer.save(application=application, application_partner_type=assignment)
+        AuditService.log_update(account, before_state=before, actor=request.user, request=request, reason="Partner-type bank account updated.")
+        return _response(data=ApplicationBankAccountSerializer(account).data, message="Partner-type bank account updated.")
 
 
 @api_view(["GET"])

@@ -456,6 +456,8 @@ export interface ApplicationPartnerType {
 
 export interface ApplicationContact {
   id: string
+  applicationPartnerType?: string | null
+  contactRequirement?: string | null
   contactType: string
   firstName: string
   lastName: string
@@ -471,6 +473,8 @@ export interface ApplicationContact {
 
 export interface ApplicationBankAccount {
   id: string
+  applicationPartnerType?: string | null
+  bankRequirement?: string | null
   bankName: string
   branchName: string
   accountName: string
@@ -788,6 +792,7 @@ export interface PartnerDynamicFieldValue {
 export interface ApplicationFieldValue {
   id: string
   application: string
+  applicationPartnerType?: string | null
   fieldConfig: string
   fieldCode: string
   fieldName: string

@@ -11,6 +11,7 @@ from .views import (
     ApplicationContactViewSet,
     ApplicationBankAccountViewSet,
     ApplicationFieldValueViewSet,
+    ApplicationPartnerTypeSetupViewSet,
     download_template,
     bulk_upload,
     choices,
@@ -97,6 +98,31 @@ urlpatterns = [
             "delete": "destroy",
         }),
         name="application-partner-type-detail",
+    ),
+    path(
+        "applications/<uuid:application_pk>/partner-types/<uuid:pk>/setup/field-values/",
+        ApplicationPartnerTypeSetupViewSet.as_view({"get": "field_values", "patch": "field_values"}),
+        name="application-partner-type-field-values",
+    ),
+    path(
+        "applications/<uuid:application_pk>/partner-types/<uuid:pk>/setup/contacts/",
+        ApplicationPartnerTypeSetupViewSet.as_view({"get": "contacts", "post": "contacts"}),
+        name="application-partner-type-contacts",
+    ),
+    path(
+        "applications/<uuid:application_pk>/partner-types/<uuid:pk>/setup/contacts/<uuid:contact_pk>/",
+        ApplicationPartnerTypeSetupViewSet.as_view({"patch": "contact_detail", "put": "contact_detail", "delete": "contact_detail"}),
+        name="application-partner-type-contact-detail",
+    ),
+    path(
+        "applications/<uuid:application_pk>/partner-types/<uuid:pk>/setup/bank-accounts/",
+        ApplicationPartnerTypeSetupViewSet.as_view({"get": "banks", "post": "banks"}),
+        name="application-partner-type-bank-accounts",
+    ),
+    path(
+        "applications/<uuid:application_pk>/partner-types/<uuid:pk>/setup/bank-accounts/<uuid:bank_pk>/",
+        ApplicationPartnerTypeSetupViewSet.as_view({"patch": "bank_detail", "put": "bank_detail", "delete": "bank_detail"}),
+        name="application-partner-type-bank-account-detail",
     ),
     path(
         "applications/<uuid:application_pk>/contacts/",

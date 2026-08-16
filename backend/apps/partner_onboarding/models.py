@@ -401,6 +401,14 @@ class ApplicationContact(models.Model):
         related_name="contacts",
         help_text="Optional assignment scope; null means shared application contact.",
     )
+    contact_requirement = models.ForeignKey(
+        "partners.PartnerTypeContactRequirement",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="application_contacts",
+        help_text="Configured contact requirement fulfilled by this contact.",
+    )
     contact_type = models.CharField(max_length=20, choices=CONTACT_TYPE_CHOICES, default="SECONDARY")
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
@@ -442,6 +450,14 @@ class ApplicationBankAccount(models.Model):
         blank=True,
         related_name="bank_accounts",
         help_text="Optional assignment scope; null means shared application bank account.",
+    )
+    bank_requirement = models.ForeignKey(
+        "partners.PartnerTypeBankRequirement",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="application_bank_accounts",
+        help_text="Configured bank requirement fulfilled by this account.",
     )
     bank_name = models.CharField(max_length=200)
     branch_name = models.CharField(max_length=200, blank=True)

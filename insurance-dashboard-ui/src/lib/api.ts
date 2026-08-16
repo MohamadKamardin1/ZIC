@@ -1694,6 +1694,159 @@ export async function deleteAssignmentDocument(assignmentId: string, docId: stri
   }
 }
 
+// --- Application partner-type scoped setup ---
+
+function scopedPartnerTypeSetupPath(applicationId: string, partnerTypeId: string, resource: string, id?: string) {
+  return `${ONBOARDING}/applications/${applicationId}/partner-types/${partnerTypeId}/setup/${resource}/${id ? `${id}/` : ""}`
+}
+
+export async function getApplicationPartnerTypeFieldValues(
+  applicationId: string,
+  partnerTypeId: string,
+): Promise<ApplicationFieldValue[]> {
+  const res = await apiFetchAuth(scopedPartnerTypeSetupPath(applicationId, partnerTypeId, "field-values"))
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body) || "Failed to fetch configured field values")
+  }
+  return extractList<ApplicationFieldValue>(res)
+}
+
+export async function updateApplicationPartnerTypeFieldValues(
+  applicationId: string,
+  partnerTypeId: string,
+  data: Record<string, unknown>[],
+): Promise<ApplicationFieldValue[]> {
+  const res = await apiFetchAuth(scopedPartnerTypeSetupPath(applicationId, partnerTypeId, "field-values"), {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const json = await res.json()
+  return Array.isArray(json.data) ? json.data : (Array.isArray(json) ? json : [])
+}
+
+export async function getApplicationPartnerTypeContacts(
+  applicationId: string,
+  partnerTypeId: string,
+): Promise<ApplicationContact[]> {
+  const res = await apiFetchAuth(scopedPartnerTypeSetupPath(applicationId, partnerTypeId, "contacts"))
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body) || "Failed to fetch configured contacts")
+  }
+  return extractList<ApplicationContact>(res)
+}
+
+export async function createApplicationPartnerTypeContact(
+  applicationId: string,
+  partnerTypeId: string,
+  data: Record<string, unknown>,
+): Promise<ApplicationContact> {
+  const res = await apiFetchAuth(scopedPartnerTypeSetupPath(applicationId, partnerTypeId, "contacts"), {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const json = await res.json()
+  return json.data ?? json
+}
+
+export async function updateApplicationPartnerTypeContact(
+  applicationId: string,
+  partnerTypeId: string,
+  contactId: string,
+  data: Record<string, unknown>,
+): Promise<ApplicationContact> {
+  const res = await apiFetchAuth(scopedPartnerTypeSetupPath(applicationId, partnerTypeId, "contacts", contactId), {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const json = await res.json()
+  return json.data ?? json
+}
+
+export async function deleteApplicationPartnerTypeContact(
+  applicationId: string,
+  partnerTypeId: string,
+  contactId: string,
+): Promise<void> {
+  const res = await apiFetchAuth(scopedPartnerTypeSetupPath(applicationId, partnerTypeId, "contacts", contactId), { method: "DELETE" })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+}
+
+export async function getApplicationPartnerTypeBankAccounts(
+  applicationId: string,
+  partnerTypeId: string,
+): Promise<ApplicationBankAccount[]> {
+  const res = await apiFetchAuth(scopedPartnerTypeSetupPath(applicationId, partnerTypeId, "bank-accounts"))
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body) || "Failed to fetch configured bank accounts")
+  }
+  return extractList<ApplicationBankAccount>(res)
+}
+
+export async function createApplicationPartnerTypeBankAccount(
+  applicationId: string,
+  partnerTypeId: string,
+  data: Record<string, unknown>,
+): Promise<ApplicationBankAccount> {
+  const res = await apiFetchAuth(scopedPartnerTypeSetupPath(applicationId, partnerTypeId, "bank-accounts"), {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const json = await res.json()
+  return json.data ?? json
+}
+
+export async function updateApplicationPartnerTypeBankAccount(
+  applicationId: string,
+  partnerTypeId: string,
+  bankId: string,
+  data: Record<string, unknown>,
+): Promise<ApplicationBankAccount> {
+  const res = await apiFetchAuth(scopedPartnerTypeSetupPath(applicationId, partnerTypeId, "bank-accounts", bankId), {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+  const json = await res.json()
+  return json.data ?? json
+}
+
+export async function deleteApplicationPartnerTypeBankAccount(
+  applicationId: string,
+  partnerTypeId: string,
+  bankId: string,
+): Promise<void> {
+  const res = await apiFetchAuth(scopedPartnerTypeSetupPath(applicationId, partnerTypeId, "bank-accounts", bankId), { method: "DELETE" })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(extractError(res, body))
+  }
+}
+
 // --- Field Values ---
 
 export async function getAssignmentFieldValues(assignmentId: string): Promise<PartnerDynamicFieldValue[]> {

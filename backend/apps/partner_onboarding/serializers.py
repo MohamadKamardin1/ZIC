@@ -147,6 +147,14 @@ class ApplicationContactSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Assignment does not belong to this application.")
         return value
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        assignment = attrs.get("application_partner_type") or getattr(self.instance, "application_partner_type", None)
+        requirement = attrs.get("contact_requirement") or getattr(self.instance, "contact_requirement", None)
+        if assignment and requirement and requirement.partner_type_id != assignment.partner_type_id:
+            raise serializers.ValidationError({"contact_requirement": "Contact requirement does not belong to this partner type."})
+        return attrs
+
 
 class ApplicationBankAccountSerializer(serializers.ModelSerializer):
     class Meta:
@@ -159,6 +167,14 @@ class ApplicationBankAccountSerializer(serializers.ModelSerializer):
         if value and application and value.application_id != application.id:
             raise serializers.ValidationError("Assignment does not belong to this application.")
         return value
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        assignment = attrs.get("application_partner_type") or getattr(self.instance, "application_partner_type", None)
+        requirement = attrs.get("bank_requirement") or getattr(self.instance, "bank_requirement", None)
+        if assignment and requirement and requirement.partner_type_id != assignment.partner_type_id:
+            raise serializers.ValidationError({"bank_requirement": "Bank requirement does not belong to this partner type."})
+        return attrs
 
 
 # ---------------------------------------------------------------------------
@@ -671,9 +687,12 @@ class ApplicationFieldValueBatchSerializer(serializers.Serializer):
             queryset = queryset.filter(
                 partner_type__in=application.partner_types.values("partner_type_id")
             )
+        assignment = self.context.get("application_partner_type")
+        if assignment:
+            queryset = queryset.filter(partner_type_id=assignment.partner_type_id)
         if not queryset.exists():
             raise serializers.ValidationError(
-                "The field configuration is not active or is not available for this application."
+                "The field configuration is not active or is not available for this partner type."
             )
         return value
 
