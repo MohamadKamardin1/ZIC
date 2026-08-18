@@ -422,6 +422,7 @@ class PartnerApplicationDocumentViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         document = PartnerApplicationDocument.objects.create(
             application=application,
+            application_partner_type=serializer.validated_data.get("application_partner_type"),
             document_type=serializer.validated_data["document_type"],
             document_name=serializer.validated_data["document_name"],
             file=serializer.validated_data["file"],
@@ -590,6 +591,7 @@ def _application_partner_type_snapshot(instance):
         "location": instance.location.name if instance.location else None,
         "region": instance.region,
         "share_data_externally": instance.share_data_externally,
+        "kyc_status": instance.kyc_status,
     }
 
 

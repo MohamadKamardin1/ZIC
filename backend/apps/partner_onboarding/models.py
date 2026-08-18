@@ -368,6 +368,11 @@ class ApplicationPartnerType(models.Model):
     )
     region = models.CharField(max_length=100, blank=True, default="")
     share_data_externally = models.BooleanField(default=False)
+    kyc_status = models.CharField(
+        max_length=30,
+        choices=[("NOT_SET", "Not Set"), ("PENDING_REVIEW", "Pending Review"), ("VERIFIED", "Verified"), ("REJECTED", "Rejected"), ("EXPIRED", "Expired")],
+        default="NOT_SET",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

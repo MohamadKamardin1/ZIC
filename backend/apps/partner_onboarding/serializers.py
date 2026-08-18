@@ -49,7 +49,7 @@ class ApplicationPartnerTypeSerializer(serializers.ModelSerializer):
         fields = [
             "id", "application", "partner_type", "partner_type_name",
             "branch", "branch_name", "location", "location_name",
-            "region", "share_data_externally", "created_at",
+            "region", "share_data_externally", "kyc_status", "created_at",
         ]
 
 
@@ -182,18 +182,26 @@ class ApplicationBankAccountSerializer(serializers.ModelSerializer):
 # ---------------------------------------------------------------------------
 
 class PartnerApplicationDocumentSerializer(serializers.ModelSerializer):
+    uploaded_by_name = serializers.SerializerMethodField()
+
     class Meta:
         model = PartnerApplicationDocument
         fields = [
             "id", "application", "application_partner_type", "document_type", "document_name",
             "file", "file_size", "mime_type", "is_verified",
             "verified_by", "verified_at", "verification_notes",
-            "uploaded_by", "created_at",
+            "uploaded_by", "uploaded_by_name", "created_at",
         ]
         read_only_fields = [
             "id", "file_size", "mime_type", "is_verified",
             "verified_by", "verified_at", "uploaded_by", "created_at",
         ]
+
+    def get_uploaded_by_name(self, obj):
+        user = obj.uploaded_by
+        if not user:
+            return ""
+        return user.full_name or user.username or str(user.pk)
 
 
 class PartnerApplicationDocumentUploadSerializer(serializers.ModelSerializer):
