@@ -427,6 +427,7 @@ class UserPermission(models.Model):
         COMPLIANCE = 'COMPLIANCE', 'Compliance'
         ASSESS = 'ASSESS', 'Assess'
         CONVERT = 'CONVERT', 'Convert'
+        FINALIZE = 'FINALIZE', 'Finalize'
         BULK_IMPORT = 'BULK_IMPORT', 'Bulk import'
         SUSPEND = 'SUSPEND', 'Suspend'
 

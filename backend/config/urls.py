@@ -26,6 +26,8 @@ api_v1_patterns = [
     path('group-life/', include('apps.group_life.urls')),
     path('ordinary-life/', include('apps.ordinary_life.urls')),
     path('ol-parameters/', include('apps.ol_parameters.urls')),
+    path('ol-quotations/', include('apps.ol_quotations.urls')),
+    path('ol/quotations/', include('apps.ol_quotations.urls')),
     path('group-credit/', include('apps.group_credit.urls')),
     path('front-office/', include('apps.front_office.urls')),
 ]
