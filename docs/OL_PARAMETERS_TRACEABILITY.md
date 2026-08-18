@@ -43,3 +43,36 @@ The product-rating foundation is intentionally more specialized than the other g
 ## Delivery status policy
 
 A group is marked **Ready** when its table contract can be discovered, permissioned, audited, and rendered by a standard table client. It becomes **Implemented** only after its concrete parameter entities, migrations, APIs, admin, seed data, tests, and frontend workspace are delivered in a dedicated change. This distinction prevents the registry foundation from being mistaken for a complete business configuration module.
+
+
+## OL Default Setup implementation status
+
+The OL Default Setup group is now **Implemented** as the first concrete group beyond the foundation. Its canonical artifacts are isolated under `backend/apps/ol_parameters/` and are exposed under `/api/v1/ol-parameters/`:
+
+| Requirement | Delivered artifact | Status |
+|---|---|---|
+| Typed OL defaults | `OLDefaultSystemParameter` with `STRING`, `TEXT`, `INTEGER`, `DECIMAL`, `BOOLEAN`, `DATE`, and `JSON` storage | Implemented |
+| Commission overrides | `OLOverrideCommissionSetup` with partner/intermediary/product/plan/rider/channel/branch/currency/year-range scope, priority, rate type, and effective dating | Implemented |
+| Calculation strategies | `OLComputationApproach` with calculation area, basis, formula key, sequence, and JSON configuration | Implemented |
+| Maturity claim behavior | `OLMaturityClaimSetup` with product/plan scope, initiation lead time, notifications, payout, documents, approval, and creation status | Implemented |
+| APIs | List/detail/create/update/deactivate, search, filters, ordering, pagination, and CSV export for all four tables | Implemented |
+| Admin | Table-first, permission-aware Django admin for all four entities | Implemented |
+| Audit | Central audit events for service and direct-save paths, with actor and request correlation support | Implemented |
+| Seed data | `seed_ol_default_setup` idempotently seeds 11 operational defaults | Implemented |
+| Tests | Typed validation, stale-column clearing, overlap rules, API behavior, export, deactivation, and audit tests | Implemented |
+
+The legacy `apps.ordinary_life` Default Setup models and `/api/v1/ordinary-life/setup/` routes remain unchanged in this delivery to preserve backward compatibility. The new `apps.ol_parameters` entities are canonical for new configuration screens and future consumers. A later compatibility migration may map legacy records into the new tables after a controlled data-reconciliation decision.
+
+## Updated nine-group status
+
+| Required group | Concrete implementation status after this delivery |
+|---|---|
+| OL Default Setup | **Implemented** |
+| OL Policy Setup | Foundation registry only; planned |
+| OL Product Setup | Foundation registry only; planned |
+| OL Product Rating | Foundation registry and abstract rate contracts; planned |
+| OL Rider Setup | Foundation registry only; planned |
+| OL Agent Management | Foundation registry only; planned |
+| OL Loan Setup | Foundation registry only; planned |
+| OL Medical / Underwriting | Foundation registry only; planned |
+| OL Claim Setup | Foundation registry only; planned |

@@ -6,7 +6,22 @@ from django.dispatch import receiver
 
 from apps.governance.services.audit_service import AuditService
 
-from .models import OLParameterTableRegistry
+from .models import (
+    OLComputationApproach,
+    OLDefaultSystemParameter,
+    OLMaturityClaimSetup,
+    OLOverrideCommissionSetup,
+    OLParameterTableRegistry,
+)
+
+
+AUDITED_MODELS = (
+    OLParameterTableRegistry,
+    OLDefaultSystemParameter,
+    OLOverrideCommissionSetup,
+    OLComputationApproach,
+    OLMaturityClaimSetup,
+)
 
 
 _state = threading.local()
@@ -26,8 +41,7 @@ def audit_suppressed():
         _state.suppressed = previous
 
 
-@receiver(pre_save, sender=OLParameterTableRegistry, dispatch_uid="ol_parameters_registry_before_save")
-def capture_before_state(sender, instance, **kwargs):
+def _capture_before_state(sender, instance, **kwargs):
     if _is_suppressed() or not instance.pk:
         return
     try:
@@ -38,13 +52,13 @@ def capture_before_state(sender, instance, **kwargs):
         instance._ol_parameters_before_state = AuditService.snapshot(previous)
 
 
-@receiver(post_save, sender=OLParameterTableRegistry, dispatch_uid="ol_parameters_registry_after_save")
-def audit_registry_save(sender, instance, created, **kwargs):
+def _audit_save(sender, instance, created, **kwargs):
     if _is_suppressed():
         return
     before = getattr(instance, "_ol_parameters_before_state", None)
+    label = sender._meta.verbose_name.replace("_", " ")
     if created:
-        AuditService.log_create(instance, reason="OL Parameters table registry created.")
+        AuditService.log_create(instance, reason=f"OL Parameters {label} created.")
     elif before is not None:
         after = AuditService.snapshot(instance)
         if before != after:
@@ -52,10 +66,23 @@ def audit_registry_save(sender, instance, created, **kwargs):
                 instance,
                 before_state=before,
                 changed_fields=AuditService.changed_fields(before, after),
-                reason="OL Parameters table registry updated.",
+                reason=f"OL Parameters {label} updated.",
             )
     if hasattr(instance, "_ol_parameters_before_state"):
         delattr(instance, "_ol_parameters_before_state")
+
+
+for _model in AUDITED_MODELS:
+    pre_save.connect(
+        _capture_before_state,
+        sender=_model,
+        dispatch_uid=f"ol_parameters_{_model.__name__.lower()}_before_save",
+    )
+    post_save.connect(
+        _audit_save,
+        sender=_model,
+        dispatch_uid=f"ol_parameters_{_model.__name__.lower()}_after_save",
+    )
 
 
 def register_receivers():

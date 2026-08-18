@@ -261,3 +261,296 @@ class OLParameterTableRegistry(models.Model):
     def required_permission(self, action="view"):
         configured = self.permission_requirements.get(action) if isinstance(self.permission_requirements, dict) else None
         return configured or self.permission_code
+
+
+class OLDefaultParameterValueType(models.TextChoices):
+    STRING = "STRING", "String"
+    TEXT = "TEXT", "Text"
+    INTEGER = "INTEGER", "Integer"
+    DECIMAL = "DECIMAL", "Decimal"
+    BOOLEAN = "BOOLEAN", "Boolean"
+    DATE = "DATE", "Date"
+    JSON = "JSON", "JSON"
+
+
+class OLDefaultSystemParameter(OLParameterBaseModel):
+    """Typed, effective-dated default used by Ordinary Life workflows."""
+
+    parameter_key = models.CharField(max_length=100, unique=True)
+    parameter_category = models.CharField(max_length=80, db_index=True)
+    value_type = models.CharField(
+        max_length=10,
+        choices=OLDefaultParameterValueType.choices,
+        default=OLDefaultParameterValueType.STRING,
+    )
+    string_value = models.TextField(null=True, blank=True)
+    integer_value = models.IntegerField(null=True, blank=True)
+    decimal_value = models.DecimalField(max_digits=24, decimal_places=8, null=True, blank=True)
+    boolean_value = models.BooleanField(null=True, blank=True)
+    date_value = models.DateField(null=True, blank=True)
+    json_value = models.JSONField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["parameter_category", "name", "parameter_key"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_def_sys_code_unique"),
+            models.CheckConstraint(
+                check=models.Q(effective_to__isnull=True)
+                | models.Q(effective_from__isnull=True)
+                | models.Q(effective_to__gte=models.F("effective_from")),
+                name="ol_def_sys_dates_valid",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["parameter_category", "is_active"], name="ol_def_sys_cat_active_idx"),
+            models.Index(fields=["parameter_key", "is_active"], name="ol_def_sys_key_active_idx"),
+        ]
+
+    @property
+    def value(self):
+        field_name = {
+            OLDefaultParameterValueType.STRING: "string_value",
+            OLDefaultParameterValueType.TEXT: "string_value",
+            OLDefaultParameterValueType.INTEGER: "integer_value",
+            OLDefaultParameterValueType.DECIMAL: "decimal_value",
+            OLDefaultParameterValueType.BOOLEAN: "boolean_value",
+            OLDefaultParameterValueType.DATE: "date_value",
+            OLDefaultParameterValueType.JSON: "json_value",
+        }[self.value_type]
+        return getattr(self, field_name)
+
+    @value.setter
+    def value(self, raw_value):
+        field_name = {
+            OLDefaultParameterValueType.STRING: "string_value",
+            OLDefaultParameterValueType.TEXT: "string_value",
+            OLDefaultParameterValueType.INTEGER: "integer_value",
+            OLDefaultParameterValueType.DECIMAL: "decimal_value",
+            OLDefaultParameterValueType.BOOLEAN: "boolean_value",
+            OLDefaultParameterValueType.DATE: "date_value",
+            OLDefaultParameterValueType.JSON: "json_value",
+        }[self.value_type]
+        for candidate in ("string_value", "integer_value", "decimal_value", "boolean_value", "date_value", "json_value"):
+            setattr(self, candidate, raw_value if candidate == field_name else None)
+
+    def set_typed_value(self, raw_value):
+        self.value = raw_value
+
+    def clean(self):
+        if not self.code and self.parameter_key:
+            self.code = self.parameter_key
+        if not self.parameter_key and self.code:
+            self.parameter_key = self.code
+        if self.code and self.parameter_key and self.code != self.parameter_key:
+            raise ValidationError({"code": "Code and parameter key must match for OL default parameters."})
+        self.value_type = (self.value_type or "").upper()
+        super().clean()
+        if self.parameter_category:
+            self.parameter_category = self.parameter_category.strip().upper()
+        if self.value_type not in dict(OLDefaultParameterValueType.choices):
+            raise ValidationError({"value_type": "Unsupported OL default parameter value type."})
+        if self.value is None:
+            raise ValidationError({"value": "A typed value is required."})
+        if self.value_type == OLDefaultParameterValueType.JSON and not isinstance(self.value, (dict, list, str, int, float, bool)):
+            raise ValidationError({"json_value": "JSON value must be JSON serializable."})
+
+
+class OLCommissionRateType(models.TextChoices):
+    PERCENTAGE = "PERCENTAGE", "Percentage"
+    FIXED = "FIXED", "Fixed"
+    FACTOR = "FACTOR", "Factor"
+
+
+class OLOverrideCommissionSetup(OLEffectiveDateModel):
+    """Priority-ordered commission override scoped to partner/product dimensions."""
+
+    partner = models.ForeignKey(
+        "partners.Partner",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="ol_commission_overrides",
+        help_text="Optional partner or agent scope; agent partners are represented by this relation.",
+    )
+    intermediary_type = models.CharField(max_length=80, blank=True, default="", db_index=True)
+    product = models.ForeignKey(
+        "ordinary_life.OLProduct",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="ol_commission_overrides",
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="ol_commission_overrides",
+    )
+    rider = models.ForeignKey(
+        "ordinary_life.OLRider",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="ol_commission_overrides",
+    )
+    channel = models.CharField(max_length=80, blank=True, default="", db_index=True)
+    branch = models.ForeignKey(
+        "partner_onboarding.Branch",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="ol_commission_overrides",
+    )
+    currency = models.CharField(max_length=3, blank=True, default="", db_index=True)
+    premium_year_from = models.PositiveIntegerField(null=True, blank=True)
+    premium_year_to = models.PositiveIntegerField(null=True, blank=True)
+    policy_year_from = models.PositiveIntegerField(null=True, blank=True)
+    policy_year_to = models.PositiveIntegerField(null=True, blank=True)
+    rate_type = models.CharField(max_length=10, choices=OLCommissionRateType.choices)
+    rate_value = models.DecimalField(max_digits=18, decimal_places=8)
+    priority = models.PositiveIntegerField(default=100, db_index=True)
+    reason = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["priority", "-effective_from", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_comm_override_code_unique"),
+            models.CheckConstraint(
+                check=models.Q(premium_year_to__isnull=True)
+                | models.Q(premium_year_from__isnull=True)
+                | models.Q(premium_year_to__gte=models.F("premium_year_from")),
+                name="ol_comm_prem_years_valid",
+            ),
+            models.CheckConstraint(
+                check=models.Q(policy_year_to__isnull=True)
+                | models.Q(policy_year_from__isnull=True)
+                | models.Q(policy_year_to__gte=models.F("policy_year_from")),
+                name="ol_comm_policy_years_valid",
+            ),
+            models.CheckConstraint(check=models.Q(rate_value__gte=0), name="ol_comm_rate_nonnegative"),
+        ]
+        indexes = [
+            models.Index(fields=["partner", "product", "plan", "rider", "is_active"], name="ol_comm_scope_active_idx"),
+            models.Index(fields=["priority", "effective_from", "effective_to"], name="ol_comm_priority_dates_idx"),
+        ]
+
+    @staticmethod
+    def _ranges_overlap(start_a, end_a, start_b, end_b):
+        lower_boundaries_do_not_cross = end_a is None or start_b is None or start_b <= end_a
+        upper_boundaries_do_not_cross = end_b is None or start_a is None or start_a <= end_b
+        return lower_boundaries_do_not_cross and upper_boundaries_do_not_cross
+
+    def clean(self):
+        super().clean()
+        self.rate_type = (self.rate_type or "").upper()
+        self.currency = (self.currency or "").strip().upper()
+        self.intermediary_type = (self.intermediary_type or "").strip().upper()
+        self.channel = (self.channel or "").strip().upper()
+        if self.plan_id and self.product_id:
+            plan_product_id = getattr(self.plan, "product_id", None)
+            if plan_product_id and plan_product_id != self.product_id:
+                raise ValidationError({"plan": "Selected plan does not belong to the selected product."})
+        if self.rate_type not in dict(OLCommissionRateType.choices):
+            raise ValidationError({"rate_type": "Unsupported commission rate type."})
+        if self.rate_value is None or self.rate_value < 0:
+            raise ValidationError({"rate_value": "Rate value cannot be negative."})
+        if self.rate_type == OLCommissionRateType.PERCENTAGE and self.rate_value > 100:
+            raise ValidationError({"rate_value": "Percentage rate cannot exceed 100."})
+        if self.premium_year_from is not None and self.premium_year_to is not None and self.premium_year_to < self.premium_year_from:
+            raise ValidationError({"premium_year_to": "Premium year-to cannot be before year-from."})
+        if self.policy_year_from is not None and self.policy_year_to is not None and self.policy_year_to < self.policy_year_from:
+            raise ValidationError({"policy_year_to": "Policy year-to cannot be before year-from."})
+        scope_fields = ("partner_id", "intermediary_type", "product_id", "plan_id", "rider_id", "channel", "branch_id", "currency")
+        filters = {field: getattr(self, field) for field in scope_fields}
+        candidates = type(self).objects.filter(is_active=True, **filters)
+        if self.pk:
+            candidates = candidates.exclude(pk=self.pk)
+        for other in candidates.only(
+            "id", "effective_from", "effective_to", "premium_year_from", "premium_year_to", "policy_year_from", "policy_year_to"
+        ):
+            if not self._ranges_overlap(self.effective_from, self.effective_to, other.effective_from, other.effective_to):
+                continue
+            if not self._ranges_overlap(self.premium_year_from, self.premium_year_to, other.premium_year_from, other.premium_year_to):
+                continue
+            if self._ranges_overlap(self.policy_year_from, self.policy_year_to, other.policy_year_from, other.policy_year_to):
+                raise ValidationError({"effective_from": "An active commission override with the same scope and overlapping period already exists."})
+
+
+class OLComputationApproach(OLEffectiveDateModel):
+    """Named calculation strategy selected by product and future transaction engines."""
+
+    calculation_area = models.CharField(max_length=80, db_index=True)
+    calculation_basis = models.CharField(max_length=120)
+    formula_key = models.CharField(max_length=120)
+    sequence = models.PositiveIntegerField(default=1)
+    configuration = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["calculation_area", "sequence", "name", "code"]
+        constraints = [models.UniqueConstraint(fields=["code"], name="ol_compute_approach_code_unique")]
+        indexes = [
+            models.Index(fields=["calculation_area", "is_active"], name="ol_compute_area_active_idx"),
+            models.Index(fields=["calculation_area", "sequence"], name="ol_compute_area_seq_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        self.calculation_area = (self.calculation_area or "").strip().upper()
+        self.calculation_basis = (self.calculation_basis or "").strip().upper()
+        self.formula_key = (self.formula_key or "").strip()
+        if not self.calculation_area:
+            raise ValidationError({"calculation_area": "Calculation area is required."})
+        if not self.calculation_basis:
+            raise ValidationError({"calculation_basis": "Calculation basis is required."})
+        if not self.formula_key:
+            raise ValidationError({"formula_key": "Formula key is required."})
+        if not isinstance(self.configuration, dict):
+            raise ValidationError({"configuration": "Configuration must be a JSON object."})
+
+
+class OLMaturityClaimSetup(OLEffectiveDateModel):
+    """Effective-dated behavior for automatically initiated maturity claims."""
+
+    product = models.ForeignKey(
+        "ordinary_life.OLProduct",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="ol_maturity_claim_setups",
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="ol_maturity_claim_setups",
+    )
+    auto_create_maturity_claim = models.BooleanField(default=True)
+    days_before_maturity_to_initiate = models.PositiveIntegerField(default=0)
+    notification_days = models.PositiveIntegerField(default=0)
+    default_payout_method = models.CharField(max_length=40, default="BANK_TRANSFER")
+    require_documents = models.BooleanField(default=True)
+    require_approval = models.BooleanField(default=True)
+    maturity_claim_status_to_create = models.CharField(max_length=40, default="REPORTED")
+
+    class Meta:
+        ordering = ["-effective_from", "name", "code"]
+        constraints = [models.UniqueConstraint(fields=["code"], name="ol_maturity_setup_code_unique")]
+        indexes = [
+            models.Index(fields=["product", "plan", "is_active"], name="ol_maturity_scope_active_idx"),
+            models.Index(fields=["auto_create_maturity_claim", "is_active"], name="ol_maturity_auto_active_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        self.default_payout_method = (self.default_payout_method or "").strip().upper()
+        self.maturity_claim_status_to_create = (self.maturity_claim_status_to_create or "").strip().upper()
+        if self.plan_id and self.product_id:
+            plan_product_id = getattr(self.plan, "product_id", None)
+            if plan_product_id and plan_product_id != self.product_id:
+                raise ValidationError({"plan": "Selected plan does not belong to the selected product."})
+        if not self.default_payout_method:
+            raise ValidationError({"default_payout_method": "A default payout method is required."})
+        if not self.maturity_claim_status_to_create:
+            raise ValidationError({"maturity_claim_status_to_create": "A maturity claim status is required."})

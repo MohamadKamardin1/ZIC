@@ -86,3 +86,30 @@ A future concrete parameter entity should inherit the appropriate abstract base,
 ## Operational assumptions
 
 The repository's existing user and governance applications are the source of truth for authentication, permission storage, actor identity, and audit persistence. The foundation uses UUID identifiers for new configuration records and stores model/resource identifiers as strings in the registry so future parameter tables can be introduced without changing the registry schema. Parameter values themselves are not seeded in this phase; only the table contracts for the nine groups are bootstrapped.
+
+
+## OL Default Setup subcontext
+
+The first concrete parameter group is implemented in `apps.ol_parameters` as the canonical OL Default Setup resource. It contains four table-backed entities and intentionally leaves the legacy `apps.ordinary_life` setup routes unchanged for compatibility. New configuration consumers should use `/api/v1/ol-parameters/`.
+
+| Entity | Purpose | Main scope or behavior |
+|---|---|---|
+| `OLDefaultSystemParameter` | Typed global defaults for lifecycle, rating, claims, maturity, identification, and commission behavior. | One unique `parameter_key`/`code`, with typed storage and effective dates. |
+| `OLOverrideCommissionSetup` | Priority-ordered commission overrides. | Optional partner, intermediary type, product, plan, rider, channel, branch, currency, and year-range dimensions. Same-scope active rows cannot overlap in effective date and premium/policy year ranges. |
+| `OLComputationApproach` | Named calculation strategy selected by future product and transaction engines. | Calculation area, basis, formula key, sequence, and JSON configuration. |
+| `OLMaturityClaimSetup` | Maturity claim initiation and payout behavior. | Optional product/plan scope, initiation lead time, notification period, documents, approval, payout method, and claim status. |
+
+`OLDefaultSystemParameter` follows the established typed-configuration approach used by the system-parameters app, but uses an OL-specific value catalog: `STRING`, `TEXT`, `INTEGER`, `DECIMAL`, `BOOLEAN`, `DATE`, and `JSON`. The write API accepts one logical `typed_value`, normalizes it into exactly one concrete storage column, and clears stale columns when the value type changes. Reads expose the normalized `value` while retaining the underlying storage columns for diagnostics and controlled administration.
+
+The Default Setup API is table-first and supports list, retrieve, create, update, soft deactivation, search, filters, ordering, pagination, and CSV export:
+
+| Resource | Endpoint |
+|---|---|
+| Typed OL defaults | `/api/v1/ol-parameters/default-system-parameters/` |
+| Commission overrides | `/api/v1/ol-parameters/override-commission-setups/` |
+| Computation approaches | `/api/v1/ol-parameters/computation-approaches/` |
+| Maturity claim setup | `/api/v1/ol-parameters/maturity-claim-setups/` |
+
+All mutations use the existing `ol_parameters.create`, `ol_parameters.update`, and `ol_parameters.deactivate` permissions, stamp the actor, execute transactionally, and emit central audit events. Admin mutations are also protected by the same permission helper. Physical deletion is not exposed.
+
+The seed command `python manage.py seed_ol_default_setup` is idempotent and provides an operational baseline for currency, premium mode, quotation and proposal validity, first-premium requirement, duplicate-claim behavior, grace and warning periods, maturity claim creation, commission basis, and policy numbering. Seed values are configuration defaults rather than hard-coded business logic; downstream lifecycle and calculation services must resolve active, effective records before execution.
