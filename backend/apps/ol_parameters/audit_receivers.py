@@ -42,6 +42,12 @@ from .models import (
     OLRiderRateRow,
     OLLoanSystemSetup,
     OLLoanInterestControl,
+    OLMedicalCode,
+    OLMedicalLimit,
+    OLPersonalHabit,
+    OLMedicalHistory,
+    OLMedicalFacility,
+    OLMedicalPractitioner,
     OLMaturityClaimSetup,
     OLMemberCoverConfiguration,
     OLOverrideCommissionSetup,
@@ -103,6 +109,12 @@ AUDITED_MODELS = (
     OLRiderRateRow,
     OLLoanSystemSetup,
     OLLoanInterestControl,
+    OLMedicalCode,
+    OLMedicalLimit,
+    OLPersonalHabit,
+    OLMedicalHistory,
+    OLMedicalFacility,
+    OLMedicalPractitioner,
 )
 
 

@@ -381,8 +381,8 @@ The Agent Management increment is intentionally configuration-only. Starter comm
 | OL Product Rating | **Parts 1 and 2 implemented**: premium, mortality, joint life, reinstatement, bonus, mortgage, installment, surrender, and reserve parameters |
 | OL Rider Setup | **Implemented**: rider catalog, applicability rules, rider rate tables, and rider rate rows |
 | OL Agent Management | **Implemented**: effective-dated agent commission setup with scoped rates, priorities, caps, and overlap protection |
-| OL Loan Setup | Foundation registry only; planned |
-| OL Medical / Underwriting | Foundation registry only; planned |
+| OL Loan Setup | **Implemented**: effective-dated loan system setup and interest control |
+| OL Medical / Underwriting | **Implemented**: medical codes, limits, personal habits, medical history, facilities, and practitioners |
 | OL Claim Setup | Foundation registry only; planned |
 
 
@@ -423,3 +423,50 @@ The additive migration `0015_olloansystemsetup_olloaninterestcontrol_and_more.py
 ### Design assumptions
 
 The implementation treats `ol_parameters.OLProduct` as the canonical product relation used by the newer parameter groups and retains the established optional `ordinary_life.OLPlan` relation for plan-level overrides. A null product and null plan represent a global default. Repayment options and interest suspension behavior are intentionally data-driven JSON/text fields at this foundation stage; a future loan transaction module can promote these into normalized workflow tables without changing the effective-dated setup API contract.
+
+
+## OL Medical Underwriting — implemented
+
+OL Medical Underwriting provides the table-driven configuration foundation required by future quotation, proposal, policy, medical-evidence, and underwriting-decision workflows. The group separates reusable medical catalogs from effective-dated product and plan limits and from approved medical service-provider catalogs.
+
+| Resource | Model and configuration contract |
+|---|---|
+| Medical codes | `OLMedicalCode` stores reusable medical examination, evidence, and underwriting codes with category, description, active status, and effective dates. |
+| Medical limits | `OLMedicalLimit` stores medical or financial evidence limits by medical code, optional product/plan, age band, sum-assured band, limit type, limit amount, required frequency, mandatory flag, and effective dates. |
+| Personal habits | `OLPersonalHabit` stores configurable habit questions with category, question text, underwriting impact, evidence requirement, active status, and effective dates. |
+| Medical history | `OLMedicalHistory` stores condition catalogs with category, severity, waiting period, exclusion/loading flags, underwriting notes, active status, and effective dates. |
+| Medical facilities | `OLMedicalFacility` stores approved facility catalogs with optional Partner master linkage, facility code/type, registration, location, contact details, approval status, active status, and effective dates. |
+| Medical practitioners | `OLMedicalPractitioner` stores approved practitioner catalogs with optional Partner and facility linkages, practitioner code, names, specialty, license, contact details, approval status, active status, and effective dates. |
+
+### APIs and table contracts
+
+The six table-first API resources are available under `/api/v1/ol-parameters/`:
+
+| Endpoint | Supported behavior |
+|---|---|
+| `medical-codes/` | CRUD, soft deactivation, CSV export, search, category/status/date filters, pagination, and ordering. |
+| `medical-limits/` | CRUD, soft deactivation, CSV export, search, code/product/plan/type/frequency/dimension/status filters, pagination, and ordering. |
+| `personal-habits/` | CRUD, soft deactivation, CSV export, search, habit category/impact/evidence/status filters, pagination, and ordering. |
+| `medical-history/` | CRUD, soft deactivation, CSV export, search, condition/severity/waiting-period/exclusion/loading/status filters, pagination, and ordering. |
+| `medical-facilities/` | CRUD, soft deactivation, CSV export, search, Partner/facility type/approval/location/status filters, pagination, and ordering. |
+| `medical-practitioners/` | CRUD, soft deactivation, CSV export, search, Partner/facility/specialty/approval/status filters, pagination, and ordering. |
+
+All resources use `ol_parameters.view`, `.create`, `.update`, `.deactivate`, and `.configure` through the shared permission-aware OL parameter viewset. Physical deletion is not exposed; deactivation preserves configuration history.
+
+### Validation and audit
+
+Validation normalizes catalog codes and choice values, requires medical categories, habit questions, history categories and severities, practitioner identity and license fields, and facility codes and types. Medical limits enforce age bounds from 0 to 150, ordered age and sum-assured ranges, positive limit amounts, supported limit types and evidence frequencies, active medical-code/product/plan references, product-plan ownership, effective-date consistency, and active overlap prevention for the same medical code, product/plan scope, limit type, required frequency, age band, sum-assured band, and effective period.
+
+Facility and practitioner Partner references are optional but, when supplied, must be active and use the repository’s medical-service classifications (`SERVICE_PROVIDER`, `MEDICAL_FACILITY`, or `MEDICAL_PROVIDER` for facilities; `SERVICE_PROVIDER` or `MEDICAL_PRACTITIONER` for practitioners). Practitioner facility references must be active. Database constraints and query indexes reinforce code uniqueness, range ordering, positive amounts, and common table filters.
+
+All six models are registered with the central signal-based audit receiver. Create, update, deactivation, and administrative mutations therefore capture actor, before/after state, changed fields, source context, and correlation identifiers through the existing governance audit framework.
+
+### Seed, migration, and tests
+
+The idempotent command `python manage.py seed_ol_medical_underwriting` ensures the `STANDARD_ENDOWMENT` product prerequisite, creates one development starter row for each medical resource, and upserts six `MEDICAL_UNDERWRITING` registry contracts. Starter medical codes, limits, questions, conditions, facilities, and practitioners are placeholders requiring underwriting, medical, actuarial, legal, compliance, and governance approval before production use.
+
+The additive migration `0016_olmedicalcode_olmedicalfacility_olmedicalhistory_and_more.py` creates the six models, foreign keys, constraints, and query indexes. Focused tests in `backend/apps/ol_parameters/tests/test_medical_underwriting.py` cover CRUD, filtering, CSV export, deactivation, range and amount validation, overlap prevention, active Partner linkage, permission enforcement, audit correlation, seed idempotency, and admin table registration.
+
+### Design assumptions
+
+The implementation treats `ol_parameters.OLProduct` as the canonical product relation and retains the optional `ordinary_life.OLPlan` relation for plan-level medical limits. A null product and null plan represent a global medical rule. Medical facilities and practitioners link to the existing Partner master without duplicating partner identity data; the medical catalog stores only underwriting-specific facility and practitioner attributes. Medical history and personal-habit outcomes remain configuration inputs at this stage, while future underwriting decision services may add normalized outcomes, referral rules, and case-level evidence transactions.

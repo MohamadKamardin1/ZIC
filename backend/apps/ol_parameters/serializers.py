@@ -134,6 +134,12 @@ from .models import (
     OLRiderRateRow,
     OLLoanSystemSetup,
     OLLoanInterestControl,
+    OLMedicalCode,
+    OLMedicalLimit,
+    OLPersonalHabit,
+    OLMedicalHistory,
+    OLMedicalFacility,
+    OLMedicalPractitioner,
 )
 
 
@@ -551,5 +557,47 @@ class OLLoanSystemSetupSerializer(_ValidatedDefaultSetupModelSerializer):
 class OLLoanInterestControlSerializer(_ValidatedDefaultSetupModelSerializer):
     class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
         model = OLLoanInterestControl
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLMedicalCodeSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLMedicalCode
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLMedicalLimitSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLMedicalLimit
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLPersonalHabitSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLPersonalHabit
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLMedicalHistorySerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLMedicalHistory
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLMedicalFacilitySerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLMedicalFacility
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLMedicalPractitionerSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLMedicalPractitioner
         fields = "__all__"
         read_only_fields = _AUDIT_READ_ONLY

@@ -53,6 +53,12 @@ from .models import (
     OLRiderRateRow,
     OLLoanSystemSetup,
     OLLoanInterestControl,
+    OLMedicalCode,
+    OLMedicalLimit,
+    OLPersonalHabit,
+    OLMedicalHistory,
+    OLMedicalFacility,
+    OLMedicalPractitioner,
     OLSurrenderSetup,
     OLSurrenderValueRate,
     OLParameterTableRegistry,
@@ -106,6 +112,12 @@ from .serializers import (
     OLRiderRateRowSerializer,
     OLLoanSystemSetupSerializer,
     OLLoanInterestControlSerializer,
+    OLMedicalCodeSerializer,
+    OLMedicalLimitSerializer,
+    OLPersonalHabitSerializer,
+    OLMedicalHistorySerializer,
+    OLMedicalFacilitySerializer,
+    OLMedicalPractitionerSerializer,
     OLTableRegistrySerializer,
 )
 from .services.default_setup_service import OLDefaultSetupService
@@ -906,4 +918,80 @@ class OLLoanInterestControlViewSet(OLDefaultSetupViewSet):
     ordering = ["product", "plan", "-effective_from", "code"]
 
 
-# End of OL Loan Setup viewsets
+class OLMedicalCodeViewSet(OLDefaultSetupViewSet):
+    model = OLMedicalCode
+    serializer_class = OLMedicalCodeSerializer
+    table_slug = "medical-codes"
+    search_fields = ["code", "name", "description", "medical_category"]
+    filterset_fields = ["is_active", "medical_category", "effective_from", "effective_to"]
+    ordering_fields = ["code", "name", "medical_category", "is_active", "effective_from", "effective_to", "created_at", "updated_at"]
+    ordering = ["medical_category", "name", "code"]
+
+
+class OLMedicalLimitViewSet(OLDefaultSetupViewSet):
+    model = OLMedicalLimit
+    serializer_class = OLMedicalLimitSerializer
+    table_slug = "medical-limits"
+    search_fields = [
+        "code", "name", "description", "medical_code__code", "medical_code__name",
+        "limit_type", "required_frequency", "product__code", "plan__code",
+    ]
+    filterset_fields = [
+        "is_active", "medical_code", "product", "plan", "limit_type", "required_frequency",
+        "mandatory_flag", "age_from", "age_to", "effective_from", "effective_to",
+    ]
+    ordering_fields = [
+        "code", "name", "medical_code", "product", "plan", "age_from", "age_to",
+        "sum_assured_from", "sum_assured_to", "limit_type", "required_frequency", "limit_amount",
+        "effective_from", "effective_to", "created_at", "updated_at",
+    ]
+    ordering = ["medical_code", "product", "plan", "age_from", "sum_assured_from", "-effective_from", "code"]
+
+
+class OLPersonalHabitViewSet(OLDefaultSetupViewSet):
+    model = OLPersonalHabit
+    serializer_class = OLPersonalHabitSerializer
+    table_slug = "personal-habits"
+    search_fields = ["code", "name", "description", "habit_category", "question_text", "underwriting_impact"]
+    filterset_fields = ["is_active", "habit_category", "underwriting_impact", "requires_evidence", "effective_from", "effective_to"]
+    ordering_fields = ["code", "name", "habit_category", "underwriting_impact", "requires_evidence", "effective_from", "effective_to", "created_at", "updated_at"]
+    ordering = ["habit_category", "name", "code"]
+
+
+class OLMedicalHistoryViewSet(OLDefaultSetupViewSet):
+    model = OLMedicalHistory
+    serializer_class = OLMedicalHistorySerializer
+    table_slug = "medical-history"
+    search_fields = ["code", "name", "description", "condition_category", "severity", "underwriting_note"]
+    filterset_fields = ["is_active", "condition_category", "severity", "waiting_period_days", "exclusion_flag", "loading_flag", "effective_from", "effective_to"]
+    ordering_fields = ["code", "name", "condition_category", "severity", "waiting_period_days", "exclusion_flag", "loading_flag", "effective_from", "effective_to", "created_at", "updated_at"]
+    ordering = ["condition_category", "severity", "name", "code"]
+
+
+class OLMedicalFacilityViewSet(OLDefaultSetupViewSet):
+    model = OLMedicalFacility
+    serializer_class = OLMedicalFacilitySerializer
+    table_slug = "medical-facilities"
+    search_fields = [
+        "code", "name", "description", "facility_code", "facility_type", "registration_number",
+        "address", "city", "country", "contact_email", "contact_phone", "partner__partner_number", "partner__legal_name",
+    ]
+    filterset_fields = ["is_active", "partner", "facility_type", "approval_status", "city", "country", "effective_from", "effective_to"]
+    ordering_fields = ["code", "name", "facility_code", "facility_type", "city", "country", "approval_status", "effective_from", "effective_to", "created_at", "updated_at"]
+    ordering = ["name", "facility_code"]
+
+
+class OLMedicalPractitionerViewSet(OLDefaultSetupViewSet):
+    model = OLMedicalPractitioner
+    serializer_class = OLMedicalPractitionerSerializer
+    table_slug = "medical-practitioners"
+    search_fields = [
+        "code", "name", "description", "practitioner_code", "first_name", "last_name", "specialty",
+        "license_number", "email", "phone", "partner__partner_number", "partner__legal_name", "medical_facility__facility_code",
+    ]
+    filterset_fields = ["is_active", "partner", "medical_facility", "specialty", "approval_status", "effective_from", "effective_to"]
+    ordering_fields = ["code", "name", "practitioner_code", "first_name", "last_name", "specialty", "license_number", "approval_status", "effective_from", "effective_to", "created_at", "updated_at"]
+    ordering = ["last_name", "first_name", "practitioner_code"]
+
+
+# End of OL Medical Underwriting viewsets

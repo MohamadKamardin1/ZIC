@@ -42,6 +42,12 @@ from .models import (
     OLRiderRateRow,
     OLLoanSystemSetup,
     OLLoanInterestControl,
+    OLMedicalCode,
+    OLMedicalLimit,
+    OLPersonalHabit,
+    OLMedicalHistory,
+    OLMedicalFacility,
+    OLMedicalPractitioner,
     OLSurrenderSetup,
     OLSurrenderValueRate,
     OLParameterTableRegistry,
@@ -877,6 +883,99 @@ class OLLoanInterestControlAdmin(OLDefaultSetupAdmin):
         ("Identity", {"fields": ("code", "name", "description", "is_active")}),
         ("Scope and interest", {"fields": ("product", "plan", "interest_rate", "compounding_frequency", "interest_calculation_basis")}),
         ("Grace, penalty, and capitalization", {"fields": ("grace_period_days", "penalty_interest_rate", "interest_suspension_rule", "capitalize_interest")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLMedicalCode)
+class OLMedicalCodeAdmin(OLDefaultSetupAdmin):
+    list_display = ("code", "name", "medical_category", "is_active", "effective_from", "effective_to")
+    list_filter = ("is_active", "medical_category", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "medical_category")
+    ordering = ("medical_category", "name", "code")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "medical_category", "is_active")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLMedicalLimit)
+class OLMedicalLimitAdmin(OLDefaultSetupAdmin):
+    list_display = (
+        "code", "medical_code", "product", "plan", "age_from", "age_to", "sum_assured_from",
+        "sum_assured_to", "limit_type", "limit_amount", "required_frequency", "mandatory_flag",
+        "is_active", "effective_from", "effective_to",
+    )
+    list_filter = ("is_active", "limit_type", "required_frequency", "mandatory_flag", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "medical_code__code", "medical_code__name", "product__code", "plan__code")
+    ordering = ("medical_code", "product", "plan", "age_from", "sum_assured_from", "-effective_from", "code")
+    autocomplete_fields = ("medical_code", "product", "plan")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Scope", {"fields": ("medical_code", "product", "plan", "limit_type", "required_frequency")}),
+        ("Dimensions and limit", {"fields": ("age_from", "age_to", "sum_assured_from", "sum_assured_to", "limit_amount", "mandatory_flag")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLPersonalHabit)
+class OLPersonalHabitAdmin(OLDefaultSetupAdmin):
+    list_display = ("code", "name", "habit_category", "underwriting_impact", "requires_evidence", "is_active", "effective_from", "effective_to")
+    list_filter = ("is_active", "habit_category", "underwriting_impact", "requires_evidence", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "habit_category", "question_text", "underwriting_impact")
+    ordering = ("habit_category", "name", "code")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Habit question", {"fields": ("habit_category", "question_text", "underwriting_impact", "requires_evidence")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLMedicalHistory)
+class OLMedicalHistoryAdmin(OLDefaultSetupAdmin):
+    list_display = ("code", "name", "condition_category", "severity", "waiting_period_days", "exclusion_flag", "loading_flag", "is_active", "effective_from", "effective_to")
+    list_filter = ("is_active", "condition_category", "severity", "exclusion_flag", "loading_flag", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "condition_category", "severity", "underwriting_note")
+    ordering = ("condition_category", "severity", "name", "code")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Condition", {"fields": ("condition_category", "severity", "waiting_period_days", "exclusion_flag", "loading_flag", "underwriting_note")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLMedicalFacility)
+class OLMedicalFacilityAdmin(OLDefaultSetupAdmin):
+    list_display = ("facility_code", "name", "facility_type", "partner", "city", "country", "approval_status", "is_active", "effective_from", "effective_to")
+    list_filter = ("is_active", "facility_type", "approval_status", "city", "country", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "facility_code", "facility_type", "registration_number", "city", "country", "partner__code", "partner__legal_name")
+    ordering = ("name", "facility_code")
+    autocomplete_fields = ("partner",)
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "facility_code", "is_active")}),
+        ("Partner and facility", {"fields": ("partner", "facility_type", "registration_number", "approval_status")}),
+        ("Contact and location", {"fields": ("address", "city", "country", "contact_email", "contact_phone")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLMedicalPractitioner)
+class OLMedicalPractitionerAdmin(OLDefaultSetupAdmin):
+    list_display = ("practitioner_code", "first_name", "last_name", "specialty", "license_number", "medical_facility", "partner", "approval_status", "is_active", "effective_from", "effective_to")
+    list_filter = ("is_active", "specialty", "approval_status", "medical_facility", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "practitioner_code", "first_name", "last_name", "specialty", "license_number", "email", "partner__code", "partner__legal_name", "medical_facility__facility_code")
+    ordering = ("last_name", "first_name", "practitioner_code")
+    autocomplete_fields = ("partner", "medical_facility")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "practitioner_code", "is_active")}),
+        ("Practitioner", {"fields": ("first_name", "last_name", "specialty", "license_number", "approval_status")}),
+        ("Relationships and contact", {"fields": ("partner", "medical_facility", "email", "phone")}),
         ("Effective dates", {"fields": ("effective_from", "effective_to")}),
         ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
     )

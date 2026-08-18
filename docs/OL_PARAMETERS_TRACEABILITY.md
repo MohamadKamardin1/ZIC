@@ -386,5 +386,27 @@ The Rider Setup increment is additive and preserves existing policy, product, qu
 | OL Rider Setup | Implemented | Rider catalog, applicability controls, rate tables, rows, seed, tests, and migration 0013 |
 | OL Agent Management | Implemented | Agent commission setup, seed, tests, audit registration, and migration 0014 |
 | OL Loan Setup | Implemented | Loan system setup and loan interest control, seed, tests, audit registration, and migration 0015 |
-| OL Medical / Underwriting | Planned | Foundation registry only |
+| OL Medical / Underwriting | Implemented | Six medical underwriting resources, seed, tests, audit registration, and migration 0016 |
 | OL Claim Setup | Planned | Foundation registry only |
+
+
+## OL Medical Underwriting — implemented
+
+| Requirement | Evidence | Status |
+|---|---|---|
+| Medical codes | `backend/apps/ol_parameters/models.py`: `OLMedicalCode` catalog with category, description, active status, effective dates, uniqueness, and indexes | Implemented |
+| Medical limits | `OLMedicalLimit` with medical-code/product/plan scope, age and sum-assured dimensions, limit type/amount, required frequency, mandatory flag, effective dates, constraints, and overlap protection | Implemented |
+| Personal habits | `OLPersonalHabit` with configurable category, question text, underwriting impact, evidence requirement, active status, and effective dates | Implemented |
+| Medical history | `OLMedicalHistory` with condition category, severity, waiting period, exclusion/loading flags, underwriting note, active status, and effective dates | Implemented |
+| Medical facilities | `OLMedicalFacility` with optional active medical-service Partner linkage, facility identity, location/contact fields, approval status, active status, and effective dates | Implemented |
+| Medical practitioners | `OLMedicalPractitioner` with optional active practitioner/service-provider Partner linkage, facility relation, identity, specialty, license, approval status, active status, and effective dates | Implemented |
+| Validation and constraints | Choice normalization, required catalog fields, age/sum-assured range checks, positive limit amounts, active foreign keys, Partner classification checks, effective-date consistency, database constraints, and active medical-limit overlap prevention | Implemented |
+| APIs | `medical-codes/`, `medical-limits/`, `personal-habits/`, `medical-history/`, `medical-facilities/`, and `medical-practitioners/` with CRUD, filtering, search, ordering, pagination, CSV export, and deactivation | Implemented |
+| Permissions | Existing `ol_parameters.view`, `.create`, `.update`, `.deactivate`, and `.configure` enforcement through `OLDefaultSetupViewSet` | Implemented |
+| Admin | Six table-first, permission-aware admin registrations with catalog/scope columns, filters, lifecycle fields, and audit fields | Implemented |
+| Audit | All six models registered in `backend/apps/ol_parameters/audit_receivers.py` for central create/update/deactivation auditing | Implemented |
+| Seed and registry | `seed_ol_medical_underwriting.py` idempotently seeds six development starter rows and six `MEDICAL_UNDERWRITING` registry contracts | Implemented |
+| Tests | `tests/test_medical_underwriting.py`: seven focused tests for six-resource CRUD, filters/export/deactivation, validation, overlap, Partner linkage, permissions/audit, seed idempotency, and admin registration | Implemented |
+| Database migration | Additive migration `0016_olmedicalcode_olmedicalfacility_olmedicalhistory_and_more.py` with foreign keys, range/amount constraints, uniqueness, and query indexes | Implemented |
+
+The Medical Underwriting increment is configuration-only. Starter codes, limits, questions, conditions, facilities, and practitioners are development placeholders and require medical, underwriting, actuarial, product, legal, compliance, and governance approval before production underwriting or evidence workflows consume them.

@@ -3646,3 +3646,390 @@ class OLLoanInterestControl(OLEffectiveDateModel):
 
 
 # End of OL Loan Setup
+
+
+# =============================================================================
+# OL MEDICAL UNDERWRITING SETUP
+# =============================================================================
+
+
+class OLMedicalLimitType(models.TextChoices):
+    AUTOMATIC = "AUTOMATIC", "Automatic"
+    MEDICAL = "MEDICAL", "Medical"
+    FINANCIAL = "FINANCIAL", "Financial"
+    UNDERWRITING = "UNDERWRITING", "Underwriting"
+    OTHER = "OTHER", "Other"
+
+
+class OLMedicalRequiredFrequency(models.TextChoices):
+    ONE_OFF = "ONE_OFF", "One-off"
+    ANNUAL = "ANNUAL", "Annual"
+    BIENNIAL = "BIENNIAL", "Biennial"
+    EVERY_TWO_YEARS = "EVERY_TWO_YEARS", "Every two years"
+    AS_REQUIRED = "AS_REQUIRED", "As required"
+    OTHER = "OTHER", "Other"
+
+
+class OLMedicalUnderwritingImpact(models.TextChoices):
+    NONE = "NONE", "None"
+    LOW = "LOW", "Low"
+    MEDIUM = "MEDIUM", "Medium"
+    HIGH = "HIGH", "High"
+    CRITICAL = "CRITICAL", "Critical"
+
+
+class OLPersonalHabitCategory(models.TextChoices):
+    SMOKING = "SMOKING", "Smoking"
+    ALCOHOL = "ALCOHOL", "Alcohol"
+    DRUG = "DRUG", "Drug"
+    OCCUPATION_HAZARD = "OCCUPATION_HAZARD", "Occupation hazard"
+    LIFESTYLE = "LIFESTYLE", "Lifestyle"
+    OTHER = "OTHER", "Other"
+
+
+class OLMedicalApprovalStatus(models.TextChoices):
+    PENDING = "PENDING", "Pending"
+    APPROVED = "APPROVED", "Approved"
+    SUSPENDED = "SUSPENDED", "Suspended"
+    REJECTED = "REJECTED", "Rejected"
+    EXPIRED = "EXPIRED", "Expired"
+
+
+def _medical_scope_overlaps(first, second):
+    return (
+        first.medical_code_id == second.medical_code_id
+        and first.product_id == second.product_id
+        and first.plan_id == second.plan_id
+        and first.limit_type == second.limit_type
+        and first.required_frequency == second.required_frequency
+        and _product_setup_intervals_overlap(
+            first.effective_from,
+            first.effective_to,
+            second.effective_from,
+            second.effective_to,
+        )
+        and _product_setup_intervals_overlap(
+            first.age_from,
+            first.age_to,
+            second.age_from,
+            second.age_to,
+        )
+        and _product_setup_intervals_overlap(
+            first.sum_assured_from,
+            first.sum_assured_to,
+            second.sum_assured_from,
+            second.sum_assured_to,
+        )
+    )
+
+
+class OLMedicalCode(OLParameterBaseModel):
+    """Reusable medical examination, evidence, and underwriting code catalog."""
+
+    medical_category = models.CharField(max_length=80, db_index=True)
+
+    class Meta:
+        ordering = ["medical_category", "name", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_medical_code_code_uq"),
+        ]
+        indexes = [
+            models.Index(fields=["medical_category", "is_active"], name="ol_med_code_cat_idx"),
+            models.Index(fields=["is_active", "effective_from"], name="ol_med_code_active_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        self.medical_category = (self.medical_category or "").strip().upper()
+        if not self.medical_category:
+            raise ValidationError({"medical_category": "Medical category is required."})
+
+
+class OLMedicalLimit(OLEffectiveDateModel):
+    """Effective-dated medical evidence or examination limit by risk dimensions."""
+
+    medical_code = models.ForeignKey(
+        OLMedicalCode,
+        on_delete=models.PROTECT,
+        related_name="limits",
+    )
+    product = models.ForeignKey(
+        "ol_parameters.OLProduct",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="medical_limits",
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="ol_parameter_medical_limits",
+    )
+    age_from = models.PositiveSmallIntegerField(default=0)
+    age_to = models.PositiveSmallIntegerField(default=150)
+    sum_assured_from = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
+    sum_assured_to = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
+    limit_type = models.CharField(max_length=30, choices=OLMedicalLimitType.choices, default=OLMedicalLimitType.MEDICAL)
+    limit_amount = models.DecimalField(max_digits=18, decimal_places=2)
+    required_frequency = models.CharField(max_length=30, choices=OLMedicalRequiredFrequency.choices, default=OLMedicalRequiredFrequency.ANNUAL)
+    mandatory_flag = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["medical_code", "product", "plan", "age_from", "sum_assured_from", "-effective_from", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_medical_limit_code_uq"),
+            models.CheckConstraint(check=models.Q(age_from__gte=0) & models.Q(age_to__lte=150) & models.Q(age_to__gte=models.F("age_from")), name="ol_med_limit_age_rng"),
+            models.CheckConstraint(check=models.Q(sum_assured_from__isnull=True) | models.Q(sum_assured_from__gte=0), name="ol_med_limit_sa_from_nonneg"),
+            models.CheckConstraint(check=models.Q(sum_assured_to__isnull=True) | models.Q(sum_assured_to__gte=0), name="ol_med_limit_sa_to_nonneg"),
+            models.CheckConstraint(check=models.Q(sum_assured_to__isnull=True) | models.Q(sum_assured_from__isnull=True) | models.Q(sum_assured_to__gte=models.F("sum_assured_from")), name="ol_med_limit_sa_order"),
+            models.CheckConstraint(check=models.Q(limit_amount__gt=0), name="ol_med_limit_amount_pos"),
+        ]
+        indexes = [
+            models.Index(fields=["medical_code", "product", "plan", "is_active"], name="ol_med_limit_scope_idx"),
+            models.Index(fields=["limit_type", "required_frequency", "is_active"], name="ol_med_limit_type_idx"),
+            models.Index(fields=["age_from", "age_to", "sum_assured_from"], name="ol_med_limit_dim_idx"),
+            models.Index(fields=["effective_from", "effective_to"], name="ol_med_limit_dates_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.limit_type = (self.limit_type or "").strip().upper()
+        self.required_frequency = (self.required_frequency or "").strip().upper()
+        if self.limit_type not in dict(OLMedicalLimitType.choices):
+            errors["limit_type"] = "Unsupported medical limit type."
+        if self.required_frequency not in dict(OLMedicalRequiredFrequency.choices):
+            errors["required_frequency"] = "Unsupported required medical frequency."
+        if self.age_from < 0 or self.age_to > 150 or self.age_to < self.age_from:
+            errors["age_to"] = "Medical limit age range must be ordered and remain between 0 and 150 years."
+        if self.sum_assured_from is not None and self.sum_assured_from < 0:
+            errors["sum_assured_from"] = "Minimum sum assured cannot be negative."
+        if self.sum_assured_to is not None and self.sum_assured_to < 0:
+            errors["sum_assured_to"] = "Maximum sum assured cannot be negative."
+        if self.sum_assured_from is not None and self.sum_assured_to is not None and self.sum_assured_to < self.sum_assured_from:
+            errors["sum_assured_to"] = "Maximum sum assured cannot be less than minimum sum assured."
+        if self.limit_amount is None or self.limit_amount <= 0:
+            errors["limit_amount"] = "Medical limit amount must be positive."
+        if self.medical_code_id and not getattr(self.medical_code, "is_active", True):
+            errors["medical_code"] = "Medical code must be active."
+        if self.product_id and not getattr(self.product, "is_active", True):
+            errors["product"] = "Medical limit product must be active."
+        if self.plan_id and not getattr(self.plan, "is_active", True):
+            errors["plan"] = "Medical limit plan must be active."
+        _policy_setup_validate_product_plan(self, errors)
+        if errors:
+            raise ValidationError(errors)
+        candidates = type(self).objects.filter(
+            medical_code=self.medical_code,
+            product=self.product,
+            plan=self.plan,
+            limit_type=self.limit_type,
+            required_frequency=self.required_frequency,
+            is_active=True,
+        ).exclude(pk=self.pk)
+        if any(_medical_scope_overlaps(self, candidate) for candidate in candidates):
+            raise ValidationError({"effective_from": "An active medical limit overlaps an existing row in the same scope and dimensions."})
+
+
+class OLPersonalHabit(OLParameterBaseModel):
+    """Catalog of personal-habit questions consumed by underwriting workflows."""
+
+    habit_category = models.CharField(max_length=40, choices=OLPersonalHabitCategory.choices)
+    question_text = models.TextField()
+    underwriting_impact = models.CharField(max_length=20, choices=OLMedicalUnderwritingImpact.choices, default=OLMedicalUnderwritingImpact.NONE)
+    requires_evidence = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["habit_category", "name", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_personal_habit_code_uq"),
+        ]
+        indexes = [
+            models.Index(fields=["habit_category", "is_active"], name="ol_habit_cat_idx"),
+            models.Index(fields=["underwriting_impact", "is_active"], name="ol_habit_impact_idx"),
+            models.Index(fields=["requires_evidence", "is_active"], name="ol_habit_evidence_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.habit_category = (self.habit_category or "").strip().upper()
+        self.underwriting_impact = (self.underwriting_impact or OLMedicalUnderwritingImpact.NONE).strip().upper()
+        self.question_text = (self.question_text or "").strip()
+        if self.habit_category not in dict(OLPersonalHabitCategory.choices):
+            errors["habit_category"] = "Unsupported personal-habit category."
+        if self.underwriting_impact not in dict(OLMedicalUnderwritingImpact.choices):
+            errors["underwriting_impact"] = "Unsupported underwriting impact."
+        if not self.question_text:
+            errors["question_text"] = "Personal-habit question text is required."
+        if errors:
+            raise ValidationError(errors)
+
+
+class OLMedicalHistory(OLParameterBaseModel):
+    """Catalog of medical conditions and default underwriting consequences."""
+
+    condition_category = models.CharField(max_length=80, db_index=True)
+    severity = models.CharField(max_length=30, db_index=True)
+    waiting_period_days = models.PositiveIntegerField(default=0)
+    exclusion_flag = models.BooleanField(default=False)
+    loading_flag = models.BooleanField(default=False)
+    underwriting_note = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["condition_category", "severity", "name", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_med_history_code_uq"),
+        ]
+        indexes = [
+            models.Index(fields=["condition_category", "is_active"], name="ol_med_hist_cat_idx"),
+            models.Index(fields=["severity", "is_active"], name="ol_med_hist_severity_idx"),
+            models.Index(fields=["exclusion_flag", "loading_flag", "is_active"], name="ol_med_hist_rules_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.condition_category = (self.condition_category or "").strip().upper()
+        self.severity = (self.severity or "").strip().upper()
+        self.underwriting_note = (self.underwriting_note or "").strip()
+        if not self.condition_category:
+            errors["condition_category"] = "Condition category is required."
+        if not self.severity:
+            errors["severity"] = "Condition severity is required."
+        if self.waiting_period_days < 0:
+            errors["waiting_period_days"] = "Waiting period cannot be negative."
+        if errors:
+            raise ValidationError(errors)
+
+
+class OLMedicalFacility(OLParameterBaseModel):
+    """Approved medical facility catalog with optional partner master linkage."""
+
+    partner = models.ForeignKey(
+        "partners.Partner",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="ol_medical_facilities",
+    )
+    facility_code = models.CharField(max_length=100, unique=True, db_index=True)
+    facility_type = models.CharField(max_length=60)
+    registration_number = models.CharField(max_length=120, blank=True, default="")
+    address = models.TextField(blank=True, default="")
+    city = models.CharField(max_length=100, blank=True, default="")
+    country = models.CharField(max_length=100, blank=True, default="TZ")
+    contact_email = models.EmailField(blank=True, default="")
+    contact_phone = models.CharField(max_length=30, blank=True, default="")
+    approval_status = models.CharField(max_length=20, choices=OLMedicalApprovalStatus.choices, default=OLMedicalApprovalStatus.PENDING, db_index=True)
+
+    class Meta:
+        ordering = ["name", "facility_code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_med_facility_code_uq"),
+        ]
+        indexes = [
+            models.Index(fields=["facility_type", "approval_status", "is_active"], name="ol_med_facility_type_idx"),
+            models.Index(fields=["city", "country", "is_active"], name="ol_med_facility_loc_idx"),
+            models.Index(fields=["partner", "is_active"], name="ol_med_facility_partner_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.facility_code = (self.facility_code or "").strip().upper()
+        self.facility_type = (self.facility_type or "").strip().upper()
+        self.registration_number = (self.registration_number or "").strip().upper()
+        self.city = (self.city or "").strip()
+        self.country = (self.country or "TZ").strip().upper()
+        self.contact_phone = (self.contact_phone or "").strip()
+        self.approval_status = (self.approval_status or OLMedicalApprovalStatus.PENDING).strip().upper()
+        if not self.facility_code:
+            errors["facility_code"] = "Facility code is required."
+        if not self.facility_type:
+            errors["facility_type"] = "Facility type is required."
+        if self.approval_status not in dict(OLMedicalApprovalStatus.choices):
+            errors["approval_status"] = "Unsupported medical facility approval status."
+        if self.partner_id:
+            if not getattr(self.partner, "is_active", True):
+                errors["partner"] = "Medical facility partner must be active."
+            elif getattr(self.partner, "partner_type", "") not in {"SERVICE_PROVIDER", "MEDICAL_FACILITY", "MEDICAL_PROVIDER"}:
+                errors["partner"] = "Linked partner must be a medical facility or service provider."
+        if errors:
+            raise ValidationError(errors)
+
+
+class OLMedicalPractitioner(OLParameterBaseModel):
+    """Medical practitioner catalog with optional partner and facility linkages."""
+
+    partner = models.ForeignKey(
+        "partners.Partner",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="ol_medical_practitioners",
+    )
+    practitioner_code = models.CharField(max_length=100, unique=True, db_index=True)
+    first_name = models.CharField(max_length=100)
+    last_name = models.CharField(max_length=100)
+    specialty = models.CharField(max_length=100)
+    license_number = models.CharField(max_length=120)
+    medical_facility = models.ForeignKey(
+        OLMedicalFacility,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="practitioners",
+    )
+    email = models.EmailField(blank=True, default="")
+    phone = models.CharField(max_length=30, blank=True, default="")
+    approval_status = models.CharField(max_length=20, choices=OLMedicalApprovalStatus.choices, default=OLMedicalApprovalStatus.PENDING, db_index=True)
+
+    class Meta:
+        ordering = ["last_name", "first_name", "practitioner_code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_med_practitioner_code_uq"),
+            models.UniqueConstraint(fields=["license_number"], name="ol_med_practitioner_license_uq"),
+        ]
+        indexes = [
+            models.Index(fields=["specialty", "approval_status", "is_active"], name="ol_med_practitioner_spec_idx"),
+            models.Index(fields=["medical_facility", "is_active"], name="ol_med_practitioner_fac_idx"),
+            models.Index(fields=["partner", "is_active"], name="ol_med_pract_partner_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.practitioner_code = (self.practitioner_code or "").strip().upper()
+        self.first_name = (self.first_name or "").strip()
+        self.last_name = (self.last_name or "").strip()
+        self.specialty = (self.specialty or "").strip().upper()
+        self.license_number = (self.license_number or "").strip().upper()
+        self.phone = (self.phone or "").strip()
+        self.approval_status = (self.approval_status or OLMedicalApprovalStatus.PENDING).strip().upper()
+        if not self.practitioner_code:
+            errors["practitioner_code"] = "Practitioner code is required."
+        if not self.first_name:
+            errors["first_name"] = "Practitioner first name is required."
+        if not self.last_name:
+            errors["last_name"] = "Practitioner last name is required."
+        if not self.specialty:
+            errors["specialty"] = "Practitioner specialty is required."
+        if not self.license_number:
+            errors["license_number"] = "Practitioner license number is required."
+        if self.approval_status not in dict(OLMedicalApprovalStatus.choices):
+            errors["approval_status"] = "Unsupported medical practitioner approval status."
+        if self.partner_id:
+            if not getattr(self.partner, "is_active", True):
+                errors["partner"] = "Medical practitioner partner must be active."
+            elif getattr(self.partner, "partner_type", "") not in {"MEDICAL_PRACTITIONER", "SERVICE_PROVIDER"}:
+                errors["partner"] = "Linked partner must be a medical practitioner or service provider."
+        if self.medical_facility_id and not getattr(self.medical_facility, "is_active", True):
+            errors["medical_facility"] = "Medical facility must be active."
+        if errors:
+            raise ValidationError(errors)
+
+
+# End of OL Medical Underwriting Setup

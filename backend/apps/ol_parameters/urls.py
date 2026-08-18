@@ -49,6 +49,12 @@ from .views import (
     OLRiderRateRowViewSet,
     OLLoanSystemSetupViewSet,
     OLLoanInterestControlViewSet,
+    OLMedicalCodeViewSet,
+    OLMedicalLimitViewSet,
+    OLPersonalHabitViewSet,
+    OLMedicalHistoryViewSet,
+    OLMedicalFacilityViewSet,
+    OLMedicalPractitionerViewSet,
 )
 
 
@@ -99,6 +105,12 @@ router.register("rider-rate-tables", OLRiderRateTableViewSet, basename="ol-rider
 router.register("rider-rate-rows", OLRiderRateRowViewSet, basename="ol-rider-rate-row")
 router.register("loan-system-setups", OLLoanSystemSetupViewSet, basename="ol-loan-system-setup")
 router.register("loan-interest-controls", OLLoanInterestControlViewSet, basename="ol-loan-interest-control")
+router.register("medical-codes", OLMedicalCodeViewSet, basename="ol-medical-code")
+router.register("medical-limits", OLMedicalLimitViewSet, basename="ol-medical-limit")
+router.register("personal-habits", OLPersonalHabitViewSet, basename="ol-personal-habit")
+router.register("medical-history", OLMedicalHistoryViewSet, basename="ol-medical-history")
+router.register("medical-facilities", OLMedicalFacilityViewSet, basename="ol-medical-facility")
+router.register("medical-practitioners", OLMedicalPractitionerViewSet, basename="ol-medical-practitioner")
 
 urlpatterns = [
     path("health/", OLParameterHealthView.as_view(), name="ol-parameters-health"),
