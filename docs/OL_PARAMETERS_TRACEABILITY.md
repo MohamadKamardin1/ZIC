@@ -2,23 +2,23 @@
 
 ## Traceability purpose
 
-This document maps the nine Ordinary Life parameter groups required by the ZIC system context to the foundation delivered in the current phase. The current change intentionally implements the reusable framework only. It does not introduce transactional OL tables or claim, policy, quotation, or servicing workflows.
+This document maps the nine Ordinary Life parameter groups required by the ZIC system context to the completed, release-hardened OL Parameters bounded context. The current release implements reusable configuration tables, effective-dated rules, APIs, administration, permissions, audit integration, seeds, and tests. It does not introduce transactional claim, policy, quotation, or servicing workflows.
 
-The table registry gives each group a stable discovery contract now. Concrete group entities will be added incrementally, each in an isolated change with its own models, migrations, serializers, services, permissions, admin configuration, tests, and frontend table workspace.
+The table registry gives each group a stable discovery contract, while each concrete group owns isolated models, migrations, serializers, services, permissions, admin configuration, tests, and table metadata. The unified release bootstrap makes the full configuration foundation repeatably deployable.
 
 ## Nine-group map
 
 | Required group | Registry slug | Foundation status | Concrete entity status | Demonstrated or expected responsibility |
 |---|---|---|---|---|
-| OL Default Setup | `ol-default-setup` | **Ready**: seeded table contract, standard metadata, generic permissions, audit path | Planned next group implementation | Global lookups, defaults, computation approaches, currency and operating rules. |
-| OL Policy Setup | `ol-policy-setup` | **Ready**: seeded table contract and lifecycle metadata | Planned | Policy status, grace periods, renewal, lapse, reinstatement, surrender, paid-up, maturity, and payment rules. |
-| OL Product Setup | `ol-product-setup` | **Ready**: seeded table contract and product/plan table shape | Planned | Products, plans, benefits, eligibility, coverage, terms, and product-level underwriting configuration. |
-| OL Product Rating | `ol-product-rating` | **Ready**: seeded table contract and rate version/row base models | Planned | Versioned rates, product/plan dimensions, age/gender/term factors, loadings, discounts, and pricing rules. |
-| OL Rider Setup | `ol-rider-setup` | **Ready**: seeded table contract and standard lifecycle contract | Planned | Riders, rider benefits, limits, eligibility, effective dates, and rider pricing. |
-| OL Agent Management | `ol-agent-management` | **Ready**: seeded table contract and actor/audit contract | Planned | Intermediary setup, distribution relationships, hierarchy, commissions, and agency rules. |
-| OL Loan Setup | `ol-loan-setup` | **Ready**: seeded table contract and effective-dated table contract | Planned | Ordinary Life loan eligibility, limits, terms, interest, repayment, and servicing rules. |
-| OL Medical / Underwriting | `ol-medical-underwriting` | **Ready**: seeded table contract and effective-date contract | Planned | Health questions, medical requirements, thresholds, underwriting outcomes, and escalation rules. |
-| OL Claim Setup | `ol-claim-setup` | **Ready**: seeded table contract and audit/lifecycle contract | Planned | Claim types, waiting periods, required documents, benefit calculation, waiver, and settlement rules. |
+| OL Default Setup | `ol-default-setup` | **Implemented** | Implemented | Global lookups, defaults, computation approaches, currency and operating rules. |
+| OL Policy Setup | `ol-policy-setup` | **Implemented in Parts 1–3** | Implemented | Policy status, grace periods, renewal, lapse, reinstatement, surrender, paid-up, maturity, and payment rules. |
+| OL Product Setup | `ol-product-setup` | **Implemented** | Implemented | Products, plans, benefits, eligibility, coverage, terms, and product-level underwriting configuration. |
+| OL Product Rating | `ol-product-rating` | **Implemented in Parts 1–2** | Implemented | Versioned rates, product/plan dimensions, age/gender/term factors, loadings, discounts, and pricing rules. |
+| OL Rider Setup | `ol-rider-setup` | **Implemented** | Implemented | Riders, rider benefits, limits, eligibility, effective dates, and rider pricing. |
+| OL Agent Management | `ol-agent-management` | **Implemented** | Implemented | Intermediary setup, distribution relationships, hierarchy, commissions, and agency rules. |
+| OL Loan Setup | `ol-loan-setup` | **Implemented** | Implemented | Ordinary Life loan eligibility, limits, terms, interest, repayment, and servicing rules. |
+| OL Medical / Underwriting | `ol-medical-underwriting` | **Implemented** | Implemented | Health questions, medical requirements, thresholds, underwriting outcomes, and escalation rules. |
+| OL Claim Setup | `ol-claim-setup` | **Implemented** | Implemented | Claim types, waiting periods, required documents, benefit calculation, waiver, and settlement rules. |
 
 ## Requirement-to-artifact mapping
 
@@ -445,3 +445,21 @@ The Claim Setup increment is configuration-only. Seed statuses, claim categories
 | OL Loan Setup | Implemented | Loan system setup and loan interest control, seed, tests, audit registration, and migration 0015 |
 | OL Medical / Underwriting | Implemented | Six medical underwriting resources, seed, tests, audit registration, and migration 0016 |
 | OL Claim Setup | Implemented | Five claim catalogs, transition-aware status configuration, seed, tests, audit registration, and migration 0017 |
+
+
+## OL Parameters release-hardening — implemented
+
+| Release requirement | Evidence | Status |
+|---|---|---|
+| All nine groups bootstrappable | `python manage.py seed_ol_parameters_release` orchestrates all implemented group seeds in dependency order | Implemented |
+| Canonical permissions | `seed_ol_parameter_permissions.py` provisions view, create, update, deactivate, and configure permissions plus the OL Parameters permission bundle | Implemented |
+| Safe role seeds | Idempotent viewer, configurator, and administrator `UserGroup` records with deterministic permission sets | Implemented |
+| Canonical table registry | `seed_ol_parameter_registry.py` exposes nine stable `ol-*` top-level group contracts with valid model labels, columns, filters, search, ordering, actions, export, and permission metadata | Implemented |
+| Operational readiness | `/api/v1/ol-parameters/health/` reports counts for Default, Policy, Product, Product Rating Parts 1/2, Rider, Agent, Loan, Medical Underwriting, and Claim Setup | Implemented |
+| Cross-group access | `tests/test_release_hardening.py` authenticates a seeded viewer and reads representative endpoints from all nine groups | Implemented |
+| Permission separation | Release tests prove the viewer can read but cannot create, while administrator permissions include the full lifecycle contract | Implemented |
+| Idempotency | Release tests run the unified seed more than once and verify canonical registry, permission bundle, and role stability | Implemented |
+| Audit and lifecycle consistency | Existing central audit receiver plus shared OL viewset deactivation and permission checks cover all concrete groups | Implemented |
+| Release documentation | `OL_PARAMETERS_ARCHITECTURE.md`, `OL_PARAMETERS_TRACEABILITY.md`, and `OL_PARAMETERS_RELEASE.md` document the final contract and operating checklist | Implemented |
+
+The component-level registry entries created by individual group seeds remain intentionally available for detailed table discovery. The release-level assertion concerns the nine canonical top-level `ol-*` records and does not delete component metadata.

@@ -412,6 +412,7 @@ class UserPermission(models.Model):
         CREATE = 'CREATE', 'Create'
         UPDATE = 'UPDATE', 'Update'
         DELETE = 'DELETE', 'Delete'
+        DEACTIVATE = 'DEACTIVATE', 'Deactivate'
         APPROVE = 'APPROVE', 'Approve'
         REJECT = 'REJECT', 'Reject'
         CONFIGURE = 'CONFIGURE', 'Configure'

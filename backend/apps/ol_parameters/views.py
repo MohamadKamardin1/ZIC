@@ -278,7 +278,7 @@ class OLAgentCommissionSetupViewSet(OLDefaultSetupViewSet):
     table_slug = "agent-commission-setups"
     search_fields = [
         "code", "name", "description", "reason", "intermediary_type", "distribution_channel", "currency",
-        "product__code", "plan__code", "rider__code", "partner__code",
+        "product__code", "plan__code", "rider__code", "partner__partner_number",
     ]
     filterset_fields = [
         "is_active", "partner", "product", "plan", "rider", "branch", "intermediary_type",
@@ -384,6 +384,28 @@ class OLParameterHealthView(APIView):
                     "riders": OLRiderSetup.objects.filter(is_active=True).count(),
                     "rider_rate_tables": OLRiderRateTable.objects.filter(is_active=True).count(),
                     "rider_rate_rows": OLRiderRateRow.objects.filter(is_active=True).count(),
+                },
+                "agent_management": {
+                    "agent_commission_setups": OLAgentCommissionSetup.objects.filter(is_active=True).count(),
+                },
+                "loan_setup": {
+                    "loan_system_setups": OLLoanSystemSetup.objects.filter(is_active=True).count(),
+                    "loan_interest_controls": OLLoanInterestControl.objects.filter(is_active=True).count(),
+                },
+                "medical_underwriting": {
+                    "medical_codes": OLMedicalCode.objects.filter(is_active=True).count(),
+                    "medical_limits": OLMedicalLimit.objects.filter(is_active=True).count(),
+                    "personal_habits": OLPersonalHabit.objects.filter(is_active=True).count(),
+                    "medical_history": OLMedicalHistory.objects.filter(is_active=True).count(),
+                    "medical_facilities": OLMedicalFacility.objects.filter(is_active=True).count(),
+                    "medical_practitioners": OLMedicalPractitioner.objects.filter(is_active=True).count(),
+                },
+                "claim_setup": {
+                    "claim_types": OLClaimType.objects.filter(is_active=True).count(),
+                    "claim_reasons": OLClaimReason.objects.filter(is_active=True).count(),
+                    "claim_statuses": OLClaimStatus.objects.filter(is_active=True).count(),
+                    "discharge_types": OLDischargeType.objects.filter(is_active=True).count(),
+                    "correspondent_types": OLCorrespondentType.objects.filter(is_active=True).count(),
                 },
             }
         )

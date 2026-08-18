@@ -26,7 +26,7 @@ This boundary keeps configuration changes auditable and independently permission
 
 `OLEffectiveDateModel` extends the base contract and makes `effective_from` mandatory. `OLRateTableVersionModel` adds a version identifier, supersession link, current-version flag, and publication timestamp. It supports multiple versions under one business code and protects against self-supersession. `OLRateRowBaseModel` is an abstract dimension contract for rate rows and includes product, plan, age, gender, term, effective dates, active state, and display order. It validates age and effective-date ranges.
 
-The base models deliberately do not publish concrete parameter tables in this foundation phase. Each of the nine parameter groups will introduce concrete models in later bounded-context increments, with table registry records describing how those models are rendered and queried.
+The base models provide the shared contract for the nine concrete parameter groups now delivered in this bounded context. Each group adds domain-specific models while retaining the common lifecycle, audit, effective-date, permission, and table-registry conventions.
 
 ## Table-metadata registry
 
@@ -533,3 +533,34 @@ The starter records are development configuration placeholders. Claim calculatio
 | OL Loan Setup | Implemented | Loan system setup and loan interest control, seed, tests, audit registration, and migration 0015 |
 | OL Medical / Underwriting | Implemented | Six medical underwriting resources, seed, tests, audit registration, and migration 0016 |
 | OL Claim Setup | Implemented | Five claim catalogs, status transition graph, seed, tests, audit registration, and migration 0017 |
+
+
+## OL Parameters release-hardening contract
+
+The nine-group OL Parameters foundation is released through one idempotent bootstrap command:
+
+```text
+python manage.py seed_ol_parameters_release
+```
+
+The command executes the group seed commands in dependency order, then provisions canonical permissions and role groups, and finally upserts the nine top-level table registry contracts. Component-level registry records remain available for detailed tables inside groups; the nine canonical records use the stable `ol-*` slugs and are the release-level discovery surface.
+
+| Release concern | Canonical contract |
+|---|---|
+| Group bootstrap | Default Setup, Policy Setup, Product Setup, Product Rating, Rider Setup, Agent Management, Loan Setup, Medical Underwriting, and Claim Setup are all executed by the release orchestrator. |
+| Permission bootstrap | `ol_parameters.view`, `ol_parameters.create`, `ol_parameters.update`, `ol_parameters.deactivate`, and `ol_parameters.configure` are seeded idempotently. |
+| Role bootstrap | `OL_PARAMETER_VIEWER`, `OL_PARAMETER_CONFIGURATOR`, and `OL_PARAMETER_ADMINISTRATOR` are system groups with deterministic permission sets. |
+| Registry bootstrap | Nine canonical top-level records expose valid `model_label`, visible columns, searchable fields, filter fields, ordering, export support, allowed actions, and per-action permissions. |
+| Readiness | `/api/v1/ol-parameters/health/` reports operational counts for all nine groups and the active registry contract count. |
+| Auditability | All concrete group models are connected to the central audit receiver; lifecycle mutations use the shared actor, correlation, and source-channel context. |
+| API consistency | Each concrete resource uses the common authenticated OL viewset contract for search, filtering, ordering, pagination, CSV export, create/update, and soft deactivation. |
+
+The seeded viewer role is intentionally read-only. The configurator role can create and update configuration but cannot deactivate it. The administrator role has full lifecycle and registry configuration access. Production deployments should map these system roles to approved organizational groups through the existing IAM governance process rather than granting permissions directly to individual users.
+
+Release seeds contain development-safe starter values only. Product, actuarial, underwriting, claims, legal, compliance, finance, reinsurance, and governance owners must approve production values, effective dates, rates, limits, workflow transitions, templates, and partner references before transactional consumers use them.
+
+The release hardening suite validates canonical registry completeness, idempotent bootstrap, seeded role resolution, read-only viewer behavior, representative endpoint access across all nine groups, readiness observability, permission uniqueness, and metadata field contracts. These tests are cross-cutting safeguards in addition to each group’s focused CRUD and validation suite.
+
+## OL Parameters release operating checklist
+
+Before promoting a release, apply migrations, execute `seed_ol_parameters_release`, verify the health endpoint, review active effective-dated configuration, confirm role assignments, and inspect the audit stream for seed and administrative changes. SQLite is a development database only; production deployments must use the supported PostgreSQL schema and deployment migration process. No seed command performs destructive deletion.
