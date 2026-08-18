@@ -37,6 +37,12 @@ from .views import (
     OLMortalityRateTableViewSet,
     OLMortalityRateRowViewSet,
     OLJointLifeSetupViewSet,
+    OLReinstatementInterestRateViewSet,
+    OLBonusRateViewSet,
+    OLMortgageInterestFactorViewSet,
+    OLInstallmentChargeRateViewSet,
+    OLCashSurrenderValueViewSet,
+    OLReserveLoadingViewSet,
 )
 
 
@@ -75,6 +81,12 @@ router.register("premium-rate-rows", OLPremiumRateRowViewSet, basename="ol-premi
 router.register("mortality-rate-tables", OLMortalityRateTableViewSet, basename="ol-mortality-rate-table")
 router.register("mortality-rate-rows", OLMortalityRateRowViewSet, basename="ol-mortality-rate-row")
 router.register("joint-life-setups", OLJointLifeSetupViewSet, basename="ol-joint-life-setup")
+router.register("reinstatement-interest-rates", OLReinstatementInterestRateViewSet, basename="ol-reinstatement-interest-rate")
+router.register("bonus-rates", OLBonusRateViewSet, basename="ol-bonus-rate")
+router.register("mortgage-interest-factors", OLMortgageInterestFactorViewSet, basename="ol-mortgage-interest-factor")
+router.register("installment-charge-rates", OLInstallmentChargeRateViewSet, basename="ol-installment-charge-rate")
+router.register("cash-surrender-values", OLCashSurrenderValueViewSet, basename="ol-cash-surrender-value")
+router.register("reserve-loadings", OLReserveLoadingViewSet, basename="ol-reserve-loading")
 
 urlpatterns = [
     path("health/", OLParameterHealthView.as_view(), name="ol-parameters-health"),

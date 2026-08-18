@@ -293,3 +293,36 @@ The idempotent command `python manage.py seed_ol_product_rating` ensures the Pro
 All five Product Rating models are registered with the central signal-based audit receiver. API and admin mutations use the shared permission-aware OL mutation service, stamp the actor, capture request correlation data, and emit central audit events. Physical deletion is not exposed; deactivation preserves the rate history required for actuarial governance and reproducibility.
 
 Product Rating Part 1 is delivered through additive migrations `0009_olmortalityratetable_olmortalityraterow_and_more.py` and `0010_oljointlifesetup_ol_joint_life_dates_valid_and_more.py`. The implementation remains separate from operational rating execution and can later be consumed by a publication or pricing-resolution service that selects one active table and one unambiguous row for a requested product, plan, age, term, gender, smoker status, frequency, sum assured, and policy year.
+
+
+## OL Product Rating Part 2 subcontext
+
+OL Product Rating Part 2 is now **Implemented** as the second isolated actuarial configuration increment for Ordinary Life. It provides effective-dated table-first parameters for reinstatement interest, bonuses, mortgage interest factors, installment charges, cash surrender values, and reserve loadings. These records are configuration inputs for future policy, loan, surrender, reserve, and actuarial calculation services; they do not execute those transactions themselves.
+
+| Entity | Purpose | Main scope or behavior |
+|---|---|---|
+| `OLReinstatementInterestRate` | Reinstatement interest assumption. | Product or plan scope, calculation basis, Decimal rate, and effective-dated active lifecycle. |
+| `OLBonusRate` | Bonus declaration assumption. | Product and plan scope, bonus type, Decimal rate, optional valuation year, declaration frequency, and effective-dated lifecycle. |
+| `OLMortgageInterestFactor` | Mortgage or policy-loan interest factor. | Product with optional plan scope, calculation basis, positive Decimal factor, and effective-dated lifecycle. |
+| `OLInstallmentChargeRate` | Installment or premium charge configuration. | Optional product/plan scope, frequency, charge type, Decimal value, application event, and effective-dated lifecycle. |
+| `OLCashSurrenderValue` | Cash surrender value factor/rate row. | Product and optional plan scope, policy-year, age, term, gender, smoker-status dimensions, and Decimal factor or rate. |
+| `OLReserveLoading` | Reserve loading assumption. | Product and optional plan scope, loading type, loading basis, non-negative Decimal value, and effective-dated lifecycle. |
+
+All six entities use the standard OL parameter identity, actor, timestamp, active-status, and effective-date contract. Rates, factors, and loading values are stored as `DecimalField` values. Model and database validation reject negative or out-of-range values, unsupported enum dimensions, invalid effective intervals, missing required product/plan scopes, and invalid age, term, policy-year, or rate bands. Active records cannot overlap another active record with the same scope and actuarial dimensions; adjacent effective periods and distinct dimensions remain valid.
+
+The table-first API surface is exposed under `/api/v1/ol-parameters/`:
+
+| Resource | Endpoint | Table behavior |
+|---|---|---|
+| Reinstatement interest rates | `/reinstatement-interest-rates/` | Product/plan/basis/effective-date filters, CRUD, pagination, CSV export, and soft deactivation. |
+| Bonus rates | `/bonus-rates/` | Product/plan/bonus-type/valuation-year/declaration-frequency filters, CRUD, pagination, CSV export, and soft deactivation. |
+| Mortgage interest factors | `/mortgage-interest-factors/` | Product/plan/calculation-basis filters, CRUD, pagination, CSV export, and soft deactivation. |
+| Installment charge rates | `/installment-charge-rates/` | Product/plan/frequency/charge-type/application filters, CRUD, pagination, CSV export, and soft deactivation. |
+| Cash surrender values | `/cash-surrender-values/` | Product/plan/policy-year/age/term/gender/smoker-status filters, CRUD, pagination, CSV export, and soft deactivation. |
+| Reserve loadings | `/reserve-loadings/` | Product/plan/loading-type/loading-basis filters, CRUD, pagination, CSV export, and soft deactivation. |
+
+The idempotent command `python manage.py seed_ol_product_rating_part2` creates six `PRODUCT_RATING` registry contracts and safe development starter rows for each Part 2 resource. It also ensures the Product Setup starter scope exists through the existing seed command. Starter actuarial values are placeholders requiring formal actuarial review and approval before production use; repeated execution updates the declared baseline without duplicating rows.
+
+All six Part 2 models are registered with the central signal-based audit receiver. API and admin mutations use the shared permission-aware OL mutation service, capture actor and correlation metadata, and emit central audit events. Physical deletion is not exposed through the table-first APIs; deactivation preserves the actuarial configuration history needed for reproducibility and governance.
+
+Product Rating Part 2 is delivered through additive migrations following Product Rating Part 1. The implementation remains separate from transactional rating execution and can later be consumed by controlled publication and calculation-resolution services that select one active, unambiguous assumption for a product, plan, event, policy year, demographic profile, and effective date.

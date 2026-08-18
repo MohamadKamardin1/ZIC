@@ -41,6 +41,12 @@ from .models import (
     OLMortalityRateTable,
     OLMortalityRateRow,
     OLJointLifeSetup,
+    OLReinstatementInterestRate,
+    OLBonusRate,
+    OLMortgageInterestFactor,
+    OLInstallmentChargeRate,
+    OLCashSurrenderValue,
+    OLReserveLoading,
     OLSurrenderSetup,
     OLSurrenderValueRate,
     OLParameterTableRegistry,
@@ -82,6 +88,12 @@ from .serializers import (
     OLMortalityRateTableSerializer,
     OLMortalityRateRowSerializer,
     OLJointLifeSetupSerializer,
+    OLReinstatementInterestRateSerializer,
+    OLBonusRateSerializer,
+    OLMortgageInterestFactorSerializer,
+    OLInstallmentChargeRateSerializer,
+    OLCashSurrenderValueSerializer,
+    OLReserveLoadingSerializer,
     OLTableRegistrySerializer,
 )
 from .services.default_setup_service import OLDefaultSetupService
@@ -305,6 +317,14 @@ class OLParameterHealthView(APIView):
                     "mortality_rate_tables": OLMortalityRateTable.objects.filter(is_active=True).count(),
                     "mortality_rate_rows": OLMortalityRateRow.objects.filter(is_active=True).count(),
                     "joint_life_setups": OLJointLifeSetup.objects.filter(is_active=True).count(),
+                },
+                "product_rating_part2": {
+                    "reinstatement_interest_rates": OLReinstatementInterestRate.objects.filter(is_active=True).count(),
+                    "bonus_rates": OLBonusRate.objects.filter(is_active=True).count(),
+                    "mortgage_interest_factors": OLMortgageInterestFactor.objects.filter(is_active=True).count(),
+                    "installment_charge_rates": OLInstallmentChargeRate.objects.filter(is_active=True).count(),
+                    "cash_surrender_values": OLCashSurrenderValue.objects.filter(is_active=True).count(),
+                    "reserve_loadings": OLReserveLoading.objects.filter(is_active=True).count(),
                 },
             }
         )
@@ -689,3 +709,69 @@ class OLJointLifeSetupViewSet(OLDefaultSetupViewSet):
     filterset_fields = ["is_active", "product", "plan", "joint_life_type", "age_basis", "effective_from", "effective_to"]
     ordering_fields = ["code", "name", "joint_life_type", "age_basis", "premium_adjustment_factor", "effective_from", "effective_to", "created_at", "updated_at"]
     ordering = ["product", "plan", "joint_life_type", "-effective_from", "code"]
+
+
+class OLReinstatementInterestRateViewSet(OLDefaultSetupViewSet):
+    model = OLReinstatementInterestRate
+    serializer_class = OLReinstatementInterestRateSerializer
+    table_slug = "reinstatement-interest-rates"
+    search_fields = ["code", "name", "description", "calculation_basis"]
+    filterset_fields = ["is_active", "product", "plan", "calculation_basis", "effective_from", "effective_to"]
+    ordering_fields = ["code", "name", "rate", "calculation_basis", "effective_from", "effective_to", "created_at", "updated_at"]
+    ordering = ["product", "plan", "calculation_basis", "-effective_from", "code"]
+
+
+class OLBonusRateViewSet(OLDefaultSetupViewSet):
+    model = OLBonusRate
+    serializer_class = OLBonusRateSerializer
+    table_slug = "bonus-rates"
+    search_fields = ["code", "name", "description", "bonus_type", "declaration_frequency"]
+    filterset_fields = ["is_active", "product", "plan", "bonus_type", "valuation_year", "declaration_frequency", "effective_from", "effective_to"]
+    ordering_fields = ["code", "name", "bonus_type", "rate", "valuation_year", "declaration_frequency", "effective_from", "effective_to", "created_at", "updated_at"]
+    ordering = ["product", "plan", "bonus_type", "valuation_year", "-effective_from", "code"]
+
+
+class OLMortgageInterestFactorViewSet(OLDefaultSetupViewSet):
+    model = OLMortgageInterestFactor
+    serializer_class = OLMortgageInterestFactorSerializer
+    table_slug = "mortgage-interest-factors"
+    search_fields = ["code", "name", "description", "calculation_basis", "product__code", "plan__code"]
+    filterset_fields = ["is_active", "product", "plan", "calculation_basis", "effective_from", "effective_to"]
+    ordering_fields = ["code", "name", "factor", "calculation_basis", "effective_from", "effective_to", "created_at", "updated_at"]
+    ordering = ["product", "plan", "calculation_basis", "-effective_from", "code"]
+
+
+class OLInstallmentChargeRateViewSet(OLDefaultSetupViewSet):
+    model = OLInstallmentChargeRate
+    serializer_class = OLInstallmentChargeRateSerializer
+    table_slug = "installment-charge-rates"
+    search_fields = ["code", "name", "description", "frequency", "charge_type", "apply_on"]
+    filterset_fields = ["is_active", "product", "plan", "frequency", "charge_type", "apply_on", "effective_from", "effective_to"]
+    ordering_fields = ["code", "name", "frequency", "charge_type", "apply_on", "rate_value", "effective_from", "effective_to", "created_at", "updated_at"]
+    ordering = ["product", "plan", "frequency", "charge_type", "apply_on", "-effective_from", "code"]
+
+
+class OLCashSurrenderValueViewSet(OLDefaultSetupViewSet):
+    model = OLCashSurrenderValue
+    serializer_class = OLCashSurrenderValueSerializer
+    table_slug = "cash-surrender-values"
+    search_fields = ["code", "name", "description", "gender", "smoker_status", "product__code", "plan__code"]
+    filterset_fields = [
+        "is_active", "product", "plan", "policy_year_from", "policy_year_to", "age_from", "age_to",
+        "term_from", "term_to", "gender", "smoker_status", "effective_from", "effective_to",
+    ]
+    ordering_fields = [
+        "code", "name", "policy_year_from", "policy_year_to", "age_from", "age_to", "term_from", "term_to",
+        "surrender_value_factor", "rate", "effective_from", "effective_to", "created_at", "updated_at",
+    ]
+    ordering = ["product", "plan", "policy_year_from", "age_from", "term_from", "code"]
+
+
+class OLReserveLoadingViewSet(OLDefaultSetupViewSet):
+    model = OLReserveLoading
+    serializer_class = OLReserveLoadingSerializer
+    table_slug = "reserve-loadings"
+    search_fields = ["code", "name", "description", "loading_type", "loading_basis"]
+    filterset_fields = ["is_active", "product", "plan", "loading_type", "loading_basis", "effective_from", "effective_to"]
+    ordering_fields = ["code", "name", "loading_type", "loading_basis", "rate_value", "effective_from", "effective_to", "created_at", "updated_at"]
+    ordering = ["product", "plan", "loading_type", "loading_basis", "-effective_from", "code"]

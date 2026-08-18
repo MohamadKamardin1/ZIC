@@ -256,3 +256,41 @@ OL Product Rating Part 1 is now **Implemented** as the first isolated rating inc
 | OL Claim Setup | Foundation registry only; planned |
 
 The Product Rating Part 1 increment is additive and does not alter transactional product, quotation, proposal, policy, or claim tables. Actuarial starter values are placeholders and must be approved through the future actuarial governance and publication workflow before production rating execution.
+
+
+## OL Product Rating Part 2 implementation status
+
+OL Product Rating Part 2 is now **Implemented** as the second isolated rating increment under the canonical OL Parameters bounded context. It covers reinstatement interest, bonus rates, mortgage interest factors, installment charges, cash surrender values, and reserve loadings while preserving the separation between actuarial configuration and transactional policy execution.
+
+| Requirement | Delivered artifact | Status |
+|---|---|---|
+| Reinstatement interest rate | `OLReinstatementInterestRate` with product/plan scope, calculation basis, Decimal rate, effective dates, and active lifecycle | Implemented |
+| Bonus rate | `OLBonusRate` with product/plan scope, bonus type, Decimal rate, optional valuation year, declaration frequency, and effective dates | Implemented |
+| Mortgage interest factor | `OLMortgageInterestFactor` with product and optional plan scope, calculation basis, positive Decimal factor, and effective dates | Implemented |
+| Installment charge rate | `OLInstallmentChargeRate` with optional product/plan scope, frequency, charge type, Decimal value, application event, and effective dates | Implemented |
+| Cash surrender value | `OLCashSurrenderValue` with product/plan scope, policy-year, age, term, gender, smoker-status dimensions, and Decimal factor/rate | Implemented |
+| Reserve loadings | `OLReserveLoading` with product/plan scope, loading type, loading basis, non-negative Decimal value, and effective dates | Implemented |
+| Validation | Decimal range checks, effective-date consistency, required scope validation, enum normalization, age/term/policy-year band validation, duplicate scope prevention, and active overlap detection | Implemented |
+| APIs | Six table-first resources with CRUD, search, filters, ordering, pagination, CSV export, and soft deactivation | Implemented |
+| Permissions | Existing `ol_parameters.view`, `.create`, `.update`, `.deactivate`, and `.configure` enforcement | Implemented |
+| Admin | Permission-aware table registrations for all six Part 2 resources with dimensions, scope, effective dates, rate values, and audit fields | Implemented |
+| Audit | Central audit receiver registration for all six Part 2 models and shared mutation-service integration | Implemented |
+| Seed data | `seed_ol_product_rating_part2` idempotently seeds six `PRODUCT_RATING` registry contracts and one safe starter row per resource | Implemented |
+| Tests | CRUD, invalid rates, effective-date checks, scope checks, overlap detection, filters, pagination, permissions, audit logs, seed idempotency, and admin registration | Implemented |
+| Migrations | Additive Part 2 migration with database-level effective-date constraints and indexes | Implemented |
+
+## Updated nine-group status after OL Product Rating Part 2
+
+| Required group | Concrete implementation status after this delivery |
+|---|---|
+| OL Default Setup | **Implemented** |
+| OL Policy Setup | **Parts 1, 2, and 3 implemented**; later policy setup parts remain planned |
+| OL Product Setup | **Implemented** |
+| OL Product Rating | **Parts 1 and 2 implemented**: premium, mortality, joint life, reinstatement, bonus, mortgage, installment, surrender, and reserve parameters |
+| OL Rider Setup | Foundation registry only; planned |
+| OL Agent Management | Foundation registry only; planned |
+| OL Loan Setup | Foundation registry only; planned |
+| OL Medical / Underwriting | Foundation registry only; planned |
+| OL Claim Setup | Foundation registry only; planned |
+
+The Product Rating Part 2 increment is additive and does not alter transactional product, quotation, proposal, policy, loan, surrender, reserve, or claim tables. Starter actuarial values are development placeholders and must pass formal actuarial approval and controlled publication before production calculation services consume them.

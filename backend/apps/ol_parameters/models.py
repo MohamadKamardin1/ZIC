@@ -2503,3 +2503,473 @@ class OLJointLifeSetup(OLEffectiveDateModel):
         ).exclude(pk=self.pk)
         if any(_product_setup_intervals_overlap(self.effective_from, self.effective_to, candidate.effective_from, candidate.effective_to) for candidate in candidates):
             raise ValidationError({"code": "An active joint-life setup overlaps an existing row in the same scope and type."})
+
+
+# =============================================================================
+# OL PRODUCT RATING PART 2
+# =============================================================================
+
+
+class OLRatingCalculationBasis(models.TextChoices):
+    OUTSTANDING_PREMIUM = "OUTSTANDING_PREMIUM", "Outstanding premium"
+    LOAN_BALANCE = "LOAN_BALANCE", "Loan balance"
+    PREMIUM = "PREMIUM", "Premium"
+    SUM_ASSURED = "SUM_ASSURED", "Sum assured"
+    RESERVE = "RESERVE", "Reserve"
+    POLICY_VALUE = "POLICY_VALUE", "Policy value"
+    CUSTOM = "CUSTOM", "Custom"
+
+
+class OLBonusType(models.TextChoices):
+    REVERSIONARY = "REVERSIONARY", "Reversionary"
+    TERMINAL = "TERMINAL", "Terminal"
+    LOYALTY = "LOYALTY", "Loyalty"
+    SPECIAL = "SPECIAL", "Special"
+    GUARANTEED = "GUARANTEED", "Guaranteed"
+
+
+class OLDeclarationFrequency(models.TextChoices):
+    ANNUAL = "ANNUAL", "Annual"
+    QUARTERLY = "QUARTERLY", "Quarterly"
+    MONTHLY = "MONTHLY", "Monthly"
+    ON_MATURITY = "ON_MATURITY", "On maturity"
+    AD_HOC = "AD_HOC", "Ad hoc"
+
+
+class OLInstallmentChargeType(models.TextChoices):
+    FIXED = "FIXED", "Fixed amount"
+    PERCENTAGE = "PERCENTAGE", "Percentage"
+    FACTOR = "FACTOR", "Factor"
+
+
+class OLInstallmentFrequency(models.TextChoices):
+    SINGLE = "SINGLE", "Single"
+    MONTHLY = "MONTHLY", "Monthly"
+    QUARTERLY = "QUARTERLY", "Quarterly"
+    HALF_YEARLY = "HALF_YEARLY", "Half yearly"
+    ANNUAL = "ANNUAL", "Annual"
+
+
+class OLInstallmentApplyOn(models.TextChoices):
+    PREMIUM = "PREMIUM", "Premium"
+    INSTALLMENT = "INSTALLMENT", "Installment"
+    SUM_ASSURED = "SUM_ASSURED", "Sum assured"
+    POLICY_VALUE = "POLICY_VALUE", "Policy value"
+    DUE_AMOUNT = "DUE_AMOUNT", "Due amount"
+
+
+class OLReserveLoadingType(models.TextChoices):
+    EXPENSE = "EXPENSE", "Expense"
+    RISK = "RISK", "Risk"
+    CONTINGENCY = "CONTINGENCY", "Contingency"
+    PROFIT = "PROFIT", "Profit"
+    CAPITAL = "CAPITAL", "Capital"
+    OTHER = "OTHER", "Other"
+
+
+class OLReserveLoadingBasis(models.TextChoices):
+    RESERVE = "RESERVE", "Reserve"
+    PREMIUM = "PREMIUM", "Premium"
+    SUM_ASSURED = "SUM_ASSURED", "Sum assured"
+    POLICY_VALUE = "POLICY_VALUE", "Policy value"
+    CUSTOM = "CUSTOM", "Custom"
+
+
+def _rating_part2_validate_scope(instance, errors, *, require_scope=False):
+    if require_scope and not instance.product_id and not instance.plan_id:
+        errors["product"] = "This configuration must be scoped to a product or plan."
+    if instance.product_id and not getattr(instance.product, "is_active", True):
+        errors["product"] = "Selected product must be active."
+    if instance.plan_id and not getattr(instance.plan, "is_active", True):
+        errors["plan"] = "Selected plan must be active."
+    _policy_setup_validate_product_plan(instance, errors)
+
+
+def _rating_part2_dates_overlap(instance, candidates):
+    return any(
+        _product_setup_intervals_overlap(
+            instance.effective_from,
+            instance.effective_to,
+            candidate.effective_from,
+            candidate.effective_to,
+        )
+        for candidate in candidates
+    )
+
+
+class OLReinstatementInterestRate(OLEffectiveDateModel):
+    """Interest rate applied when reinstatement financial obligations are calculated."""
+
+    product = models.ForeignKey(
+        "ol_parameters.OLProduct",
+        on_delete=models.PROTECT,
+        related_name="reinstatement_interest_rates",
+        null=True,
+        blank=True,
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        related_name="ol_parameter_reinstatement_interest_rates",
+        null=True,
+        blank=True,
+    )
+    rate = models.DecimalField(max_digits=12, decimal_places=8)
+    calculation_basis = models.CharField(max_length=40, choices=OLRatingCalculationBasis.choices, default=OLRatingCalculationBasis.OUTSTANDING_PREMIUM)
+
+    class Meta:
+        ordering = ["product", "plan", "calculation_basis", "-effective_from", "code"]
+        constraints = [
+            models.CheckConstraint(check=models.Q(effective_to__isnull=True) | models.Q(effective_from__isnull=True) | models.Q(effective_to__gte=models.F("effective_from")), name="ol_rein_interest_dates_ck"),
+            models.UniqueConstraint(fields=["code"], name="ol_rein_interest_code_uq"),
+            models.CheckConstraint(check=models.Q(rate__gte=0) & models.Q(rate__lte=100), name="ol_rein_interest_rate_rng_ck"),
+        ]
+        indexes = [
+            models.Index(fields=["product", "plan", "calculation_basis", "is_active"], name="ol_rein_interest_scope_idx"),
+            models.Index(fields=["effective_from", "effective_to", "is_active"], name="ol_rein_interest_dates_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.calculation_basis = (self.calculation_basis or "").strip().upper()
+        _rating_part2_validate_scope(self, errors)
+        if self.calculation_basis not in dict(OLRatingCalculationBasis.choices):
+            errors["calculation_basis"] = "Unsupported reinstatement calculation basis."
+        if self.rate is None or self.rate < 0 or self.rate > 100:
+            errors["rate"] = "Reinstatement interest rate must be between 0 and 100."
+        if errors:
+            raise ValidationError(errors)
+        candidates = self.__class__.objects.filter(
+            product=self.product,
+            plan=self.plan,
+            calculation_basis=self.calculation_basis,
+            is_active=True,
+        ).exclude(pk=self.pk)
+        if _rating_part2_dates_overlap(self, candidates):
+            raise ValidationError({"code": "An active reinstatement interest rate overlaps an existing row in the same scope."})
+
+
+class OLBonusRate(OLEffectiveDateModel):
+    """Effective-dated bonus declaration assumption for an OL product or plan."""
+
+    product = models.ForeignKey(
+        "ol_parameters.OLProduct",
+        on_delete=models.PROTECT,
+        related_name="bonus_rates",
+        null=True,
+        blank=True,
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        related_name="ol_parameter_bonus_rates",
+        null=True,
+        blank=True,
+    )
+    bonus_type = models.CharField(max_length=30, choices=OLBonusType.choices)
+    rate = models.DecimalField(max_digits=12, decimal_places=8)
+    valuation_year = models.PositiveSmallIntegerField(null=True, blank=True)
+    declaration_frequency = models.CharField(max_length=20, choices=OLDeclarationFrequency.choices, blank=True, default="")
+
+    class Meta:
+        ordering = ["product", "plan", "bonus_type", "valuation_year", "-effective_from", "code"]
+        constraints = [
+            models.CheckConstraint(check=models.Q(effective_to__isnull=True) | models.Q(effective_from__isnull=True) | models.Q(effective_to__gte=models.F("effective_from")), name="ol_bonus_rate_dates_ck"),
+            models.UniqueConstraint(fields=["code"], name="ol_bonus_rate_code_uq"),
+            models.CheckConstraint(check=models.Q(rate__gte=0) & models.Q(rate__lte=100), name="ol_bonus_rate_rng_ck"),
+            models.CheckConstraint(check=models.Q(valuation_year__isnull=True) | models.Q(valuation_year__gt=0), name="ol_bonus_year_pos_ck"),
+        ]
+        indexes = [
+            models.Index(fields=["product", "plan", "bonus_type", "is_active"], name="ol_bonus_rate_scope_idx"),
+            models.Index(fields=["valuation_year", "declaration_frequency", "is_active"], name="ol_bonus_rate_dim_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.bonus_type = (self.bonus_type or "").strip().upper()
+        self.declaration_frequency = (self.declaration_frequency or "").strip().upper()
+        _rating_part2_validate_scope(self, errors, require_scope=True)
+        if self.bonus_type not in dict(OLBonusType.choices):
+            errors["bonus_type"] = "Unsupported bonus type."
+        if self.declaration_frequency and self.declaration_frequency not in dict(OLDeclarationFrequency.choices):
+            errors["declaration_frequency"] = "Unsupported declaration frequency."
+        if self.valuation_year is not None and self.valuation_year < 1:
+            errors["valuation_year"] = "Valuation year must be positive."
+        if self.rate is None or self.rate < 0 or self.rate > 100:
+            errors["rate"] = "Bonus rate must be between 0 and 100."
+        if errors:
+            raise ValidationError(errors)
+        candidates = self.__class__.objects.filter(
+            product=self.product,
+            plan=self.plan,
+            bonus_type=self.bonus_type,
+            valuation_year=self.valuation_year,
+            declaration_frequency=self.declaration_frequency,
+            is_active=True,
+        ).exclude(pk=self.pk)
+        if _rating_part2_dates_overlap(self, candidates):
+            raise ValidationError({"code": "An active bonus rate overlaps an existing row in the same scope."})
+
+
+class OLMortgageInterestFactor(OLEffectiveDateModel):
+    """Interest factor for policy loans or mortgage-linked product calculations."""
+
+    product = models.ForeignKey(
+        "ol_parameters.OLProduct",
+        on_delete=models.PROTECT,
+        related_name="mortgage_interest_factors",
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        related_name="ol_parameter_mortgage_interest_factors",
+        null=True,
+        blank=True,
+    )
+    factor = models.DecimalField(max_digits=12, decimal_places=8)
+    calculation_basis = models.CharField(max_length=40, choices=OLRatingCalculationBasis.choices, default=OLRatingCalculationBasis.LOAN_BALANCE)
+
+    class Meta:
+        ordering = ["product", "plan", "calculation_basis", "-effective_from", "code"]
+        constraints = [
+            models.CheckConstraint(check=models.Q(effective_to__isnull=True) | models.Q(effective_from__isnull=True) | models.Q(effective_to__gte=models.F("effective_from")), name="ol_mortgage_factor_dates_ck"),
+            models.UniqueConstraint(fields=["code"], name="ol_mortgage_factor_code_uq"),
+            models.CheckConstraint(check=models.Q(factor__gt=0), name="ol_mortgage_factor_pos_ck"),
+        ]
+        indexes = [
+            models.Index(fields=["product", "plan", "calculation_basis", "is_active"], name="ol_mortgage_factor_scope_idx"),
+            models.Index(fields=["effective_from", "effective_to", "is_active"], name="ol_mortgage_factor_dates_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.calculation_basis = (self.calculation_basis or "").strip().upper()
+        _rating_part2_validate_scope(self, errors, require_scope=True)
+        if self.calculation_basis not in dict(OLRatingCalculationBasis.choices):
+            errors["calculation_basis"] = "Unsupported mortgage calculation basis."
+        if self.factor is None or self.factor <= 0:
+            errors["factor"] = "Mortgage interest factor must be greater than zero."
+        if errors:
+            raise ValidationError(errors)
+        candidates = self.__class__.objects.filter(
+            product=self.product,
+            plan=self.plan,
+            calculation_basis=self.calculation_basis,
+            is_active=True,
+        ).exclude(pk=self.pk)
+        if _rating_part2_dates_overlap(self, candidates):
+            raise ValidationError({"code": "An active mortgage interest factor overlaps an existing row in the same scope."})
+
+
+class OLInstallmentChargeRate(OLEffectiveDateModel):
+    """Effective-dated charge applied to installment or premium transactions."""
+
+    product = models.ForeignKey(
+        "ol_parameters.OLProduct",
+        on_delete=models.PROTECT,
+        related_name="installment_charge_rates",
+        null=True,
+        blank=True,
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        related_name="ol_parameter_installment_charge_rates",
+        null=True,
+        blank=True,
+    )
+    frequency = models.CharField(max_length=20, choices=OLInstallmentFrequency.choices)
+    charge_type = models.CharField(max_length=20, choices=OLInstallmentChargeType.choices)
+    rate_value = models.DecimalField(max_digits=12, decimal_places=8)
+    apply_on = models.CharField(max_length=20, choices=OLInstallmentApplyOn.choices)
+
+    class Meta:
+        ordering = ["product", "plan", "frequency", "charge_type", "apply_on", "-effective_from", "code"]
+        constraints = [
+            models.CheckConstraint(check=models.Q(effective_to__isnull=True) | models.Q(effective_from__isnull=True) | models.Q(effective_to__gte=models.F("effective_from")), name="ol_install_charge_dates_ck"),
+            models.UniqueConstraint(fields=["code"], name="ol_install_charge_code_uq"),
+            models.CheckConstraint(check=models.Q(rate_value__gte=0), name="ol_install_charge_nonneg_ck"),
+        ]
+        indexes = [
+            models.Index(fields=["product", "plan", "frequency", "is_active"], name="ol_install_charge_scope_idx"),
+            models.Index(fields=["charge_type", "apply_on", "is_active"], name="ol_install_charge_dim_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.frequency = (self.frequency or "").strip().upper()
+        self.charge_type = (self.charge_type or "").strip().upper()
+        self.apply_on = (self.apply_on or "").strip().upper()
+        _rating_part2_validate_scope(self, errors)
+        if self.frequency not in dict(OLInstallmentFrequency.choices):
+            errors["frequency"] = "Unsupported installment frequency."
+        if self.charge_type not in dict(OLInstallmentChargeType.choices):
+            errors["charge_type"] = "Unsupported installment charge type."
+        if self.apply_on not in dict(OLInstallmentApplyOn.choices):
+            errors["apply_on"] = "Unsupported installment charge apply-on dimension."
+        if self.rate_value is None or self.rate_value < 0:
+            errors["rate_value"] = "Installment charge value cannot be negative."
+        elif self.charge_type == OLInstallmentChargeType.PERCENTAGE and self.rate_value > 100:
+            errors["rate_value"] = "Percentage installment charge cannot exceed 100."
+        if errors:
+            raise ValidationError(errors)
+        candidates = self.__class__.objects.filter(
+            product=self.product,
+            plan=self.plan,
+            frequency=self.frequency,
+            charge_type=self.charge_type,
+            apply_on=self.apply_on,
+            is_active=True,
+        ).exclude(pk=self.pk)
+        if _rating_part2_dates_overlap(self, candidates):
+            raise ValidationError({"code": "An active installment charge overlaps an existing row in the same scope."})
+
+
+class OLCashSurrenderValue(OLEffectiveDateModel):
+    """Age, term, policy-year, and demographic surrender-value factor or rate row."""
+
+    product = models.ForeignKey(
+        "ol_parameters.OLProduct",
+        on_delete=models.PROTECT,
+        related_name="cash_surrender_values",
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        related_name="ol_parameter_cash_surrender_values",
+        null=True,
+        blank=True,
+    )
+    policy_year_from = models.PositiveSmallIntegerField()
+    policy_year_to = models.PositiveSmallIntegerField()
+    age_from = models.PositiveSmallIntegerField(null=True, blank=True)
+    age_to = models.PositiveSmallIntegerField(null=True, blank=True)
+    term_from = models.PositiveSmallIntegerField(null=True, blank=True)
+    term_to = models.PositiveSmallIntegerField(null=True, blank=True)
+    gender = models.CharField(max_length=30, blank=True, default="", db_index=True)
+    smoker_status = models.CharField(max_length=30, blank=True, default="", db_index=True)
+    surrender_value_factor = models.DecimalField(max_digits=12, decimal_places=8, null=True, blank=True)
+    rate = models.DecimalField(max_digits=12, decimal_places=8, null=True, blank=True)
+
+    class Meta:
+        ordering = ["product", "plan", "policy_year_from", "age_from", "term_from", "code"]
+        constraints = [
+            models.CheckConstraint(check=models.Q(effective_to__isnull=True) | models.Q(effective_from__isnull=True) | models.Q(effective_to__gte=models.F("effective_from")), name="ol_cash_surrender_dates_ck"),
+            models.UniqueConstraint(fields=["code"], name="ol_cash_surrender_code_uq"),
+            models.CheckConstraint(check=models.Q(policy_year_to__gte=models.F("policy_year_from")), name="ol_cash_surrender_year_ck"),
+            models.CheckConstraint(check=models.Q(age_to__isnull=True) | models.Q(age_from__isnull=True) | models.Q(age_to__gte=models.F("age_from")), name="ol_cash_surrender_age_ck"),
+            models.CheckConstraint(check=models.Q(term_to__isnull=True) | models.Q(term_from__isnull=True) | models.Q(term_to__gte=models.F("term_from")), name="ol_cash_surrender_term_ck"),
+            models.CheckConstraint(check=(models.Q(surrender_value_factor__isnull=False) & models.Q(rate__isnull=True)) | (models.Q(surrender_value_factor__isnull=True) & models.Q(rate__isnull=False)), name="ol_cash_surrender_one_value_ck"),
+            models.CheckConstraint(check=models.Q(surrender_value_factor__isnull=True) | (models.Q(surrender_value_factor__gte=0) & models.Q(surrender_value_factor__lte=1)), name="ol_cash_surrender_factor_rng_ck"),
+            models.CheckConstraint(check=models.Q(rate__isnull=True) | (models.Q(rate__gte=0) & models.Q(rate__lte=100)), name="ol_cash_surrender_rate_rng_ck"),
+        ]
+        indexes = [
+            models.Index(fields=["product", "plan", "is_active", "effective_from"], name="ol_cash_surrender_scope_idx"),
+            models.Index(fields=["policy_year_from", "policy_year_to", "age_from", "age_to"], name="ol_cash_surrender_band_idx"),
+            models.Index(fields=["gender", "smoker_status", "is_active"], name="ol_cash_surrender_demo_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        _rating_part2_validate_scope(self, errors, require_scope=True)
+        self.gender = (self.gender or "").strip().upper()
+        self.smoker_status = (self.smoker_status or "").strip().upper()
+        if self.policy_year_from < 1 or self.policy_year_to < self.policy_year_from:
+            errors["policy_year_to"] = "Policy-year band must be ordered and start at one."
+        if self.age_from is not None and (self.age_from < 0 or self.age_from > 150):
+            errors["age_from"] = "Age-from must be between 0 and 150."
+        if self.age_to is not None and (self.age_to < 0 or self.age_to > 150 or (self.age_from is not None and self.age_to < self.age_from)):
+            errors["age_to"] = "Age-to must be ordered and remain between 0 and 150."
+        if self.term_from is not None and self.term_from < 1:
+            errors["term_from"] = "Term-from must be at least one year."
+        if self.term_to is not None and (self.term_to < 1 or (self.term_from is not None and self.term_to < self.term_from)):
+            errors["term_to"] = "Term-to must be ordered and positive."
+        if (self.surrender_value_factor is None) == (self.rate is None):
+            errors["surrender_value_factor"] = "Provide exactly one surrender value factor or rate."
+        if self.surrender_value_factor is not None and not 0 <= self.surrender_value_factor <= 1:
+            errors["surrender_value_factor"] = "Surrender value factor must be between 0 and 1."
+        if self.rate is not None and not 0 <= self.rate <= 100:
+            errors["rate"] = "Surrender value rate must be between 0 and 100."
+        if errors:
+            raise ValidationError(errors)
+        candidates = self.__class__.objects.filter(
+            product=self.product,
+            plan=self.plan,
+            gender=self.gender,
+            smoker_status=self.smoker_status,
+            is_active=True,
+        ).exclude(pk=self.pk)
+        for candidate in candidates:
+            if (
+                _rating_part2_dates_overlap(self, [candidate])
+                and _product_setup_intervals_overlap(self.policy_year_from, self.policy_year_to, candidate.policy_year_from, candidate.policy_year_to)
+                and _product_setup_intervals_overlap(self.age_from, self.age_to, candidate.age_from, candidate.age_to)
+                and _product_setup_intervals_overlap(self.term_from, self.term_to, candidate.term_from, candidate.term_to)
+            ):
+                raise ValidationError({"code": "An active cash surrender value overlaps an existing row in the same scope and dimensions."})
+
+
+class OLReserveLoading(OLEffectiveDateModel):
+    """Effective-dated reserve expense, risk, contingency, or capital loading."""
+
+    product = models.ForeignKey(
+        "ol_parameters.OLProduct",
+        on_delete=models.PROTECT,
+        related_name="reserve_loadings",
+        null=True,
+        blank=True,
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        related_name="ol_parameter_reserve_loadings",
+        null=True,
+        blank=True,
+    )
+    loading_type = models.CharField(max_length=30, choices=OLReserveLoadingType.choices)
+    loading_basis = models.CharField(max_length=30, choices=OLReserveLoadingBasis.choices)
+    rate_value = models.DecimalField(max_digits=12, decimal_places=8)
+
+    class Meta:
+        ordering = ["product", "plan", "loading_type", "loading_basis", "-effective_from", "code"]
+        constraints = [
+            models.CheckConstraint(check=models.Q(effective_to__isnull=True) | models.Q(effective_from__isnull=True) | models.Q(effective_to__gte=models.F("effective_from")), name="ol_reserve_load_dates_ck"),
+            models.UniqueConstraint(fields=["code"], name="ol_reserve_load_code_uq"),
+            models.CheckConstraint(check=models.Q(rate_value__gte=0) & models.Q(rate_value__lte=100), name="ol_reserve_load_rate_rng_ck"),
+        ]
+        indexes = [
+            models.Index(fields=["product", "plan", "loading_type", "is_active"], name="ol_reserve_load_scope_idx"),
+            models.Index(fields=["loading_basis", "is_active", "effective_from"], name="ol_reserve_load_basis_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.loading_type = (self.loading_type or "").strip().upper()
+        self.loading_basis = (self.loading_basis or "").strip().upper()
+        _rating_part2_validate_scope(self, errors, require_scope=True)
+        if self.loading_type not in dict(OLReserveLoadingType.choices):
+            errors["loading_type"] = "Unsupported reserve loading type."
+        if self.loading_basis not in dict(OLReserveLoadingBasis.choices):
+            errors["loading_basis"] = "Unsupported reserve loading basis."
+        if self.rate_value is None or self.rate_value < 0 or self.rate_value > 100:
+            errors["rate_value"] = "Reserve loading value must be between 0 and 100."
+        if errors:
+            raise ValidationError(errors)
+        candidates = self.__class__.objects.filter(
+            product=self.product,
+            plan=self.plan,
+            loading_type=self.loading_type,
+            loading_basis=self.loading_basis,
+            is_active=True,
+        ).exclude(pk=self.pk)
+        if _rating_part2_dates_overlap(self, candidates):
+            raise ValidationError({"code": "An active reserve loading overlaps an existing row in the same scope."})
+
+
+# End of OL Product Rating Part 2

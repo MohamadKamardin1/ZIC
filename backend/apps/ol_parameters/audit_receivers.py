@@ -30,6 +30,12 @@ from .models import (
     OLMortalityRateTable,
     OLMortalityRateRow,
     OLJointLifeSetup,
+    OLReinstatementInterestRate,
+    OLBonusRate,
+    OLMortgageInterestFactor,
+    OLInstallmentChargeRate,
+    OLCashSurrenderValue,
+    OLReserveLoading,
     OLMaturityClaimSetup,
     OLMemberCoverConfiguration,
     OLOverrideCommissionSetup,
@@ -79,6 +85,12 @@ AUDITED_MODELS = (
     OLMortalityRateTable,
     OLMortalityRateRow,
     OLJointLifeSetup,
+    OLReinstatementInterestRate,
+    OLBonusRate,
+    OLMortgageInterestFactor,
+    OLInstallmentChargeRate,
+    OLCashSurrenderValue,
+    OLReserveLoading,
 )
 
 

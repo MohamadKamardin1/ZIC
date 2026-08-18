@@ -122,6 +122,12 @@ from .models import (
     OLJointLifeSetup,
     OLSurrenderSetup,
     OLSurrenderValueRate,
+    OLReinstatementInterestRate,
+    OLBonusRate,
+    OLMortgageInterestFactor,
+    OLInstallmentChargeRate,
+    OLCashSurrenderValue,
+    OLReserveLoading,
 )
 
 
@@ -454,5 +460,48 @@ class OLMortalityRateRowSerializer(_ValidatedDefaultSetupModelSerializer):
 class OLJointLifeSetupSerializer(_ValidatedDefaultSetupModelSerializer):
     class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
         model = OLJointLifeSetup
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+
+class OLReinstatementInterestRateSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLReinstatementInterestRate
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLBonusRateSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLBonusRate
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLMortgageInterestFactorSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLMortgageInterestFactor
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLInstallmentChargeRateSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLInstallmentChargeRate
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLCashSurrenderValueSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLCashSurrenderValue
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLReserveLoadingSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLReserveLoading
         fields = "__all__"
         read_only_fields = _AUDIT_READ_ONLY

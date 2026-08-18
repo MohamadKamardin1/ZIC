@@ -30,6 +30,12 @@ from .models import (
     OLMortalityRateTable,
     OLMortalityRateRow,
     OLJointLifeSetup,
+    OLReinstatementInterestRate,
+    OLBonusRate,
+    OLMortgageInterestFactor,
+    OLInstallmentChargeRate,
+    OLCashSurrenderValue,
+    OLReserveLoading,
     OLSurrenderSetup,
     OLSurrenderValueRate,
     OLParameterTableRegistry,
@@ -692,6 +698,98 @@ class OLJointLifeSetupAdmin(OLDefaultSetupAdmin):
     fieldsets = (
         ("Identity", {"fields": ("code", "name", "description", "is_active")}),
         ("Scope and joint-life rules", {"fields": ("product", "plan", "joint_life_type", "age_basis", "survivor_benefit_rule", "premium_adjustment_factor", "underwriting_rule")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLReinstatementInterestRate)
+class OLReinstatementInterestRateAdmin(OLDefaultSetupAdmin):
+    list_display = ("code", "name", "product", "plan", "rate", "calculation_basis", "effective_from", "effective_to", "is_active")
+    list_filter = ("is_active", "calculation_basis", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "calculation_basis", "product__code", "plan__code")
+    ordering = ("product", "plan", "calculation_basis", "-effective_from", "code")
+    autocomplete_fields = ("product", "plan")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Scope and interest", {"fields": ("product", "plan", "rate", "calculation_basis")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLBonusRate)
+class OLBonusRateAdmin(OLDefaultSetupAdmin):
+    list_display = ("code", "name", "product", "plan", "bonus_type", "rate", "valuation_year", "declaration_frequency", "effective_from", "effective_to", "is_active")
+    list_filter = ("is_active", "bonus_type", "declaration_frequency", "valuation_year", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "bonus_type", "declaration_frequency", "product__code", "plan__code")
+    ordering = ("product", "plan", "bonus_type", "valuation_year", "-effective_from", "code")
+    autocomplete_fields = ("product", "plan")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Scope and bonus", {"fields": ("product", "plan", "bonus_type", "rate", "valuation_year", "declaration_frequency")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLMortgageInterestFactor)
+class OLMortgageInterestFactorAdmin(OLDefaultSetupAdmin):
+    list_display = ("code", "name", "product", "plan", "factor", "calculation_basis", "effective_from", "effective_to", "is_active")
+    list_filter = ("is_active", "calculation_basis", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "calculation_basis", "product__code", "plan__code")
+    ordering = ("product", "plan", "calculation_basis", "-effective_from", "code")
+    autocomplete_fields = ("product", "plan")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Scope and factor", {"fields": ("product", "plan", "factor", "calculation_basis")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLInstallmentChargeRate)
+class OLInstallmentChargeRateAdmin(OLDefaultSetupAdmin):
+    list_display = ("code", "name", "product", "plan", "frequency", "charge_type", "rate_value", "apply_on", "effective_from", "effective_to", "is_active")
+    list_filter = ("is_active", "frequency", "charge_type", "apply_on", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "frequency", "charge_type", "apply_on", "product__code", "plan__code")
+    ordering = ("product", "plan", "frequency", "charge_type", "apply_on", "-effective_from", "code")
+    autocomplete_fields = ("product", "plan")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Scope and charge", {"fields": ("product", "plan", "frequency", "charge_type", "rate_value", "apply_on")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLCashSurrenderValue)
+class OLCashSurrenderValueAdmin(OLDefaultSetupAdmin):
+    list_display = ("code", "name", "product", "plan", "policy_year_from", "policy_year_to", "age_from", "age_to", "term_from", "term_to", "gender", "smoker_status", "surrender_value_factor", "rate", "is_active")
+    list_filter = ("is_active", "gender", "smoker_status", "policy_year_from", "policy_year_to", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "gender", "smoker_status", "product__code", "plan__code")
+    ordering = ("product", "plan", "policy_year_from", "age_from", "term_from", "code")
+    autocomplete_fields = ("product", "plan")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Scope", {"fields": ("product", "plan")}),
+        ("Eligibility bands", {"fields": ("policy_year_from", "policy_year_to", "age_from", "age_to", "term_from", "term_to", "gender", "smoker_status")}),
+        ("Surrender value", {"fields": ("surrender_value_factor", "rate")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLReserveLoading)
+class OLReserveLoadingAdmin(OLDefaultSetupAdmin):
+    list_display = ("code", "name", "product", "plan", "loading_type", "loading_basis", "rate_value", "effective_from", "effective_to", "is_active")
+    list_filter = ("is_active", "loading_type", "loading_basis", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "loading_type", "loading_basis", "product__code", "plan__code")
+    ordering = ("product", "plan", "loading_type", "loading_basis", "-effective_from", "code")
+    autocomplete_fields = ("product", "plan")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Scope and loading", {"fields": ("product", "plan", "loading_type", "loading_basis", "rate_value")}),
         ("Effective dates", {"fields": ("effective_from", "effective_to")}),
         ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
     )
