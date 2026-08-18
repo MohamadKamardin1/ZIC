@@ -12,6 +12,11 @@ from .models import (
     OLPaidUpRate,
     OLPaidUpSetup,
     OLCommitmentStatus,
+    OLHealthQuestion,
+    OLHealthQuestionnaire,
+    OLHealthQuestionnaireItem,
+    OLGracePeriodNotificationSchedule,
+    OLReinstatementWindow,
     OLSurrenderSetup,
     OLSurrenderValueRate,
     OLParameterTableRegistry,
@@ -408,5 +413,79 @@ class OLCommitmentStatusAdmin(OLDefaultSetupAdmin):
     fieldsets = (
         ("Identity", {"fields": ("code", "name", "description", "is_active")}),
         ("Status behavior", {"fields": ("display_order", "applies_to", "is_terminal")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLHealthQuestion)
+class OLHealthQuestionAdmin(OLDefaultSetupAdmin):
+    list_display = ("category", "code", "name", "answer_type", "underwriting_impact", "requires_medical_followup", "is_active", "updated_at")
+    list_filter = ("is_active", "category", "answer_type", "underwriting_impact", "requires_medical_followup")
+    search_fields = ("code", "name", "description", "question_text", "category", "answer_type", "underwriting_impact")
+    ordering = ("category", "name", "code")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Question", {"fields": ("question_text", "category", "answer_type", "underwriting_impact", "requires_medical_followup")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLHealthQuestionnaire)
+class OLHealthQuestionnaireAdmin(OLDefaultSetupAdmin):
+    list_display = ("code", "name", "version", "applies_to_scope", "product", "plan", "age_threshold", "is_active", "updated_at")
+    list_filter = ("is_active", "applies_to_scope", "version", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "scheme_code", "version", "product__code", "plan__code")
+    ordering = ("code", "-effective_from", "version")
+    autocomplete_fields = ("product", "plan")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Scope and version", {"fields": ("applies_to_scope", "product", "plan", "scheme_code", "version")}),
+        ("Thresholds", {"fields": ("sum_assured_threshold", "age_threshold")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLHealthQuestionnaireItem)
+class OLHealthQuestionnaireItemAdmin(OLDefaultSetupAdmin):
+    list_display = ("questionnaire", "sequence", "code", "health_question", "mandatory", "trigger_medical_requirement", "score", "is_active", "updated_at")
+    list_filter = ("is_active", "mandatory", "trigger_medical_requirement", "questionnaire")
+    search_fields = ("code", "name", "description", "questionnaire__code", "questionnaire__name", "health_question__code", "health_question__question_text")
+    ordering = ("questionnaire", "sequence", "code")
+    autocomplete_fields = ("questionnaire", "health_question")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Question membership", {"fields": ("questionnaire", "health_question", "sequence", "mandatory", "trigger_medical_requirement", "score")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLGracePeriodNotificationSchedule)
+class OLGracePeriodNotificationScheduleAdmin(OLDefaultSetupAdmin):
+    list_display = ("event_type", "days_offset", "code", "notification_channel", "recipient_type", "template_code", "is_active", "updated_at")
+    list_filter = ("is_active", "event_type", "notification_channel", "recipient_type", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "event_type", "notification_channel", "recipient_type", "template_code")
+    ordering = ("event_type", "days_offset", "code")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Schedule", {"fields": ("event_type", "days_offset", "notification_channel", "recipient_type", "template_code")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLReinstatementWindow)
+class OLReinstatementWindowAdmin(OLDefaultSetupAdmin):
+    list_display = ("code", "name", "product", "plan", "days_after_lapse", "maximum_reinstatements", "require_medical_underwriting", "is_active", "updated_at")
+    list_filter = ("is_active", "require_medical_underwriting", "require_outstanding_premium_payment", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "product__code", "plan__code")
+    ordering = ("product", "plan", "-effective_from", "code")
+    autocomplete_fields = ("product", "plan")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Scope", {"fields": ("product", "plan")}),
+        ("Window and requirements", {"fields": ("days_after_lapse", "maximum_reinstatements", "require_medical_underwriting", "require_outstanding_premium_payment", "interest_rate", "penalty_rate")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
         ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
     )

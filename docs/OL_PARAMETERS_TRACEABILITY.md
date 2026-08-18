@@ -145,3 +145,39 @@ OL Policy Setup Part 2 is now **Implemented** as the next isolated increment of 
 | OL Claim Setup | Foundation registry only; planned |
 
 The Part 2 implementation is additive. Existing legacy `apps.ordinary_life` tables and endpoints remain available; reconciliation of existing legacy configuration into canonical OL Parameters tables is a separate controlled migration decision.
+
+
+## OL Policy Setup Part 3 implementation status
+
+OL Policy Setup Part 3 is now **Implemented** as the third isolated increment of the canonical Policy Setup group. It adds the reusable configuration foundation needed by future medical underwriting, policy notification, and lapse-reinstatement workflows while preserving the legacy Ordinary Life setup surface.
+
+| Requirement | Delivered artifact | Status |
+|---|---|---|
+| Health-question catalog | `OLHealthQuestion` with typed answers, categories, underwriting impact, and medical-follow-up flag | Implemented |
+| Questionnaire headers | `OLHealthQuestionnaire` with global, product, plan, and scheme scope, versioning, thresholds, and effective dates | Implemented |
+| Questionnaire membership | `OLHealthQuestionnaireItem` with ordered sequence, mandatory/medical-trigger flags, scores, and uniqueness constraints | Implemented |
+| Notification schedules | `OLGracePeriodNotificationSchedule` with lifecycle event, signed offset, channel, recipient, and template configuration | Implemented |
+| Reinstatement windows | `OLReinstatementWindow` with product/plan scope, lapse window, repeat limit, underwriting, premium, interest, and penalty controls | Implemented |
+| Validation and invariants | Scope rules, active-reference checks, product-plan consistency, positive ordering, range checks, and effective-date overlap protection | Implemented |
+| APIs | Five table-first resources under `/api/v1/ol-parameters/` with CRUD, search, filters, ordering, pagination, CSV export, and deactivation | Implemented |
+| Admin | Permission-aware Django admin changelists and forms for all five entities | Implemented |
+| Audit | Explicit signal registration for all five Part 3 models, covering direct creates and updates through the central audit service | Implemented |
+| Seed data | `seed_ol_policy_setup` idempotently seeds five registry contracts and starter questionnaire, notification, and reinstatement records | Implemented |
+| Migration | Additive `0007_olhealthquestion_olhealthquestionnaire_and_more.py` | Implemented |
+| Tests | Model invariants, all-five-resource CRUD, permission enforcement, audit coverage, seed idempotency, registry count, and admin access | Implemented |
+
+The Policy Setup registry now contains **16 contracts across Parts 1–3**. The Part 3 implementation is configuration-only: future underwriting and policy modules remain responsible for collecting answers, applying underwriting decisions, scheduling messages, and executing reinstatements using these active, effective-dated records.
+
+## Updated nine-group status after Policy Setup Part 3
+
+| Required group | Concrete implementation status after this delivery |
+|---|---|
+| OL Default Setup | **Implemented** |
+| OL Policy Setup | **Parts 1, 2, and 3 implemented**; later policy setup parts remain planned |
+| OL Product Setup | Foundation registry only; planned |
+| OL Product Rating | Foundation registry and abstract rate contracts; planned |
+| OL Rider Setup | Foundation registry only; planned |
+| OL Agent Management | Foundation registry only; planned |
+| OL Loan Setup | Foundation registry only; planned |
+| OL Medical / Underwriting | Foundation registry only; planned; consumes Part 3 health-question configuration |
+| OL Claim Setup | Foundation registry only; planned |

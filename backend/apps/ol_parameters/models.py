@@ -1308,3 +1308,328 @@ class OLCommitmentStatus(OLParameterBaseModel):
             raise ValidationError({"applies_to": "Status applicability is required."})
         if not self.code:
             raise ValidationError({"code": "A commitment status code is required."})
+
+
+# =============================================================================
+# OL POLICY SETUP PART 3
+# =============================================================================
+
+
+class OLHealthQuestionAnswerType(models.TextChoices):
+    BOOLEAN = "BOOLEAN", "Boolean"
+    TEXT = "TEXT", "Text"
+    NUMBER = "NUMBER", "Number"
+    DATE = "DATE", "Date"
+    CHOICE = "CHOICE", "Choice"
+
+
+class OLHealthQuestionImpact(models.TextChoices):
+    NONE = "NONE", "None"
+    LOW = "LOW", "Low"
+    MEDIUM = "MEDIUM", "Medium"
+    HIGH = "HIGH", "High"
+    CRITICAL = "CRITICAL", "Critical"
+
+
+class OLHealthQuestion(OLParameterBaseModel):
+    """Reusable health-question catalog consumed by configurable underwriting questionnaires."""
+
+    question_text = models.TextField()
+    category = models.CharField(max_length=80, blank=True, default="")
+    answer_type = models.CharField(
+        max_length=20,
+        choices=OLHealthQuestionAnswerType.choices,
+        default=OLHealthQuestionAnswerType.BOOLEAN,
+    )
+    underwriting_impact = models.CharField(
+        max_length=20,
+        choices=OLHealthQuestionImpact.choices,
+        default=OLHealthQuestionImpact.NONE,
+    )
+    requires_medical_followup = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["category", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_health_question_code_uq"),
+        ]
+        indexes = [
+            models.Index(fields=["category", "is_active"], name="ol_health_question_cat_idx"),
+            models.Index(fields=["answer_type", "is_active"], name="ol_health_question_type_idx"),
+            models.Index(fields=["requires_medical_followup", "is_active"], name="ol_health_question_med_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.question_text = (self.question_text or "").strip()
+        self.category = (self.category or "").strip().upper()
+        self.answer_type = (self.answer_type or "").strip().upper()
+        self.underwriting_impact = (self.underwriting_impact or "NONE").strip().upper()
+        if not self.question_text:
+            errors["question_text"] = "Question text is required."
+        if self.answer_type not in {choice for choice, _ in OLHealthQuestionAnswerType.choices}:
+            errors["answer_type"] = "Unsupported health-question answer type."
+        if self.underwriting_impact not in {choice for choice, _ in OLHealthQuestionImpact.choices}:
+            errors["underwriting_impact"] = "Unsupported underwriting impact."
+        if errors:
+            raise ValidationError(errors)
+
+
+class OLHealthQuestionnaireScope(models.TextChoices):
+    PRODUCT = "PRODUCT", "Product"
+    PLAN = "PLAN", "Plan"
+    SCHEME = "SCHEME", "Scheme"
+    GLOBAL = "GLOBAL", "Global"
+
+
+class OLHealthQuestionnaire(OLEffectiveDateModel):
+    """Effective-dated and versioned questionnaire header with configurable scope."""
+
+    applies_to_scope = models.CharField(
+        max_length=20,
+        choices=OLHealthQuestionnaireScope.choices,
+        default=OLHealthQuestionnaireScope.GLOBAL,
+    )
+    product = models.ForeignKey(
+        "ordinary_life.OLProduct",
+        on_delete=models.PROTECT,
+        related_name="ol_parameter_health_questionnaires",
+        null=True,
+        blank=True,
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        related_name="ol_parameter_health_questionnaires",
+        null=True,
+        blank=True,
+    )
+    scheme_code = models.CharField(max_length=100, blank=True, default="")
+    sum_assured_threshold = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    age_threshold = models.PositiveSmallIntegerField(null=True, blank=True)
+    version = models.CharField(max_length=50, default="1.0")
+
+    class Meta:
+        ordering = ["code", "-effective_from", "version"]
+        constraints = [
+            models.UniqueConstraint(fields=["code", "version"], name="ol_health_questionnaire_code_ver_uq"),
+            models.CheckConstraint(
+                check=models.Q(sum_assured_threshold__isnull=True) | models.Q(sum_assured_threshold__gte=0),
+                name="ol_health_qnr_sum_nonneg",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["applies_to_scope", "is_active", "effective_from"], name="ol_health_qnr_scope_idx"),
+            models.Index(fields=["product", "plan", "is_active"], name="ol_health_qnr_product_idx"),
+            models.Index(fields=["code", "version"], name="ol_health_qnr_code_ver_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.applies_to_scope = (self.applies_to_scope or "GLOBAL").strip().upper()
+        self.scheme_code = (self.scheme_code or "").strip().upper()
+        self.version = (self.version or "").strip()
+        if self.applies_to_scope not in {choice for choice, _ in OLHealthQuestionnaireScope.choices}:
+            errors["applies_to_scope"] = "Unsupported questionnaire scope."
+        if not self.version:
+            errors["version"] = "Questionnaire version is required."
+        if self.sum_assured_threshold is not None and self.sum_assured_threshold < 0:
+            errors["sum_assured_threshold"] = "Sum-assured threshold cannot be negative."
+        if self.age_threshold is not None and self.age_threshold < 1:
+            errors["age_threshold"] = "Age threshold must be positive."
+        if self.applies_to_scope == OLHealthQuestionnaireScope.GLOBAL:
+            if self.product_id or self.plan_id or self.scheme_code:
+                errors["applies_to_scope"] = "Global questionnaires cannot have product, plan, or scheme scope."
+        elif self.applies_to_scope == OLHealthQuestionnaireScope.PRODUCT:
+            if not self.product_id or self.plan_id or self.scheme_code:
+                errors["product"] = "Product scope requires a product and cannot include plan or scheme scope."
+        elif self.applies_to_scope == OLHealthQuestionnaireScope.PLAN:
+            if not self.plan_id or self.scheme_code:
+                errors["plan"] = "Plan scope requires a plan and cannot include scheme scope."
+        elif self.applies_to_scope == OLHealthQuestionnaireScope.SCHEME:
+            if not self.scheme_code or self.product_id or self.plan_id:
+                errors["scheme_code"] = "Scheme scope requires a scheme code and cannot include product or plan scope."
+        if self.product_id and not getattr(self.product, "is_active", True):
+            errors["product"] = "Questionnaire product must be active."
+        if self.plan_id and not getattr(self.plan, "is_active", True):
+            errors["plan"] = "Questionnaire plan must be active."
+        if self.plan_id and self.product_id:
+            plan_product_id = getattr(getattr(self.plan, "product_version", None), "product_id", None)
+            if plan_product_id and plan_product_id != self.product_id:
+                errors["plan"] = "Questionnaire plan must belong to the selected product."
+        if errors:
+            raise ValidationError(errors)
+
+
+class OLHealthQuestionnaireItem(OLParameterBaseModel):
+    """Ordered question membership; mandatory items are progression blockers for future flows."""
+
+    questionnaire = models.ForeignKey(
+        OLHealthQuestionnaire,
+        on_delete=models.CASCADE,
+        related_name="items",
+    )
+    health_question = models.ForeignKey(
+        OLHealthQuestion,
+        on_delete=models.PROTECT,
+        related_name="questionnaire_items",
+    )
+    sequence = models.PositiveIntegerField()
+    mandatory = models.BooleanField(default=False)
+    trigger_medical_requirement = models.BooleanField(default=False)
+    score = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
+
+    class Meta:
+        ordering = ["questionnaire", "sequence", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_health_qitem_code_uq"),
+            models.UniqueConstraint(fields=["questionnaire", "health_question"], name="ol_health_qitem_question_uq"),
+            models.UniqueConstraint(fields=["questionnaire", "sequence"], name="ol_health_qitem_sequence_uq"),
+            models.CheckConstraint(check=models.Q(sequence__gt=0), name="ol_health_qitem_sequence_pos"),
+            models.CheckConstraint(check=models.Q(score__isnull=True) | models.Q(score__gte=0), name="ol_health_qitem_score_nonneg"),
+        ]
+        indexes = [
+            models.Index(fields=["questionnaire", "is_active", "sequence"], name="ol_health_qitem_order_idx"),
+            models.Index(fields=["mandatory", "is_active"], name="ol_health_qitem_mand_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if not self.questionnaire_id:
+            errors["questionnaire"] = "Questionnaire is required."
+        if not self.health_question_id:
+            errors["health_question"] = "Health question is required."
+        if self.sequence < 1:
+            errors["sequence"] = "Questionnaire item sequence must be positive."
+        if self.score is not None and self.score < 0:
+            errors["score"] = "Question score/weight cannot be negative."
+        if self.questionnaire_id and not getattr(self.questionnaire, "is_active", True):
+            errors["questionnaire"] = "Questionnaire must be active."
+        if self.health_question_id and not getattr(self.health_question, "is_active", True):
+            errors["health_question"] = "Health question must be active."
+        if errors:
+            raise ValidationError(errors)
+
+
+class OLNotificationEventType(models.TextChoices):
+    PREMIUM_DUE = "PREMIUM_DUE", "Premium due"
+    GRACE_START = "GRACE_START", "Grace start"
+    GRACE_WARNING = "GRACE_WARNING", "Grace warning"
+    PRE_LAPSE = "PRE_LAPSE", "Pre-lapse"
+    LAPSE = "LAPSE", "Lapse"
+
+
+class OLNotificationChannel(models.TextChoices):
+    SYSTEM = "SYSTEM", "System"
+    EMAIL = "EMAIL", "Email"
+    SMS = "SMS", "SMS"
+    PORTAL = "PORTAL", "Portal"
+    OTHER = "OTHER", "Other"
+
+
+class OLNotificationRecipientType(models.TextChoices):
+    POLICYHOLDER = "POLICYHOLDER", "Policyholder"
+    AGENT = "AGENT", "Agent"
+    STAFF = "STAFF", "Staff"
+    PARTNER = "PARTNER", "Partner"
+
+
+class OLGracePeriodNotificationSchedule(OLEffectiveDateModel):
+    """Effective-dated notification schedule relative to a premium/grace event."""
+
+    event_type = models.CharField(max_length=30, choices=OLNotificationEventType.choices)
+    days_offset = models.SmallIntegerField()
+    notification_channel = models.CharField(max_length=20, choices=OLNotificationChannel.choices, default=OLNotificationChannel.SYSTEM)
+    recipient_type = models.CharField(max_length=20, choices=OLNotificationRecipientType.choices, default=OLNotificationRecipientType.POLICYHOLDER)
+    template_code = models.CharField(max_length=100, blank=True, default="")
+
+    class Meta:
+        ordering = ["event_type", "days_offset", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_grace_notify_code_uq"),
+            models.CheckConstraint(check=models.Q(days_offset__gte=-3650) & models.Q(days_offset__lte=3650), name="ol_grace_notify_offset_rng"),
+        ]
+        indexes = [
+            models.Index(fields=["event_type", "is_active", "effective_from"], name="ol_grace_notify_event_idx"),
+            models.Index(fields=["notification_channel", "recipient_type"], name="ol_grace_notify_route_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.event_type = (self.event_type or "").strip().upper()
+        self.notification_channel = (self.notification_channel or "SYSTEM").strip().upper()
+        self.recipient_type = (self.recipient_type or "POLICYHOLDER").strip().upper()
+        self.template_code = (self.template_code or "").strip().upper()
+        if self.event_type not in {choice for choice, _ in OLNotificationEventType.choices}:
+            errors["event_type"] = "Unsupported notification event type."
+        if self.notification_channel not in {choice for choice, _ in OLNotificationChannel.choices}:
+            errors["notification_channel"] = "Unsupported notification channel."
+        if self.recipient_type not in {choice for choice, _ in OLNotificationRecipientType.choices}:
+            errors["recipient_type"] = "Unsupported notification recipient type."
+        if self.days_offset < -3650 or self.days_offset > 3650:
+            errors["days_offset"] = "Notification offset must be between -3650 and 3650 days."
+        if errors:
+            raise ValidationError(errors)
+
+
+class OLReinstatementWindow(OLEffectiveDateModel):
+    """Effective-dated lapse reinstatement eligibility and financial requirements."""
+
+    product = models.ForeignKey(
+        "ordinary_life.OLProduct",
+        on_delete=models.PROTECT,
+        related_name="ol_parameter_reinstatement_windows",
+        null=True,
+        blank=True,
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        related_name="ol_parameter_reinstatement_windows",
+        null=True,
+        blank=True,
+    )
+    days_after_lapse = models.PositiveIntegerField()
+    maximum_reinstatements = models.PositiveIntegerField(null=True, blank=True)
+    require_medical_underwriting = models.BooleanField(default=False)
+    require_outstanding_premium_payment = models.BooleanField(default=True)
+    interest_rate = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
+    penalty_rate = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
+
+    class Meta:
+        ordering = ["product", "plan", "-effective_from", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_reinstate_window_code_uq"),
+            models.CheckConstraint(check=models.Q(days_after_lapse__gt=0), name="ol_reinstate_days_pos"),
+            models.CheckConstraint(check=models.Q(maximum_reinstatements__isnull=True) | models.Q(maximum_reinstatements__gt=0), name="ol_reinstate_max_pos"),
+            models.CheckConstraint(check=models.Q(interest_rate__isnull=True) | (models.Q(interest_rate__gte=0) & models.Q(interest_rate__lte=100)), name="ol_reinstate_interest_rng"),
+            models.CheckConstraint(check=models.Q(penalty_rate__isnull=True) | (models.Q(penalty_rate__gte=0) & models.Q(penalty_rate__lte=100)), name="ol_reinstate_penalty_rng"),
+        ]
+        indexes = [
+            models.Index(fields=["product", "plan", "is_active", "effective_from"], name="ol_reinstate_scope_idx"),
+            models.Index(fields=["require_medical_underwriting", "is_active"], name="ol_reinstate_med_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        _policy_setup_validate_product_plan(self, errors)
+        if self.days_after_lapse <= 0:
+            errors["days_after_lapse"] = "Days after lapse must be positive."
+        if self.maximum_reinstatements is not None and self.maximum_reinstatements <= 0:
+            errors["maximum_reinstatements"] = "Maximum reinstatements must be positive when supplied."
+        for field_name, value in (("interest_rate", self.interest_rate), ("penalty_rate", self.penalty_rate)):
+            if value is not None and (value < 0 or value > 100):
+                errors[field_name] = "Rate must be between 0 and 100 percent."
+        if errors:
+            raise ValidationError(errors)
+        candidates = self.__class__.objects.filter(product=self.product, plan=self.plan, is_active=True)
+        if self.pk:
+            candidates = candidates.exclude(pk=self.pk)
+        for candidate in candidates:
+            if _policy_setup_intervals_overlap(self.effective_from, self.effective_to, candidate.effective_from, candidate.effective_to):
+                raise ValidationError({"code": "An active reinstatement window overlaps an existing row in the same scope."})

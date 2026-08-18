@@ -17,12 +17,17 @@ from .models import (
     OLComputationApproach,
     OLDefaultSystemParameter,
     OLGracePeriod,
+    OLGracePeriodNotificationSchedule,
+    OLHealthQuestion,
+    OLHealthQuestionnaire,
+    OLHealthQuestionnaireItem,
     OLMaturityClaimSetup,
     OLMemberCoverConfiguration,
     OLOverrideCommissionSetup,
     OLPaidUpRate,
     OLPaidUpSetup,
     OLCommitmentStatus,
+    OLReinstatementWindow,
     OLSurrenderSetup,
     OLSurrenderValueRate,
     OLParameterTableRegistry,
@@ -46,6 +51,11 @@ from .serializers import (
     OLSurrenderValueRateSerializer,
     OLPolicyRenewalStatusSerializer,
     OLPolicyStatusSerializer,
+    OLHealthQuestionSerializer,
+    OLHealthQuestionnaireSerializer,
+    OLHealthQuestionnaireItemSerializer,
+    OLGracePeriodNotificationScheduleSerializer,
+    OLReinstatementWindowSerializer,
     OLTableRegistrySerializer,
 )
 from .services.default_setup_service import OLDefaultSetupService
@@ -245,6 +255,13 @@ class OLParameterHealthView(APIView):
                     "paid_up_rates": OLPaidUpRate.objects.filter(is_active=True).count(),
                     "commitment_statuses": OLCommitmentStatus.objects.filter(is_active=True).count(),
                 },
+                "policy_setup_part3": {
+                    "health_questions": OLHealthQuestion.objects.filter(is_active=True).count(),
+                    "health_questionnaires": OLHealthQuestionnaire.objects.filter(is_active=True).count(),
+                    "health_questionnaire_items": OLHealthQuestionnaireItem.objects.filter(is_active=True).count(),
+                    "grace_period_notification_schedules": OLGracePeriodNotificationSchedule.objects.filter(is_active=True).count(),
+                    "reinstatement_windows": OLReinstatementWindow.objects.filter(is_active=True).count(),
+                },
             }
         )
 
@@ -405,3 +422,71 @@ class OLCommitmentStatusViewSet(OLDefaultSetupViewSet):
     filterset_fields = ["is_active", "applies_to", "is_terminal", "display_order"]
     ordering_fields = ["applies_to", "display_order", "code", "name", "is_terminal", "created_at", "updated_at"]
     ordering = ["applies_to", "display_order", "name", "code"]
+
+
+class OLHealthQuestionViewSet(OLDefaultSetupViewSet):
+    model = OLHealthQuestion
+    serializer_class = OLHealthQuestionSerializer
+    table_slug = "health-questions"
+    search_fields = ["code", "name", "description", "question_text", "category", "answer_type", "underwriting_impact"]
+    filterset_fields = ["is_active", "category", "answer_type", "underwriting_impact", "requires_medical_followup"]
+    ordering_fields = ["category", "code", "name", "answer_type", "underwriting_impact", "requires_medical_followup", "created_at", "updated_at"]
+    ordering = ["category", "name", "code"]
+
+
+class OLHealthQuestionnaireViewSet(OLDefaultSetupViewSet):
+    model = OLHealthQuestionnaire
+    serializer_class = OLHealthQuestionnaireSerializer
+    table_slug = "health-questionnaires"
+    search_fields = ["code", "name", "description", "applies_to_scope", "scheme_code", "version"]
+    filterset_fields = [
+        "is_active", "applies_to_scope", "product", "plan", "scheme_code", "version",
+        "age_threshold", "effective_from", "effective_to",
+    ]
+    ordering_fields = [
+        "code", "name", "applies_to_scope", "version", "sum_assured_threshold", "age_threshold",
+        "effective_from", "effective_to", "created_at", "updated_at",
+    ]
+    ordering = ["code", "-effective_from", "version"]
+
+
+class OLHealthQuestionnaireItemViewSet(OLDefaultSetupViewSet):
+    model = OLHealthQuestionnaireItem
+    serializer_class = OLHealthQuestionnaireItemSerializer
+    table_slug = "health-questionnaire-items"
+    search_fields = ["code", "name", "description", "questionnaire__code", "questionnaire__name", "health_question__code", "health_question__question_text"]
+    filterset_fields = ["is_active", "questionnaire", "health_question", "sequence", "mandatory", "trigger_medical_requirement"]
+    ordering_fields = ["questionnaire", "sequence", "code", "name", "mandatory", "trigger_medical_requirement", "score", "created_at", "updated_at"]
+    ordering = ["questionnaire", "sequence", "code"]
+
+
+class OLGracePeriodNotificationScheduleViewSet(OLDefaultSetupViewSet):
+    model = OLGracePeriodNotificationSchedule
+    serializer_class = OLGracePeriodNotificationScheduleSerializer
+    table_slug = "grace-period-notification-schedules"
+    search_fields = ["code", "name", "description", "event_type", "notification_channel", "recipient_type", "template_code"]
+    filterset_fields = [
+        "is_active", "event_type", "days_offset", "notification_channel", "recipient_type",
+        "template_code", "effective_from", "effective_to",
+    ]
+    ordering_fields = [
+        "event_type", "days_offset", "code", "name", "notification_channel", "recipient_type",
+        "effective_from", "effective_to", "created_at", "updated_at",
+    ]
+    ordering = ["event_type", "days_offset", "code"]
+
+
+class OLReinstatementWindowViewSet(OLDefaultSetupViewSet):
+    model = OLReinstatementWindow
+    serializer_class = OLReinstatementWindowSerializer
+    table_slug = "reinstatement-windows"
+    search_fields = ["code", "name", "description"]
+    filterset_fields = [
+        "is_active", "product", "plan", "days_after_lapse", "maximum_reinstatements",
+        "require_medical_underwriting", "require_outstanding_premium_payment", "effective_from", "effective_to",
+    ]
+    ordering_fields = [
+        "code", "name", "days_after_lapse", "maximum_reinstatements", "interest_rate", "penalty_rate",
+        "effective_from", "effective_to", "created_at", "updated_at",
+    ]
+    ordering = ["product", "plan", "-effective_from", "code"]

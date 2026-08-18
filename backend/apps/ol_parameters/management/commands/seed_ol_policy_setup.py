@@ -8,6 +8,10 @@ from apps.ol_parameters.models import (
     OLAnticipatedEndowmentInstallmentRate,
     OLBeneficialType,
     OLGracePeriod,
+    OLGracePeriodNotificationSchedule,
+    OLHealthQuestion,
+    OLHealthQuestionnaire,
+    OLHealthQuestionnaireItem,
     OLMemberCoverConfiguration,
     OLParameterTableRegistry,
     OLCommitmentStatus,
@@ -17,6 +21,7 @@ from apps.ol_parameters.models import (
     OLSurrenderValueRate,
     OLPolicyRenewalStatus,
     OLPolicyStatus,
+    OLReinstatementWindow,
 )
 from apps.ordinary_life.models import OLPlan, OLProduct
 
@@ -175,6 +180,60 @@ PART2_REGISTRY_SEEDS = [
 ]
 
 
+PART3_REGISTRY_SEEDS = [
+    {
+        "slug": "health-questions",
+        "label": "Health Questions",
+        "description": "Reusable typed health-question catalog with underwriting impact and medical follow-up flags.",
+        "model_label": "ol_parameters.OLHealthQuestion",
+        "visible_columns": ["category", "code", "name", "question_text", "answer_type", "underwriting_impact", "requires_medical_followup", "is_active"],
+        "searchable_fields": ["code", "name", "description", "question_text", "category", "answer_type", "underwriting_impact"],
+        "filter_fields": ["is_active", "category", "answer_type", "underwriting_impact", "requires_medical_followup"],
+        "default_ordering": ["category", "name", "code"],
+    },
+    {
+        "slug": "health-questionnaires",
+        "label": "Health Questionnaires",
+        "description": "Versioned health questionnaire headers scoped globally, by product, plan, or scheme.",
+        "model_label": "ol_parameters.OLHealthQuestionnaire",
+        "visible_columns": ["code", "name", "version", "applies_to_scope", "product", "plan", "age_threshold", "is_active"],
+        "searchable_fields": ["code", "name", "description", "scheme_code", "version", "product", "plan"],
+        "filter_fields": ["is_active", "applies_to_scope", "product", "plan", "version", "effective_from", "effective_to"],
+        "default_ordering": ["code", "-effective_from", "version"],
+    },
+    {
+        "slug": "health-questionnaire-items",
+        "label": "Health Questionnaire Items",
+        "description": "Ordered question membership for questionnaire versions, including mandatory and medical-trigger flags.",
+        "model_label": "ol_parameters.OLHealthQuestionnaireItem",
+        "visible_columns": ["questionnaire", "sequence", "code", "health_question", "mandatory", "trigger_medical_requirement", "score", "is_active"],
+        "searchable_fields": ["code", "name", "description", "questionnaire", "health_question"],
+        "filter_fields": ["is_active", "questionnaire", "health_question", "mandatory", "trigger_medical_requirement"],
+        "default_ordering": ["questionnaire", "sequence", "code"],
+    },
+    {
+        "slug": "grace-period-notification-schedules",
+        "label": "Grace Period Notification Schedules",
+        "description": "Effective-dated notification events, offsets, channels, recipients, and template codes for premium/grace lifecycle events.",
+        "model_label": "ol_parameters.OLGracePeriodNotificationSchedule",
+        "visible_columns": ["event_type", "days_offset", "code", "notification_channel", "recipient_type", "template_code", "is_active"],
+        "searchable_fields": ["code", "name", "description", "event_type", "notification_channel", "recipient_type", "template_code"],
+        "filter_fields": ["is_active", "event_type", "notification_channel", "recipient_type", "effective_from", "effective_to"],
+        "default_ordering": ["event_type", "days_offset", "code"],
+    },
+    {
+        "slug": "reinstatement-windows",
+        "label": "Reinstatement Windows",
+        "description": "Effective-dated lapse reinstatement eligibility, financial requirements, and underwriting controls.",
+        "model_label": "ol_parameters.OLReinstatementWindow",
+        "visible_columns": ["code", "name", "product", "plan", "days_after_lapse", "maximum_reinstatements", "require_medical_underwriting", "interest_rate", "penalty_rate", "is_active"],
+        "searchable_fields": ["code", "name", "description", "product", "plan"],
+        "filter_fields": ["is_active", "product", "plan", "require_medical_underwriting", "require_outstanding_premium_payment", "effective_from", "effective_to"],
+        "default_ordering": ["product", "plan", "-effective_from", "code"],
+    },
+]
+
+
 def upsert(model, lookup, defaults):
     record, created = model.objects.get_or_create(**lookup, defaults=defaults)
     for field_name, value in defaults.items():
@@ -185,7 +244,7 @@ def upsert(model, lookup, defaults):
 
 
 class Command(BaseCommand):
-    help = "Seed idempotent OL Policy Setup Part 1 and Part 2 catalogs and safe starter configuration."
+    help = "Seed idempotent OL Policy Setup Part 1, Part 2, and Part 3 catalogs and safe starter configuration."
 
     @transaction.atomic
     def handle(self, *args, **options):
@@ -362,7 +421,118 @@ class Command(BaseCommand):
         else:
             updated += 1
 
-        for registry_seed in REGISTRY_SEEDS + PART2_REGISTRY_SEEDS:
+        _, was_created = upsert(
+            OLHealthQuestion,
+            {"code": "SMOKING_HISTORY"},
+            {
+                "name": "Smoking History",
+                "description": "Starter health question for tobacco or nicotine use history.",
+                "question_text": "Have you used tobacco or nicotine products within the last five years?",
+                "category": "LIFESTYLE",
+                "answer_type": "BOOLEAN",
+                "underwriting_impact": "MEDIUM",
+                "requires_medical_followup": False,
+                "effective_from": EFFECTIVE_FROM,
+                "is_active": True,
+            },
+        )
+        if was_created:
+            created += 1
+        else:
+            updated += 1
+
+        questionnaire, was_created = upsert(
+            OLHealthQuestionnaire,
+            {"code": "STANDARD_UW_QUESTIONNAIRE", "version": "1.0"},
+            {
+                "name": "Standard Underwriting Questionnaire",
+                "description": "Starter global underwriting questionnaire; extend through the configuration tables.",
+                "applies_to_scope": "GLOBAL",
+                "product": None,
+                "plan": None,
+                "scheme_code": "",
+                "sum_assured_threshold": None,
+                "age_threshold": 18,
+                "version": "1.0",
+                "effective_from": EFFECTIVE_FROM,
+                "is_active": True,
+            },
+        )
+        if was_created:
+            created += 1
+        else:
+            updated += 1
+
+        health_question = OLHealthQuestion.objects.get(code="SMOKING_HISTORY")
+        _, was_created = upsert(
+            OLHealthQuestionnaireItem,
+            {"code": "STANDARD_UW_SMOKING"},
+            {
+                "name": "Smoking History Item",
+                "description": "Starter mandatory smoking-history question.",
+                "questionnaire": questionnaire,
+                "health_question": health_question,
+                "sequence": 1,
+                "mandatory": True,
+                "trigger_medical_requirement": False,
+                "score": None,
+                "is_active": True,
+            },
+        )
+        if was_created:
+            created += 1
+        else:
+            updated += 1
+
+        for code, name, event_type, days_offset, channel, recipient, template in (
+            ("PREMIUM_DUE_EMAIL", "Premium Due Email", "PREMIUM_DUE", -5, "EMAIL", "POLICYHOLDER", "OL_PREMIUM_DUE"),
+            ("GRACE_WARNING_SMS", "Grace Warning SMS", "GRACE_WARNING", 7, "SMS", "POLICYHOLDER", "OL_GRACE_WARNING"),
+            ("PRE_LAPSE_AGENT_EMAIL", "Pre-Lapse Agent Email", "PRE_LAPSE", -3, "EMAIL", "AGENT", "OL_PRE_LAPSE"),
+        ):
+            _, was_created = upsert(
+                OLGracePeriodNotificationSchedule,
+                {"code": code},
+                {
+                    "name": name,
+                    "description": f"Starter Ordinary Life notification schedule: {name}.",
+                    "event_type": event_type,
+                    "days_offset": days_offset,
+                    "notification_channel": channel,
+                    "recipient_type": recipient,
+                    "template_code": template,
+                    "effective_from": EFFECTIVE_FROM,
+                    "is_active": True,
+                },
+            )
+            if was_created:
+                created += 1
+            else:
+                updated += 1
+
+        _, was_created = upsert(
+            OLReinstatementWindow,
+            {"code": "STANDARD_REINSTATEMENT"},
+            {
+                "name": "Standard Reinstatement Window",
+                "description": "Starter global reinstatement eligibility after policy lapse.",
+                "product": None,
+                "plan": None,
+                "days_after_lapse": 730,
+                "maximum_reinstatements": 2,
+                "require_medical_underwriting": False,
+                "require_outstanding_premium_payment": True,
+                "interest_rate": Decimal("8.0000"),
+                "penalty_rate": Decimal("5.0000"),
+                "effective_from": EFFECTIVE_FROM,
+                "is_active": True,
+            },
+        )
+        if was_created:
+            created += 1
+        else:
+            updated += 1
+
+        for registry_seed in REGISTRY_SEEDS + PART2_REGISTRY_SEEDS + PART3_REGISTRY_SEEDS:
             defaults = {
                 **registry_seed,
                 "parameter_group": "Policy Setup",

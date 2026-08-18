@@ -12,6 +12,10 @@ from apps.ol_parameters.models import (
     OLAnticipatedEndowmentInstallmentRate,
     OLBeneficialType,
     OLGracePeriod,
+    OLGracePeriodNotificationSchedule,
+    OLHealthQuestion,
+    OLHealthQuestionnaire,
+    OLHealthQuestionnaireItem,
     OLMemberCoverConfiguration,
     OLParameterTableRegistry,
     OLCommitmentStatus,
@@ -21,6 +25,7 @@ from apps.ol_parameters.models import (
     OLSurrenderValueRate,
     OLPolicyRenewalStatus,
     OLPolicyStatus,
+    OLReinstatementWindow,
 )
 from apps.users.models import User
 from apps.ordinary_life.models import OLPlan, OLProduct, OLProductVersion
@@ -244,7 +249,7 @@ class OLPolicySetupTests(TestCase):
         self.assertGreaterEqual(counts["beneficial_types"], 7)
         self.assertGreaterEqual(counts["grace_periods"], 1)
         self.assertGreaterEqual(counts["member_cover"], 1)
-        self.assertEqual(counts["registry"], 11)
+        self.assertEqual(counts["registry"], 16)
 
         call_command("seed_ol_policy_setup")
         self.assertEqual(OLPolicyStatus.objects.count(), counts["policy_statuses"])
@@ -523,7 +528,7 @@ class OLPolicySetupTests(TestCase):
         self.assertGreaterEqual(counts["paid_up_setups"], 1)
         self.assertGreaterEqual(counts["surrender_value_rates"], 1)
         self.assertGreaterEqual(counts["paid_up_rates"], 1)
-        self.assertEqual(counts["registry"], 11)
+        self.assertEqual(counts["registry"], 16)
 
         call_command("seed_ol_policy_setup")
         self.assertEqual(OLCommitmentStatus.objects.count(), counts["commitment_statuses"])
@@ -671,3 +676,347 @@ class OLPolicySetupTests(TestCase):
         for model_name in model_names:
             response = self.client.get(reverse(f"admin:ol_parameters_{model_name}_changelist"))
             self.assertEqual(response.status_code, 200, {"model": model_name, "status": response.status_code})
+
+
+    def test_part3_model_invariants_cover_scope_ordering_ranges_and_overlap(self):
+        product, plan = self._product_scope()
+
+        invalid_question = OLHealthQuestion(
+            code="HEALTH_INVALID",
+            name="Invalid Health Question",
+            effective_from=date(2026, 1, 1),
+            question_text="",
+            answer_type="INVALID",
+            underwriting_impact="INVALID",
+        )
+        with self.assertRaises(ValidationError):
+            invalid_question.full_clean()
+
+        invalid_global_questionnaire = OLHealthQuestionnaire(
+            code="QNR_INVALID_GLOBAL",
+            name="Invalid Global Questionnaire",
+            effective_from=date(2026, 1, 1),
+            applies_to_scope="GLOBAL",
+            product=product,
+            version="1.0",
+        )
+        with self.assertRaises(ValidationError):
+            invalid_global_questionnaire.full_clean()
+
+        questionnaire = OLHealthQuestionnaire(
+            code="QNR_PART3_INVARIANT",
+            name="Part 3 Invariant Questionnaire",
+            effective_from=date(2026, 1, 1),
+            applies_to_scope="PLAN",
+            product=product,
+            plan=plan,
+            version="1.0",
+        )
+        questionnaire.full_clean()
+        questionnaire.save()
+
+        question = OLHealthQuestion(
+            code="HEALTH_PART3_INVARIANT",
+            name="Part 3 Health Question",
+            effective_from=date(2026, 1, 1),
+            question_text="Have you received medical treatment in the last five years?",
+            category="MEDICAL",
+            answer_type="BOOLEAN",
+            underwriting_impact="HIGH",
+            requires_medical_followup=True,
+        )
+        question.full_clean()
+        question.save()
+
+        invalid_item = OLHealthQuestionnaireItem(
+            code="QNR_ITEM_INVALID",
+            name="Invalid Questionnaire Item",
+            effective_from=date(2026, 1, 1),
+            questionnaire=questionnaire,
+            health_question=question,
+            sequence=0,
+        )
+        with self.assertRaises(ValidationError):
+            invalid_item.full_clean()
+
+        item = OLHealthQuestionnaireItem(
+            code="QNR_ITEM_VALID",
+            name="Valid Questionnaire Item",
+            effective_from=date(2026, 1, 1),
+            questionnaire=questionnaire,
+            health_question=question,
+            sequence=1,
+            mandatory=True,
+            trigger_medical_requirement=True,
+            score=Decimal("2.5000"),
+        )
+        item.full_clean()
+        item.save()
+
+        duplicate_sequence = OLHealthQuestionnaireItem(
+            code="QNR_ITEM_DUPLICATE_SEQUENCE",
+            name="Duplicate Questionnaire Sequence",
+            effective_from=date(2026, 1, 1),
+            questionnaire=questionnaire,
+            health_question=question,
+            sequence=1,
+        )
+        with self.assertRaises(ValidationError):
+            duplicate_sequence.full_clean()
+
+        invalid_schedule = OLGracePeriodNotificationSchedule(
+            code="NOTIFY_INVALID_OFFSET",
+            name="Invalid Notification Offset",
+            effective_from=date(2026, 1, 1),
+            event_type="GRACE_WARNING",
+            days_offset=4000,
+            notification_channel="EMAIL",
+            recipient_type="POLICYHOLDER",
+        )
+        with self.assertRaises(ValidationError):
+            invalid_schedule.full_clean()
+
+        first_window = OLReinstatementWindow(
+            code="REINSTATE_PART3_FIRST",
+            name="First Reinstatement Window",
+            effective_from=date(2026, 1, 1),
+            product=product,
+            plan=plan,
+            days_after_lapse=365,
+            maximum_reinstatements=1,
+            interest_rate=Decimal("8.0000"),
+            penalty_rate=Decimal("5.0000"),
+        )
+        first_window.full_clean()
+        first_window.save()
+
+        overlapping_window = OLReinstatementWindow(
+            code="REINSTATE_PART3_OVERLAP",
+            name="Overlapping Reinstatement Window",
+            effective_from=date(2026, 6, 1),
+            product=product,
+            plan=plan,
+            days_after_lapse=730,
+            maximum_reinstatements=2,
+        )
+        with self.assertRaises(ValidationError):
+            overlapping_window.full_clean()
+
+    def test_part3_crud_create_and_retrieve_is_available_for_all_five_entities(self):
+        product, plan = self._product_scope()
+        question_response = self.client.post(
+            "/api/v1/ol-parameters/health-questions/",
+            {
+                "code": "HEALTH_API",
+                "name": "API Health Question",
+                "effective_from": "2026-01-01",
+                "question_text": "Do you currently smoke or use nicotine products?",
+                "category": "LIFESTYLE",
+                "answer_type": "BOOLEAN",
+                "underwriting_impact": "MEDIUM",
+                "requires_medical_followup": False,
+            },
+            format="json",
+        )
+        self.assertEqual(question_response.status_code, 201, question_response.data)
+        question_id = question_response.data["id"]
+
+        questionnaire_response = self.client.post(
+            "/api/v1/ol-parameters/health-questionnaires/",
+            {
+                "code": "QNR_API",
+                "name": "API Health Questionnaire",
+                "effective_from": "2026-01-01",
+                "applies_to_scope": "PLAN",
+                "product": str(product.pk),
+                "plan": str(plan.pk),
+                "scheme_code": "",
+                "age_threshold": 18,
+                "version": "1.0",
+            },
+            format="json",
+        )
+        self.assertEqual(questionnaire_response.status_code, 201, questionnaire_response.data)
+        questionnaire_id = questionnaire_response.data["id"]
+
+        cases = [
+            (
+                "health-questionnaire-items",
+                {
+                    "code": "QNR_ITEM_API",
+                    "name": "API Questionnaire Item",
+                    "effective_from": "2026-01-01",
+                    "questionnaire": str(questionnaire_id),
+                    "health_question": str(question_id),
+                    "sequence": 1,
+                    "mandatory": True,
+                    "trigger_medical_requirement": False,
+                    "score": "1.0000",
+                },
+            ),
+            (
+                "grace-period-notification-schedules",
+                {
+                    "code": "NOTIFY_API",
+                    "name": "API Grace Warning Notification",
+                    "effective_from": "2026-01-01",
+                    "event_type": "GRACE_WARNING",
+                    "days_offset": 7,
+                    "notification_channel": "EMAIL",
+                    "recipient_type": "POLICYHOLDER",
+                    "template_code": "OL_GRACE_WARNING",
+                },
+            ),
+            (
+                "reinstatement-windows",
+                {
+                    "code": "REINSTATE_API",
+                    "name": "API Reinstatement Window",
+                    "effective_from": "2026-01-01",
+                    "product": str(product.pk),
+                    "plan": str(plan.pk),
+                    "days_after_lapse": 730,
+                    "maximum_reinstatements": 2,
+                    "require_medical_underwriting": True,
+                    "require_outstanding_premium_payment": True,
+                    "interest_rate": "8.0000",
+                    "penalty_rate": "5.0000",
+                },
+            ),
+        ]
+        for slug, payload in cases:
+            response = self.client.post(
+                f"/api/v1/ol-parameters/{slug}/",
+                payload,
+                format="json",
+            )
+            self.assertEqual(response.status_code, 201, {"slug": slug, "data": response.data})
+            self.assertEqual(response.data["code"], payload["code"])
+            record_id = response.data["id"]
+            retrieve_response = self.client.get(f"/api/v1/ol-parameters/{slug}/{record_id}/")
+            self.assertEqual(retrieve_response.status_code, 200, retrieve_response.data)
+            self.assertEqual(retrieve_response.data["code"], payload["code"])
+
+    def test_part3_read_permission_is_required_for_all_new_endpoints(self):
+        unpermissioned = User.objects.create_user(
+            username="ol-policy-part3-no-access",
+            email="ol-policy-part3-no-access@example.com",
+            password="Strong-pass-123!",
+            is_active=True,
+            is_approved=True,
+        )
+        self.client.force_authenticate(unpermissioned)
+        for slug in (
+            "health-questions",
+            "health-questionnaires",
+            "health-questionnaire-items",
+            "grace-period-notification-schedules",
+            "reinstatement-windows",
+        ):
+            response = self.client.get(f"/api/v1/ol-parameters/{slug}/")
+            self.assertEqual(response.status_code, 403, {"slug": slug, "data": response.data})
+
+    def test_part3_models_are_registered_for_create_and_update_auditing(self):
+        product, plan = self._product_scope()
+        question = OLHealthQuestion.objects.create(
+            code="HEALTH_AUDIT_PART3",
+            name="Health Audit Question",
+            effective_from=date(2026, 1, 1),
+            question_text="Have you had a medical consultation recently?",
+        )
+        questionnaire = OLHealthQuestionnaire.objects.create(
+            code="QNR_AUDIT_PART3",
+            name="Audit Questionnaire",
+            effective_from=date(2026, 1, 1),
+            applies_to_scope="GLOBAL",
+            version="1.0",
+        )
+        item = OLHealthQuestionnaireItem.objects.create(
+            code="QNR_ITEM_AUDIT_PART3",
+            name="Audit Questionnaire Item",
+            effective_from=date(2026, 1, 1),
+            questionnaire=questionnaire,
+            health_question=question,
+            sequence=1,
+        )
+        schedule = OLGracePeriodNotificationSchedule.objects.create(
+            code="NOTIFY_AUDIT_PART3",
+            name="Audit Notification",
+            effective_from=date(2026, 1, 1),
+            event_type="PREMIUM_DUE",
+            days_offset=-5,
+            notification_channel="SYSTEM",
+            recipient_type="POLICYHOLDER",
+        )
+        window = OLReinstatementWindow.objects.create(
+            code="REINSTATE_AUDIT_PART3",
+            name="Audit Reinstatement Window",
+            effective_from=date(2026, 1, 1),
+            product=product,
+            plan=plan,
+            days_after_lapse=365,
+        )
+        for record in (question, questionnaire, item, schedule, window):
+            self.assertTrue(
+                AuditLog.objects.filter(
+                    app_label="ol_parameters",
+                    model_name=record._meta.model_name,
+                    object_id=str(record.pk),
+                    action="CREATE",
+                ).exists(),
+                record._meta.model_name,
+            )
+
+        question.name = "Health Audit Question Updated"
+        question.save()
+        update_audit = AuditLog.objects.get(
+            app_label="ol_parameters",
+            model_name="olhealthquestion",
+            object_id=str(question.pk),
+            action="UPDATE",
+        )
+        self.assertIn("name", update_audit.changed_fields)
+
+    def test_part3_seed_is_idempotent_and_covers_all_new_tables(self):
+        call_command("seed_ol_policy_setup")
+        counts = {
+            "health_questions": OLHealthQuestion.objects.count(),
+            "questionnaires": OLHealthQuestionnaire.objects.count(),
+            "questionnaire_items": OLHealthQuestionnaireItem.objects.count(),
+            "notification_schedules": OLGracePeriodNotificationSchedule.objects.count(),
+            "reinstatement_windows": OLReinstatementWindow.objects.count(),
+            "registry": OLParameterTableRegistry.objects.filter(parameter_group="Policy Setup").count(),
+        }
+        self.assertGreaterEqual(counts["health_questions"], 1)
+        self.assertGreaterEqual(counts["questionnaires"], 1)
+        self.assertGreaterEqual(counts["questionnaire_items"], 1)
+        self.assertGreaterEqual(counts["notification_schedules"], 3)
+        self.assertGreaterEqual(counts["reinstatement_windows"], 1)
+        self.assertEqual(counts["registry"], 16)
+
+        call_command("seed_ol_policy_setup")
+        self.assertEqual(OLHealthQuestion.objects.count(), counts["health_questions"])
+        self.assertEqual(OLHealthQuestionnaire.objects.count(), counts["questionnaires"])
+        self.assertEqual(OLHealthQuestionnaireItem.objects.count(), counts["questionnaire_items"])
+        self.assertEqual(OLGracePeriodNotificationSchedule.objects.count(), counts["notification_schedules"])
+        self.assertEqual(OLReinstatementWindow.objects.count(), counts["reinstatement_windows"])
+        self.assertEqual(OLParameterTableRegistry.objects.filter(parameter_group="Policy Setup").count(), 16)
+
+    @override_settings(STATICFILES_STORAGE="django.contrib.staticfiles.storage.StaticFilesStorage")
+    def test_admin_changelists_are_available_for_all_part3_entities(self):
+        self.client.force_login(self.user)
+        model_names = (
+            "olhealthquestion",
+            "olhealthquestionnaire",
+            "olhealthquestionnaireitem",
+            "olgraceperiodnotificationschedule",
+            "olreinstatementwindow",
+        )
+        for model_name in model_names:
+            response = self.client.get(reverse(f"admin:ol_parameters_{model_name}_changelist"))
+            self.assertEqual(response.status_code, 200, {"model": model_name, "status": response.status_code})
+
+
+# The Part 3 coverage deliberately exercises model-level invariants in addition to
+# API-level validation because future policy and underwriting flows will reuse the
+# configuration models outside DRF.

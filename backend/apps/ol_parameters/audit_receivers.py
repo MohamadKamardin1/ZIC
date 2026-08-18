@@ -12,6 +12,11 @@ from .models import (
     OLComputationApproach,
     OLDefaultSystemParameter,
     OLGracePeriod,
+    OLGracePeriodNotificationSchedule,
+    OLHealthQuestion,
+    OLHealthQuestionnaire,
+    OLHealthQuestionnaireItem,
+    OLReinstatementWindow,
     OLMaturityClaimSetup,
     OLMemberCoverConfiguration,
     OLOverrideCommissionSetup,
@@ -43,6 +48,11 @@ AUDITED_MODELS = (
     OLSurrenderValueRate,
     OLPaidUpRate,
     OLCommitmentStatus,
+    OLGracePeriodNotificationSchedule,
+    OLHealthQuestion,
+    OLHealthQuestionnaire,
+    OLHealthQuestionnaireItem,
+    OLReinstatementWindow,
 )
 
 

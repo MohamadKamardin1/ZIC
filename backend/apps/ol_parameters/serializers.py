@@ -102,6 +102,11 @@ from .models import (
     OLPaidUpRate,
     OLPaidUpSetup,
     OLCommitmentStatus,
+    OLHealthQuestion,
+    OLHealthQuestionnaire,
+    OLHealthQuestionnaireItem,
+    OLGracePeriodNotificationSchedule,
+    OLReinstatementWindow,
     OLSurrenderSetup,
     OLSurrenderValueRate,
 )
@@ -310,5 +315,40 @@ class OLPaidUpRateSerializer(_ValidatedDefaultSetupModelSerializer):
 class OLCommitmentStatusSerializer(_ValidatedDefaultSetupModelSerializer):
     class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
         model = OLCommitmentStatus
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLHealthQuestionSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLHealthQuestion
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLHealthQuestionnaireSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLHealthQuestionnaire
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLHealthQuestionnaireItemSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLHealthQuestionnaireItem
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLGracePeriodNotificationScheduleSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLGracePeriodNotificationSchedule
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLReinstatementWindowSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLReinstatementWindow
         fields = "__all__"
         read_only_fields = _AUDIT_READ_ONLY

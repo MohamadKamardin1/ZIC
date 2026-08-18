@@ -160,3 +160,34 @@ The Part 2 resources use the shared table-first contract and expose list, retrie
 All mutations reuse the generic OL Parameters permission contract, actor stamping, atomic persistence, and central audit events. The idempotent `python manage.py seed_ol_policy_setup` command now seeds the Part 1 and Part 2 registry contracts, commitment statuses, global surrender and paid-up defaults, and product-scoped starter rate rows only when an active product is available. Existing `apps.ordinary_life` Policy Setup models and routes remain unchanged for compatibility.
 
 The Part 2 schema is delivered by additive migration `0006_olpaiduprate_olpaidupsetup_olsurrendersetup_and_more.py`. Future Policy Setup parts can reuse the same scoped effective-date and rate-row conventions without changing the registry or API foundation.
+
+
+## OL Policy Setup Part 3 subcontext
+
+OL Policy Setup Part 3 adds reusable health-questionnaire, grace-notification, and lapse-reinstatement configuration to the canonical OL Parameters bounded context. These records are configuration inputs for future underwriting, policy servicing, notification, and reinstatement workflows; they do not execute medical decisions, send notifications, reinstate policies, or change transactional policy state themselves.
+
+| Entity | Purpose | Main scope or behavior |
+|---|---|---|
+| `OLHealthQuestion` | Reusable typed health-question catalog. | Question text, category, answer type (`BOOLEAN`, `TEXT`, `NUMBER`, `DATE`, or `CHOICE`), underwriting impact, and medical-follow-up flag. |
+| `OLHealthQuestionnaire` | Effective-dated and versioned questionnaire header. | Global, product, plan, or scheme scope; optional sum-assured and age thresholds; unique code/version contract. |
+| `OLHealthQuestionnaireItem` | Ordered membership of questions in a questionnaire version. | Positive sequence, mandatory flag, medical-requirement trigger, optional nonnegative score, and unique question/sequence membership per questionnaire. |
+| `OLGracePeriodNotificationSchedule` | Notification schedule relative to premium and lapse lifecycle events. | Event type, signed day offset from -3650 to 3650, channel, recipient type, and template code. |
+| `OLReinstatementWindow` | Effective-dated lapse-reinstatement eligibility configuration. | Optional product/plan scope, days after lapse, maximum reinstatements, medical underwriting and outstanding-premium requirements, interest rate, and penalty rate. |
+
+The Part 3 model layer rejects blank or unsupported health-question values, invalid questionnaire scopes, inactive referenced products/plans/questions, product-plan mismatches, nonpositive questionnaire sequences, duplicate questionnaire membership, invalid notification offsets, nonpositive reinstatement windows, rates outside 0–100 percent, and overlapping active reinstatement windows in the same scope and effective-date interval. All five entities use UUID identity, standard OL lifecycle fields, actor attribution, effective dating, shared permission checks, and central audit events.
+
+The table-first API exposes the following resources under `/api/v1/ol-parameters/`:
+
+| Resource | Endpoint |
+|---|---|
+| Health questions | `/health-questions/` |
+| Health questionnaires | `/health-questionnaires/` |
+| Health questionnaire items | `/health-questionnaire-items/` |
+| Grace-period notification schedules | `/grace-period-notification-schedules/` |
+| Reinstatement windows | `/reinstatement-windows/` |
+
+Each endpoint supports authenticated list/retrieve/create/update, search, configured filters, ordering, pagination, CSV export, and soft deactivation through the shared OL Parameters viewset contract. Writes invoke model validation, permission-aware service behavior, actor stamping, and audit logging. The five models are explicitly registered with signal-based audit receivers so direct saves from administrative or future application paths are covered as well as API writes.
+
+The idempotent `python manage.py seed_ol_policy_setup` command now seeds five additional registry contracts and safe starter data: one smoking-history question, one global standard underwriting questionnaire, one mandatory questionnaire item, three lifecycle notification schedules, and one global reinstatement window. Registry coverage for Policy Setup is therefore sixteen table contracts across Parts 1–3. Running the command repeatedly uses upsert semantics and does not duplicate configuration rows.
+
+Part 3 is delivered through additive migration `0007_olhealthquestion_olhealthquestionnaire_and_more.py`. The migration preserves all prior OL Parameters and legacy Ordinary Life tables. Future Medical Underwriting, Claim Setup, and policy-servicing modules should resolve active effective-dated Part 3 records through these canonical resources rather than duplicating questionnaire, notification, or reinstatement rules in transactional models.

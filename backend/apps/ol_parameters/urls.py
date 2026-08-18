@@ -19,6 +19,11 @@ from .views import (
     OLParameterTableRegistryViewSet,
     OLPolicyRenewalStatusViewSet,
     OLPolicyStatusViewSet,
+    OLHealthQuestionViewSet,
+    OLHealthQuestionnaireViewSet,
+    OLHealthQuestionnaireItemViewSet,
+    OLGracePeriodNotificationScheduleViewSet,
+    OLReinstatementWindowViewSet,
 )
 
 
@@ -39,6 +44,11 @@ router.register("paid-up-setups", OLPaidUpSetupViewSet, basename="ol-paid-up-set
 router.register("surrender-value-rates", OLSurrenderValueRateViewSet, basename="ol-surrender-value-rate")
 router.register("paid-up-rates", OLPaidUpRateViewSet, basename="ol-paid-up-rate")
 router.register("commitment-statuses", OLCommitmentStatusViewSet, basename="ol-commitment-status")
+router.register("health-questions", OLHealthQuestionViewSet, basename="ol-health-question")
+router.register("health-questionnaires", OLHealthQuestionnaireViewSet, basename="ol-health-questionnaire")
+router.register("health-questionnaire-items", OLHealthQuestionnaireItemViewSet, basename="ol-health-questionnaire-item")
+router.register("grace-period-notification-schedules", OLGracePeriodNotificationScheduleViewSet, basename="ol-grace-period-notification-schedule")
+router.register("reinstatement-windows", OLReinstatementWindowViewSet, basename="ol-reinstatement-window")
 
 urlpatterns = [
     path("health/", OLParameterHealthView.as_view(), name="ol-parameters-health"),
