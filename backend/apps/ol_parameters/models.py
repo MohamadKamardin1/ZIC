@@ -1633,3 +1633,461 @@ class OLReinstatementWindow(OLEffectiveDateModel):
         for candidate in candidates:
             if _policy_setup_intervals_overlap(self.effective_from, self.effective_to, candidate.effective_from, candidate.effective_to):
                 raise ValidationError({"code": "An active reinstatement window overlaps an existing row in the same scope."})
+
+
+# =============================================================================
+# OL PRODUCT SETUP
+# =============================================================================
+
+
+class OLPlanType(OLParameterBaseModel):
+    """Catalog of Ordinary Life plan/product categories."""
+
+    plan_category = models.CharField(max_length=50, default="INDIVIDUAL")
+
+    class Meta:
+        ordering = ["name", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_product_plan_type_code_uq"),
+        ]
+        indexes = [
+            models.Index(fields=["plan_category", "is_active"], name="ol_product_plan_type_cat_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        self.plan_category = (self.plan_category or "INDIVIDUAL").strip().upper()
+        if not self.plan_category:
+            raise ValidationError({"plan_category": "Plan category is required."})
+
+
+class OLInsuranceClass(models.TextChoices):
+    INDIVIDUAL = "INDIVIDUAL", "Individual"
+    GROUP = "GROUP", "Group"
+    CREDIT = "CREDIT", "Credit"
+    INVESTMENT_LINKED = "INVESTMENT_LINKED", "Investment linked"
+
+
+class OLProduct(OLEffectiveDateModel):
+    """Table-driven Ordinary Life product definition used by future quotation and policy flows."""
+
+    plan_type = models.ForeignKey(
+        OLPlanType,
+        on_delete=models.PROTECT,
+        related_name="products",
+    )
+    insurance_class = models.CharField(max_length=30, choices=OLInsuranceClass.choices, default=OLInsuranceClass.INDIVIDUAL)
+    currency = models.CharField(max_length=3, default="TZS")
+    min_entry_age = models.PositiveSmallIntegerField(default=18)
+    max_entry_age = models.PositiveSmallIntegerField(default=65)
+    min_term = models.PositiveSmallIntegerField(default=1)
+    max_term = models.PositiveSmallIntegerField(default=30)
+    min_sum_assured = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
+    max_sum_assured = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
+    premium_frequencies = models.JSONField(default=list)
+    allow_riders = models.BooleanField(default=False)
+    allow_loans = models.BooleanField(default=False)
+    allow_withdrawals = models.BooleanField(default=False)
+    allow_surrender = models.BooleanField(default=True)
+    allow_paidup = models.BooleanField(default=False)
+    allow_bonus = models.BooleanField(default=False)
+    investment_linked = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["name", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_product_setup_code_uq"),
+            models.CheckConstraint(check=models.Q(min_entry_age__lte=models.F("max_entry_age")), name="ol_product_setup_age_range_ck"),
+            models.CheckConstraint(check=models.Q(min_term__gt=0) & models.Q(min_term__lte=models.F("max_term")), name="ol_product_setup_term_range_ck"),
+            models.CheckConstraint(
+                check=models.Q(min_sum_assured__isnull=True)
+                | models.Q(max_sum_assured__isnull=True)
+                | models.Q(min_sum_assured__lte=models.F("max_sum_assured")),
+                name="ol_product_setup_sum_range_ck",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["plan_type", "is_active"], name="ol_product_setup_plan_idx"),
+            models.Index(fields=["insurance_class", "is_active"], name="ol_product_setup_class_idx"),
+            models.Index(fields=["currency", "is_active"], name="ol_product_setup_currency_idx"),
+            models.Index(fields=["is_active", "effective_from", "effective_to"], name="ol_prod_setup_active_dates"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.insurance_class = (self.insurance_class or OLInsuranceClass.INDIVIDUAL).strip().upper()
+        self.currency = (self.currency or "").strip().upper()
+        if self.insurance_class not in {choice for choice, _ in OLInsuranceClass.choices}:
+            errors["insurance_class"] = "Unsupported insurance class."
+        if len(self.currency) != 3 or not self.currency.isalpha():
+            errors["currency"] = "Currency must be a three-letter code."
+        if self.plan_type_id and not getattr(self.plan_type, "is_active", True):
+            errors["plan_type"] = "Plan type must be active."
+        if self.min_entry_age > self.max_entry_age:
+            errors["max_entry_age"] = "Maximum entry age cannot be less than minimum entry age."
+        if self.min_entry_age > 150 or self.max_entry_age > 150:
+            errors["max_entry_age"] = "Entry age cannot exceed 150 years."
+        if self.min_term < 1 or self.min_term > self.max_term:
+            errors["max_term"] = "Maximum term must be at least the minimum term, and minimum term must be positive."
+        if self.min_sum_assured is not None and self.min_sum_assured < 0:
+            errors["min_sum_assured"] = "Minimum sum assured cannot be negative."
+        if self.max_sum_assured is not None and self.max_sum_assured < 0:
+            errors["max_sum_assured"] = "Maximum sum assured cannot be negative."
+        if self.min_sum_assured is not None and self.max_sum_assured is not None and self.min_sum_assured > self.max_sum_assured:
+            errors["max_sum_assured"] = "Maximum sum assured cannot be less than minimum sum assured."
+        if not isinstance(self.premium_frequencies, list) or not self.premium_frequencies:
+            errors["premium_frequencies"] = "At least one premium frequency is required."
+        elif any(not isinstance(value, str) or not value.strip() for value in self.premium_frequencies):
+            errors["premium_frequencies"] = "Premium frequencies must be a list of non-empty strings."
+        else:
+            self.premium_frequencies = list(dict.fromkeys(value.strip().upper() for value in self.premium_frequencies))
+        if errors:
+            raise ValidationError(errors)
+
+
+class OLRateType(models.TextChoices):
+    PERCENTAGE = "PERCENTAGE", "Percentage"
+    FIXED = "FIXED", "Fixed"
+    FACTOR = "FACTOR", "Factor"
+
+
+class OLPlanTaxConfiguration(OLEffectiveDateModel):
+    """Effective-dated, ordered tax component scoped to a Product Setup product or operational plan."""
+
+    product = models.ForeignKey(
+        OLProduct,
+        on_delete=models.PROTECT,
+        related_name="tax_configurations",
+        null=True,
+        blank=True,
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        related_name="ol_parameter_tax_configurations",
+        null=True,
+        blank=True,
+    )
+    tax_type = models.CharField(max_length=50)
+    tax_basis = models.CharField(max_length=50)
+    rate_type = models.CharField(max_length=20, choices=OLRateType.choices, default=OLRateType.PERCENTAGE)
+    rate_value = models.DecimalField(max_digits=18, decimal_places=6)
+    apply_on = models.CharField(max_length=50)
+    sequence = models.PositiveIntegerField(default=1)
+    country_or_branch = models.CharField(max_length=80, blank=True, default="")
+
+    class Meta:
+        ordering = ["product", "plan", "sequence", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_product_tax_code_uq"),
+            models.CheckConstraint(check=models.Q(sequence__gt=0), name="ol_product_tax_sequence_pos_ck"),
+            models.CheckConstraint(check=models.Q(rate_value__gte=0), name="ol_product_tax_rate_nonneg_ck"),
+        ]
+        indexes = [
+            models.Index(fields=["product", "plan", "is_active", "effective_from"], name="ol_product_tax_scope_idx"),
+            models.Index(fields=["tax_type", "tax_basis", "is_active"], name="ol_product_tax_type_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.tax_type = (self.tax_type or "").strip().upper()
+        self.tax_basis = (self.tax_basis or "").strip().upper()
+        self.rate_type = (self.rate_type or OLRateType.PERCENTAGE).strip().upper()
+        self.apply_on = (self.apply_on or "").strip().upper()
+        self.country_or_branch = (self.country_or_branch or "").strip().upper()
+        if not self.product_id and not self.plan_id:
+            errors["product"] = "Tax configuration must be scoped to a product or plan."
+        if not self.tax_type:
+            errors["tax_type"] = "Tax type is required."
+        if not self.tax_basis:
+            errors["tax_basis"] = "Tax basis is required."
+        if not self.apply_on:
+            errors["apply_on"] = "Apply-on dimension is required."
+        if self.rate_type not in {choice for choice, _ in OLRateType.choices}:
+            errors["rate_type"] = "Unsupported tax rate type."
+        if self.rate_value is None or self.rate_value < 0:
+            errors["rate_value"] = "Tax rate value cannot be negative."
+        elif self.rate_type == OLRateType.PERCENTAGE and self.rate_value > 100:
+            errors["rate_value"] = "Percentage tax rate cannot exceed 100."
+        if errors:
+            raise ValidationError(errors)
+        candidates = self.__class__.objects.filter(
+            product=self.product,
+            plan=self.plan,
+            tax_type=self.tax_type,
+            tax_basis=self.tax_basis,
+            rate_type=self.rate_type,
+            apply_on=self.apply_on,
+            sequence=self.sequence,
+            country_or_branch=self.country_or_branch,
+            is_active=True,
+        ).exclude(pk=self.pk)
+        if any(_product_setup_intervals_overlap(self.effective_from, self.effective_to, candidate.effective_from, candidate.effective_to) for candidate in candidates):
+            raise ValidationError({"code": "An active tax configuration overlaps an existing row in the same scope."})
+
+
+class OLPlanTargetMarket(OLParameterBaseModel):
+    """Target-market eligibility configuration for a Product Setup product or operational plan."""
+
+    product = models.ForeignKey(
+        OLProduct,
+        on_delete=models.PROTECT,
+        related_name="target_markets",
+        null=True,
+        blank=True,
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        related_name="ol_parameter_target_markets",
+        null=True,
+        blank=True,
+    )
+    target_market_type = models.CharField(max_length=60)
+    min_age = models.PositiveSmallIntegerField(null=True, blank=True)
+    max_age = models.PositiveSmallIntegerField(null=True, blank=True)
+    occupation_categories = models.JSONField(default=list, blank=True)
+    residency_requirement = models.CharField(max_length=80, blank=True, default="")
+
+    class Meta:
+        ordering = ["product", "plan", "target_market_type", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_product_market_code_uq"),
+            models.CheckConstraint(check=models.Q(max_age__isnull=True) | models.Q(min_age__isnull=True) | models.Q(max_age__gte=models.F("min_age")), name="ol_product_market_age_range_ck"),
+        ]
+        indexes = [
+            models.Index(fields=["product", "plan", "is_active"], name="ol_product_market_scope_idx"),
+            models.Index(fields=["target_market_type", "is_active"], name="ol_product_market_type_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.target_market_type = (self.target_market_type or "").strip().upper()
+        self.residency_requirement = (self.residency_requirement or "").strip().upper()
+        if not self.product_id and not self.plan_id:
+            errors["product"] = "Target market must be scoped to a product or plan."
+        if not self.target_market_type:
+            errors["target_market_type"] = "Target-market type is required."
+        if self.min_age is not None and self.max_age is not None and self.min_age > self.max_age:
+            errors["max_age"] = "Maximum target-market age cannot be less than minimum age."
+        if self.occupation_categories is not None and (
+            not isinstance(self.occupation_categories, list)
+            or any(not isinstance(value, str) or not value.strip() for value in self.occupation_categories)
+        ):
+            errors["occupation_categories"] = "Occupation categories must be a list of non-empty strings."
+        else:
+            self.occupation_categories = list(dict.fromkeys(value.strip().upper() for value in (self.occupation_categories or [])))
+        if errors:
+            raise ValidationError(errors)
+        candidates = self.__class__.objects.filter(
+            product=self.product,
+            plan=self.plan,
+            target_market_type=self.target_market_type,
+            residency_requirement=self.residency_requirement,
+            is_active=True,
+        ).exclude(pk=self.pk)
+        for candidate in candidates:
+            if _product_setup_intervals_overlap(self.effective_from, self.effective_to, candidate.effective_from, candidate.effective_to) and _product_setup_intervals_overlap(self.min_age, self.max_age, candidate.min_age, candidate.max_age):
+                raise ValidationError({"code": "An active target-market row overlaps an existing row in the same scope."})
+
+
+class OLPlanRiskCategory(OLParameterBaseModel):
+    """Underwriting risk class and loading basis scoped to a product, plan, or globally."""
+
+    product = models.ForeignKey(
+        OLProduct,
+        on_delete=models.PROTECT,
+        related_name="risk_categories",
+        null=True,
+        blank=True,
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        related_name="ol_parameter_risk_categories",
+        null=True,
+        blank=True,
+    )
+    underwriting_class = models.CharField(max_length=60)
+    loading_basis = models.CharField(max_length=60)
+
+    class Meta:
+        ordering = ["product", "plan", "underwriting_class", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_product_risk_code_uq"),
+        ]
+        indexes = [
+            models.Index(fields=["product", "plan", "is_active"], name="ol_product_risk_scope_idx"),
+            models.Index(fields=["underwriting_class", "is_active"], name="ol_product_risk_class_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.underwriting_class = (self.underwriting_class or "").strip().upper()
+        self.loading_basis = (self.loading_basis or "").strip().upper()
+        if not self.underwriting_class:
+            errors["underwriting_class"] = "Underwriting class is required."
+        if not self.loading_basis:
+            errors["loading_basis"] = "Loading basis is required."
+        if errors:
+            raise ValidationError(errors)
+        candidates = self.__class__.objects.filter(
+            product=self.product,
+            plan=self.plan,
+            underwriting_class=self.underwriting_class,
+            loading_basis=self.loading_basis,
+            is_active=True,
+        ).exclude(pk=self.pk)
+        if any(_product_setup_intervals_overlap(self.effective_from, self.effective_to, candidate.effective_from, candidate.effective_to) for candidate in candidates):
+            raise ValidationError({"code": "An active risk category overlaps an existing row in the same scope."})
+
+
+class OLPlanOccupationRiskLimit(OLEffectiveDateModel):
+    """Occupation-level sum-assured and loading limit for product or plan underwriting."""
+
+    product = models.ForeignKey(
+        OLProduct,
+        on_delete=models.PROTECT,
+        related_name="occupation_risk_limits",
+        null=True,
+        blank=True,
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        related_name="ol_parameter_occupation_risk_limits",
+        null=True,
+        blank=True,
+    )
+    occupation_risk_category = models.CharField(max_length=80)
+    max_sum_assured = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
+    loading_rate = models.DecimalField(max_digits=9, decimal_places=6, default=0)
+    exclusion_flag = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["product", "plan", "occupation_risk_category", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_product_occupation_limit_code_uq"),
+            models.CheckConstraint(check=models.Q(max_sum_assured__isnull=True) | models.Q(max_sum_assured__gte=0), name="ol_product_occupation_sum_nonneg_ck"),
+            models.CheckConstraint(check=models.Q(loading_rate__gte=0) & models.Q(loading_rate__lte=100), name="ol_product_occupation_loading_rng_ck"),
+        ]
+        indexes = [
+            models.Index(fields=["product", "plan", "is_active", "effective_from"], name="ol_prod_occup_scope_idx"),
+            models.Index(fields=["occupation_risk_category", "is_active"], name="ol_product_occupation_cat_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.occupation_risk_category = (self.occupation_risk_category or "").strip().upper()
+        if not self.product_id and not self.plan_id:
+            errors["product"] = "Occupation risk limit must be scoped to a product or plan."
+        if not self.occupation_risk_category:
+            errors["occupation_risk_category"] = "Occupation risk category is required."
+        if self.max_sum_assured is not None and self.max_sum_assured < 0:
+            errors["max_sum_assured"] = "Maximum sum assured cannot be negative."
+        if self.loading_rate < 0 or self.loading_rate > 100:
+            errors["loading_rate"] = "Loading rate must be between 0 and 100."
+        if errors:
+            raise ValidationError(errors)
+        candidates = self.__class__.objects.filter(
+            product=self.product,
+            plan=self.plan,
+            occupation_risk_category=self.occupation_risk_category,
+            is_active=True,
+        ).exclude(pk=self.pk)
+        if any(_product_setup_intervals_overlap(self.effective_from, self.effective_to, candidate.effective_from, candidate.effective_to) for candidate in candidates):
+            raise ValidationError({"code": "An active occupation risk limit overlaps an existing row in the same scope."})
+
+
+class OLInvestmentFundRiskProfile(models.TextChoices):
+    CONSERVATIVE = "CONSERVATIVE", "Conservative"
+    MODERATE = "MODERATE", "Moderate"
+    BALANCED = "BALANCED", "Balanced"
+    AGGRESSIVE = "AGGRESSIVE", "Aggressive"
+
+
+class OLInvestmentFundType(OLParameterBaseModel):
+    """Catalog of investment-fund risk profiles."""
+
+    risk_profile = models.CharField(max_length=30, choices=OLInvestmentFundRiskProfile.choices, default=OLInvestmentFundRiskProfile.MODERATE)
+
+    class Meta:
+        ordering = ["name", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_product_fund_type_code_uq"),
+        ]
+        indexes = [
+            models.Index(fields=["risk_profile", "is_active"], name="ol_product_fund_type_risk_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        self.risk_profile = (self.risk_profile or OLInvestmentFundRiskProfile.MODERATE).strip().upper()
+        if self.risk_profile not in {choice for choice, _ in OLInvestmentFundRiskProfile.choices}:
+            raise ValidationError({"risk_profile": "Unsupported investment-fund risk profile."})
+
+
+class OLValuationFrequency(models.TextChoices):
+    DAILY = "DAILY", "Daily"
+    WEEKLY = "WEEKLY", "Weekly"
+    MONTHLY = "MONTHLY", "Monthly"
+    QUARTERLY = "QUARTERLY", "Quarterly"
+    ANNUAL = "ANNUAL", "Annual"
+
+
+class OLInvestmentFund(OLEffectiveDateModel):
+    """Effective-dated investment fund catalog and allocation metadata."""
+
+    fund_type = models.ForeignKey(
+        OLInvestmentFundType,
+        on_delete=models.PROTECT,
+        related_name="funds",
+    )
+    currency = models.CharField(max_length=3, default="TZS")
+    valuation_frequency = models.CharField(max_length=20, choices=OLValuationFrequency.choices, default=OLValuationFrequency.DAILY)
+    unit_price = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
+    allocation_rules = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["name", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_product_fund_code_uq"),
+            models.CheckConstraint(check=models.Q(unit_price__isnull=True) | models.Q(unit_price__gt=0), name="ol_product_fund_unit_price_pos_ck"),
+        ]
+        indexes = [
+            models.Index(fields=["fund_type", "is_active"], name="ol_product_fund_type_idx"),
+            models.Index(fields=["currency", "valuation_frequency", "is_active"], name="ol_product_fund_route_idx"),
+            models.Index(fields=["is_active", "effective_from", "effective_to"], name="ol_prod_fund_active_dates"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.currency = (self.currency or "").strip().upper()
+        self.valuation_frequency = (self.valuation_frequency or OLValuationFrequency.DAILY).strip().upper()
+        if len(self.currency) != 3 or not self.currency.isalpha():
+            errors["currency"] = "Currency must be a three-letter code."
+        if self.valuation_frequency not in {choice for choice, _ in OLValuationFrequency.choices}:
+            errors["valuation_frequency"] = "Unsupported valuation frequency."
+        if self.fund_type_id and not getattr(self.fund_type, "is_active", True):
+            errors["fund_type"] = "Fund type must be active."
+        if self.unit_price is not None and self.unit_price <= 0:
+            errors["unit_price"] = "Unit price must be greater than zero."
+        if not isinstance(self.allocation_rules, dict):
+            errors["allocation_rules"] = "Allocation rules must be a JSON object."
+        if errors:
+            raise ValidationError(errors)
+
+
+def _product_setup_intervals_overlap(start_a, end_a, start_b, end_b):
+    """Return whether two inclusive date or numeric intervals overlap."""
+    if end_a is not None and start_b is not None and end_a < start_b:
+        return False
+    if end_b is not None and start_a is not None and end_b < start_a:
+        return False
+    return True

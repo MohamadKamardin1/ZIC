@@ -24,6 +24,14 @@ from .views import (
     OLHealthQuestionnaireItemViewSet,
     OLGracePeriodNotificationScheduleViewSet,
     OLReinstatementWindowViewSet,
+    OLPlanTypeViewSet,
+    OLProductViewSet,
+    OLPlanTaxConfigurationViewSet,
+    OLPlanTargetMarketViewSet,
+    OLPlanRiskCategoryViewSet,
+    OLPlanOccupationRiskLimitViewSet,
+    OLInvestmentFundTypeViewSet,
+    OLInvestmentFundViewSet,
 )
 
 
@@ -49,6 +57,14 @@ router.register("health-questionnaires", OLHealthQuestionnaireViewSet, basename=
 router.register("health-questionnaire-items", OLHealthQuestionnaireItemViewSet, basename="ol-health-questionnaire-item")
 router.register("grace-period-notification-schedules", OLGracePeriodNotificationScheduleViewSet, basename="ol-grace-period-notification-schedule")
 router.register("reinstatement-windows", OLReinstatementWindowViewSet, basename="ol-reinstatement-window")
+router.register("plan-types", OLPlanTypeViewSet, basename="ol-plan-type")
+router.register("products", OLProductViewSet, basename="ol-product")
+router.register("plan-tax-configurations", OLPlanTaxConfigurationViewSet, basename="ol-plan-tax-configuration")
+router.register("plan-target-markets", OLPlanTargetMarketViewSet, basename="ol-plan-target-market")
+router.register("plan-risk-categories", OLPlanRiskCategoryViewSet, basename="ol-plan-risk-category")
+router.register("plan-occupation-risk-limits", OLPlanOccupationRiskLimitViewSet, basename="ol-plan-occupation-risk-limit")
+router.register("investment-fund-types", OLInvestmentFundTypeViewSet, basename="ol-investment-fund-type")
+router.register("investment-funds", OLInvestmentFundViewSet, basename="ol-investment-fund")
 
 urlpatterns = [
     path("health/", OLParameterHealthView.as_view(), name="ol-parameters-health"),

@@ -17,6 +17,14 @@ from .models import (
     OLHealthQuestionnaireItem,
     OLGracePeriodNotificationSchedule,
     OLReinstatementWindow,
+    OLPlanType,
+    OLProduct,
+    OLPlanTaxConfiguration,
+    OLPlanTargetMarket,
+    OLPlanRiskCategory,
+    OLPlanOccupationRiskLimit,
+    OLInvestmentFundType,
+    OLInvestmentFund,
     OLSurrenderSetup,
     OLSurrenderValueRate,
     OLParameterTableRegistry,
@@ -470,6 +478,123 @@ class OLGracePeriodNotificationScheduleAdmin(OLDefaultSetupAdmin):
     fieldsets = (
         ("Identity", {"fields": ("code", "name", "description", "is_active")}),
         ("Schedule", {"fields": ("event_type", "days_offset", "notification_channel", "recipient_type", "template_code")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLPlanType)
+class OLPlanTypeAdmin(OLDefaultSetupAdmin):
+    list_display = ("code", "name", "plan_category", "is_active", "updated_by", "updated_at")
+    list_filter = ("is_active", "plan_category")
+    search_fields = ("code", "name", "description", "plan_category")
+    ordering = ("name", "code")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "plan_category", "is_active")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLProduct)
+class OLProductAdmin(OLDefaultSetupAdmin):
+    list_display = ("code", "name", "plan_type", "insurance_class", "currency", "min_entry_age", "max_entry_age", "is_active", "effective_from", "effective_to")
+    list_filter = ("is_active", "plan_type", "insurance_class", "currency", "investment_linked", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "currency", "insurance_class", "plan_type__code", "plan_type__name")
+    ordering = ("name", "code")
+    autocomplete_fields = ("plan_type",)
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "plan_type", "insurance_class", "currency", "is_active")}),
+        ("Eligibility", {"fields": ("min_entry_age", "max_entry_age", "min_term", "max_term", "min_sum_assured", "max_sum_assured", "premium_frequencies")}),
+        ("Product behavior", {"fields": ("allow_riders", "allow_loans", "allow_withdrawals", "allow_surrender", "allow_paidup", "allow_bonus", "investment_linked")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLPlanTaxConfiguration)
+class OLPlanTaxConfigurationAdmin(OLDefaultSetupAdmin):
+    list_display = ("code", "name", "product", "plan", "tax_type", "rate_type", "rate_value", "apply_on", "sequence", "is_active", "effective_from", "effective_to")
+    list_filter = ("is_active", "tax_type", "tax_basis", "rate_type", "apply_on", "country_or_branch", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "tax_type", "tax_basis", "apply_on", "country_or_branch", "product__code", "plan__code")
+    ordering = ("product", "plan", "sequence", "code")
+    autocomplete_fields = ("product", "plan")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Scope", {"fields": ("product", "plan", "country_or_branch")}),
+        ("Tax rule", {"fields": ("tax_type", "tax_basis", "rate_type", "rate_value", "apply_on", "sequence")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLPlanTargetMarket)
+class OLPlanTargetMarketAdmin(OLDefaultSetupAdmin):
+    list_display = ("code", "name", "product", "plan", "target_market_type", "min_age", "max_age", "residency_requirement", "is_active")
+    list_filter = ("is_active", "target_market_type", "residency_requirement", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "target_market_type", "residency_requirement", "product__code", "plan__code")
+    ordering = ("product", "plan", "target_market_type", "code")
+    autocomplete_fields = ("product", "plan")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Scope", {"fields": ("product", "plan")}),
+        ("Eligibility", {"fields": ("target_market_type", "min_age", "max_age", "occupation_categories", "residency_requirement")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLPlanRiskCategory)
+class OLPlanRiskCategoryAdmin(OLDefaultSetupAdmin):
+    list_display = ("code", "name", "product", "plan", "underwriting_class", "loading_basis", "is_active", "effective_from", "effective_to")
+    list_filter = ("is_active", "underwriting_class", "loading_basis", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "underwriting_class", "loading_basis", "product__code", "plan__code")
+    ordering = ("product", "plan", "underwriting_class", "code")
+    autocomplete_fields = ("product", "plan")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Scope and underwriting", {"fields": ("product", "plan", "underwriting_class", "loading_basis")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLPlanOccupationRiskLimit)
+class OLPlanOccupationRiskLimitAdmin(OLDefaultSetupAdmin):
+    list_display = ("code", "name", "product", "plan", "occupation_risk_category", "max_sum_assured", "loading_rate", "exclusion_flag", "is_active", "effective_from", "effective_to")
+    list_filter = ("is_active", "occupation_risk_category", "exclusion_flag", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "occupation_risk_category", "product__code", "plan__code")
+    ordering = ("product", "plan", "occupation_risk_category", "code")
+    autocomplete_fields = ("product", "plan")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Scope and limit", {"fields": ("product", "plan", "occupation_risk_category", "max_sum_assured", "loading_rate", "exclusion_flag")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLInvestmentFundType)
+class OLInvestmentFundTypeAdmin(OLDefaultSetupAdmin):
+    list_display = ("code", "name", "risk_profile", "is_active", "updated_by", "updated_at")
+    list_filter = ("is_active", "risk_profile")
+    search_fields = ("code", "name", "description", "risk_profile")
+    ordering = ("name", "code")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "risk_profile", "is_active")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLInvestmentFund)
+class OLInvestmentFundAdmin(OLDefaultSetupAdmin):
+    list_display = ("code", "name", "fund_type", "currency", "valuation_frequency", "unit_price", "is_active", "effective_from", "effective_to")
+    list_filter = ("is_active", "fund_type", "currency", "valuation_frequency", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "currency", "valuation_frequency", "fund_type__code", "fund_type__name")
+    ordering = ("name", "code")
+    autocomplete_fields = ("fund_type",)
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "fund_type", "currency", "is_active")}),
+        ("Valuation", {"fields": ("valuation_frequency", "unit_price", "allocation_rules")}),
         ("Effective dates", {"fields": ("effective_from", "effective_to")}),
         ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
     )

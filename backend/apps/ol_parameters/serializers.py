@@ -107,6 +107,14 @@ from .models import (
     OLHealthQuestionnaireItem,
     OLGracePeriodNotificationSchedule,
     OLReinstatementWindow,
+    OLPlanType,
+    OLProduct,
+    OLPlanTaxConfiguration,
+    OLPlanTargetMarket,
+    OLPlanRiskCategory,
+    OLPlanOccupationRiskLimit,
+    OLInvestmentFundType,
+    OLInvestmentFund,
     OLSurrenderSetup,
     OLSurrenderValueRate,
 )
@@ -350,5 +358,61 @@ class OLGracePeriodNotificationScheduleSerializer(_ValidatedDefaultSetupModelSer
 class OLReinstatementWindowSerializer(_ValidatedDefaultSetupModelSerializer):
     class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
         model = OLReinstatementWindow
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLPlanTypeSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLPlanType
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLProductSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLProduct
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLPlanTaxConfigurationSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLPlanTaxConfiguration
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLPlanTargetMarketSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLPlanTargetMarket
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLPlanRiskCategorySerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLPlanRiskCategory
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLPlanOccupationRiskLimitSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLPlanOccupationRiskLimit
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLInvestmentFundTypeSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLInvestmentFundType
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLInvestmentFundSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLInvestmentFund
         fields = "__all__"
         read_only_fields = _AUDIT_READ_ONLY

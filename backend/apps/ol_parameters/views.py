@@ -28,6 +28,14 @@ from .models import (
     OLPaidUpSetup,
     OLCommitmentStatus,
     OLReinstatementWindow,
+    OLPlanType,
+    OLProduct,
+    OLPlanTaxConfiguration,
+    OLPlanTargetMarket,
+    OLPlanRiskCategory,
+    OLPlanOccupationRiskLimit,
+    OLInvestmentFundType,
+    OLInvestmentFund,
     OLSurrenderSetup,
     OLSurrenderValueRate,
     OLParameterTableRegistry,
@@ -56,6 +64,14 @@ from .serializers import (
     OLHealthQuestionnaireItemSerializer,
     OLGracePeriodNotificationScheduleSerializer,
     OLReinstatementWindowSerializer,
+    OLPlanTypeSerializer,
+    OLProductSerializer,
+    OLPlanTaxConfigurationSerializer,
+    OLPlanTargetMarketSerializer,
+    OLPlanRiskCategorySerializer,
+    OLPlanOccupationRiskLimitSerializer,
+    OLInvestmentFundTypeSerializer,
+    OLInvestmentFundSerializer,
     OLTableRegistrySerializer,
 )
 from .services.default_setup_service import OLDefaultSetupService
@@ -261,6 +277,16 @@ class OLParameterHealthView(APIView):
                     "health_questionnaire_items": OLHealthQuestionnaireItem.objects.filter(is_active=True).count(),
                     "grace_period_notification_schedules": OLGracePeriodNotificationSchedule.objects.filter(is_active=True).count(),
                     "reinstatement_windows": OLReinstatementWindow.objects.filter(is_active=True).count(),
+                },
+                "product_setup": {
+                    "plan_types": OLPlanType.objects.filter(is_active=True).count(),
+                    "products": OLProduct.objects.filter(is_active=True).count(),
+                    "tax_configurations": OLPlanTaxConfiguration.objects.filter(is_active=True).count(),
+                    "target_markets": OLPlanTargetMarket.objects.filter(is_active=True).count(),
+                    "risk_categories": OLPlanRiskCategory.objects.filter(is_active=True).count(),
+                    "occupation_risk_limits": OLPlanOccupationRiskLimit.objects.filter(is_active=True).count(),
+                    "investment_fund_types": OLInvestmentFundType.objects.filter(is_active=True).count(),
+                    "investment_funds": OLInvestmentFund.objects.filter(is_active=True).count(),
                 },
             }
         )
@@ -490,3 +516,84 @@ class OLReinstatementWindowViewSet(OLDefaultSetupViewSet):
         "effective_from", "effective_to", "created_at", "updated_at",
     ]
     ordering = ["product", "plan", "-effective_from", "code"]
+
+
+
+class OLPlanTypeViewSet(OLDefaultSetupViewSet):
+    model = OLPlanType
+    serializer_class = OLPlanTypeSerializer
+    table_slug = "plan-types"
+    search_fields = ["code", "name", "description", "plan_category"]
+    filterset_fields = ["is_active", "plan_category"]
+    ordering_fields = ["code", "name", "plan_category", "is_active", "created_at", "updated_at"]
+    ordering = ["name", "code"]
+
+
+class OLProductViewSet(OLDefaultSetupViewSet):
+    model = OLProduct
+    serializer_class = OLProductSerializer
+    table_slug = "products"
+    search_fields = ["code", "name", "description", "currency", "insurance_class"]
+    filterset_fields = ["is_active", "plan_type", "insurance_class", "currency", "investment_linked", "effective_from", "effective_to"]
+    ordering_fields = ["code", "name", "plan_type", "insurance_class", "currency", "is_active", "effective_from", "effective_to", "created_at", "updated_at"]
+    ordering = ["name", "code"]
+
+
+class OLPlanTaxConfigurationViewSet(OLDefaultSetupViewSet):
+    model = OLPlanTaxConfiguration
+    serializer_class = OLPlanTaxConfigurationSerializer
+    table_slug = "plan-tax-configurations"
+    search_fields = ["code", "name", "description", "tax_type", "tax_basis", "apply_on", "country_or_branch"]
+    filterset_fields = ["is_active", "product", "plan", "tax_type", "tax_basis", "rate_type", "sequence", "country_or_branch", "effective_from", "effective_to"]
+    ordering_fields = ["code", "name", "sequence", "rate_value", "effective_from", "effective_to", "created_at", "updated_at"]
+    ordering = ["product", "plan", "sequence", "code"]
+
+
+class OLPlanTargetMarketViewSet(OLDefaultSetupViewSet):
+    model = OLPlanTargetMarket
+    serializer_class = OLPlanTargetMarketSerializer
+    table_slug = "plan-target-markets"
+    search_fields = ["code", "name", "description", "target_market_type", "residency_requirement"]
+    filterset_fields = ["is_active", "product", "plan", "target_market_type", "residency_requirement", "effective_from", "effective_to"]
+    ordering_fields = ["code", "name", "target_market_type", "min_age", "max_age", "effective_from", "effective_to", "created_at", "updated_at"]
+    ordering = ["product", "plan", "target_market_type", "code"]
+
+
+class OLPlanRiskCategoryViewSet(OLDefaultSetupViewSet):
+    model = OLPlanRiskCategory
+    serializer_class = OLPlanRiskCategorySerializer
+    table_slug = "plan-risk-categories"
+    search_fields = ["code", "name", "description", "underwriting_class", "loading_basis"]
+    filterset_fields = ["is_active", "product", "plan", "underwriting_class", "loading_basis", "effective_from", "effective_to"]
+    ordering_fields = ["code", "name", "underwriting_class", "loading_basis", "effective_from", "effective_to", "created_at", "updated_at"]
+    ordering = ["product", "plan", "underwriting_class", "code"]
+
+
+class OLPlanOccupationRiskLimitViewSet(OLDefaultSetupViewSet):
+    model = OLPlanOccupationRiskLimit
+    serializer_class = OLPlanOccupationRiskLimitSerializer
+    table_slug = "plan-occupation-risk-limits"
+    search_fields = ["code", "name", "description", "occupation_risk_category"]
+    filterset_fields = ["is_active", "product", "plan", "occupation_risk_category", "exclusion_flag", "effective_from", "effective_to"]
+    ordering_fields = ["code", "name", "occupation_risk_category", "max_sum_assured", "loading_rate", "effective_from", "effective_to", "created_at", "updated_at"]
+    ordering = ["product", "plan", "occupation_risk_category", "code"]
+
+
+class OLInvestmentFundTypeViewSet(OLDefaultSetupViewSet):
+    model = OLInvestmentFundType
+    serializer_class = OLInvestmentFundTypeSerializer
+    table_slug = "investment-fund-types"
+    search_fields = ["code", "name", "description", "risk_profile"]
+    filterset_fields = ["is_active", "risk_profile"]
+    ordering_fields = ["code", "name", "risk_profile", "is_active", "created_at", "updated_at"]
+    ordering = ["name", "code"]
+
+
+class OLInvestmentFundViewSet(OLDefaultSetupViewSet):
+    model = OLInvestmentFund
+    serializer_class = OLInvestmentFundSerializer
+    table_slug = "investment-funds"
+    search_fields = ["code", "name", "description", "currency", "valuation_frequency"]
+    filterset_fields = ["is_active", "fund_type", "currency", "valuation_frequency", "effective_from", "effective_to"]
+    ordering_fields = ["code", "name", "fund_type", "currency", "valuation_frequency", "unit_price", "effective_from", "effective_to", "created_at", "updated_at"]
+    ordering = ["name", "code"]

@@ -181,3 +181,41 @@ The Policy Setup registry now contains **16 contracts across Parts 1–3**. The 
 | OL Loan Setup | Foundation registry only; planned |
 | OL Medical / Underwriting | Foundation registry only; planned; consumes Part 3 health-question configuration |
 | OL Claim Setup | Foundation registry only; planned |
+
+
+## OL Product Setup implementation status
+
+OL Product Setup is now **Implemented** as the next isolated concrete OL Parameters group. The implementation is configuration-only and remains separate from the transactional `apps.ordinary_life` product model and operational product workflows.
+
+| Requirement | Delivered artifact | Status |
+|---|---|---|
+| Plan-type catalog | `OLPlanType` with effective-dated plan categories | Implemented |
+| Product contract | `OLProduct` with plan type, class, currency, eligibility, limits, frequencies, and product capabilities | Implemented |
+| Tax configuration | `OLPlanTaxConfiguration` with product/plan scope, tax basis, rate, application event, sequence, and country/branch scope | Implemented |
+| Target-market configuration | `OLPlanTargetMarket` with market type, age range, occupation categories, residency, and product/plan scope | Implemented |
+| Risk categories | `OLPlanRiskCategory` with underwriting class, loading basis, and product/plan scope | Implemented |
+| Occupation-risk limits | `OLPlanOccupationRiskLimit` with category, maximum sum assured, loading rate, and exclusion flag | Implemented |
+| Investment fund catalogs | `OLInvestmentFundType` and `OLInvestmentFund` with risk profile, valuation, unit price, currency, and allocation metadata | Implemented |
+| Validation and invariants | Product eligibility ranges, scoped references, nonnegative and percentage bounds, positive fund pricing, and active effective-date overlap protection | Implemented |
+| APIs | Eight table-first resources with CRUD, search, filters, ordering, pagination, CSV export, and soft deactivation | Implemented |
+| Admin | Permission-aware registrations for all eight Product Setup entities | Implemented |
+| Audit | Central audit events through service mutations and explicit signal registration for all eight entities | Implemented |
+| Seed data | `seed_ol_product_setup` idempotently seeds six plan types, one product, starter scoped configuration, three fund types, one fund, and eight registry contracts | Implemented |
+| Tests | Model invariants, all endpoint CRUD paths, filtering/export, permissions, audit, seed idempotency, and admin registration coverage | Implemented |
+| Migration | Additive `0008_olinvestmentfundtype_olinvestmentfund_olplantype_and_more.py` | Implemented |
+
+## Updated nine-group status after OL Product Setup
+
+| Required group | Concrete implementation status after this delivery |
+|---|---|
+| OL Default Setup | **Implemented** |
+| OL Policy Setup | **Parts 1, 2, and 3 implemented**; later policy setup parts remain planned |
+| OL Product Setup | **Implemented** |
+| OL Product Rating | Foundation registry and abstract rate contracts; planned |
+| OL Rider Setup | Foundation registry only; planned |
+| OL Agent Management | Foundation registry only; planned |
+| OL Loan Setup | Foundation registry only; planned |
+| OL Medical / Underwriting | Foundation registry only; planned |
+| OL Claim Setup | Foundation registry only; planned |
+
+The Product Setup increment is additive and does not alter legacy Ordinary Life product tables or routes. A future controlled reconciliation process may map approved legacy product data into canonical parameter rows, but no implicit data migration or destructive replacement is performed by this delivery.

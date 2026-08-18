@@ -191,3 +191,40 @@ Each endpoint supports authenticated list/retrieve/create/update, search, config
 The idempotent `python manage.py seed_ol_policy_setup` command now seeds five additional registry contracts and safe starter data: one smoking-history question, one global standard underwriting questionnaire, one mandatory questionnaire item, three lifecycle notification schedules, and one global reinstatement window. Registry coverage for Policy Setup is therefore sixteen table contracts across Parts 1–3. Running the command repeatedly uses upsert semantics and does not duplicate configuration rows.
 
 Part 3 is delivered through additive migration `0007_olhealthquestion_olhealthquestionnaire_and_more.py`. The migration preserves all prior OL Parameters and legacy Ordinary Life tables. Future Medical Underwriting, Claim Setup, and policy-servicing modules should resolve active effective-dated Part 3 records through these canonical resources rather than duplicating questionnaire, notification, or reinstatement rules in transactional models.
+
+
+## OL Product Setup subcontext
+
+OL Product Setup is now **Implemented** as the first concrete product-configuration group in the canonical OL Parameters bounded context. It owns reusable product and plan configuration contracts consumed by future quotation, proposal, policy, rating, underwriting, investment, and servicing workflows. It does not own transactional products, policy records, investment transactions, or rating execution; those remain in their respective operational contexts.
+
+| Entity | Purpose | Main scope or behavior |
+|---|---|---|
+| `OLPlanType` | Plan-category catalog. | Effective-dated plan categories such as endowment, whole life, term life, education, pension-linked, and credit-linked. |
+| `OLProduct` | Product contract and eligibility configuration. | Plan type, insurance class, currency, age and term limits, sum-assured limits, premium frequencies, product capabilities, and effective dates. |
+| `OLPlanTaxConfiguration` | Product/plan tax component configuration. | Tax type and basis, percentage or fixed rate, application event, sequence, country/branch scope, and effective dates. |
+| `OLPlanTargetMarket` | Target-market eligibility configuration. | Product/plan scope, market type, age limits, occupation categories, residency requirement, and effective dates. |
+| `OLPlanRiskCategory` | Underwriting risk-class configuration. | Product/plan scope, underwriting class, loading basis, and effective dates. |
+| `OLPlanOccupationRiskLimit` | Occupation-risk limit and loading configuration. | Product/plan scope, occupation-risk category, maximum sum assured, loading rate, exclusion flag, and effective dates. |
+| `OLInvestmentFundType` | Investment fund risk-profile catalog. | Conservative, moderate, aggressive, or other configured fund risk profiles. |
+| `OLInvestmentFund` | Investment fund catalog and valuation metadata. | Fund type, currency, valuation frequency, unit price, allocation rules, and effective dates. |
+
+All eight entities use UUID identity, standard OL lifecycle fields, actor attribution, effective dates, generic permission checks, and central audit events. Model validation rejects invalid age, term, sum-assured, tax-rate, loading-rate, unit-price, and scope combinations. Product and plan references are validated for consistency with the operational Ordinary Life domain. Effective-dated scoped configuration rows use overlap protection so two active rows cannot ambiguously govern the same product/plan or global scope.
+
+The table-first API exposes the following resources under `/api/v1/ol-parameters/`:
+
+| Resource | Endpoint |
+|---|---|
+| Plan types | `/plan-types/` |
+| Products | `/products/` |
+| Plan tax configurations | `/plan-tax-configurations/` |
+| Plan target markets | `/plan-target-markets/` |
+| Plan risk categories | `/plan-risk-categories/` |
+| Plan occupation-risk limits | `/plan-occupation-risk-limits/` |
+| Investment fund types | `/investment-fund-types/` |
+| Investment funds | `/investment-funds/` |
+
+Each endpoint supports authenticated list/retrieve/create/update, configured search and filters, ordering, pagination, CSV export, and soft deactivation through the shared OL Parameters viewset contract. Writes use the common parameter service for actor attribution, transactional persistence, model validation, and audit logging. The eight models are explicitly registered with signal-based audit receivers so direct administrative saves are covered alongside API mutations.
+
+The idempotent `python manage.py seed_ol_product_setup` command seeds six plan types, one safe standard endowment product, starter tax/target-market/risk/occupation rows, three investment fund types, one balanced fund, and eight Product Setup registry contracts. Re-running the command updates the declared baseline without duplicating rows. Starter financial values are deliberately conservative configuration placeholders and must be reviewed before production underwriting or investment execution.
+
+Product Setup is delivered through additive migration `0008_olinvestmentfundtype_olinvestmentfund_olplantype_and_more.py`. It remains isolated from the existing `apps.ordinary_life.OLProduct` transactional model: canonical new configuration consumers should resolve Product Setup rows through `apps.ol_parameters`, while legacy operational tables and routes remain available for compatibility and controlled reconciliation.
