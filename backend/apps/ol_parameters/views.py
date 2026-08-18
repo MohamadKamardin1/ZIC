@@ -12,22 +12,35 @@ from rest_framework.views import APIView
 from apps.core.pagination import StandardPagination
 
 from .models import (
+    OLAnticipatedEndowmentInstallmentRate,
+    OLBeneficialType,
     OLComputationApproach,
     OLDefaultSystemParameter,
+    OLGracePeriod,
     OLMaturityClaimSetup,
+    OLMemberCoverConfiguration,
     OLOverrideCommissionSetup,
     OLParameterTableRegistry,
+    OLPolicyRenewalStatus,
+    OLPolicyStatus,
 )
 from .permissions import HasOLParameterPermission, has_ol_parameter_permission
 from .serializers import (
+    OLAnticipatedEndowmentInstallmentRateSerializer,
+    OLBeneficialTypeSerializer,
     OLComputationApproachSerializer,
     OLDefaultSystemParameterSerializer,
+    OLGracePeriodSerializer,
     OLMaturityClaimSetupSerializer,
+    OLMemberCoverConfigurationSerializer,
     OLOverrideCommissionSetupSerializer,
+    OLPolicyRenewalStatusSerializer,
+    OLPolicyStatusSerializer,
     OLTableRegistrySerializer,
 )
 from .services.default_setup_service import OLDefaultSetupService
 from .services.parameter_service import OLParameterService
+from .services.policy_setup_service import OLPolicySetupService
 
 
 class OLParameterTableRegistryViewSet(viewsets.ModelViewSet):
@@ -207,5 +220,95 @@ class OLParameterHealthView(APIView):
                     "computation_approaches": OLComputationApproach.objects.filter(is_active=True).count(),
                     "maturity_claim_setups": OLMaturityClaimSetup.objects.filter(is_active=True).count(),
                 },
+                "policy_setup": {
+                    "anticipated_endowment_rates": OLAnticipatedEndowmentInstallmentRate.objects.filter(is_active=True).count(),
+                    "grace_periods": OLGracePeriod.objects.filter(is_active=True).count(),
+                    "policy_statuses": OLPolicyStatus.objects.filter(is_active=True).count(),
+                    "policy_renewal_statuses": OLPolicyRenewalStatus.objects.filter(is_active=True).count(),
+                    "beneficial_types": OLBeneficialType.objects.filter(is_active=True).count(),
+                    "member_cover_configurations": OLMemberCoverConfiguration.objects.filter(is_active=True).count(),
+                },
             }
         )
+
+
+class OLAnticipatedEndowmentInstallmentRateViewSet(OLDefaultSetupViewSet):
+    model = OLAnticipatedEndowmentInstallmentRate
+    serializer_class = OLAnticipatedEndowmentInstallmentRateSerializer
+    table_slug = "anticipated-endowment-rates"
+    search_fields = ["code", "name", "description", "installment_type", "frequency", "currency"]
+    filterset_fields = [
+        "is_active", "product", "plan", "installment_type", "frequency", "currency",
+        "effective_from", "effective_to",
+    ]
+    ordering_fields = [
+        "code", "name", "frequency", "rate_factor", "age_from", "term_from",
+        "policy_year_from", "effective_from", "effective_to", "created_at", "updated_at",
+    ]
+    ordering = ["product", "plan", "frequency", "age_from", "term_from", "code"]
+
+
+class OLGracePeriodViewSet(OLDefaultSetupViewSet):
+    model = OLGracePeriod
+    serializer_class = OLGracePeriodSerializer
+    table_slug = "grace-periods"
+    search_fields = ["code", "name", "description", "premium_frequency"]
+    filterset_fields = [
+        "is_active", "product", "plan", "premium_frequency", "grace_days", "warning_days",
+        "pre_lapse_days", "lapse_days", "effective_from", "effective_to",
+    ]
+    ordering_fields = [
+        "code", "name", "grace_days", "warning_days", "pre_lapse_days", "lapse_days",
+        "effective_from", "effective_to", "created_at", "updated_at",
+    ]
+    ordering = ["product", "plan", "premium_frequency", "-effective_from", "code"]
+
+
+class OLPolicyStatusViewSet(OLDefaultSetupViewSet):
+    model = OLPolicyStatus
+    serializer_class = OLPolicyStatusSerializer
+    table_slug = "policy-statuses"
+    search_fields = ["code", "name", "description", "badge_type"]
+    filterset_fields = ["is_active", "is_terminal", "badge_type", "display_order"]
+    ordering_fields = ["display_order", "code", "name", "badge_type", "is_terminal", "created_at", "updated_at"]
+    ordering = ["display_order", "name", "code"]
+
+    @action(detail=False, methods=["get"], url_path="validate-transitions")
+    def validate_transitions(self, request, *args, **kwargs):
+        return Response(OLPolicySetupService.validate_status_transitions())
+
+
+class OLPolicyRenewalStatusViewSet(OLDefaultSetupViewSet):
+    model = OLPolicyRenewalStatus
+    serializer_class = OLPolicyRenewalStatusSerializer
+    table_slug = "policy-renewal-statuses"
+    search_fields = ["code", "name", "description", "renewal_action"]
+    filterset_fields = ["is_active", "renewal_action", "display_order"]
+    ordering_fields = ["display_order", "code", "name", "renewal_action", "created_at", "updated_at"]
+    ordering = ["display_order", "name", "code"]
+
+
+class OLBeneficialTypeViewSet(OLDefaultSetupViewSet):
+    model = OLBeneficialType
+    serializer_class = OLBeneficialTypeSerializer
+    table_slug = "beneficial-types"
+    search_fields = ["code", "name", "description", "category", "calculation_basis"]
+    filterset_fields = ["is_active", "category", "calculation_basis", "allows_multiple"]
+    ordering_fields = ["category", "code", "name", "default_ratio", "calculation_basis", "created_at", "updated_at"]
+    ordering = ["category", "name", "code"]
+
+
+class OLMemberCoverConfigurationViewSet(OLDefaultSetupViewSet):
+    model = OLMemberCoverConfiguration
+    serializer_class = OLMemberCoverConfigurationSerializer
+    table_slug = "member-cover-configurations"
+    search_fields = ["code", "name", "description", "cover_type", "member_relation", "premium_basis", "coverage_basis"]
+    filterset_fields = [
+        "is_active", "product", "plan", "cover_type", "member_relation", "min_age", "max_age",
+        "waiting_period_days", "premium_basis", "coverage_basis", "effective_from", "effective_to",
+    ]
+    ordering_fields = [
+        "code", "name", "cover_type", "member_relation", "min_age", "max_age",
+        "waiting_period_days", "effective_from", "effective_to", "created_at", "updated_at",
+    ]
+    ordering = ["product", "plan", "cover_type", "member_relation", "min_age", "code"]

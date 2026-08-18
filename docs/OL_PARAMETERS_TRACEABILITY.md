@@ -76,3 +76,38 @@ The legacy `apps.ordinary_life` Default Setup models and `/api/v1/ordinary-life/
 | OL Loan Setup | Foundation registry only; planned |
 | OL Medical / Underwriting | Foundation registry only; planned |
 | OL Claim Setup | Foundation registry only; planned |
+
+## OL Policy Setup Part 1 implementation status
+
+OL Policy Setup Part 1 is now **Implemented** as the second concrete group beyond the OL Parameters foundation. The canonical artifacts are isolated under `backend/apps/ol_parameters/`, with legacy Ordinary Life setup routes preserved.
+
+| Requirement | Delivered artifact | Status |
+|---|---|---|
+| Anticipated endowment rates | `OLAnticipatedEndowmentInstallmentRate` with product/plan, frequency, age, term, policy-year, currency, rate, and effective-date dimensions | Implemented |
+| Grace periods | `OLGracePeriod` with frequency, grace, warning, pre-lapse, lapse, minimum due amount, and optional product/plan scope | Implemented |
+| Policy status catalog | `OLPolicyStatus` with display ordering, terminal status flag, and allowed transition codes | Implemented |
+| Renewal status catalog | `OLPolicyRenewalStatus` with display ordering and renewal action | Implemented |
+| Beneficial types | `OLBeneficialType` with category, calculation basis, default ratio, and multiple-allocation behavior | Implemented |
+| Member cover configuration | `OLMemberCoverConfiguration` with product/plan scope, relation, age limits, waiting period, limits, and calculation bases | Implemented |
+| Validation and invariants | Effective-date ordering, range checks, product-plan consistency, nonnegative values, active transition targets, and terminal transition rules | Implemented |
+| APIs | Six table-first resources under `/api/v1/ol-parameters/`, including search, filters, ordering, pagination, CSV export, deactivation, and transition validation | Implemented |
+| Admin | Permission-aware table-first registrations for all six entities | Implemented |
+| Audit | Central audit events for service and direct-save paths, including actor and request correlation | Implemented |
+| Seed data | `seed_ol_policy_setup` idempotently seeds catalogs, defaults, registry contracts, and safe starter rows | Implemented |
+| Tests | Model invariants, transition graph validation, CRUD, filtering, export, soft deactivation, audit, registry, and seed idempotency coverage | Implemented |
+
+## Updated nine-group status after Policy Setup Part 1
+
+| Required group | Concrete implementation status after this delivery |
+|---|---|
+| OL Default Setup | **Implemented** |
+| OL Policy Setup | **Part 1 implemented**; later policy setup parts remain planned |
+| OL Product Setup | Foundation registry only; planned |
+| OL Product Rating | Foundation registry and abstract rate contracts; planned |
+| OL Rider Setup | Foundation registry only; planned |
+| OL Agent Management | Foundation registry only; planned |
+| OL Loan Setup | Foundation registry only; planned |
+| OL Medical / Underwriting | Foundation registry only; planned |
+| OL Claim Setup | Foundation registry only; planned |
+
+The canonical Policy Setup records are intended for new configuration consumers. The existing legacy `apps.ordinary_life` setup tables and endpoints remain unchanged, so migration or reconciliation of preexisting configuration data is a separate controlled decision rather than an implicit destructive replacement.

@@ -1,11 +1,17 @@
 from django.contrib import admin, messages
 
 from .models import (
+    OLAnticipatedEndowmentInstallmentRate,
+    OLBeneficialType,
     OLComputationApproach,
     OLDefaultSystemParameter,
+    OLGracePeriod,
     OLMaturityClaimSetup,
+    OLMemberCoverConfiguration,
     OLOverrideCommissionSetup,
     OLParameterTableRegistry,
+    OLPolicyRenewalStatus,
+    OLPolicyStatus,
 )
 from .permissions import has_ol_parameter_permission
 from .services.default_setup_service import OLDefaultSetupService
@@ -197,6 +203,107 @@ class OLMaturityClaimSetupAdmin(OLDefaultSetupAdmin):
         ("Identity", {"fields": ("code", "name", "description", "is_active")}),
         ("Scope", {"fields": ("product", "plan")}),
         ("Maturity behavior", {"fields": ("auto_create_maturity_claim", "days_before_maturity_to_initiate", "notification_days", "default_payout_method", "require_documents", "require_approval", "maturity_claim_status_to_create")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLAnticipatedEndowmentInstallmentRate)
+class OLAnticipatedEndowmentInstallmentRateAdmin(OLDefaultSetupAdmin):
+    list_display = (
+        "code", "name", "product", "plan", "installment_type", "frequency", "rate_factor",
+        "effective_from", "effective_to", "is_active", "updated_at",
+    )
+    list_filter = ("is_active", "installment_type", "frequency", "currency", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "installment_type", "frequency", "currency", "product__code", "plan__code")
+    ordering = ("product", "plan", "frequency", "age_from", "term_from", "code")
+    autocomplete_fields = ("product", "plan")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Scope", {"fields": ("product", "plan", "installment_type", "frequency", "currency")}),
+        ("Dimensions and rate", {"fields": ("age_from", "age_to", "term_from", "term_to", "policy_year_from", "policy_year_to", "rate_factor")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLGracePeriod)
+class OLGracePeriodAdmin(OLDefaultSetupAdmin):
+    list_display = (
+        "code", "name", "product", "plan", "premium_frequency", "grace_days", "warning_days",
+        "pre_lapse_days", "lapse_days", "effective_from", "effective_to", "is_active",
+    )
+    list_filter = ("is_active", "premium_frequency", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "premium_frequency", "product__code", "plan__code")
+    ordering = ("product", "plan", "premium_frequency", "-effective_from", "code")
+    autocomplete_fields = ("product", "plan")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Scope", {"fields": ("product", "plan", "premium_frequency")}),
+        ("Timing", {"fields": ("grace_days", "warning_days", "pre_lapse_days", "lapse_days", "minimum_due_amount")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLPolicyStatus)
+class OLPolicyStatusAdmin(OLDefaultSetupAdmin):
+    list_display = ("display_order", "code", "name", "badge_type", "is_terminal", "is_active", "updated_at")
+    list_filter = ("is_active", "is_terminal", "badge_type")
+    search_fields = ("code", "name", "description", "badge_type")
+    ordering = ("display_order", "name", "code")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Lifecycle", {"fields": ("display_order", "badge_type", "is_terminal", "allowed_transitions")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLPolicyRenewalStatus)
+class OLPolicyRenewalStatusAdmin(OLDefaultSetupAdmin):
+    list_display = ("display_order", "code", "name", "renewal_action", "is_active", "updated_at")
+    list_filter = ("is_active", "renewal_action")
+    search_fields = ("code", "name", "description", "renewal_action")
+    ordering = ("display_order", "name", "code")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Renewal behavior", {"fields": ("display_order", "renewal_action")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLBeneficialType)
+class OLBeneficialTypeAdmin(OLDefaultSetupAdmin):
+    list_display = (
+        "category", "code", "name", "calculation_basis", "default_ratio", "allows_multiple", "is_active", "updated_at",
+    )
+    list_filter = ("is_active", "category", "calculation_basis", "allows_multiple")
+    search_fields = ("code", "name", "description", "category", "calculation_basis")
+    ordering = ("category", "name", "code")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Beneficial behavior", {"fields": ("category", "calculation_basis", "default_ratio", "allows_multiple")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLMemberCoverConfiguration)
+class OLMemberCoverConfigurationAdmin(OLDefaultSetupAdmin):
+    list_display = (
+        "code", "name", "product", "plan", "cover_type", "member_relation", "min_age", "max_age",
+        "waiting_period_days", "effective_from", "effective_to", "is_active",
+    )
+    list_filter = ("is_active", "cover_type", "member_relation", "premium_basis", "coverage_basis", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "cover_type", "member_relation", "premium_basis", "coverage_basis", "product__code", "plan__code")
+    ordering = ("product", "plan", "cover_type", "member_relation", "min_age", "code")
+    autocomplete_fields = ("product", "plan")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Scope", {"fields": ("product", "plan", "cover_type", "member_relation")}),
+        ("Eligibility and cover", {"fields": ("min_age", "max_age", "waiting_period_days", "benefit_limit", "premium_basis", "coverage_basis")}),
         ("Effective dates", {"fields": ("effective_from", "effective_to")}),
         ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
     )

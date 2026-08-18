@@ -7,11 +7,17 @@ from django.dispatch import receiver
 from apps.governance.services.audit_service import AuditService
 
 from .models import (
+    OLAnticipatedEndowmentInstallmentRate,
+    OLBeneficialType,
     OLComputationApproach,
     OLDefaultSystemParameter,
+    OLGracePeriod,
     OLMaturityClaimSetup,
+    OLMemberCoverConfiguration,
     OLOverrideCommissionSetup,
     OLParameterTableRegistry,
+    OLPolicyRenewalStatus,
+    OLPolicyStatus,
 )
 
 
@@ -21,6 +27,12 @@ AUDITED_MODELS = (
     OLOverrideCommissionSetup,
     OLComputationApproach,
     OLMaturityClaimSetup,
+    OLAnticipatedEndowmentInstallmentRate,
+    OLGracePeriod,
+    OLPolicyStatus,
+    OLPolicyRenewalStatus,
+    OLBeneficialType,
+    OLMemberCoverConfiguration,
 )
 
 

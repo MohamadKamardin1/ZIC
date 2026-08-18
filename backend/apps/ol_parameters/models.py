@@ -554,3 +554,370 @@ class OLMaturityClaimSetup(OLEffectiveDateModel):
             raise ValidationError({"default_payout_method": "A default payout method is required."})
         if not self.maturity_claim_status_to_create:
             raise ValidationError({"maturity_claim_status_to_create": "A maturity claim status is required."})
+
+
+class OLBeneficialTypeCategory(models.TextChoices):
+    BENEFICIARY = "BENEFICIARY", "Beneficiary"
+    BENEFIT = "BENEFIT", "Benefit"
+    COVERAGE = "COVERAGE", "Coverage"
+    OTHER = "OTHER", "Other"
+
+
+def _policy_setup_intervals_overlap(start_a, end_a, start_b, end_b):
+    """Return whether two inclusive date or numeric intervals overlap."""
+    if end_a is not None and start_b is not None and end_a < start_b:
+        return False
+    if end_b is not None and start_a is not None and end_b < start_a:
+        return False
+    return True
+
+
+def _policy_setup_validate_product_plan(instance, errors):
+    if instance.plan_id and instance.product_id:
+        plan_product_id = getattr(instance.plan, "product_version", None)
+        plan_product_id = getattr(plan_product_id, "product_id", None)
+        if plan_product_id and plan_product_id != instance.product_id:
+            errors["plan"] = "Selected plan does not belong to the selected product."
+
+
+class OLAnticipatedEndowmentInstallmentRate(OLEffectiveDateModel):
+    """Effective-dated anticipated endowment installment rate by product dimensions."""
+
+    product = models.ForeignKey(
+        "ordinary_life.OLProduct",
+        on_delete=models.PROTECT,
+        related_name="ol_anticipated_endowment_rates",
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        related_name="ol_anticipated_endowment_rates",
+        null=True,
+        blank=True,
+    )
+    installment_type = models.CharField(max_length=40, default="ANTICIPATED_ENDOWMENT")
+    frequency = models.CharField(max_length=30, default="ANNUAL")
+    age_from = models.PositiveSmallIntegerField(null=True, blank=True)
+    age_to = models.PositiveSmallIntegerField(null=True, blank=True)
+    term_from = models.PositiveSmallIntegerField(null=True, blank=True)
+    term_to = models.PositiveSmallIntegerField(null=True, blank=True)
+    policy_year_from = models.PositiveSmallIntegerField(null=True, blank=True)
+    policy_year_to = models.PositiveSmallIntegerField(null=True, blank=True)
+    rate_factor = models.DecimalField(max_digits=18, decimal_places=8)
+    currency = models.CharField(max_length=3, blank=True, default="")
+
+    class Meta:
+        ordering = ["product", "plan", "frequency", "age_from", "term_from", "policy_year_from", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_policy_endow_rate_code_uq"),
+            models.CheckConstraint(check=models.Q(rate_factor__gte=0), name="ol_policy_endow_rate_nonnegative"),
+            models.CheckConstraint(
+                check=models.Q(age_to__isnull=True) | models.Q(age_from__isnull=True) | models.Q(age_to__gte=models.F("age_from")),
+                name="ol_policy_endow_age_valid",
+            ),
+            models.CheckConstraint(
+                check=models.Q(term_to__isnull=True) | models.Q(term_from__isnull=True) | models.Q(term_to__gte=models.F("term_from")),
+                name="ol_policy_endow_term_valid",
+            ),
+            models.CheckConstraint(
+                check=models.Q(policy_year_to__isnull=True) | models.Q(policy_year_from__isnull=True) | models.Q(policy_year_to__gte=models.F("policy_year_from")),
+                name="ol_policy_endow_year_valid",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["product", "plan", "frequency"], name="ol_policy_endow_scope_idx"),
+            models.Index(fields=["effective_from", "effective_to"], name="ol_policy_endow_dates_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        _policy_setup_validate_product_plan(self, errors)
+        self.installment_type = (self.installment_type or "").strip().upper()
+        self.frequency = (self.frequency or "").strip().upper()
+        self.currency = (self.currency or "").strip().upper()
+        if not self.installment_type:
+            errors["installment_type"] = "Installment type is required."
+        if not self.frequency:
+            errors["frequency"] = "Frequency is required."
+        if self.currency and (len(self.currency) != 3 or not self.currency.isalpha()):
+            errors["currency"] = "Currency must be a three-letter code."
+        for lower, upper, label in (
+            (self.age_from, self.age_to, "age"),
+            (self.term_from, self.term_to, "term"),
+            (self.policy_year_from, self.policy_year_to, "policy year"),
+        ):
+            if lower is not None and upper is not None and upper < lower:
+                errors[f"{label.replace(' ', '_')}_to"] = f"{label.title()}-to cannot be less than {label}-from."
+        if self.rate_factor is None or self.rate_factor < 0:
+            errors["rate_factor"] = "Rate or factor must be a non-negative decimal."
+        if errors:
+            raise ValidationError(errors)
+        candidates = self.__class__.objects.filter(
+            product=self.product,
+            plan=self.plan,
+            installment_type=self.installment_type,
+            frequency=self.frequency,
+            currency=self.currency,
+            is_active=True,
+        )
+        if self.pk:
+            candidates = candidates.exclude(pk=self.pk)
+        for candidate in candidates:
+            if not _policy_setup_intervals_overlap(self.effective_from, self.effective_to, candidate.effective_from, candidate.effective_to):
+                continue
+            if all(
+                _policy_setup_intervals_overlap(getattr(self, lower), getattr(self, upper), getattr(candidate, lower), getattr(candidate, upper))
+                for lower, upper in (
+                    ("age_from", "age_to"),
+                    ("term_from", "term_to"),
+                    ("policy_year_from", "policy_year_to"),
+                )
+            ):
+                raise ValidationError({"code": "An active anticipated endowment rate overlaps an existing row in the same scope."})
+
+
+class OLGracePeriod(OLEffectiveDateModel):
+    """Effective-dated premium grace/lapse timing by optional product scope."""
+
+    product = models.ForeignKey(
+        "ordinary_life.OLProduct",
+        on_delete=models.PROTECT,
+        related_name="ol_grace_periods",
+        null=True,
+        blank=True,
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        related_name="ol_grace_periods",
+        null=True,
+        blank=True,
+    )
+    premium_frequency = models.CharField(max_length=30, blank=True, default="")
+    grace_days = models.PositiveIntegerField(default=0)
+    warning_days = models.PositiveIntegerField(default=0)
+    pre_lapse_days = models.PositiveIntegerField(default=0)
+    lapse_days = models.PositiveIntegerField(default=0)
+    minimum_due_amount = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+
+    class Meta:
+        ordering = ["product", "plan", "premium_frequency", "-effective_from", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_policy_grace_code_uq"),
+            models.CheckConstraint(check=models.Q(minimum_due_amount__isnull=True) | models.Q(minimum_due_amount__gte=0), name="ol_policy_grace_min_due_nonnegative"),
+            models.CheckConstraint(check=models.Q(grace_days__lte=models.F("lapse_days")), name="ol_policy_grace_days_ordered"),
+            models.CheckConstraint(check=models.Q(warning_days__lte=models.F("lapse_days")), name="ol_policy_grace_warning_valid"),
+            models.CheckConstraint(check=models.Q(pre_lapse_days__lte=models.F("lapse_days")), name="ol_policy_grace_pre_lapse_valid"),
+        ]
+        indexes = [
+            models.Index(fields=["product", "plan", "premium_frequency"], name="ol_policy_grace_scope_idx"),
+            models.Index(fields=["is_active", "effective_from"], name="ol_policy_grace_active_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        _policy_setup_validate_product_plan(self, errors)
+        self.premium_frequency = (self.premium_frequency or "").strip().upper()
+        if self.grace_days > self.lapse_days:
+            errors["grace_days"] = "Grace days cannot exceed lapse days."
+        if self.warning_days > self.lapse_days:
+            errors["warning_days"] = "Warning days cannot exceed lapse days."
+        if self.pre_lapse_days > self.lapse_days:
+            errors["pre_lapse_days"] = "Pre-lapse days cannot exceed lapse days."
+        if self.minimum_due_amount is not None and self.minimum_due_amount < 0:
+            errors["minimum_due_amount"] = "Minimum due amount cannot be negative."
+        if errors:
+            raise ValidationError(errors)
+        candidates = self.__class__.objects.filter(
+            product=self.product,
+            plan=self.plan,
+            premium_frequency=self.premium_frequency,
+            is_active=True,
+        )
+        if self.pk:
+            candidates = candidates.exclude(pk=self.pk)
+        for candidate in candidates:
+            if _policy_setup_intervals_overlap(self.effective_from, self.effective_to, candidate.effective_from, candidate.effective_to):
+                raise ValidationError({"code": "An active grace-period row overlaps an existing row in the same scope."})
+
+
+class OLPolicyStatus(OLParameterBaseModel):
+    """Configurable policy lifecycle status and outgoing transition metadata."""
+
+    display_order = models.PositiveIntegerField(default=0)
+    badge_type = models.CharField(max_length=30, default="NEUTRAL")
+    is_terminal = models.BooleanField(default=False)
+    allowed_transitions = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ["display_order", "name", "code"]
+        constraints = [models.UniqueConstraint(fields=["code"], name="ol_policy_status_code_uq")]
+        indexes = [
+            models.Index(fields=["is_active", "display_order"], name="ol_policy_status_active_idx"),
+            models.Index(fields=["is_terminal", "is_active"], name="ol_policy_status_terminal_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        self.badge_type = (self.badge_type or "NEUTRAL").strip().upper()
+        transitions = self.allowed_transitions if self.allowed_transitions is not None else []
+        if not isinstance(transitions, list):
+            raise ValidationError({"allowed_transitions": "Allowed transitions must be a JSON list of status codes."})
+        normalized = []
+        for transition in transitions:
+            if not isinstance(transition, str) or not transition.strip():
+                raise ValidationError({"allowed_transitions": "Each transition must be a non-empty status code."})
+            target = transition.strip().upper()
+            if target == self.code.upper():
+                raise ValidationError({"allowed_transitions": "A policy status cannot transition to itself."})
+            if target not in normalized:
+                normalized.append(target)
+        if self.is_terminal and normalized:
+            raise ValidationError({"allowed_transitions": "Terminal policy statuses cannot have outgoing transitions."})
+        if normalized:
+            existing_codes = {
+                code.upper()
+                for code in self.__class__.objects.filter(is_active=True).exclude(pk=self.pk).values_list("code", flat=True)
+            }
+            missing = [target for target in normalized if target not in existing_codes]
+            if missing:
+                raise ValidationError({"allowed_transitions": f"Unknown active policy-status codes: {', '.join(missing)}."})
+        self.allowed_transitions = normalized
+
+
+class OLPolicyRenewalStatus(OLParameterBaseModel):
+    """Configurable renewal lifecycle status catalog."""
+
+    display_order = models.PositiveIntegerField(default=0)
+    renewal_action = models.CharField(max_length=40, default="NONE")
+
+    class Meta:
+        ordering = ["display_order", "name", "code"]
+        constraints = [models.UniqueConstraint(fields=["code"], name="ol_policy_renewal_status_code_uq")]
+        indexes = [models.Index(fields=["is_active", "display_order"], name="ol_policy_renewal_active_idx")]
+
+    def clean(self):
+        super().clean()
+        self.renewal_action = (self.renewal_action or "NONE").strip().upper()
+        if not self.renewal_action:
+            raise ValidationError({"renewal_action": "Renewal action is required."})
+
+
+class OLBeneficialType(OLParameterBaseModel):
+    """Flexible beneficiary, benefit, or coverage type catalog."""
+
+    category = models.CharField(max_length=20, choices=OLBeneficialTypeCategory.choices, default=OLBeneficialTypeCategory.BENEFICIARY)
+    calculation_basis = models.CharField(max_length=50, default="PERCENTAGE")
+    default_ratio = models.DecimalField(max_digits=7, decimal_places=4, default=0)
+    allows_multiple = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["category", "name", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_beneficial_type_code_uq"),
+            models.CheckConstraint(check=models.Q(default_ratio__gte=0) & models.Q(default_ratio__lte=100), name="ol_beneficial_ratio_valid"),
+        ]
+        indexes = [
+            models.Index(fields=["category", "is_active"], name="ol_beneficial_type_cat_idx"),
+            models.Index(fields=["is_active", "calculation_basis"], name="ol_beneficial_type_basis_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        self.category = (self.category or "").strip().upper()
+        self.calculation_basis = (self.calculation_basis or "PERCENTAGE").strip().upper()
+        if self.category not in {choice for choice, _ in OLBeneficialTypeCategory.choices}:
+            raise ValidationError({"category": "Unsupported beneficial type category."})
+        if self.default_ratio is None or self.default_ratio < 0 or self.default_ratio > 100:
+            raise ValidationError({"default_ratio": "Default ratio must be between 0 and 100."})
+
+
+class OLMemberCoverConfiguration(OLEffectiveDateModel):
+    """Effective-dated member/dependent eligibility and cover configuration."""
+
+    product = models.ForeignKey(
+        "ordinary_life.OLProduct",
+        on_delete=models.PROTECT,
+        related_name="ol_member_cover_configurations",
+        null=True,
+        blank=True,
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        related_name="ol_member_cover_configurations",
+        null=True,
+        blank=True,
+    )
+    cover_type = models.CharField(max_length=40, default="INDIVIDUAL")
+    member_relation = models.CharField(max_length=40, default="MEMBER")
+    min_age = models.PositiveSmallIntegerField(null=True, blank=True)
+    max_age = models.PositiveSmallIntegerField(null=True, blank=True)
+    waiting_period_days = models.PositiveIntegerField(default=0)
+    benefit_limit = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    premium_basis = models.CharField(max_length=50, default="MEMBER_PREMIUM")
+    coverage_basis = models.CharField(max_length=50, default="SUM_ASSURED")
+
+    class Meta:
+        ordering = ["product", "plan", "cover_type", "member_relation", "min_age", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_member_cover_code_uq"),
+            models.CheckConstraint(check=models.Q(max_age__isnull=True) | models.Q(min_age__isnull=True) | models.Q(max_age__gte=models.F("min_age")), name="ol_member_cover_age_valid"),
+            models.CheckConstraint(check=models.Q(benefit_limit__isnull=True) | models.Q(benefit_limit__gte=0), name="ol_member_cover_limit_nonnegative"),
+        ]
+        indexes = [
+            models.Index(fields=["product", "plan", "cover_type", "member_relation"], name="ol_member_cover_scope_idx"),
+            models.Index(fields=["is_active", "effective_from"], name="ol_member_cover_active_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        _policy_setup_validate_product_plan(self, errors)
+        self.cover_type = (self.cover_type or "").strip().upper()
+        self.member_relation = (self.member_relation or "").strip().upper()
+        self.premium_basis = (self.premium_basis or "").strip().upper()
+        self.coverage_basis = (self.coverage_basis or "").strip().upper()
+        if not self.cover_type:
+            errors["cover_type"] = "Cover type is required."
+        if not self.member_relation:
+            errors["member_relation"] = "Member relation is required."
+        if self.min_age is not None and self.max_age is not None and self.max_age < self.min_age:
+            errors["max_age"] = "Maximum age cannot be less than minimum age."
+        if self.benefit_limit is not None and self.benefit_limit < 0:
+            errors["benefit_limit"] = "Benefit limit cannot be negative."
+        if errors:
+            raise ValidationError(errors)
+        candidates = self.__class__.objects.filter(
+            product=self.product,
+            plan=self.plan,
+            cover_type=self.cover_type,
+            member_relation=self.member_relation,
+            is_active=True,
+        )
+        if self.pk:
+            candidates = candidates.exclude(pk=self.pk)
+        for candidate in candidates:
+            if not _policy_setup_intervals_overlap(self.effective_from, self.effective_to, candidate.effective_from, candidate.effective_to):
+                continue
+            if _policy_setup_intervals_overlap(self.min_age, self.max_age, candidate.min_age, candidate.max_age):
+                raise ValidationError({"code": "An active member-cover row overlaps an existing row in the same scope."})
+
+
+def validate_policy_status_transition_graph(queryset=None):
+    """Validate that active policy-status transition targets form a valid catalog graph."""
+    statuses = list((queryset or OLPolicyStatus.objects.filter(is_active=True)).all())
+    by_code = {status.code.upper(): status for status in statuses}
+    errors = {}
+    for status in statuses:
+        transitions = status.allowed_transitions or []
+        missing = [code for code in transitions if code.upper() not in by_code]
+        if missing:
+            errors[status.code] = f"Unknown active policy-status transition targets: {', '.join(missing)}."
+        if status.is_terminal and transitions:
+            errors[status.code] = "Terminal policy statuses cannot have outgoing transitions."
+    if errors:
+        raise ValidationError(errors)
+    return True

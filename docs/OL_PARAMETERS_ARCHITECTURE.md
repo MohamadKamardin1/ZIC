@@ -113,3 +113,22 @@ The Default Setup API is table-first and supports list, retrieve, create, update
 All mutations use the existing `ol_parameters.create`, `ol_parameters.update`, and `ol_parameters.deactivate` permissions, stamp the actor, execute transactionally, and emit central audit events. Admin mutations are also protected by the same permission helper. Physical deletion is not exposed.
 
 The seed command `python manage.py seed_ol_default_setup` is idempotent and provides an operational baseline for currency, premium mode, quotation and proposal validity, first-premium requirement, duplicate-claim behavior, grace and warning periods, maturity claim creation, commission basis, and policy numbering. Seed values are configuration defaults rather than hard-coded business logic; downstream lifecycle and calculation services must resolve active, effective records before execution.
+
+## OL Policy Setup Part 1 subcontext
+
+OL Policy Setup Part 1 is the second concrete parameter group delivered on the foundation. It provides canonical, effective-dated configuration for policy lifecycle and member-cover behavior while leaving transactional policy state and workflow execution in `apps.ordinary_life`.
+
+| Entity | Purpose | Main scope or behavior |
+|---|---|---|
+| `OLAnticipatedEndowmentInstallmentRate` | Anticipated endowment installment rate/factor rows. | Product/plan, frequency, age, term, policy-year, currency, and effective-date dimensions; nonnegative rates and ordered ranges. |
+| `OLGracePeriod` | Premium grace, warning, pre-lapse, and lapse timing. | Optional product/plan and premium-frequency scope, minimum due amount, effective dates, and ordered lifecycle intervals. |
+| `OLPolicyStatus` | Policy lifecycle status catalog. | Display order, badge type, terminal flag, and an explicit allowed-transition code list. |
+| `OLPolicyRenewalStatus` | Renewal lifecycle status catalog. | Display order, renewal action, and effective dates for renewal processing consumers. |
+| `OLBeneficialType` | Beneficiary/benefit/coverage classification. | Category, calculation basis, default ratio, and multiple-allocation behavior. |
+| `OLMemberCoverConfiguration` | Member cover eligibility and calculation defaults. | Optional product/plan scope, cover type, member relation, age range, waiting period, limits, premium basis, and coverage basis. |
+
+All six tables use the standard OL parameter lifecycle contract: UUID identity, business code, name, description, active flag, effective dates, actor attribution, timestamps, permission-aware service mutations, and central audit events. The APIs support table list/detail/create/update/deactivate, search, exact filters, ordering, pagination, and CSV export. Policy statuses additionally expose `GET /api/v1/ol-parameters/policy-statuses/validate-transitions/`, which validates that active transition targets exist and are not terminal-transition violations.
+
+The model layer validates product-plan consistency, ordered age/term/year and lifecycle ranges, nonnegative numeric values, active transition targets, and terminal status rules. Effective-dated scoped records use model-level overlap protection where a duplicate active configuration would create ambiguous runtime resolution. The service and serializers execute the same validation contract for API/admin writes.
+
+The idempotent command `python manage.py seed_ol_policy_setup` seeds operational policy and renewal status catalogs, beneficiary types, grace-period and member-cover defaults, six table-registry contracts, and safe starter rows where no product scope is required. The legacy `apps.ordinary_life` setup models and `/api/v1/ordinary-life/setup/` routes remain available unchanged for compatibility; new configuration screens and future consumers should use the canonical `apps.ol_parameters` tables.

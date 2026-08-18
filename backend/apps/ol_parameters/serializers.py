@@ -86,12 +86,19 @@ from decimal import Decimal, InvalidOperation
 from django.core.exceptions import ValidationError as DjangoValidationError
 
 from .models import (
+    OLAnticipatedEndowmentInstallmentRate,
+    OLBeneficialType,
+    OLBeneficialTypeCategory,
     OLCommissionRateType,
     OLComputationApproach,
     OLDefaultParameterValueType,
     OLDefaultSystemParameter,
+    OLGracePeriod,
     OLMaturityClaimSetup,
+    OLMemberCoverConfiguration,
     OLOverrideCommissionSetup,
+    OLPolicyRenewalStatus,
+    OLPolicyStatus,
 )
 
 
@@ -221,5 +228,47 @@ class OLComputationApproachSerializer(_ValidatedDefaultSetupModelSerializer):
 class OLMaturityClaimSetupSerializer(_ValidatedDefaultSetupModelSerializer):
     class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
         model = OLMaturityClaimSetup
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLAnticipatedEndowmentInstallmentRateSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLAnticipatedEndowmentInstallmentRate
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLGracePeriodSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLGracePeriod
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLPolicyStatusSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLPolicyStatus
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLPolicyRenewalStatusSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLPolicyRenewalStatus
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLBeneficialTypeSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLBeneficialType
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLMemberCoverConfigurationSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLMemberCoverConfiguration
         fields = "__all__"
         read_only_fields = _AUDIT_READ_ONLY
