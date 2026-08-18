@@ -15,6 +15,11 @@ from .models import (
     OLMaturityClaimSetup,
     OLMemberCoverConfiguration,
     OLOverrideCommissionSetup,
+    OLPaidUpRate,
+    OLPaidUpSetup,
+    OLCommitmentStatus,
+    OLSurrenderSetup,
+    OLSurrenderValueRate,
     OLParameterTableRegistry,
     OLPolicyRenewalStatus,
     OLPolicyStatus,
@@ -33,6 +38,11 @@ AUDITED_MODELS = (
     OLPolicyRenewalStatus,
     OLBeneficialType,
     OLMemberCoverConfiguration,
+    OLSurrenderSetup,
+    OLPaidUpSetup,
+    OLSurrenderValueRate,
+    OLPaidUpRate,
+    OLCommitmentStatus,
 )
 
 

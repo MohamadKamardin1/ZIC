@@ -132,3 +132,31 @@ All six tables use the standard OL parameter lifecycle contract: UUID identity, 
 The model layer validates product-plan consistency, ordered age/term/year and lifecycle ranges, nonnegative numeric values, active transition targets, and terminal status rules. Effective-dated scoped records use model-level overlap protection where a duplicate active configuration would create ambiguous runtime resolution. The service and serializers execute the same validation contract for API/admin writes.
 
 The idempotent command `python manage.py seed_ol_policy_setup` seeds operational policy and renewal status catalogs, beneficiary types, grace-period and member-cover defaults, six table-registry contracts, and safe starter rows where no product scope is required. The legacy `apps.ordinary_life` setup models and `/api/v1/ordinary-life/setup/` routes remain available unchanged for compatibility; new configuration screens and future consumers should use the canonical `apps.ol_parameters` tables.
+
+## OL Policy Setup Part 2 subcontext
+
+OL Policy Setup Part 2 extends the canonical policy-configuration surface with surrender, paid-up, value-rate, and commitment configuration. It remains configuration-only: policy transactions, servicing actions, surrender processing, paid-up conversion, and commitment execution remain owned by the Ordinary Life transactional domain.
+
+| Entity | Purpose | Main scope or behavior |
+|---|---|---|
+| `OLSurrenderSetup` | Surrender eligibility, charges, payout timing, and approval behavior. | Optional product/plan scope, minimum premiums/months, minimum premium ratio, charge type/value, partial-surrender flag, payout days, and approval requirement. |
+| `OLPaidUpSetup` | Paid-up conversion eligibility and effective timing. | Optional product/plan scope, minimum premiums/months, proportional or fixed conversion basis, eligibility flag, and effective-rule selection. |
+| `OLSurrenderValueRate` | Surrender-value factor/rate rows. | Product/optional plan scope, table code/version, gender, smoker status, age/term/policy-year dimensions, row order, effective dates, and nonnegative Decimal rate factor. |
+| `OLPaidUpRate` | Paid-up value factor/rate rows. | Product/optional plan scope, table code/version, gender, smoker status, age/term/policy-year dimensions, row order, effective dates, and nonnegative Decimal rate factor. |
+| `OLCommitmentStatus` | Commitment lifecycle status catalog. | Status code, display order, applicability, terminal flag, effective dates, and standard active/audit lifecycle fields. |
+
+The setup entities enforce product-plan consistency and prevent ambiguous active effective-dated rows within the same scope. Surrender setup rejects nonzero charges when the charge type is `NONE`; paid-up setup requires at least one eligibility threshold when conversion is allowed; rate rows require a table code or version, validate age/term/policy-year ranges, reject negative factors, and protect against overlapping rows with the same table/version, product/plan, demographic dimensions, and effective date interval.
+
+The Part 2 resources use the shared table-first contract and expose list, retrieve, create, update, soft deactivation, search, filtering, ordering, pagination, and CSV export:
+
+| Resource | Endpoint |
+|---|---|
+| Surrender setup | `/api/v1/ol-parameters/surrender-setups/` |
+| Paid-up setup | `/api/v1/ol-parameters/paid-up-setups/` |
+| Surrender-value rates | `/api/v1/ol-parameters/surrender-value-rates/` |
+| Paid-up rates | `/api/v1/ol-parameters/paid-up-rates/` |
+| Commitment statuses | `/api/v1/ol-parameters/commitment-statuses/` |
+
+All mutations reuse the generic OL Parameters permission contract, actor stamping, atomic persistence, and central audit events. The idempotent `python manage.py seed_ol_policy_setup` command now seeds the Part 1 and Part 2 registry contracts, commitment statuses, global surrender and paid-up defaults, and product-scoped starter rate rows only when an active product is available. Existing `apps.ordinary_life` Policy Setup models and routes remain unchanged for compatibility.
+
+The Part 2 schema is delivered by additive migration `0006_olpaiduprate_olpaidupsetup_olsurrendersetup_and_more.py`. Future Policy Setup parts can reuse the same scoped effective-date and rate-row conventions without changing the registry or API foundation.

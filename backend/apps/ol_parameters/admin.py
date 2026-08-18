@@ -9,6 +9,11 @@ from .models import (
     OLMaturityClaimSetup,
     OLMemberCoverConfiguration,
     OLOverrideCommissionSetup,
+    OLPaidUpRate,
+    OLPaidUpSetup,
+    OLCommitmentStatus,
+    OLSurrenderSetup,
+    OLSurrenderValueRate,
     OLParameterTableRegistry,
     OLPolicyRenewalStatus,
     OLPolicyStatus,
@@ -305,5 +310,103 @@ class OLMemberCoverConfigurationAdmin(OLDefaultSetupAdmin):
         ("Scope", {"fields": ("product", "plan", "cover_type", "member_relation")}),
         ("Eligibility and cover", {"fields": ("min_age", "max_age", "waiting_period_days", "benefit_limit", "premium_basis", "coverage_basis")}),
         ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLSurrenderSetup)
+class OLSurrenderSetupAdmin(OLDefaultSetupAdmin):
+    list_display = (
+        "code", "name", "product", "plan", "minimum_policy_months", "minimum_premiums_paid",
+        "surrender_charge_type", "surrender_charge_value", "partial_surrender_allowed", "is_active", "updated_at",
+    )
+    list_filter = (
+        "is_active", "surrender_charge_type", "partial_surrender_allowed", "require_approval",
+        "effective_from", "effective_to",
+    )
+    search_fields = ("code", "name", "description", "surrender_charge_type", "product__code", "plan__code")
+    ordering = ("product", "plan", "-effective_from", "code")
+    autocomplete_fields = ("product", "plan")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Scope", {"fields": ("product", "plan")}),
+        ("Eligibility", {"fields": ("minimum_premiums_paid", "minimum_policy_months", "minimum_premium_paid_ratio")}),
+        ("Surrender behavior", {"fields": ("surrender_charge_type", "surrender_charge_value", "partial_surrender_allowed", "surrender_payout_days", "require_approval")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLPaidUpSetup)
+class OLPaidUpSetupAdmin(OLDefaultSetupAdmin):
+    list_display = (
+        "code", "name", "product", "plan", "minimum_policy_months", "minimum_premiums_paid",
+        "paidup_conversion_basis", "paidup_effective_rule", "allow_paidup", "is_active", "updated_at",
+    )
+    list_filter = ("is_active", "allow_paidup", "paidup_conversion_basis", "paidup_effective_rule", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "paidup_conversion_basis", "paidup_effective_rule", "product__code", "plan__code")
+    ordering = ("product", "plan", "-effective_from", "code")
+    autocomplete_fields = ("product", "plan")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Scope", {"fields": ("product", "plan")}),
+        ("Eligibility", {"fields": ("minimum_premiums_paid", "minimum_policy_months", "allow_paidup")}),
+        ("Conversion behavior", {"fields": ("paidup_conversion_basis", "paidup_effective_rule")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+class OLRatePart2Admin(OLDefaultSetupAdmin):
+    list_filter = (
+        "is_active", "table_code", "rate_table_version", "gender", "smoker_status", "effective_from", "effective_to",
+    )
+    search_fields = (
+        "code", "name", "description", "table_code", "rate_table_version", "gender", "smoker_status",
+        "product__code", "plan__code",
+    )
+    ordering = ("table_code", "rate_table_version", "product", "plan", "row_order", "age_from", "term_from", "policy_year_from", "code")
+    autocomplete_fields = ("product", "plan")
+
+
+@admin.register(OLSurrenderValueRate)
+class OLSurrenderValueRateAdmin(OLRatePart2Admin):
+    list_display = (
+        "table_code", "rate_table_version", "code", "product", "plan", "gender", "smoker_status",
+        "age_from", "age_to", "term_from", "term_to", "policy_year_from", "policy_year_to", "rate_factor", "is_active",
+    )
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Table and scope", {"fields": ("table_code", "rate_table_version", "product", "plan", "gender", "smoker_status")}),
+        ("Dimensions and rate", {"fields": ("age_from", "age_to", "term_from", "term_to", "policy_year_from", "policy_year_to", "rate_factor", "row_order")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLPaidUpRate)
+class OLPaidUpRateAdmin(OLRatePart2Admin):
+    list_display = (
+        "table_code", "rate_table_version", "code", "product", "plan", "gender", "smoker_status",
+        "age_from", "age_to", "term_from", "term_to", "policy_year_from", "policy_year_to", "rate_factor", "is_active",
+    )
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Table and scope", {"fields": ("table_code", "rate_table_version", "product", "plan", "gender", "smoker_status")}),
+        ("Dimensions and rate", {"fields": ("age_from", "age_to", "term_from", "term_to", "policy_year_from", "policy_year_to", "rate_factor", "row_order")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLCommitmentStatus)
+class OLCommitmentStatusAdmin(OLDefaultSetupAdmin):
+    list_display = ("display_order", "code", "name", "applies_to", "is_terminal", "is_active", "updated_at")
+    list_filter = ("is_active", "applies_to", "is_terminal")
+    search_fields = ("code", "name", "description", "applies_to")
+    ordering = ("applies_to", "display_order", "name", "code")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Status behavior", {"fields": ("display_order", "applies_to", "is_terminal")}),
         ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
     )

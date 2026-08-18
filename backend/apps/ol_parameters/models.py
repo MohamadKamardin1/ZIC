@@ -921,3 +921,390 @@ def validate_policy_status_transition_graph(queryset=None):
     if errors:
         raise ValidationError(errors)
     return True
+
+
+# =============================================================================
+# OL POLICY SETUP PART 2
+# =============================================================================
+
+
+class OLSurrenderChargeType(models.TextChoices):
+    NONE = "NONE", "None"
+    PERCENTAGE = "PERCENTAGE", "Percentage"
+    FIXED = "FIXED", "Fixed amount"
+    FACTOR = "FACTOR", "Factor"
+
+
+class OLPaidUpConversionBasis(models.TextChoices):
+    PROPORTIONAL = "PROPORTIONAL", "Proportional"
+    REDUCED_SUM_ASSURED = "REDUCED_SUM_ASSURED", "Reduced sum assured"
+    CASH_VALUE = "CASH_VALUE", "Cash value"
+    CUSTOM = "CUSTOM", "Custom formula"
+
+
+class OLPaidUpEffectiveRule(models.TextChoices):
+    IMMEDIATE = "IMMEDIATE", "Immediate"
+    NEXT_ANNIVERSARY = "NEXT_ANNIVERSARY", "Next policy anniversary"
+    NEXT_DUE_DATE = "NEXT_DUE_DATE", "Next premium due date"
+    CONFIGURED_DATE = "CONFIGURED_DATE", "Configured effective date"
+
+
+def _part2_validate_scope(instance, errors):
+    if instance.plan_id and not instance.product_id:
+        errors["plan"] = "A plan cannot be configured without its product scope."
+    _policy_setup_validate_product_plan(instance, errors)
+
+
+def _part2_rate_intervals_overlap(first, second):
+    return all(
+        _policy_setup_intervals_overlap(getattr(first, lower), getattr(first, upper), getattr(second, lower), getattr(second, upper))
+        for lower, upper in (
+            ("age_from", "age_to"),
+            ("term_from", "term_to"),
+            ("policy_year_from", "policy_year_to"),
+        )
+    )
+
+
+class OLSurrenderSetup(OLEffectiveDateModel):
+    """Effective-dated surrender eligibility and payout behavior."""
+
+    product = models.ForeignKey(
+        "ordinary_life.OLProduct",
+        on_delete=models.PROTECT,
+        related_name="ol_parameter_surrender_setups",
+        null=True,
+        blank=True,
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        related_name="ol_parameter_surrender_setups",
+        null=True,
+        blank=True,
+    )
+    minimum_premiums_paid = models.PositiveIntegerField(default=0)
+    minimum_policy_months = models.PositiveIntegerField(default=0)
+    minimum_premium_paid_ratio = models.DecimalField(max_digits=7, decimal_places=4, default=0)
+    surrender_charge_type = models.CharField(
+        max_length=20,
+        choices=OLSurrenderChargeType.choices,
+        default=OLSurrenderChargeType.NONE,
+    )
+    surrender_charge_value = models.DecimalField(max_digits=18, decimal_places=8, default=0)
+    partial_surrender_allowed = models.BooleanField(default=False)
+    surrender_payout_days = models.PositiveIntegerField(default=0)
+    require_approval = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["product", "plan", "-effective_from", "name", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_surr_setup_code_uq"),
+            models.CheckConstraint(
+                check=models.Q(minimum_premium_paid_ratio__gte=0)
+                & models.Q(minimum_premium_paid_ratio__lte=100),
+                name="ol_surr_setup_ratio_valid",
+            ),
+            models.CheckConstraint(
+                check=models.Q(surrender_charge_value__gte=0),
+                name="ol_surr_setup_charge_nonneg",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["product", "plan", "is_active"], name="ol_surr_setup_scope_idx"),
+            models.Index(fields=["is_active", "effective_from"], name="ol_surr_setup_dates_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        _part2_validate_scope(self, errors)
+        self.surrender_charge_type = (self.surrender_charge_type or OLSurrenderChargeType.NONE).strip().upper()
+        if self.surrender_charge_type not in {choice for choice, _ in OLSurrenderChargeType.choices}:
+            errors["surrender_charge_type"] = "Unsupported surrender charge type."
+        if self.minimum_premium_paid_ratio is None or not 0 <= self.minimum_premium_paid_ratio <= 100:
+            errors["minimum_premium_paid_ratio"] = "Minimum premium paid ratio must be between 0 and 100."
+        if self.surrender_charge_value is None or self.surrender_charge_value < 0:
+            errors["surrender_charge_value"] = "Surrender charge value cannot be negative."
+        if self.surrender_charge_type == OLSurrenderChargeType.NONE and self.surrender_charge_value:
+            errors["surrender_charge_value"] = "A surrender charge value is not allowed when charge type is NONE."
+        if errors:
+            raise ValidationError(errors)
+        candidates = self.__class__.objects.filter(product=self.product, plan=self.plan, is_active=True)
+        if self.pk:
+            candidates = candidates.exclude(pk=self.pk)
+        for candidate in candidates:
+            if _policy_setup_intervals_overlap(self.effective_from, self.effective_to, candidate.effective_from, candidate.effective_to):
+                raise ValidationError({"code": "An active surrender setup overlaps an existing row in the same scope."})
+
+
+class OLPaidUpSetup(OLEffectiveDateModel):
+    """Effective-dated paid-up conversion eligibility and timing behavior."""
+
+    product = models.ForeignKey(
+        "ordinary_life.OLProduct",
+        on_delete=models.PROTECT,
+        related_name="ol_parameter_paid_up_setups",
+        null=True,
+        blank=True,
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        related_name="ol_parameter_paid_up_setups",
+        null=True,
+        blank=True,
+    )
+    minimum_premiums_paid = models.PositiveIntegerField(default=0)
+    minimum_policy_months = models.PositiveIntegerField(default=0)
+    paidup_conversion_basis = models.CharField(
+        max_length=30,
+        choices=OLPaidUpConversionBasis.choices,
+        default=OLPaidUpConversionBasis.PROPORTIONAL,
+    )
+    allow_paidup = models.BooleanField(default=True)
+    paidup_effective_rule = models.CharField(
+        max_length=30,
+        choices=OLPaidUpEffectiveRule.choices,
+        default=OLPaidUpEffectiveRule.NEXT_ANNIVERSARY,
+    )
+
+    class Meta:
+        ordering = ["product", "plan", "-effective_from", "name", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_paidup_setup_code_uq"),
+        ]
+        indexes = [
+            models.Index(fields=["product", "plan", "is_active"], name="ol_paidup_setup_scope_idx"),
+            models.Index(fields=["allow_paidup", "is_active"], name="ol_paidup_setup_allow_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        _part2_validate_scope(self, errors)
+        self.paidup_conversion_basis = (self.paidup_conversion_basis or OLPaidUpConversionBasis.PROPORTIONAL).strip().upper()
+        self.paidup_effective_rule = (self.paidup_effective_rule or OLPaidUpEffectiveRule.NEXT_ANNIVERSARY).strip().upper()
+        if self.paidup_conversion_basis not in {choice for choice, _ in OLPaidUpConversionBasis.choices}:
+            errors["paidup_conversion_basis"] = "Unsupported paid-up conversion basis."
+        if self.paidup_effective_rule not in {choice for choice, _ in OLPaidUpEffectiveRule.choices}:
+            errors["paidup_effective_rule"] = "Unsupported paid-up effective rule."
+        if self.allow_paidup and self.minimum_premiums_paid == 0 and self.minimum_policy_months == 0:
+            errors["minimum_policy_months"] = "At least one paid-up eligibility threshold is required when paid-up conversion is allowed."
+        if errors:
+            raise ValidationError(errors)
+        candidates = self.__class__.objects.filter(product=self.product, plan=self.plan, is_active=True)
+        if self.pk:
+            candidates = candidates.exclude(pk=self.pk)
+        for candidate in candidates:
+            if _policy_setup_intervals_overlap(self.effective_from, self.effective_to, candidate.effective_from, candidate.effective_to):
+                raise ValidationError({"code": "An active paid-up setup overlaps an existing row in the same scope."})
+
+
+class OLSurrenderValueRate(OLEffectiveDateModel):
+    """Multi-dimensional surrender-value rate/factor table row."""
+
+    table_code = models.CharField(max_length=100, blank=True, default="", db_index=True)
+    rate_table_version = models.CharField(max_length=50, blank=True, default="", db_index=True)
+    product = models.ForeignKey(
+        "ordinary_life.OLProduct",
+        on_delete=models.PROTECT,
+        related_name="ol_parameter_surrender_value_rates",
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        related_name="ol_parameter_surrender_value_rates",
+        null=True,
+        blank=True,
+    )
+    gender = models.CharField(max_length=30, blank=True, default="", db_index=True)
+    smoker_status = models.CharField(max_length=30, blank=True, default="", db_index=True)
+    age_from = models.PositiveSmallIntegerField(null=True, blank=True)
+    age_to = models.PositiveSmallIntegerField(null=True, blank=True)
+    term_from = models.PositiveSmallIntegerField(null=True, blank=True)
+    term_to = models.PositiveSmallIntegerField(null=True, blank=True)
+    policy_year_from = models.PositiveSmallIntegerField(null=True, blank=True)
+    policy_year_to = models.PositiveSmallIntegerField(null=True, blank=True)
+    rate_factor = models.DecimalField(max_digits=18, decimal_places=8)
+    row_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["table_code", "rate_table_version", "product", "plan", "row_order", "age_from", "term_from", "policy_year_from", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_surr_value_rate_code_uq"),
+            models.CheckConstraint(check=models.Q(rate_factor__gte=0), name="ol_surr_value_rate_nonneg"),
+            models.CheckConstraint(
+                check=models.Q(age_to__isnull=True) | models.Q(age_from__isnull=True) | models.Q(age_to__gte=models.F("age_from")),
+                name="ol_surr_value_age_valid",
+            ),
+            models.CheckConstraint(
+                check=models.Q(term_to__isnull=True) | models.Q(term_from__isnull=True) | models.Q(term_to__gte=models.F("term_from")),
+                name="ol_surr_value_term_valid",
+            ),
+            models.CheckConstraint(
+                check=models.Q(policy_year_to__isnull=True) | models.Q(policy_year_from__isnull=True) | models.Q(policy_year_to__gte=models.F("policy_year_from")),
+                name="ol_surr_value_year_valid",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["table_code", "rate_table_version", "product", "plan"], name="ol_surr_value_scope_idx"),
+            models.Index(fields=["product", "gender", "smoker_status"], name="ol_surr_value_dim_idx"),
+            models.Index(fields=["is_active", "effective_from"], name="ol_surr_value_dates_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        _part2_validate_scope(self, errors)
+        self.table_code = (self.table_code or "").strip().upper()
+        self.rate_table_version = (self.rate_table_version or "").strip().upper()
+        self.gender = (self.gender or "").strip().upper()
+        self.smoker_status = (self.smoker_status or "").strip().upper()
+        if not self.table_code and not self.rate_table_version:
+            errors["table_code"] = "A table code or rate-table version is required."
+        for lower, upper, label in (
+            (self.age_from, self.age_to, "age"),
+            (self.term_from, self.term_to, "term"),
+            (self.policy_year_from, self.policy_year_to, "policy year"),
+        ):
+            if lower is not None and upper is not None and upper < lower:
+                errors[f"{label.replace(' ', '_')}_to"] = f"{label.title()}-to cannot be less than {label}-from."
+            if label != "age" and lower is not None and lower < 1:
+                errors[f"{label.replace(' ', '_')}_from"] = f"{label.title()}-from must be at least 1."
+        if self.rate_factor is None or self.rate_factor < 0:
+            errors["rate_factor"] = "Surrender value rate/factor must be a non-negative decimal."
+        if errors:
+            raise ValidationError(errors)
+        candidates = self.__class__.objects.filter(
+            table_code=self.table_code,
+            rate_table_version=self.rate_table_version,
+            product=self.product,
+            plan=self.plan,
+            gender=self.gender,
+            smoker_status=self.smoker_status,
+            is_active=True,
+        )
+        if self.pk:
+            candidates = candidates.exclude(pk=self.pk)
+        for candidate in candidates:
+            if _policy_setup_intervals_overlap(self.effective_from, self.effective_to, candidate.effective_from, candidate.effective_to) and _part2_rate_intervals_overlap(self, candidate):
+                raise ValidationError({"code": "An active surrender-value rate overlaps an existing row in the same scope and table version."})
+
+
+class OLPaidUpRate(OLEffectiveDateModel):
+    """Multi-dimensional paid-up value rate/factor table row."""
+
+    table_code = models.CharField(max_length=100, blank=True, default="", db_index=True)
+    rate_table_version = models.CharField(max_length=50, blank=True, default="", db_index=True)
+    product = models.ForeignKey(
+        "ordinary_life.OLProduct",
+        on_delete=models.PROTECT,
+        related_name="ol_parameter_paid_up_rates",
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        related_name="ol_parameter_paid_up_rates",
+        null=True,
+        blank=True,
+    )
+    gender = models.CharField(max_length=30, blank=True, default="", db_index=True)
+    smoker_status = models.CharField(max_length=30, blank=True, default="", db_index=True)
+    age_from = models.PositiveSmallIntegerField(null=True, blank=True)
+    age_to = models.PositiveSmallIntegerField(null=True, blank=True)
+    term_from = models.PositiveSmallIntegerField(null=True, blank=True)
+    term_to = models.PositiveSmallIntegerField(null=True, blank=True)
+    policy_year_from = models.PositiveSmallIntegerField(null=True, blank=True)
+    policy_year_to = models.PositiveSmallIntegerField(null=True, blank=True)
+    rate_factor = models.DecimalField(max_digits=18, decimal_places=8)
+    row_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["table_code", "rate_table_version", "product", "plan", "row_order", "age_from", "term_from", "policy_year_from", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_paidup_rate_code_uq"),
+            models.CheckConstraint(check=models.Q(rate_factor__gte=0), name="ol_paidup_rate_nonneg"),
+            models.CheckConstraint(
+                check=models.Q(age_to__isnull=True) | models.Q(age_from__isnull=True) | models.Q(age_to__gte=models.F("age_from")),
+                name="ol_paidup_rate_age_valid",
+            ),
+            models.CheckConstraint(
+                check=models.Q(term_to__isnull=True) | models.Q(term_from__isnull=True) | models.Q(term_to__gte=models.F("term_from")),
+                name="ol_paidup_rate_term_valid",
+            ),
+            models.CheckConstraint(
+                check=models.Q(policy_year_to__isnull=True) | models.Q(policy_year_from__isnull=True) | models.Q(policy_year_to__gte=models.F("policy_year_from")),
+                name="ol_paidup_rate_year_valid",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["table_code", "rate_table_version", "product", "plan"], name="ol_paidup_rate_scope_idx"),
+            models.Index(fields=["product", "gender", "smoker_status"], name="ol_paidup_rate_dim_idx"),
+            models.Index(fields=["is_active", "effective_from"], name="ol_paidup_rate_dates_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        _part2_validate_scope(self, errors)
+        self.table_code = (self.table_code or "").strip().upper()
+        self.rate_table_version = (self.rate_table_version or "").strip().upper()
+        self.gender = (self.gender or "").strip().upper()
+        self.smoker_status = (self.smoker_status or "").strip().upper()
+        if not self.table_code and not self.rate_table_version:
+            errors["table_code"] = "A table code or rate-table version is required."
+        for lower, upper, label in (
+            (self.age_from, self.age_to, "age"),
+            (self.term_from, self.term_to, "term"),
+            (self.policy_year_from, self.policy_year_to, "policy year"),
+        ):
+            if lower is not None and upper is not None and upper < lower:
+                errors[f"{label.replace(' ', '_')}_to"] = f"{label.title()}-to cannot be less than {label}-from."
+            if label != "age" and lower is not None and lower < 1:
+                errors[f"{label.replace(' ', '_')}_from"] = f"{label.title()}-from must be at least 1."
+        if self.rate_factor is None or self.rate_factor < 0:
+            errors["rate_factor"] = "Paid-up rate/factor must be a non-negative decimal."
+        if errors:
+            raise ValidationError(errors)
+        candidates = self.__class__.objects.filter(
+            table_code=self.table_code,
+            rate_table_version=self.rate_table_version,
+            product=self.product,
+            plan=self.plan,
+            gender=self.gender,
+            smoker_status=self.smoker_status,
+            is_active=True,
+        )
+        if self.pk:
+            candidates = candidates.exclude(pk=self.pk)
+        for candidate in candidates:
+            if _policy_setup_intervals_overlap(self.effective_from, self.effective_to, candidate.effective_from, candidate.effective_to) and _part2_rate_intervals_overlap(self, candidate):
+                raise ValidationError({"code": "An active paid-up rate overlaps an existing row in the same scope and table version."})
+
+
+class OLCommitmentStatus(OLParameterBaseModel):
+    """Configurable commitment status catalog, separate from transaction workflow state."""
+
+    display_order = models.PositiveIntegerField(default=0)
+    applies_to = models.CharField(max_length=50, default="COMMITMENT", db_index=True)
+    is_terminal = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["applies_to", "display_order", "name", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_commitment_status_code_uq"),
+        ]
+        indexes = [
+            models.Index(fields=["applies_to", "is_active", "display_order"], name="ol_commitment_status_idx"),
+            models.Index(fields=["is_terminal", "is_active"], name="ol_commitment_terminal_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        self.code = (self.code or "").strip().upper()
+        self.applies_to = (self.applies_to or "COMMITMENT").strip().upper()
+        if not self.applies_to:
+            raise ValidationError({"applies_to": "Status applicability is required."})
+        if not self.code:
+            raise ValidationError({"code": "A commitment status code is required."})

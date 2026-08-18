@@ -10,6 +10,11 @@ from .views import (
     OLMaturityClaimSetupViewSet,
     OLMemberCoverConfigurationViewSet,
     OLOverrideCommissionSetupViewSet,
+    OLPaidUpRateViewSet,
+    OLPaidUpSetupViewSet,
+    OLCommitmentStatusViewSet,
+    OLSurrenderSetupViewSet,
+    OLSurrenderValueRateViewSet,
     OLParameterHealthView,
     OLParameterTableRegistryViewSet,
     OLPolicyRenewalStatusViewSet,
@@ -29,6 +34,11 @@ router.register("policy-statuses", OLPolicyStatusViewSet, basename="ol-policy-st
 router.register("policy-renewal-statuses", OLPolicyRenewalStatusViewSet, basename="ol-policy-renewal-status")
 router.register("beneficial-types", OLBeneficialTypeViewSet, basename="ol-beneficial-type")
 router.register("member-cover-configurations", OLMemberCoverConfigurationViewSet, basename="ol-member-cover-configuration")
+router.register("surrender-setups", OLSurrenderSetupViewSet, basename="ol-surrender-setup")
+router.register("paid-up-setups", OLPaidUpSetupViewSet, basename="ol-paid-up-setup")
+router.register("surrender-value-rates", OLSurrenderValueRateViewSet, basename="ol-surrender-value-rate")
+router.register("paid-up-rates", OLPaidUpRateViewSet, basename="ol-paid-up-rate")
+router.register("commitment-statuses", OLCommitmentStatusViewSet, basename="ol-commitment-status")
 
 urlpatterns = [
     path("health/", OLParameterHealthView.as_view(), name="ol-parameters-health"),

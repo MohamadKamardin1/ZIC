@@ -10,6 +10,11 @@ from apps.ol_parameters.models import (
     OLGracePeriod,
     OLMemberCoverConfiguration,
     OLParameterTableRegistry,
+    OLCommitmentStatus,
+    OLPaidUpRate,
+    OLPaidUpSetup,
+    OLSurrenderSetup,
+    OLSurrenderValueRate,
     OLPolicyRenewalStatus,
     OLPolicyStatus,
 )
@@ -109,6 +114,66 @@ REGISTRY_SEEDS = [
     },
 ]
 
+PART2_COMMITMENT_STATUS_SEEDS = [
+    ("PENDING", "Pending", "COMMITMENT", False),
+    ("ACTIVE", "Active", "COMMITMENT", False),
+    ("COMPLETED", "Completed", "COMMITMENT", True),
+    ("CANCELLED", "Cancelled", "COMMITMENT", True),
+]
+
+PART2_REGISTRY_SEEDS = [
+    {
+        "slug": "surrender-setups",
+        "label": "Surrender Setups",
+        "description": "Effective-dated surrender eligibility, charges, approval, and payout timing.",
+        "model_label": "ol_parameters.OLSurrenderSetup",
+        "visible_columns": ["code", "name", "product", "plan", "minimum_premiums_paid", "surrender_charge_type", "partial_surrender_allowed", "is_active"],
+        "searchable_fields": ["code", "name", "description", "surrender_charge_type"],
+        "filter_fields": ["is_active", "product", "plan", "surrender_charge_type", "partial_surrender_allowed", "effective_from", "effective_to"],
+        "default_ordering": ["product", "plan", "-effective_from", "code"],
+    },
+    {
+        "slug": "paid-up-setups",
+        "label": "Paid-Up Setups",
+        "description": "Effective-dated paid-up eligibility, conversion basis, and effective timing.",
+        "model_label": "ol_parameters.OLPaidUpSetup",
+        "visible_columns": ["code", "name", "product", "plan", "minimum_premiums_paid", "minimum_policy_months", "paidup_conversion_basis", "allow_paidup", "is_active"],
+        "searchable_fields": ["code", "name", "description", "paidup_conversion_basis", "paidup_effective_rule"],
+        "filter_fields": ["is_active", "product", "plan", "paidup_conversion_basis", "allow_paidup", "effective_from", "effective_to"],
+        "default_ordering": ["product", "plan", "-effective_from", "code"],
+    },
+    {
+        "slug": "surrender-value-rates",
+        "label": "Surrender Value Rates",
+        "description": "Versioned surrender-value factors by product, plan, demographic, age, term, and policy year.",
+        "model_label": "ol_parameters.OLSurrenderValueRate",
+        "visible_columns": ["code", "table_code", "rate_table_version", "product", "plan", "age_from", "age_to", "policy_year_from", "policy_year_to", "rate_factor", "is_active"],
+        "searchable_fields": ["code", "name", "description", "table_code", "rate_table_version", "gender", "smoker_status"],
+        "filter_fields": ["is_active", "product", "plan", "table_code", "rate_table_version", "gender", "smoker_status", "effective_from", "effective_to"],
+        "default_ordering": ["table_code", "rate_table_version", "product", "plan", "row_order", "code"],
+    },
+    {
+        "slug": "paid-up-rates",
+        "label": "Paid-Up Rates",
+        "description": "Versioned paid-up factors by product, plan, demographic, age, term, and policy year.",
+        "model_label": "ol_parameters.OLPaidUpRate",
+        "visible_columns": ["code", "table_code", "rate_table_version", "product", "plan", "age_from", "age_to", "policy_year_from", "policy_year_to", "rate_factor", "is_active"],
+        "searchable_fields": ["code", "name", "description", "table_code", "rate_table_version", "gender", "smoker_status"],
+        "filter_fields": ["is_active", "product", "plan", "table_code", "rate_table_version", "gender", "smoker_status", "effective_from", "effective_to"],
+        "default_ordering": ["table_code", "rate_table_version", "product", "plan", "row_order", "code"],
+    },
+    {
+        "slug": "commitment-statuses",
+        "label": "Commitment Statuses",
+        "description": "Commitment status catalog kept separate from policy transaction lifecycle state.",
+        "model_label": "ol_parameters.OLCommitmentStatus",
+        "visible_columns": ["display_order", "code", "name", "applies_to", "is_terminal", "is_active"],
+        "searchable_fields": ["code", "name", "description", "applies_to"],
+        "filter_fields": ["is_active", "applies_to", "is_terminal", "display_order"],
+        "default_ordering": ["applies_to", "display_order", "name", "code"],
+    },
+]
+
 
 def upsert(model, lookup, defaults):
     record, created = model.objects.get_or_create(**lookup, defaults=defaults)
@@ -120,7 +185,7 @@ def upsert(model, lookup, defaults):
 
 
 class Command(BaseCommand):
-    help = "Seed idempotent OL Policy Setup Part 1 catalogs and safe starter configuration."
+    help = "Seed idempotent OL Policy Setup Part 1 and Part 2 catalogs and safe starter configuration."
 
     @transaction.atomic
     def handle(self, *args, **options):
@@ -235,7 +300,69 @@ class Command(BaseCommand):
         else:
             updated += 1
 
-        for registry_seed in REGISTRY_SEEDS:
+        for index, (code, name, applies_to, terminal) in enumerate(PART2_COMMITMENT_STATUS_SEEDS):
+            _, was_created = upsert(
+                OLCommitmentStatus,
+                {"code": code},
+                {
+                    "name": name,
+                    "description": f"Ordinary Life commitment status: {name}.",
+                    "display_order": index + 1,
+                    "applies_to": applies_to,
+                    "is_terminal": terminal,
+                    "effective_from": EFFECTIVE_FROM,
+                    "is_active": True,
+                },
+            )
+            if was_created:
+                created += 1
+            else:
+                updated += 1
+
+        _, was_created = upsert(
+            OLSurrenderSetup,
+            {"code": "STANDARD_SURRENDER"},
+            {
+                "name": "Standard Surrender Setup",
+                "description": "Global starter surrender eligibility and payout configuration.",
+                "effective_from": EFFECTIVE_FROM,
+                "minimum_premiums_paid": 24,
+                "minimum_policy_months": 24,
+                "minimum_premium_paid_ratio": Decimal("100.0000"),
+                "surrender_charge_type": "PERCENTAGE",
+                "surrender_charge_value": Decimal("5.00000000"),
+                "partial_surrender_allowed": False,
+                "surrender_payout_days": 30,
+                "require_approval": True,
+                "is_active": True,
+            },
+        )
+        if was_created:
+            created += 1
+        else:
+            updated += 1
+
+        _, was_created = upsert(
+            OLPaidUpSetup,
+            {"code": "STANDARD_PAID_UP"},
+            {
+                "name": "Standard Paid-Up Setup",
+                "description": "Global starter paid-up conversion configuration.",
+                "effective_from": EFFECTIVE_FROM,
+                "minimum_premiums_paid": 12,
+                "minimum_policy_months": 12,
+                "paidup_conversion_basis": "PROPORTIONAL",
+                "allow_paidup": True,
+                "paidup_effective_rule": "NEXT_ANNIVERSARY",
+                "is_active": True,
+            },
+        )
+        if was_created:
+            created += 1
+        else:
+            updated += 1
+
+        for registry_seed in REGISTRY_SEEDS + PART2_REGISTRY_SEEDS:
             defaults = {
                 **registry_seed,
                 "parameter_group": "Policy Setup",
@@ -280,7 +407,47 @@ class Command(BaseCommand):
                 created += 1
             else:
                 updated += 1
-            rate_message = "one product-scoped starter anticipated-endowment rate"
+            for model, code, name, description, factor in (
+                (
+                    OLSurrenderValueRate,
+                    "BASE_SURRENDER_VALUE_RATE",
+                    "Base Surrender Value Rate",
+                    "Starter surrender-value rate factor; replace with approved actuarial data before production use.",
+                    Decimal("0.50000000"),
+                ),
+                (
+                    OLPaidUpRate,
+                    "BASE_PAID_UP_RATE",
+                    "Base Paid-Up Rate",
+                    "Starter paid-up rate factor; replace with approved actuarial data before production use.",
+                    Decimal("0.75000000"),
+                ),
+            ):
+                _, was_created = upsert(
+                    model,
+                    {"code": code},
+                    {
+                        "name": name,
+                        "description": description,
+                        "effective_from": EFFECTIVE_FROM,
+                        "table_code": "STANDARD",
+                        "rate_table_version": "V1",
+                        "product": product,
+                        "plan": plan,
+                        "gender": "",
+                        "smoker_status": "",
+                        "policy_year_from": 1,
+                        "policy_year_to": 100,
+                        "rate_factor": factor,
+                        "row_order": 1,
+                        "is_active": True,
+                    },
+                )
+                if was_created:
+                    created += 1
+                else:
+                    updated += 1
+            rate_message = "one product-scoped starter anticipated-endowment, surrender-value, and paid-up rate per table"
         else:
             rate_message = "no anticipated-endowment rate (active product configuration is required)"
 

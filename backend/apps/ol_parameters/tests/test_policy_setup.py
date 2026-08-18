@@ -14,6 +14,11 @@ from apps.ol_parameters.models import (
     OLGracePeriod,
     OLMemberCoverConfiguration,
     OLParameterTableRegistry,
+    OLCommitmentStatus,
+    OLPaidUpRate,
+    OLPaidUpSetup,
+    OLSurrenderSetup,
+    OLSurrenderValueRate,
     OLPolicyRenewalStatus,
     OLPolicyStatus,
 )
@@ -239,7 +244,7 @@ class OLPolicySetupTests(TestCase):
         self.assertGreaterEqual(counts["beneficial_types"], 7)
         self.assertGreaterEqual(counts["grace_periods"], 1)
         self.assertGreaterEqual(counts["member_cover"], 1)
-        self.assertEqual(counts["registry"], 6)
+        self.assertEqual(counts["registry"], 11)
 
         call_command("seed_ol_policy_setup")
         self.assertEqual(OLPolicyStatus.objects.count(), counts["policy_statuses"])
@@ -413,3 +418,256 @@ class OLPolicySetupTests(TestCase):
         )
         with self.assertRaises(ValidationError):
             invalid_ratio.full_clean()
+
+    def test_part2_model_invariants_and_effective_date_overlaps_are_enforced(self):
+        invalid_surrender = OLSurrenderSetup(
+            code="SURRENDER_INVALID",
+            name="Invalid Surrender",
+            effective_from=date(2026, 1, 1),
+            surrender_charge_type="NONE",
+            surrender_charge_value=Decimal("1.00"),
+        )
+        with self.assertRaises(ValidationError):
+            invalid_surrender.full_clean()
+
+        invalid_paid_up = OLPaidUpSetup(
+            code="PAID_UP_INVALID",
+            name="Invalid Paid Up",
+            effective_from=date(2026, 1, 1),
+            allow_paidup=True,
+            minimum_premiums_paid=0,
+            minimum_policy_months=0,
+        )
+        with self.assertRaises(ValidationError):
+            invalid_paid_up.full_clean()
+
+        product, plan = self._product_scope()
+        invalid_rate = OLSurrenderValueRate(
+            code="SURRENDER_RATE_INVALID",
+            name="Invalid Surrender Rate",
+            effective_from=date(2026, 1, 1),
+            table_code="STANDARD",
+            rate_table_version="V1",
+            product=product,
+            plan=plan,
+            age_from=70,
+            age_to=18,
+            policy_year_from=1,
+            policy_year_to=5,
+            rate_factor=Decimal("0.50000000"),
+        )
+        with self.assertRaises(ValidationError):
+            invalid_rate.full_clean()
+
+        first_setup = OLSurrenderSetup(
+            code="SURRENDER_FIRST",
+            name="First Surrender Setup",
+            effective_from=date(2026, 1, 1),
+            surrender_charge_type="PERCENTAGE",
+            surrender_charge_value=Decimal("5.00000000"),
+        )
+        first_setup.full_clean()
+        first_setup.save()
+        overlapping_setup = OLSurrenderSetup(
+            code="SURRENDER_OVERLAP",
+            name="Overlapping Surrender Setup",
+            effective_from=date(2026, 6, 1),
+            surrender_charge_type="PERCENTAGE",
+            surrender_charge_value=Decimal("4.00000000"),
+        )
+        with self.assertRaises(ValidationError):
+            overlapping_setup.full_clean()
+
+        first_rate = OLSurrenderValueRate(
+            code="SURRENDER_RATE_FIRST",
+            name="First Surrender Rate",
+            effective_from=date(2026, 1, 1),
+            table_code="STANDARD",
+            rate_table_version="V1",
+            product=product,
+            plan=plan,
+            policy_year_from=1,
+            policy_year_to=5,
+            rate_factor=Decimal("0.50000000"),
+        )
+        first_rate.full_clean()
+        first_rate.save()
+        overlapping_rate = OLSurrenderValueRate(
+            code="SURRENDER_RATE_OVERLAP",
+            name="Overlapping Surrender Rate",
+            effective_from=date(2026, 6, 1),
+            table_code="STANDARD",
+            rate_table_version="V1",
+            product=product,
+            plan=plan,
+            policy_year_from=1,
+            policy_year_to=5,
+            rate_factor=Decimal("0.60000000"),
+        )
+        with self.assertRaises(ValidationError):
+            overlapping_rate.full_clean()
+
+    def test_part2_seed_covers_all_tables_and_is_idempotent(self):
+        self._product_scope()
+        call_command("seed_ol_policy_setup")
+        counts = {
+            "commitment_statuses": OLCommitmentStatus.objects.count(),
+            "surrender_setups": OLSurrenderSetup.objects.count(),
+            "paid_up_setups": OLPaidUpSetup.objects.count(),
+            "surrender_value_rates": OLSurrenderValueRate.objects.count(),
+            "paid_up_rates": OLPaidUpRate.objects.count(),
+            "registry": OLParameterTableRegistry.objects.filter(parameter_group="Policy Setup").count(),
+        }
+        self.assertGreaterEqual(counts["commitment_statuses"], 4)
+        self.assertGreaterEqual(counts["surrender_setups"], 1)
+        self.assertGreaterEqual(counts["paid_up_setups"], 1)
+        self.assertGreaterEqual(counts["surrender_value_rates"], 1)
+        self.assertGreaterEqual(counts["paid_up_rates"], 1)
+        self.assertEqual(counts["registry"], 11)
+
+        call_command("seed_ol_policy_setup")
+        self.assertEqual(OLCommitmentStatus.objects.count(), counts["commitment_statuses"])
+        self.assertEqual(OLSurrenderSetup.objects.count(), counts["surrender_setups"])
+        self.assertEqual(OLPaidUpSetup.objects.count(), counts["paid_up_setups"])
+        self.assertEqual(OLSurrenderValueRate.objects.count(), counts["surrender_value_rates"])
+        self.assertEqual(OLPaidUpRate.objects.count(), counts["paid_up_rates"])
+        self.assertEqual(OLParameterTableRegistry.objects.filter(parameter_group="Policy Setup").count(), counts["registry"])
+
+    def test_part2_crud_create_and_retrieve_is_available_for_all_five_entities(self):
+        product, plan = self._product_scope()
+        cases = [
+            (
+                "surrender-setups",
+                {
+                    "code": "SURRENDER_API",
+                    "name": "API Surrender Setup",
+                    "effective_from": "2026-01-01",
+                    "product": str(product.pk),
+                    "plan": str(plan.pk),
+                    "minimum_premiums_paid": 12,
+                    "minimum_policy_months": 12,
+                    "minimum_premium_paid_ratio": "100.0000",
+                    "surrender_charge_type": "PERCENTAGE",
+                    "surrender_charge_value": "5.00000000",
+                    "partial_surrender_allowed": False,
+                    "surrender_payout_days": 30,
+                    "require_approval": True,
+                },
+            ),
+            (
+                "paid-up-setups",
+                {
+                    "code": "PAID_UP_API",
+                    "name": "API Paid Up Setup",
+                    "effective_from": "2026-01-01",
+                    "product": str(product.pk),
+                    "plan": str(plan.pk),
+                    "minimum_premiums_paid": 12,
+                    "minimum_policy_months": 12,
+                    "paidup_conversion_basis": "PROPORTIONAL",
+                    "allow_paidup": True,
+                    "paidup_effective_rule": "NEXT_ANNIVERSARY",
+                },
+            ),
+            (
+                "surrender-value-rates",
+                {
+                    "code": "SURRENDER_RATE_API",
+                    "name": "API Surrender Value Rate",
+                    "effective_from": "2026-01-01",
+                    "table_code": "STANDARD",
+                    "rate_table_version": "V1",
+                    "product": str(product.pk),
+                    "plan": str(plan.pk),
+                    "policy_year_from": 1,
+                    "policy_year_to": 5,
+                    "rate_factor": "0.50000000",
+                    "row_order": 1,
+                },
+            ),
+            (
+                "paid-up-rates",
+                {
+                    "code": "PAID_UP_RATE_API",
+                    "name": "API Paid Up Rate",
+                    "effective_from": "2026-01-01",
+                    "table_code": "STANDARD",
+                    "rate_table_version": "V1",
+                    "product": str(product.pk),
+                    "plan": str(plan.pk),
+                    "policy_year_from": 1,
+                    "policy_year_to": 5,
+                    "rate_factor": "0.75000000",
+                    "row_order": 1,
+                },
+            ),
+            (
+                "commitment-statuses",
+                {
+                    "code": "COMMITMENT_API",
+                    "name": "API Commitment Status",
+                    "effective_from": "2026-01-01",
+                    "display_order": 1,
+                    "applies_to": "COMMITMENT",
+                    "is_terminal": False,
+                },
+            ),
+        ]
+        for slug, payload in cases:
+            response = self.client.post(
+                f"/api/v1/ol-parameters/{slug}/",
+                payload,
+                format="json",
+            )
+            self.assertEqual(response.status_code, 201, {"slug": slug, "data": response.data})
+            record_id = response.data["id"]
+            retrieve_response = self.client.get(f"/api/v1/ol-parameters/{slug}/{record_id}/")
+            self.assertEqual(retrieve_response.status_code, 200, retrieve_response.data)
+            self.assertEqual(retrieve_response.data["code"], payload["code"])
+
+    def test_part2_permission_enforcement_and_audit_coverage(self):
+        unpermissioned = User.objects.create_user(
+            username="ol-policy-part2-no-access",
+            email="ol-policy-part2-no-access@example.com",
+            password="Strong-pass-123!",
+            is_active=True,
+            is_approved=True,
+        )
+        self.client.force_authenticate(unpermissioned)
+        response = self.client.get("/api/v1/ol-parameters/surrender-setups/")
+        self.assertEqual(response.status_code, 403, response.data)
+
+        self.client.force_authenticate(self.user)
+        product, plan = self._product_scope()
+        records = [
+            OLSurrenderSetup(code="SURRENDER_AUDIT", name="Surrender Audit", effective_from=date(2026, 1, 1)),
+            OLPaidUpSetup(code="PAID_UP_AUDIT", name="Paid Up Audit", effective_from=date(2026, 1, 1), minimum_policy_months=12),
+            OLSurrenderValueRate(code="SURRENDER_RATE_AUDIT", name="Surrender Rate Audit", effective_from=date(2026, 1, 1), table_code="STANDARD", rate_table_version="V1", product=product, plan=plan, rate_factor=Decimal("0.50")),
+            OLPaidUpRate(code="PAID_UP_RATE_AUDIT", name="Paid Up Rate Audit", effective_from=date(2026, 1, 1), table_code="STANDARD", rate_table_version="V1", product=product, plan=plan, rate_factor=Decimal("0.75")),
+            OLCommitmentStatus(code="COMMITMENT_AUDIT", name="Commitment Audit", effective_from=date(2026, 1, 1)),
+        ]
+        for record in records:
+            record.full_clean()
+            record.save()
+            self.assertTrue(
+                AuditLog.objects.filter(
+                    app_label="ol_parameters",
+                    model_name=record._meta.model_name,
+                    object_id=str(record.pk),
+                    action="CREATE",
+                ).exists()
+            )
+
+    @override_settings(STATICFILES_STORAGE="django.contrib.staticfiles.storage.StaticFilesStorage")
+    def test_admin_changelists_are_available_for_all_part2_entities(self):
+        self.client.force_login(self.user)
+        model_names = (
+            "olsurrendersetup",
+            "olpaidupsetup",
+            "olsurrendervaluerate",
+            "olpaiduprate",
+            "olcommitmentstatus",
+        )
+        for model_name in model_names:
+            response = self.client.get(reverse(f"admin:ol_parameters_{model_name}_changelist"))
+            self.assertEqual(response.status_code, 200, {"model": model_name, "status": response.status_code})

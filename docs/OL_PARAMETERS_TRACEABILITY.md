@@ -111,3 +111,37 @@ OL Policy Setup Part 1 is now **Implemented** as the second concrete group beyon
 | OL Claim Setup | Foundation registry only; planned |
 
 The canonical Policy Setup records are intended for new configuration consumers. The existing legacy `apps.ordinary_life` setup tables and endpoints remain unchanged, so migration or reconciliation of preexisting configuration data is a separate controlled decision rather than an implicit destructive replacement.
+
+## OL Policy Setup Part 2 implementation status
+
+OL Policy Setup Part 2 is now **Implemented** as the next isolated increment of the canonical Policy Setup group. It adds surrender, paid-up, value-rate, and commitment configuration while preserving the legacy Ordinary Life setup surface.
+
+| Requirement | Delivered artifact | Status |
+|---|---|---|
+| Surrender setup | `OLSurrenderSetup` with product/plan scope, eligibility thresholds, charge type/value, partial surrender, payout timing, and approval | Implemented |
+| Paid-up setup | `OLPaidUpSetup` with conversion basis, eligibility thresholds, effective rule, and product/plan scope | Implemented |
+| Surrender-value rates | `OLSurrenderValueRate` with table/version, product/plan, demographic, age/term/policy-year, Decimal factor, and effective-date dimensions | Implemented |
+| Paid-up rates | `OLPaidUpRate` with table/version, product/plan, demographic, age/term/policy-year, Decimal factor, and effective-date dimensions | Implemented |
+| Commitment statuses | `OLCommitmentStatus` with display order, applicability, terminal flag, and effective dates | Implemented |
+| Validation and invariants | Product-plan consistency, ordered ranges, nonnegative rates, required table/version, surrender-charge rule, paid-up eligibility threshold, and active scoped overlap protection | Implemented |
+| APIs | Five table-first resources under `/api/v1/ol-parameters/` with CRUD, search, filters, ordering, pagination, CSV export, and deactivation | Implemented |
+| Admin | Permission-aware table-first admin screens for all five entities | Implemented |
+| Audit | Central audit events for service and direct-save paths across all Part 2 models | Implemented |
+| Seed data | `seed_ol_policy_setup` now seeds Part 1 and Part 2 catalogs, registry metadata, global setup defaults, and safe product-scoped starter rates | Implemented |
+| Tests | Part 2 model invariants, overlap protection, CRUD for all five tables, permissions, audit coverage, seed idempotency, and admin access | Implemented |
+
+## Updated nine-group status after Policy Setup Part 2
+
+| Required group | Concrete implementation status after this delivery |
+|---|---|
+| OL Default Setup | **Implemented** |
+| OL Policy Setup | **Parts 1 and 2 implemented**; later policy setup parts remain planned |
+| OL Product Setup | Foundation registry only; planned |
+| OL Product Rating | Foundation registry and abstract rate contracts; planned |
+| OL Rider Setup | Foundation registry only; planned |
+| OL Agent Management | Foundation registry only; planned |
+| OL Loan Setup | Foundation registry only; planned |
+| OL Medical / Underwriting | Foundation registry only; planned |
+| OL Claim Setup | Foundation registry only; planned |
+
+The Part 2 implementation is additive. Existing legacy `apps.ordinary_life` tables and endpoints remain available; reconciliation of existing legacy configuration into canonical OL Parameters tables is a separate controlled migration decision.

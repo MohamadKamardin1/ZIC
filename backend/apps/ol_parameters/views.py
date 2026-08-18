@@ -20,6 +20,11 @@ from .models import (
     OLMaturityClaimSetup,
     OLMemberCoverConfiguration,
     OLOverrideCommissionSetup,
+    OLPaidUpRate,
+    OLPaidUpSetup,
+    OLCommitmentStatus,
+    OLSurrenderSetup,
+    OLSurrenderValueRate,
     OLParameterTableRegistry,
     OLPolicyRenewalStatus,
     OLPolicyStatus,
@@ -34,6 +39,11 @@ from .serializers import (
     OLMaturityClaimSetupSerializer,
     OLMemberCoverConfigurationSerializer,
     OLOverrideCommissionSetupSerializer,
+    OLPaidUpRateSerializer,
+    OLPaidUpSetupSerializer,
+    OLCommitmentStatusSerializer,
+    OLSurrenderSetupSerializer,
+    OLSurrenderValueRateSerializer,
     OLPolicyRenewalStatusSerializer,
     OLPolicyStatusSerializer,
     OLTableRegistrySerializer,
@@ -228,6 +238,13 @@ class OLParameterHealthView(APIView):
                     "beneficial_types": OLBeneficialType.objects.filter(is_active=True).count(),
                     "member_cover_configurations": OLMemberCoverConfiguration.objects.filter(is_active=True).count(),
                 },
+                "policy_setup_part2": {
+                    "surrender_setups": OLSurrenderSetup.objects.filter(is_active=True).count(),
+                    "paid_up_setups": OLPaidUpSetup.objects.filter(is_active=True).count(),
+                    "surrender_value_rates": OLSurrenderValueRate.objects.filter(is_active=True).count(),
+                    "paid_up_rates": OLPaidUpRate.objects.filter(is_active=True).count(),
+                    "commitment_statuses": OLCommitmentStatus.objects.filter(is_active=True).count(),
+                },
             }
         )
 
@@ -312,3 +329,79 @@ class OLMemberCoverConfigurationViewSet(OLDefaultSetupViewSet):
         "waiting_period_days", "effective_from", "effective_to", "created_at", "updated_at",
     ]
     ordering = ["product", "plan", "cover_type", "member_relation", "min_age", "code"]
+
+
+class OLSurrenderSetupViewSet(OLDefaultSetupViewSet):
+    model = OLSurrenderSetup
+    serializer_class = OLSurrenderSetupSerializer
+    table_slug = "surrender-setups"
+    search_fields = ["code", "name", "description", "surrender_charge_type"]
+    filterset_fields = [
+        "is_active", "product", "plan", "surrender_charge_type", "partial_surrender_allowed",
+        "require_approval", "effective_from", "effective_to",
+    ]
+    ordering_fields = [
+        "code", "name", "minimum_policy_months", "minimum_premiums_paid", "surrender_charge_value",
+        "effective_from", "effective_to", "created_at", "updated_at",
+    ]
+    ordering = ["product", "plan", "-effective_from", "code"]
+
+
+class OLPaidUpSetupViewSet(OLDefaultSetupViewSet):
+    model = OLPaidUpSetup
+    serializer_class = OLPaidUpSetupSerializer
+    table_slug = "paid-up-setups"
+    search_fields = ["code", "name", "description", "paidup_conversion_basis", "paidup_effective_rule"]
+    filterset_fields = [
+        "is_active", "product", "plan", "allow_paidup", "paidup_conversion_basis", "paidup_effective_rule",
+        "effective_from", "effective_to",
+    ]
+    ordering_fields = [
+        "code", "name", "minimum_policy_months", "minimum_premiums_paid", "allow_paidup",
+        "effective_from", "effective_to", "created_at", "updated_at",
+    ]
+    ordering = ["product", "plan", "-effective_from", "code"]
+
+
+class OLSurrenderValueRateViewSet(OLDefaultSetupViewSet):
+    model = OLSurrenderValueRate
+    serializer_class = OLSurrenderValueRateSerializer
+    table_slug = "surrender-value-rates"
+    search_fields = ["code", "name", "description", "table_code", "rate_table_version", "gender", "smoker_status"]
+    filterset_fields = [
+        "is_active", "product", "plan", "table_code", "rate_table_version", "gender", "smoker_status",
+        "age_from", "age_to", "term_from", "term_to", "policy_year_from", "policy_year_to",
+        "effective_from", "effective_to",
+    ]
+    ordering_fields = [
+        "table_code", "rate_table_version", "code", "name", "rate_factor", "row_order", "age_from", "term_from",
+        "policy_year_from", "effective_from", "effective_to", "created_at", "updated_at",
+    ]
+    ordering = ["table_code", "rate_table_version", "product", "plan", "row_order", "age_from", "term_from", "policy_year_from", "code"]
+
+
+class OLPaidUpRateViewSet(OLDefaultSetupViewSet):
+    model = OLPaidUpRate
+    serializer_class = OLPaidUpRateSerializer
+    table_slug = "paid-up-rates"
+    search_fields = ["code", "name", "description", "table_code", "rate_table_version", "gender", "smoker_status"]
+    filterset_fields = [
+        "is_active", "product", "plan", "table_code", "rate_table_version", "gender", "smoker_status",
+        "age_from", "age_to", "term_from", "term_to", "policy_year_from", "policy_year_to",
+        "effective_from", "effective_to",
+    ]
+    ordering_fields = [
+        "table_code", "rate_table_version", "code", "name", "rate_factor", "row_order", "age_from", "term_from",
+        "policy_year_from", "effective_from", "effective_to", "created_at", "updated_at",
+    ]
+    ordering = ["table_code", "rate_table_version", "product", "plan", "row_order", "age_from", "term_from", "policy_year_from", "code"]
+
+
+class OLCommitmentStatusViewSet(OLDefaultSetupViewSet):
+    model = OLCommitmentStatus
+    serializer_class = OLCommitmentStatusSerializer
+    table_slug = "commitment-statuses"
+    search_fields = ["code", "name", "description", "applies_to"]
+    filterset_fields = ["is_active", "applies_to", "is_terminal", "display_order"]
+    ordering_fields = ["applies_to", "display_order", "code", "name", "is_terminal", "created_at", "updated_at"]
+    ordering = ["applies_to", "display_order", "name", "code"]

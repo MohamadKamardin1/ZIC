@@ -99,6 +99,11 @@ from .models import (
     OLOverrideCommissionSetup,
     OLPolicyRenewalStatus,
     OLPolicyStatus,
+    OLPaidUpRate,
+    OLPaidUpSetup,
+    OLCommitmentStatus,
+    OLSurrenderSetup,
+    OLSurrenderValueRate,
 )
 
 
@@ -270,5 +275,40 @@ class OLBeneficialTypeSerializer(_ValidatedDefaultSetupModelSerializer):
 class OLMemberCoverConfigurationSerializer(_ValidatedDefaultSetupModelSerializer):
     class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
         model = OLMemberCoverConfiguration
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLSurrenderSetupSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLSurrenderSetup
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLPaidUpSetupSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLPaidUpSetup
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLSurrenderValueRateSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLSurrenderValueRate
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLPaidUpRateSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLPaidUpRate
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLCommitmentStatusSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLCommitmentStatus
         fields = "__all__"
         read_only_fields = _AUDIT_READ_ONLY
