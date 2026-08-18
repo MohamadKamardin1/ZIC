@@ -51,6 +51,8 @@ from .models import (
     OLRiderSetup,
     OLRiderRateTable,
     OLRiderRateRow,
+    OLLoanSystemSetup,
+    OLLoanInterestControl,
     OLSurrenderSetup,
     OLSurrenderValueRate,
     OLParameterTableRegistry,
@@ -102,6 +104,8 @@ from .serializers import (
     OLRiderSetupSerializer,
     OLRiderRateTableSerializer,
     OLRiderRateRowSerializer,
+    OLLoanSystemSetupSerializer,
+    OLLoanInterestControlSerializer,
     OLTableRegistrySerializer,
 )
 from .services.default_setup_service import OLDefaultSetupService
@@ -862,4 +866,44 @@ class OLRiderRateRowViewSet(OLDefaultSetupViewSet):
     ordering = ["table", "gender", "smoker_status", "frequency", "age_from", "term_from", "code"]
 
 
-# End of OL Rider Setup viewsets
+class OLLoanSystemSetupViewSet(OLDefaultSetupViewSet):
+    model = OLLoanSystemSetup
+    serializer_class = OLLoanSystemSetupSerializer
+    table_slug = "loan-system-setups"
+    search_fields = [
+        "code", "name", "description", "loan_basis", "loan_currency",
+        "effect_on_claim", "effect_on_surrender", "effect_on_maturity",
+        "product__code", "plan__code",
+    ]
+    filterset_fields = [
+        "is_active", "product", "plan", "allow_policy_loans", "loan_basis", "loan_currency",
+        "auto_deduct_from_benefits", "require_approval", "effect_on_claim", "effect_on_surrender",
+        "effect_on_maturity", "effective_from", "effective_to",
+    ]
+    ordering_fields = [
+        "code", "name", "loan_basis", "max_loan_percentage_of_cash_value", "min_loan_amount",
+        "max_loan_amount", "loan_currency", "effective_from", "effective_to", "created_at", "updated_at",
+    ]
+    ordering = ["product", "plan", "-effective_from", "code"]
+
+
+class OLLoanInterestControlViewSet(OLDefaultSetupViewSet):
+    model = OLLoanInterestControl
+    serializer_class = OLLoanInterestControlSerializer
+    table_slug = "loan-interest-controls"
+    search_fields = [
+        "code", "name", "description", "compounding_frequency", "interest_calculation_basis",
+        "interest_suspension_rule", "product__code", "plan__code",
+    ]
+    filterset_fields = [
+        "is_active", "product", "plan", "compounding_frequency", "interest_calculation_basis",
+        "capitalize_interest", "effective_from", "effective_to",
+    ]
+    ordering_fields = [
+        "code", "name", "interest_rate", "compounding_frequency", "interest_calculation_basis",
+        "grace_period_days", "penalty_interest_rate", "effective_from", "effective_to", "created_at", "updated_at",
+    ]
+    ordering = ["product", "plan", "-effective_from", "code"]
+
+
+# End of OL Loan Setup viewsets

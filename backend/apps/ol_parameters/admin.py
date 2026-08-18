@@ -40,6 +40,8 @@ from .models import (
     OLRiderSetup,
     OLRiderRateTable,
     OLRiderRateRow,
+    OLLoanSystemSetup,
+    OLLoanInterestControl,
     OLSurrenderSetup,
     OLSurrenderValueRate,
     OLParameterTableRegistry,
@@ -822,10 +824,66 @@ class OLReserveLoadingAdmin(OLDefaultSetupAdmin):
         ("Scope and loading", {"fields": ("product", "plan", "loading_type", "loading_basis", "rate_value")}),
         ("Effective dates", {"fields": ("effective_from", "effective_to")}),
         ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+        )
+
+
+@admin.register(OLLoanSystemSetup)
+class OLLoanSystemSetupAdmin(OLDefaultSetupAdmin):
+    list_display = (
+        "code", "name", "product", "plan", "allow_policy_loans", "loan_basis",
+        "max_loan_percentage_of_cash_value", "min_loan_amount", "max_loan_amount",
+        "require_approval", "is_active", "effective_from", "effective_to",
+    )
+    list_filter = (
+        "is_active", "allow_policy_loans", "loan_basis", "auto_deduct_from_benefits",
+        "require_approval", "effect_on_claim", "effect_on_surrender", "effect_on_maturity",
+        "effective_from", "effective_to",
+    )
+    search_fields = (
+        "code", "name", "description", "loan_basis", "loan_currency",
+        "effect_on_claim", "effect_on_surrender", "effect_on_maturity",
+        "product__code", "plan__code",
+    )
+    ordering = ("product", "plan", "-effective_from", "code")
+    autocomplete_fields = ("product", "plan")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Scope and loan basis", {"fields": ("product", "plan", "allow_policy_loans", "loan_basis", "loan_currency")}),
+        ("Loan limits", {"fields": ("max_loan_percentage_of_cash_value", "min_loan_amount", "max_loan_amount")}),
+        ("Repayment and benefit behavior", {"fields": ("repayment_options", "auto_deduct_from_benefits", "effect_on_claim", "effect_on_surrender", "effect_on_maturity", "require_approval")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLLoanInterestControl)
+class OLLoanInterestControlAdmin(OLDefaultSetupAdmin):
+    list_display = (
+        "code", "name", "product", "plan", "interest_rate", "compounding_frequency",
+        "interest_calculation_basis", "grace_period_days", "penalty_interest_rate",
+        "capitalize_interest", "is_active", "effective_from", "effective_to",
+    )
+    list_filter = (
+        "is_active", "compounding_frequency", "interest_calculation_basis",
+        "capitalize_interest", "effective_from", "effective_to",
+    )
+    search_fields = (
+        "code", "name", "description", "compounding_frequency", "interest_calculation_basis",
+        "interest_suspension_rule", "product__code", "plan__code",
+    )
+    ordering = ("product", "plan", "-effective_from", "code")
+    autocomplete_fields = ("product", "plan")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Scope and interest", {"fields": ("product", "plan", "interest_rate", "compounding_frequency", "interest_calculation_basis")}),
+        ("Grace, penalty, and capitalization", {"fields": ("grace_period_days", "penalty_interest_rate", "interest_suspension_rule", "capitalize_interest")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
     )
 
 
 @admin.register(OLRiderSetup)
+
 class OLRiderSetupAdmin(OLDefaultSetupAdmin):
     list_display = (
         "code", "name", "rider_category", "benefit_type", "product", "plan",

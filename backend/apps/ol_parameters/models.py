@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -3436,3 +3437,212 @@ class OLRiderRateRow(OLParameterBaseModel):
 
 
 # End of OL Rider Setup
+
+
+# =============================================================================
+# OL LOAN SETUP
+# =============================================================================
+class OLLoanBasis(models.TextChoices):
+    CASH_VALUE = "CASH_VALUE", "Cash value"
+    PAID_UP_VALUE = "PAID_UP_VALUE", "Paid-up value"
+    PREMIUM_BASED = "PREMIUM_BASED", "Premium based"
+    OTHER = "OTHER", "Other"
+
+
+class OLLoanEffectRule(models.TextChoices):
+    DEDUCT_BALANCE = "DEDUCT_BALANCE", "Deduct loan balance"
+    REDUCE_BENEFIT = "REDUCE_BENEFIT", "Reduce benefit"
+    BLOCK_BENEFIT = "BLOCK_BENEFIT", "Block benefit"
+    NET_BENEFIT = "NET_BENEFIT", "Pay benefit net of loan"
+    NO_EFFECT = "NO_EFFECT", "No effect"
+    OTHER = "OTHER", "Other"
+
+
+class OLLoanCompoundingFrequency(models.TextChoices):
+    DAILY = "DAILY", "Daily"
+    MONTHLY = "MONTHLY", "Monthly"
+    QUARTERLY = "QUARTERLY", "Quarterly"
+    SEMI_ANNUAL = "SEMI_ANNUAL", "Semi-annual"
+    ANNUAL = "ANNUAL", "Annual"
+    OTHER = "OTHER", "Other"
+
+
+class OLLoanInterestBasis(models.TextChoices):
+    SIMPLE = "SIMPLE", "Simple interest"
+    COMPOUND = "COMPOUND", "Compound interest"
+    ACTUAL_365 = "ACTUAL_365", "Actual/365"
+    ACTUAL_360 = "ACTUAL_360", "Actual/360"
+    OTHER = "OTHER", "Other"
+
+
+def _loan_setup_scope_overlaps(first, second):
+    return (
+        first.product_id == second.product_id
+        and first.plan_id == second.plan_id
+        and _product_setup_intervals_overlap(
+            first.effective_from,
+            first.effective_to,
+            second.effective_from,
+            second.effective_to,
+        )
+    )
+
+
+class OLLoanSystemSetup(OLEffectiveDateModel):
+    """Effective-dated configuration controlling Ordinary Life policy loans."""
+
+    product = models.ForeignKey(
+        "ol_parameters.OLProduct",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="loan_system_setups",
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="ol_parameter_loan_system_setups",
+    )
+    allow_policy_loans = models.BooleanField(default=True)
+    loan_basis = models.CharField(max_length=30, choices=OLLoanBasis.choices, default=OLLoanBasis.CASH_VALUE)
+    max_loan_percentage_of_cash_value = models.DecimalField(max_digits=18, decimal_places=8, default=Decimal("0"))
+    min_loan_amount = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
+    max_loan_amount = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
+    loan_currency = models.CharField(max_length=3, blank=True, default="", db_index=True)
+    repayment_options = models.JSONField(default=list, blank=True)
+    auto_deduct_from_benefits = models.BooleanField(default=True)
+    effect_on_claim = models.CharField(max_length=30, choices=OLLoanEffectRule.choices, default=OLLoanEffectRule.DEDUCT_BALANCE)
+    effect_on_surrender = models.CharField(max_length=30, choices=OLLoanEffectRule.choices, default=OLLoanEffectRule.DEDUCT_BALANCE)
+    effect_on_maturity = models.CharField(max_length=30, choices=OLLoanEffectRule.choices, default=OLLoanEffectRule.DEDUCT_BALANCE)
+    require_approval = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["product", "plan", "-effective_from", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_loan_system_code_uq"),
+            models.CheckConstraint(
+                check=models.Q(max_loan_percentage_of_cash_value__gte=0)
+                & models.Q(max_loan_percentage_of_cash_value__lte=100),
+                name="ol_loan_system_pct_rng",
+            ),
+            models.CheckConstraint(
+                check=models.Q(min_loan_amount__isnull=True) | models.Q(min_loan_amount__gt=0),
+                name="ol_loan_system_min_pos",
+            ),
+            models.CheckConstraint(
+                check=models.Q(max_loan_amount__isnull=True) | models.Q(max_loan_amount__gt=0),
+                name="ol_loan_system_max_pos",
+            ),
+            models.CheckConstraint(
+                check=models.Q(max_loan_amount__isnull=True)
+                | models.Q(min_loan_amount__isnull=True)
+                | models.Q(max_loan_amount__gte=models.F("min_loan_amount")),
+                name="ol_loan_system_min_max_ck",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["product", "plan", "is_active", "effective_from"], name="ol_loan_system_scope_idx"),
+            models.Index(fields=["loan_basis", "is_active"], name="ol_loan_system_basis_idx"),
+            models.Index(fields=["allow_policy_loans", "is_active"], name="ol_loan_system_allowed_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.loan_basis = (self.loan_basis or "").strip().upper()
+        self.loan_currency = (self.loan_currency or "").strip().upper()
+        for field_name in ("effect_on_claim", "effect_on_surrender", "effect_on_maturity"):
+            setattr(self, field_name, (getattr(self, field_name) or "").strip().upper())
+        if self.loan_basis not in dict(OLLoanBasis.choices):
+            errors["loan_basis"] = "Unsupported loan basis."
+        if self.loan_currency and len(self.loan_currency) != 3:
+            errors["loan_currency"] = "Loan currency must be a three-letter code when supplied."
+        if self.max_loan_percentage_of_cash_value is None or not 0 <= self.max_loan_percentage_of_cash_value <= 100:
+            errors["max_loan_percentage_of_cash_value"] = "Loan percentage must be between 0 and 100."
+        if self.min_loan_amount is not None and self.min_loan_amount <= 0:
+            errors["min_loan_amount"] = "Minimum loan amount must be positive when supplied."
+        if self.max_loan_amount is not None and self.max_loan_amount <= 0:
+            errors["max_loan_amount"] = "Maximum loan amount must be positive when supplied."
+        if self.min_loan_amount is not None and self.max_loan_amount is not None and self.max_loan_amount < self.min_loan_amount:
+            errors["max_loan_amount"] = "Maximum loan amount cannot be less than minimum loan amount."
+        if not isinstance(self.repayment_options, (dict, list)):
+            errors["repayment_options"] = "Repayment options must be a JSON object or array."
+        for field_name in ("effect_on_claim", "effect_on_surrender", "effect_on_maturity"):
+            if getattr(self, field_name) not in dict(OLLoanEffectRule.choices):
+                errors[field_name] = "Unsupported loan effect rule."
+        if errors:
+            raise ValidationError(errors)
+        candidates = type(self).objects.filter(product=self.product, plan=self.plan, is_active=True).exclude(pk=self.pk)
+        if any(_loan_setup_scope_overlaps(self, candidate) for candidate in candidates):
+            raise ValidationError({"effective_from": "An active loan system setup overlaps an existing row in the same product/plan scope."})
+
+
+class OLLoanInterestControl(OLEffectiveDateModel):
+    """Effective-dated interest and capitalization configuration for Ordinary Life loans."""
+
+    product = models.ForeignKey(
+        "ol_parameters.OLProduct",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="loan_interest_controls",
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="ol_parameter_loan_interest_controls",
+    )
+    interest_rate = models.DecimalField(max_digits=18, decimal_places=8)
+    compounding_frequency = models.CharField(max_length=20, choices=OLLoanCompoundingFrequency.choices, default=OLLoanCompoundingFrequency.ANNUAL)
+    interest_calculation_basis = models.CharField(max_length=20, choices=OLLoanInterestBasis.choices, default=OLLoanInterestBasis.COMPOUND)
+    grace_period_days = models.PositiveIntegerField(default=0)
+    penalty_interest_rate = models.DecimalField(max_digits=18, decimal_places=8, null=True, blank=True)
+    interest_suspension_rule = models.CharField(max_length=120, blank=True, default="")
+    capitalize_interest = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["product", "plan", "-effective_from", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_loan_interest_code_uq"),
+            models.CheckConstraint(
+                check=models.Q(interest_rate__gte=0) & models.Q(interest_rate__lte=100),
+                name="ol_loan_interest_rate_rng",
+            ),
+            models.CheckConstraint(
+                check=models.Q(penalty_interest_rate__isnull=True)
+                | (models.Q(penalty_interest_rate__gte=0) & models.Q(penalty_interest_rate__lte=100)),
+                name="ol_loan_interest_penalty_rng",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["product", "plan", "is_active", "effective_from"], name="ol_loan_interest_scope_idx"),
+            models.Index(fields=["compounding_frequency", "interest_calculation_basis"], name="ol_loan_interest_basis_idx"),
+            models.Index(fields=["capitalize_interest", "is_active"], name="ol_loan_interest_cap_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.compounding_frequency = (self.compounding_frequency or "").strip().upper()
+        self.interest_calculation_basis = (self.interest_calculation_basis or "").strip().upper()
+        self.interest_suspension_rule = (self.interest_suspension_rule or "").strip()
+        if self.compounding_frequency not in dict(OLLoanCompoundingFrequency.choices):
+            errors["compounding_frequency"] = "Unsupported compounding frequency."
+        if self.interest_calculation_basis not in dict(OLLoanInterestBasis.choices):
+            errors["interest_calculation_basis"] = "Unsupported interest calculation basis."
+        if self.interest_rate is None or not 0 <= self.interest_rate <= 100:
+            errors["interest_rate"] = "Interest rate must be between 0 and 100."
+        if self.penalty_interest_rate is not None and not 0 <= self.penalty_interest_rate <= 100:
+            errors["penalty_interest_rate"] = "Penalty interest rate must be between 0 and 100."
+        if errors:
+            raise ValidationError(errors)
+        candidates = type(self).objects.filter(product=self.product, plan=self.plan, is_active=True).exclude(pk=self.pk)
+        if any(_loan_setup_scope_overlaps(self, candidate) for candidate in candidates):
+            raise ValidationError({"effective_from": "An active loan interest control overlaps an existing row in the same product/plan scope."})
+
+
+# End of OL Loan Setup

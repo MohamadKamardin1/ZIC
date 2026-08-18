@@ -40,6 +40,8 @@ from .models import (
     OLRiderSetup,
     OLRiderRateTable,
     OLRiderRateRow,
+    OLLoanSystemSetup,
+    OLLoanInterestControl,
     OLMaturityClaimSetup,
     OLMemberCoverConfiguration,
     OLOverrideCommissionSetup,
@@ -99,6 +101,8 @@ AUDITED_MODELS = (
     OLRiderSetup,
     OLRiderRateTable,
     OLRiderRateRow,
+    OLLoanSystemSetup,
+    OLLoanInterestControl,
 )
 
 

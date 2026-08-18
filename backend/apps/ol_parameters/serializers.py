@@ -132,6 +132,8 @@ from .models import (
     OLRiderSetup,
     OLRiderRateTable,
     OLRiderRateRow,
+    OLLoanSystemSetup,
+    OLLoanInterestControl,
 )
 
 
@@ -535,5 +537,19 @@ class OLRiderRateTableSerializer(_ValidatedDefaultSetupModelSerializer):
 class OLRiderRateRowSerializer(_ValidatedDefaultSetupModelSerializer):
     class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
         model = OLRiderRateRow
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLLoanSystemSetupSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLLoanSystemSetup
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLLoanInterestControlSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLLoanInterestControl
         fields = "__all__"
         read_only_fields = _AUDIT_READ_ONLY

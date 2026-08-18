@@ -47,6 +47,8 @@ from .views import (
     OLRiderSetupViewSet,
     OLRiderRateTableViewSet,
     OLRiderRateRowViewSet,
+    OLLoanSystemSetupViewSet,
+    OLLoanInterestControlViewSet,
 )
 
 
@@ -95,6 +97,8 @@ router.register("reserve-loadings", OLReserveLoadingViewSet, basename="ol-reserv
 router.register("rider-setups", OLRiderSetupViewSet, basename="ol-rider-setup")
 router.register("rider-rate-tables", OLRiderRateTableViewSet, basename="ol-rider-rate-table")
 router.register("rider-rate-rows", OLRiderRateRowViewSet, basename="ol-rider-rate-row")
+router.register("loan-system-setups", OLLoanSystemSetupViewSet, basename="ol-loan-system-setup")
+router.register("loan-interest-controls", OLLoanInterestControlViewSet, basename="ol-loan-interest-control")
 
 urlpatterns = [
     path("health/", OLParameterHealthView.as_view(), name="ol-parameters-health"),

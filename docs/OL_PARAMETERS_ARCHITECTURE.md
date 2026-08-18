@@ -384,3 +384,42 @@ The Agent Management increment is intentionally configuration-only. Starter comm
 | OL Loan Setup | Foundation registry only; planned |
 | OL Medical / Underwriting | Foundation registry only; planned |
 | OL Claim Setup | Foundation registry only; planned |
+
+
+## OL Loan Setup — implemented
+
+OL Loan Setup provides the table-driven policy-loan configuration foundation required by future Ordinary Life loan transactions. It is split into two independently versioned, effective-dated resources so eligibility and loan limits can evolve separately from interest and capitalization behavior.
+
+| Resource | Model and configuration contract |
+|---|---|
+| Loan system setup | `OLLoanSystemSetup` stores optional product/plan scope, `allow_policy_loans`, loan basis (`CASH_VALUE`, `PAID_UP_VALUE`, `PREMIUM_BASED`, `OTHER`), maximum percentage of cash value, minimum and maximum loan amounts, optional three-letter loan currency, repayment-options JSON, benefit deduction behavior, claim/surrender/maturity effect rules, approval requirement, lifecycle state, and effective dates. |
+| Loan interest control | `OLLoanInterestControl` stores optional product/plan scope, Decimal interest rate, compounding frequency, interest calculation basis, grace-period days, optional penalty interest rate, suspension rule text, capitalization behavior, lifecycle state, and effective dates. |
+
+Both models inherit the common OL effective-date/audit base. Product-level, plan-level, and global configurations are represented by nullable scope foreign keys. An active record with the same product/plan scope cannot overlap another active record of the same resource in effective dates. This keeps precedence deterministic for downstream loan transaction services while allowing different scopes to coexist.
+
+### APIs and table contracts
+
+The API resources are available under `/api/v1/ol-parameters/`:
+
+| Endpoint | Supported behavior |
+|---|---|
+| `loan-system-setups/` | CRUD, soft deactivation, CSV export, search, filters by product/plan/status/loan basis/currency/behavior, pagination, and ordering. |
+| `loan-interest-controls/` | CRUD, soft deactivation, CSV export, search, filters by product/plan/status/compounding/calculation basis/capitalization, pagination, and ordering. |
+
+The table registry seed creates `loan-system-setups` and `loan-interest-controls` under parameter group `LOAN_SETUP`, with visible columns, searchable fields, filter fields, default ordering, permission requirements, and export support.
+
+### Validation and audit
+
+Validation enforces Decimal rate fields, a 0–100 percentage range for cash-value loan limits and interest rates, positive loan amounts when supplied, minimum/maximum amount ordering, three-letter currency codes, supported behavior choices, supported compounding and calculation bases, JSON object/array repayment options, required effective-from dates, effective-date ordering, and active scope overlap prevention. Database check constraints and indexes reinforce the most important range and query invariants.
+
+All create and update mutations are registered with the central OL Parameters signal audit receiver and therefore capture actor, before/after state, changed fields, source context, and correlation identifiers through the existing governance audit service. The viewsets use the established OL parameter permission contract: `ol_parameters.view`, `ol_parameters.create`, `ol_parameters.update`, `ol_parameters.deactivate`, and `ol_parameters.configure`.
+
+### Seed, migration, and tests
+
+The idempotent command `python manage.py seed_ol_loan_setup` ensures the `STANDARD_ENDOWMENT` product prerequisite, creates development starter rows for policy-loan behavior and annual compound interest, and upserts both registry contracts. Starter values are placeholders and require actuarial, product, legal, compliance, and governance approval before production loan calculations or settlement use them.
+
+The additive migration `0015_olloansystemsetup_olloaninterestcontrol_and_more.py` creates both models, constraints, and indexes. Focused tests in `backend/apps/ol_parameters/tests/test_loan_setup.py` cover both CRUD surfaces, filtering, CSV export, deactivation, invalid percentages and amounts, unsupported choices, effective-date consistency, scope overlap prevention, permission enforcement, audit correlation, seed idempotency, and admin table registration.
+
+### Design assumptions
+
+The implementation treats `ol_parameters.OLProduct` as the canonical product relation used by the newer parameter groups and retains the established optional `ordinary_life.OLPlan` relation for plan-level overrides. A null product and null plan represent a global default. Repayment options and interest suspension behavior are intentionally data-driven JSON/text fields at this foundation stage; a future loan transaction module can promote these into normalized workflow tables without changing the effective-dated setup API contract.

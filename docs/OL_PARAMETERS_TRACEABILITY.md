@@ -358,3 +358,33 @@ The Rider Setup increment is additive and preserves existing policy, product, qu
 | OL Loan Setup | Planned | Foundation registry only |
 | OL Medical / Underwriting | Planned | Foundation registry only |
 | OL Claim Setup | Planned | Foundation registry only |
+
+
+## OL Loan Setup — implemented
+
+| Requirement | Evidence | Status |
+|---|---|---|
+| OL loan system setup | `backend/apps/ol_parameters/models.py`: `OLLoanSystemSetup` with product/plan scope, eligibility, limits, currency, repayment options, benefit effects, approval, and effective dates | Implemented |
+| OL loan interest control | `backend/apps/ol_parameters/models.py`: `OLLoanInterestControl` with product/plan scope, Decimal rates, compounding, calculation basis, grace, penalty, suspension, capitalization, and effective dates | Implemented |
+| Validation and constraints | Percentage/rate range checks, positive and ordered amounts, choice normalization, date consistency, JSON repayment validation, database check constraints, and active same-scope overlap prevention | Implemented |
+| APIs | `loan-system-setups/` and `loan-interest-controls/` with CRUD, filters, search, ordering, pagination, CSV export, and deactivation | Implemented |
+| Permissions | Existing `ol_parameters.view`, `.create`, `.update`, `.deactivate`, and `.configure` enforcement through `OLDefaultSetupViewSet` | Implemented |
+| Admin | `OLLoanSystemSetupAdmin` and `OLLoanInterestControlAdmin` with table-first columns, filters, scope selectors, fieldsets, lifecycle fields, and audit fields | Implemented |
+| Audit | Both models registered in `backend/apps/ol_parameters/audit_receivers.py` for central create/update auditing | Implemented |
+| Seed and registry | `seed_ol_loan_setup.py` idempotently seeds two starter rows and two `LOAN_SETUP` registry contracts | Implemented |
+| Tests | `tests/test_loan_setup.py`: seven focused tests for CRUD, filters/export/deactivation, validation, overlap, permissions/audit, seed idempotency, and admin registration | Implemented |
+| Database migration | Additive migration `0015_olloansystemsetup_olloaninterestcontrol_and_more.py` with range constraints and query indexes | Implemented |
+
+## Updated nine-group status after OL Loan Setup
+
+| Required group | Status | Evidence |
+|---|---|---|
+| OL Default Setup | Implemented | Models, APIs, admin, seed, tests, and documentation |
+| OL Policy Setup | Parts 1, 2, and 3 implemented | Policy setup models, APIs, seed, tests, and documentation |
+| OL Product Setup | Implemented | Product and supporting table-driven configuration resources |
+| OL Product Rating | Parts 1 and 2 implemented | Premium, mortality, joint-life, reinstatement, bonus, mortgage, installment, surrender, and reserve resources |
+| OL Rider Setup | Implemented | Rider catalog, applicability controls, rate tables, rows, seed, tests, and migration 0013 |
+| OL Agent Management | Implemented | Agent commission setup, seed, tests, audit registration, and migration 0014 |
+| OL Loan Setup | Implemented | Loan system setup and loan interest control, seed, tests, audit registration, and migration 0015 |
+| OL Medical / Underwriting | Planned | Foundation registry only |
+| OL Claim Setup | Planned | Foundation registry only |
