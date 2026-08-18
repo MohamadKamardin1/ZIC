@@ -25,6 +25,7 @@ api_v1_patterns = [
     path('ai/', include('apps.ai_assistant.urls')),
     path('group-life/', include('apps.group_life.urls')),
     path('ordinary-life/', include('apps.ordinary_life.urls')),
+    path('ol-parameters/', include('apps.ol_parameters.urls')),
     path('group-credit/', include('apps.group_credit.urls')),
     path('front-office/', include('apps.front_office.urls')),
 ]
