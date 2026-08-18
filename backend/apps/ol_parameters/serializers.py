@@ -128,6 +128,9 @@ from .models import (
     OLInstallmentChargeRate,
     OLCashSurrenderValue,
     OLReserveLoading,
+    OLRiderSetup,
+    OLRiderRateTable,
+    OLRiderRateRow,
 )
 
 
@@ -503,5 +506,26 @@ class OLCashSurrenderValueSerializer(_ValidatedDefaultSetupModelSerializer):
 class OLReserveLoadingSerializer(_ValidatedDefaultSetupModelSerializer):
     class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
         model = OLReserveLoading
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLRiderSetupSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLRiderSetup
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLRiderRateTableSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLRiderRateTable
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLRiderRateRowSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLRiderRateRow
         fields = "__all__"
         read_only_fields = _AUDIT_READ_ONLY

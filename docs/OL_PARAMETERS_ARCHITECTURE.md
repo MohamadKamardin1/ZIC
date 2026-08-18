@@ -326,3 +326,30 @@ The idempotent command `python manage.py seed_ol_product_rating_part2` creates s
 All six Part 2 models are registered with the central signal-based audit receiver. API and admin mutations use the shared permission-aware OL mutation service, capture actor and correlation metadata, and emit central audit events. Physical deletion is not exposed through the table-first APIs; deactivation preserves the actuarial configuration history needed for reproducibility and governance.
 
 Product Rating Part 2 is delivered through additive migrations following Product Rating Part 1. The implementation remains separate from transactional rating execution and can later be consumed by controlled publication and calculation-resolution services that select one active, unambiguous assumption for a product, plan, event, policy year, demographic profile, and effective date.
+
+
+## OL Rider Setup subcontext
+
+OL Rider Setup is now **Implemented** as the canonical, table-first rider configuration surface for Ordinary Life. It provides reusable rider definitions and versioned rider rate tables for future quotation, proposal, underwriting, policy, and servicing consumers. The subcontext defines configuration contracts only; it does not attach riders to transactional policies or execute rider pricing.
+
+| Entity | Purpose | Main scope or behavior |
+|---|---|---|
+| `OLRiderSetup` | Parameterized rider catalog and applicability contract. | Rider category, benefit type, calculation basis, age/term/sum-assured limits, waiting period, standalone and underwriting flags, exclusion JSON, optional product/plan applicability, and effective-dated lifecycle. |
+| `OLRiderRateTable` | Versioned rider rate-table header. | Required rider scope, optional product/plan scope, rating basis, version, effective dates, active lifecycle, and referential consistency with rider applicability. |
+| `OLRiderRateRow` | Multi-dimensional rider rate row. | Gender, smoker status, age band, term band, frequency, optional sum-assured band, Decimal rate, rate unit, effective dates, and active lifecycle. |
+
+Rider definitions enforce ordered age and term bands, age limits from 0 through 150 years, nonnegative and ordered sum-assured limits, effective-date consistency, supported enum values, active product/plan references, and product-plan consistency. Rate tables require an active rider and remain aligned with any product or plan applicability declared by that rider. Rate rows require an active, effective parent table, inclusive ordered age and term bands, nonnegative Decimal rates, supported rate units, and ordered sum-assured bands. Active rows cannot overlap another row in the same table, gender, smoker status, frequency, rate unit, effective-date interval, and age/term/sum-assured dimensions; adjacent bands and distinct dimensions remain valid.
+
+The table-first API surface is exposed under `/api/v1/ol-parameters/`:
+
+| Resource | Endpoint | Table behavior |
+|---|---|---|
+| Rider setups | `/rider-setups/` | Rider catalog CRUD, category/benefit/product/plan/eligibility filters, search, ordering, pagination, CSV export, and soft deactivation. |
+| Rider rate tables | `/rider-rate-tables/` | Versioned table-header CRUD, rider/product/plan/rating-basis/version filters, search, ordering, pagination, CSV export, and soft deactivation. |
+| Rider rate rows | `/rider-rate-rows/` | Dimension-row CRUD, table/rider/gender/smoker/frequency/rate-unit/age/term filters, search, ordering, pagination, CSV export, and soft deactivation. |
+
+All three resources use `ol_parameters.view`, `.create`, `.update`, `.deactivate`, and `.configure` through the shared permission-aware mutation service. API and admin mutations stamp actor references and emit central audit events; the three models are explicitly registered with the signal-based audit receiver so direct administrative saves are also covered. Physical deletion is not exposed and deactivation preserves actuarial configuration history.
+
+The idempotent command `python manage.py seed_ol_rider_setup` ensures the Product Setup starter product exists, seeds one development accidental-death rider, one versioned rider rate table, one rider rate row, and three `RIDER_SETUP` registry contracts. Starter actuarial values and exclusion rules are placeholders requiring actuarial and underwriting approval before production use; repeated execution updates the declared baseline without duplicating rows.
+
+Rider Setup is delivered through additive migration `0013_olridersetup_olriderratetable_olriderraterow_and_more.py`. Future quotation and policy consumers should resolve the active rider definition first, then select one unambiguous rate table and rate row for the requested rider, product, plan, demographic profile, frequency, age, term, sum assured, and effective date.

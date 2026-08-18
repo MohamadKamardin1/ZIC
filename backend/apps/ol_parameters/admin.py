@@ -36,6 +36,9 @@ from .models import (
     OLInstallmentChargeRate,
     OLCashSurrenderValue,
     OLReserveLoading,
+    OLRiderSetup,
+    OLRiderRateTable,
+    OLRiderRateRow,
     OLSurrenderSetup,
     OLSurrenderValueRate,
     OLParameterTableRegistry,
@@ -790,6 +793,77 @@ class OLReserveLoadingAdmin(OLDefaultSetupAdmin):
     fieldsets = (
         ("Identity", {"fields": ("code", "name", "description", "is_active")}),
         ("Scope and loading", {"fields": ("product", "plan", "loading_type", "loading_basis", "rate_value")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLRiderSetup)
+class OLRiderSetupAdmin(OLDefaultSetupAdmin):
+    list_display = (
+        "code", "name", "rider_category", "benefit_type", "product", "plan",
+        "min_age", "max_age", "min_term", "max_term", "allows_standalone",
+        "requires_underwriting", "is_active", "effective_from", "effective_to",
+    )
+    list_filter = (
+        "is_active", "rider_category", "benefit_type", "calculation_basis",
+        "allows_standalone", "requires_underwriting", "effective_from", "effective_to",
+    )
+    search_fields = (
+        "code", "name", "description", "rider_category", "benefit_type",
+        "calculation_basis", "product__code", "plan__code",
+    )
+    ordering = ("rider_category", "benefit_type", "name", "code")
+    autocomplete_fields = ("product", "plan")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Rider classification", {"fields": ("rider_category", "benefit_type", "calculation_basis")}),
+        ("Applicability", {"fields": ("product", "plan", "allows_standalone", "requires_underwriting", "exclusion_rules")}),
+        ("Eligibility", {"fields": ("min_age", "max_age", "min_term", "max_term", "min_sum_assured", "max_sum_assured", "waiting_period_days")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLRiderRateTable)
+class OLRiderRateTableAdmin(admin.ModelAdmin):
+    list_display = (
+        "table_code", "name", "rider", "product", "plan", "rating_basis",
+        "version", "effective_from", "effective_to", "is_active",
+    )
+    list_filter = ("is_active", "rating_basis", "effective_from", "effective_to")
+    search_fields = (
+        "table_code", "name", "description", "version", "rider__code",
+        "rider__name", "product__code", "plan__code",
+    )
+    ordering = ("table_code", "rider", "-effective_from", "version")
+    autocomplete_fields = ("rider", "product", "plan")
+    readonly_fields = ("created_by", "created_at", "updated_by", "updated_at")
+    fieldsets = (
+        ("Table identity", {"fields": ("table_code", "name", "description", "version", "is_active")}),
+        ("Scope and rating", {"fields": ("rider", "product", "plan", "rating_basis")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLRiderRateRow)
+class OLRiderRateRowAdmin(OLDefaultSetupAdmin):
+    list_display = (
+        "table", "code", "gender", "smoker_status", "age_from", "age_to",
+        "term_from", "term_to", "frequency", "rate", "rate_unit", "is_active",
+    )
+    list_filter = ("is_active", "gender", "smoker_status", "frequency", "rate_unit", "effective_from", "effective_to")
+    search_fields = (
+        "code", "name", "description", "table__table_code", "table__version",
+        "table__rider__code", "gender", "smoker_status", "frequency",
+    )
+    ordering = ("table", "gender", "smoker_status", "frequency", "age_from", "term_from", "code")
+    autocomplete_fields = ("table",)
+    fieldsets = (
+        ("Row identity", {"fields": ("code", "name", "description", "table", "is_active")}),
+        ("Rating dimensions", {"fields": ("gender", "smoker_status", "age_from", "age_to", "term_from", "term_to", "frequency", "sum_assured_band_from", "sum_assured_band_to")}),
+        ("Rate", {"fields": ("rate", "rate_unit")}),
         ("Effective dates", {"fields": ("effective_from", "effective_to")}),
         ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
     )

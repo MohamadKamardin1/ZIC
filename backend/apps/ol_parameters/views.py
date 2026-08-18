@@ -47,6 +47,9 @@ from .models import (
     OLInstallmentChargeRate,
     OLCashSurrenderValue,
     OLReserveLoading,
+    OLRiderSetup,
+    OLRiderRateTable,
+    OLRiderRateRow,
     OLSurrenderSetup,
     OLSurrenderValueRate,
     OLParameterTableRegistry,
@@ -94,6 +97,9 @@ from .serializers import (
     OLInstallmentChargeRateSerializer,
     OLCashSurrenderValueSerializer,
     OLReserveLoadingSerializer,
+    OLRiderSetupSerializer,
+    OLRiderRateTableSerializer,
+    OLRiderRateRowSerializer,
     OLTableRegistrySerializer,
 )
 from .services.default_setup_service import OLDefaultSetupService
@@ -325,6 +331,11 @@ class OLParameterHealthView(APIView):
                     "installment_charge_rates": OLInstallmentChargeRate.objects.filter(is_active=True).count(),
                     "cash_surrender_values": OLCashSurrenderValue.objects.filter(is_active=True).count(),
                     "reserve_loadings": OLReserveLoading.objects.filter(is_active=True).count(),
+                },
+                "rider_setup": {
+                    "riders": OLRiderSetup.objects.filter(is_active=True).count(),
+                    "rider_rate_tables": OLRiderRateTable.objects.filter(is_active=True).count(),
+                    "rider_rate_rows": OLRiderRateRow.objects.filter(is_active=True).count(),
                 },
             }
         )
@@ -775,3 +786,58 @@ class OLReserveLoadingViewSet(OLDefaultSetupViewSet):
     filterset_fields = ["is_active", "product", "plan", "loading_type", "loading_basis", "effective_from", "effective_to"]
     ordering_fields = ["code", "name", "loading_type", "loading_basis", "rate_value", "effective_from", "effective_to", "created_at", "updated_at"]
     ordering = ["product", "plan", "loading_type", "loading_basis", "-effective_from", "code"]
+
+
+class OLRiderSetupViewSet(OLDefaultSetupViewSet):
+    model = OLRiderSetup
+    serializer_class = OLRiderSetupSerializer
+    table_slug = "rider-setups"
+    search_fields = [
+        "code", "name", "description", "rider_category", "benefit_type", "calculation_basis",
+        "product__code", "plan__code",
+    ]
+    filterset_fields = [
+        "is_active", "rider_category", "benefit_type", "calculation_basis", "product", "plan",
+        "allows_standalone", "requires_underwriting", "effective_from", "effective_to",
+    ]
+    ordering_fields = [
+        "code", "name", "rider_category", "benefit_type", "calculation_basis", "min_age", "max_age",
+        "min_term", "max_term", "min_sum_assured", "max_sum_assured", "waiting_period_days",
+        "effective_from", "effective_to", "created_at", "updated_at",
+    ]
+    ordering = ["rider_category", "benefit_type", "name", "code"]
+
+
+class OLRiderRateTableViewSet(OLDefaultSetupViewSet):
+    model = OLRiderRateTable
+    serializer_class = OLRiderRateTableSerializer
+    table_slug = "rider-rate-tables"
+    search_fields = [
+        "table_code", "name", "description", "rating_basis", "version", "rider__code", "rider__name",
+        "product__code", "plan__code",
+    ]
+    filterset_fields = ["is_active", "rider", "product", "plan", "rating_basis", "version", "effective_from", "effective_to"]
+    ordering_fields = ["table_code", "name", "rider", "version", "rating_basis", "effective_from", "effective_to", "created_at", "updated_at"]
+    ordering = ["table_code", "rider", "-effective_from", "version"]
+
+
+class OLRiderRateRowViewSet(OLDefaultSetupViewSet):
+    model = OLRiderRateRow
+    serializer_class = OLRiderRateRowSerializer
+    table_slug = "rider-rate-rows"
+    search_fields = [
+        "code", "name", "description", "table__table_code", "table__version", "table__rider__code",
+        "gender", "smoker_status", "frequency", "rate_unit",
+    ]
+    filterset_fields = [
+        "is_active", "table", "table__rider", "gender", "smoker_status", "age_from", "age_to",
+        "term_from", "term_to", "frequency", "rate_unit", "effective_from", "effective_to",
+    ]
+    ordering_fields = [
+        "code", "name", "table", "gender", "smoker_status", "frequency", "age_from", "term_from",
+        "sum_assured_band_from", "rate", "effective_from", "effective_to", "created_at", "updated_at",
+    ]
+    ordering = ["table", "gender", "smoker_status", "frequency", "age_from", "term_from", "code"]
+
+
+# End of OL Rider Setup viewsets

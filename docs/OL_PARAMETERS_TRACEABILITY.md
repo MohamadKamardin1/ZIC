@@ -294,3 +294,38 @@ OL Product Rating Part 2 is now **Implemented** as the second isolated rating in
 | OL Claim Setup | Foundation registry only; planned |
 
 The Product Rating Part 2 increment is additive and does not alter transactional product, quotation, proposal, policy, loan, surrender, reserve, or claim tables. Starter actuarial values are development placeholders and must pass formal actuarial approval and controlled publication before production calculation services consume them.
+
+
+## OL Rider Setup implementation status
+
+OL Rider Setup is now **Implemented** as the fifth concrete OL Parameters group. The canonical artifacts are isolated under `backend/apps/ol_parameters/` and expose rider definitions and rider rate tables without introducing transactional policy or quotation behavior.
+
+| Requirement | Delivered artifact | Status |
+|---|---|---|
+| Rider definitions | `OLRiderSetup` with category, benefit type, calculation basis, age/term/sum-assured applicability, waiting period, standalone/underwriting controls, exclusion JSON, optional product/plan scope, and effective dates | Implemented |
+| Rider rate tables | `OLRiderRateTable` with rider reference, optional product/plan scope, rating basis, version, effective dates, and active lifecycle | Implemented |
+| Rider rate rows | `OLRiderRateRow` with gender, smoker status, age/term bands, frequency, sum-assured bands, Decimal rate, rate unit, and effective dates | Implemented |
+| Validation and invariants | Ordered applicability ranges, 0–150 age bounds, nonnegative Decimal rates, rate-unit limits, effective-date consistency, active product/plan references, rider/table scope alignment, and active multi-dimensional overlap protection | Implemented |
+| APIs | Three table-first resources with CRUD, search, filters, ordering, pagination, CSV export, and soft deactivation | Implemented |
+| Permissions | Existing `ol_parameters.view`, `.create`, `.update`, `.deactivate`, and `.configure` enforcement | Implemented |
+| Admin | Table-first, permission-aware rider, rate-table, and rate-row registrations with focused list displays and fieldsets | Implemented |
+| Audit | Central audit receiver registration for all three Rider Setup models plus shared mutation-service integration | Implemented |
+| Seed data | `seed_ol_rider_setup` idempotently seeds one rider, one rate table, one rate row, and three `RIDER_SETUP` registry contracts | Implemented |
+| Tests | CRUD, dimension filters, applicability/date/rate validation, overlap prevention, permissions, audit correlation, seed idempotency, and admin registration | Implemented |
+| Migrations | Additive migration `0013_olridersetup_olriderratetable_olriderraterow_and_more.py` with database-level range/date/rate constraints and query indexes | Implemented |
+
+## Updated nine-group status after OL Rider Setup
+
+| Required group | Concrete implementation status after this delivery |
+|---|---|
+| OL Default Setup | **Implemented** |
+| OL Policy Setup | **Parts 1, 2, and 3 implemented**; later policy setup parts remain planned |
+| OL Product Setup | **Implemented** |
+| OL Product Rating | **Parts 1 and 2 implemented**: premium, mortality, joint life, reinstatement, bonus, mortgage, installment, surrender, and reserve parameters |
+| OL Rider Setup | **Implemented**: rider catalog, applicability rules, rider rate tables, and rider rate rows |
+| OL Agent Management | Foundation registry only; planned |
+| OL Loan Setup | Foundation registry only; planned |
+| OL Medical / Underwriting | Foundation registry only; planned |
+| OL Claim Setup | Foundation registry only; planned |
+
+The Rider Setup increment is additive and preserves existing policy, product, quotation, proposal, underwriting, and rating execution boundaries. Starter rider and rate values are development placeholders and must pass formal actuarial and underwriting approval before production consumers resolve them.

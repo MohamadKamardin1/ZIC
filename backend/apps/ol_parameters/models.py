@@ -2973,3 +2973,279 @@ class OLReserveLoading(OLEffectiveDateModel):
 
 
 # End of OL Product Rating Part 2
+
+
+# =============================================================================
+# OL RIDER SETUP
+# =============================================================================
+
+
+class OLRiderCategory(models.TextChoices):
+    ACCIDENT = "ACCIDENT", "Accident"
+    CRITICAL_ILLNESS = "CRITICAL_ILLNESS", "Critical illness"
+    DISABILITY = "DISABILITY", "Disability"
+    HEALTH = "HEALTH", "Health"
+    SAVINGS = "SAVINGS", "Savings"
+    WAIVER = "WAIVER", "Waiver"
+    OTHER = "OTHER", "Other"
+
+
+class OLRiderBenefitType(models.TextChoices):
+    ACCIDENTAL_DEATH = "ACCIDENTAL_DEATH", "Accidental death"
+    CRITICAL_ILLNESS = "CRITICAL_ILLNESS", "Critical illness"
+    DEATH = "DEATH", "Death"
+    DISABILITY = "DISABILITY", "Disability"
+    HOSPITAL_CASH = "HOSPITAL_CASH", "Hospital cash"
+    INCOME_REPLACEMENT = "INCOME_REPLACEMENT", "Income replacement"
+    WAIVER_PREMIUM = "WAIVER_PREMIUM", "Waiver of premium"
+    OTHER = "OTHER", "Other"
+
+
+class OLRiderCalculationBasis(models.TextChoices):
+    SUM_ASSURED = "SUM_ASSURED", "Sum assured"
+    PREMIUM = "PREMIUM", "Premium"
+    AGE_TERM = "AGE_TERM", "Age and term"
+    FLAT = "FLAT", "Flat"
+    CUSTOM = "CUSTOM", "Custom"
+
+
+class OLRiderSetup(OLParameterBaseModel):
+    """Parameterized rider catalog consumed by quotation, proposal, and policy flows."""
+
+    rider_category = models.CharField(max_length=40, choices=OLRiderCategory.choices)
+    benefit_type = models.CharField(max_length=50, choices=OLRiderBenefitType.choices)
+    calculation_basis = models.CharField(max_length=30, choices=OLRiderCalculationBasis.choices, default=OLRiderCalculationBasis.SUM_ASSURED)
+    min_age = models.PositiveSmallIntegerField(default=0)
+    max_age = models.PositiveSmallIntegerField(default=150)
+    min_term = models.PositiveSmallIntegerField(default=1)
+    max_term = models.PositiveSmallIntegerField(default=100)
+    min_sum_assured = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
+    max_sum_assured = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
+    waiting_period_days = models.PositiveIntegerField(default=0)
+    allows_standalone = models.BooleanField(default=False)
+    requires_underwriting = models.BooleanField(default=True)
+    exclusion_rules = models.JSONField(default=dict, blank=True)
+    product = models.ForeignKey(
+        OLProduct,
+        on_delete=models.PROTECT,
+        related_name="rider_setups",
+        null=True,
+        blank=True,
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        related_name="ol_parameter_rider_setups",
+        null=True,
+        blank=True,
+    )
+
+    class Meta:
+        ordering = ["rider_category", "benefit_type", "name", "code"]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(effective_to__isnull=True) | models.Q(effective_from__isnull=True) | models.Q(effective_to__gte=models.F("effective_from")),
+                name="ol_rider_dates_valid",
+            ),
+            models.UniqueConstraint(fields=["code"], name="ol_rider_setup_code_uq"),
+            models.CheckConstraint(check=models.Q(max_age__gte=models.F("min_age")), name="ol_rider_age_order_ck"),
+            models.CheckConstraint(check=models.Q(min_age__lte=150) & models.Q(max_age__lte=150), name="ol_rider_age_range_ck"),
+            models.CheckConstraint(check=models.Q(min_term__gte=1) & models.Q(max_term__gte=models.F("min_term")), name="ol_rider_term_range_ck"),
+            models.CheckConstraint(check=models.Q(min_sum_assured__isnull=True) | models.Q(min_sum_assured__gte=0), name="ol_rider_min_sa_nonneg"),
+            models.CheckConstraint(check=models.Q(max_sum_assured__isnull=True) | models.Q(max_sum_assured__gte=0), name="ol_rider_max_sa_nonneg"),
+            models.CheckConstraint(check=models.Q(max_sum_assured__isnull=True) | models.Q(min_sum_assured__isnull=True) | models.Q(max_sum_assured__gte=models.F("min_sum_assured")), name="ol_rider_sa_order_ck"),
+        ]
+        indexes = [
+            models.Index(fields=["rider_category", "benefit_type", "is_active"], name="ol_rider_setup_cat_idx"),
+            models.Index(fields=["product", "plan", "is_active"], name="ol_rider_setup_scope_idx"),
+            models.Index(fields=["requires_underwriting", "allows_standalone", "is_active"], name="ol_rider_setup_rule_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.rider_category = (self.rider_category or "").strip().upper()
+        self.benefit_type = (self.benefit_type or "").strip().upper()
+        self.calculation_basis = (self.calculation_basis or "").strip().upper()
+        if self.rider_category not in dict(OLRiderCategory.choices):
+            errors["rider_category"] = "Unsupported rider category."
+        if self.benefit_type not in dict(OLRiderBenefitType.choices):
+            errors["benefit_type"] = "Unsupported rider benefit type."
+        if self.calculation_basis not in dict(OLRiderCalculationBasis.choices):
+            errors["calculation_basis"] = "Unsupported rider calculation basis."
+        if self.min_age < 0 or self.max_age > 150 or self.max_age < self.min_age:
+            errors["max_age"] = "Rider age range must be ordered and remain between 0 and 150 years."
+        if self.min_term < 1 or self.max_term < self.min_term:
+            errors["max_term"] = "Rider term range must be ordered and start at one year or later."
+        if self.min_sum_assured is not None and self.min_sum_assured < 0:
+            errors["min_sum_assured"] = "Minimum sum assured cannot be negative."
+        if self.max_sum_assured is not None and self.max_sum_assured < 0:
+            errors["max_sum_assured"] = "Maximum sum assured cannot be negative."
+        if self.min_sum_assured is not None and self.max_sum_assured is not None and self.max_sum_assured < self.min_sum_assured:
+            errors["max_sum_assured"] = "Maximum sum assured cannot be less than minimum sum assured."
+        if self.waiting_period_days < 0:
+            errors["waiting_period_days"] = "Waiting period cannot be negative."
+        if self.product_id and not getattr(self.product, "is_active", True):
+            errors["product"] = "Rider product applicability must be active."
+        if self.plan_id and not getattr(self.plan, "is_active", True):
+            errors["plan"] = "Rider plan applicability must be active."
+        _policy_setup_validate_product_plan(self, errors)
+        if not isinstance(self.exclusion_rules, dict):
+            errors["exclusion_rules"] = "Exclusion rules must be a JSON object."
+        if errors:
+            raise ValidationError(errors)
+
+
+class OLRiderRateTable(OLRatingTableBaseModel):
+    """Versioned rider rate table scoped to a rider and optional product or plan."""
+
+    rider = models.ForeignKey(
+        OLRiderSetup,
+        on_delete=models.PROTECT,
+        related_name="rate_tables",
+    )
+    product = models.ForeignKey(
+        OLProduct,
+        on_delete=models.PROTECT,
+        related_name="rider_rate_tables",
+        null=True,
+        blank=True,
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        related_name="ol_parameter_rider_rate_tables",
+        null=True,
+        blank=True,
+    )
+    rating_basis = models.CharField(max_length=40, choices=OLPremiumRatingBasis.choices, default=OLPremiumRatingBasis.AGE_TERM)
+    version = models.CharField(max_length=50, default="1.0")
+
+    class Meta:
+        ordering = ["table_code", "rider", "-effective_from", "version"]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(effective_to__isnull=True) | models.Q(effective_from__isnull=True) | models.Q(effective_to__gte=models.F("effective_from")),
+                name="ol_rider_rt_dates_valid",
+            ),
+            models.UniqueConstraint(fields=["table_code", "version"], name="ol_rider_rt_code_ver_uq"),
+        ]
+        indexes = [
+            models.Index(fields=["rider", "product", "plan", "is_active"], name="ol_rider_rt_scope_idx"),
+            models.Index(fields=["table_code", "version"], name="ol_rider_rt_ver_idx"),
+            models.Index(fields=["is_active", "effective_from"], name="ol_rider_rt_dates_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.rating_basis = (self.rating_basis or "").strip().upper()
+        self.version = (self.version or "").strip()
+        if self.rating_basis not in dict(OLPremiumRatingBasis.choices):
+            errors["rating_basis"] = "Unsupported rider rating basis."
+        if not self.version:
+            errors["version"] = "Rider rate table version is required."
+        if not self.rider_id:
+            errors["rider"] = "A rider is required."
+        elif not getattr(self.rider, "is_active", True):
+            errors["rider"] = "Rider must be active."
+        if self.product_id and not getattr(self.product, "is_active", True):
+            errors["product"] = "Rider rate product must be active."
+        if self.plan_id and not getattr(self.plan, "is_active", True):
+            errors["plan"] = "Rider rate plan must be active."
+        _policy_setup_validate_product_plan(self, errors)
+        if self.rider_id:
+            rider = self.rider
+            if rider.product_id and rider.product_id != self.product_id:
+                errors["product"] = "Rate table product must match the rider product applicability."
+            if rider.plan_id and rider.plan_id != self.plan_id:
+                errors["plan"] = "Rate table plan must match the rider plan applicability."
+        if errors:
+            raise ValidationError(errors)
+
+
+class OLRiderRateRow(OLParameterBaseModel):
+    """Multi-dimensional rider rate row belonging to one versioned rider rate table."""
+
+    table = models.ForeignKey(
+        OLRiderRateTable,
+        on_delete=models.CASCADE,
+        related_name="rows",
+    )
+    gender = models.CharField(max_length=30, db_index=True)
+    smoker_status = models.CharField(max_length=30, db_index=True)
+    age_from = models.PositiveSmallIntegerField()
+    age_to = models.PositiveSmallIntegerField()
+    term_from = models.PositiveSmallIntegerField()
+    term_to = models.PositiveSmallIntegerField()
+    frequency = models.CharField(max_length=30, blank=True, default="", db_index=True)
+    sum_assured_band_from = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
+    sum_assured_band_to = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
+    rate = models.DecimalField(max_digits=18, decimal_places=8)
+    rate_unit = models.CharField(max_length=30, choices=OLPremiumRateUnit.choices, default=OLPremiumRateUnit.PER_THOUSAND_SUM_ASSURED)
+
+    class Meta:
+        ordering = ["table", "gender", "smoker_status", "frequency", "age_from", "term_from", "code"]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(effective_to__isnull=True) | models.Q(effective_from__isnull=True) | models.Q(effective_to__gte=models.F("effective_from")),
+                name="ol_rider_row_dates_valid",
+            ),
+            models.UniqueConstraint(fields=["code"], name="ol_rider_rate_row_code_uq"),
+            models.CheckConstraint(check=models.Q(age_to__gte=models.F("age_from")), name="ol_rider_row_age_order_ck"),
+            models.CheckConstraint(check=models.Q(term_to__gte=models.F("term_from")), name="ol_rider_row_term_order_ck"),
+            models.CheckConstraint(check=models.Q(sum_assured_band_from__isnull=True) | models.Q(sum_assured_band_from__gte=0), name="ol_rider_row_sa_from_ck"),
+            models.CheckConstraint(check=models.Q(sum_assured_band_to__isnull=True) | models.Q(sum_assured_band_to__gte=0), name="ol_rider_row_sa_to_ck"),
+            models.CheckConstraint(check=models.Q(sum_assured_band_to__isnull=True) | models.Q(sum_assured_band_from__isnull=True) | models.Q(sum_assured_band_to__gte=models.F("sum_assured_band_from")), name="ol_rider_row_sa_order_ck"),
+            models.CheckConstraint(check=models.Q(rate__gte=0), name="ol_rider_row_rate_nonneg"),
+        ]
+        indexes = [
+            models.Index(fields=["table", "gender", "smoker_status", "frequency"], name="ol_rider_row_scope_idx"),
+            models.Index(fields=["age_from", "age_to", "term_from", "term_to"], name="ol_rider_row_band_idx"),
+            models.Index(fields=["is_active", "effective_from"], name="ol_rider_row_dates_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        _rating_row_dates_within_table(self, errors)
+        self.gender = (self.gender or "").strip().upper()
+        self.smoker_status = (self.smoker_status or "").strip().upper()
+        self.frequency = (self.frequency or "").strip().upper()
+        self.rate_unit = (self.rate_unit or "").strip().upper()
+        if not self.gender:
+            errors["gender"] = "Gender is required."
+        if not self.smoker_status:
+            errors["smoker_status"] = "Smoker status is required."
+        if self.age_from < 0 or self.age_to > 150 or self.age_to < self.age_from:
+            errors["age_to"] = "Rider rate age band must be ordered and remain between 0 and 150 years."
+        if self.term_from < 1 or self.term_to < self.term_from:
+            errors["term_to"] = "Rider rate term band must be ordered and start at one year or later."
+        if self.sum_assured_band_from is not None and self.sum_assured_band_from < 0:
+            errors["sum_assured_band_from"] = "Sum-assured band cannot be negative."
+        if self.sum_assured_band_to is not None and self.sum_assured_band_to < 0:
+            errors["sum_assured_band_to"] = "Sum-assured band cannot be negative."
+        if self.sum_assured_band_from is not None and self.sum_assured_band_to is not None and self.sum_assured_band_to < self.sum_assured_band_from:
+            errors["sum_assured_band_to"] = "Sum-assured band-to cannot be less than band-from."
+        if self.rate is None or self.rate < 0:
+            errors["rate"] = "Rider rate must be a non-negative decimal."
+        if self.rate_unit not in {choice for choice, _ in OLPremiumRateUnit.choices}:
+            errors["rate_unit"] = "Unsupported rider rate unit."
+        elif self.rate_unit == OLPremiumRateUnit.PERCENTAGE and self.rate > 100:
+            errors["rate"] = "Percentage rider rate cannot exceed 100."
+        if errors:
+            raise ValidationError(errors)
+        candidates = self.__class__.objects.filter(
+            table=self.table,
+            gender=self.gender,
+            smoker_status=self.smoker_status,
+            frequency=self.frequency,
+            rate_unit=self.rate_unit,
+            is_active=True,
+        ).exclude(pk=self.pk)
+        for candidate in candidates:
+            if _product_setup_intervals_overlap(self.effective_from, self.effective_to, candidate.effective_from, candidate.effective_to) and _rating_intervals_overlap(self, candidate, ("age", "term", "sum_assured_band")):
+                raise ValidationError({"code": "An active rider-rate row overlaps an existing row in the same table and dimensions."})
+
+
+# End of OL Rider Setup

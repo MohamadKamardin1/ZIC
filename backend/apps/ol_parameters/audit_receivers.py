@@ -36,6 +36,9 @@ from .models import (
     OLInstallmentChargeRate,
     OLCashSurrenderValue,
     OLReserveLoading,
+    OLRiderSetup,
+    OLRiderRateTable,
+    OLRiderRateRow,
     OLMaturityClaimSetup,
     OLMemberCoverConfiguration,
     OLOverrideCommissionSetup,
@@ -91,6 +94,9 @@ AUDITED_MODELS = (
     OLInstallmentChargeRate,
     OLCashSurrenderValue,
     OLReserveLoading,
+    OLRiderSetup,
+    OLRiderRateTable,
+    OLRiderRateRow,
 )
 
 

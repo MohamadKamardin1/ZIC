@@ -43,6 +43,9 @@ from .views import (
     OLInstallmentChargeRateViewSet,
     OLCashSurrenderValueViewSet,
     OLReserveLoadingViewSet,
+    OLRiderSetupViewSet,
+    OLRiderRateTableViewSet,
+    OLRiderRateRowViewSet,
 )
 
 
@@ -87,6 +90,9 @@ router.register("mortgage-interest-factors", OLMortgageInterestFactorViewSet, ba
 router.register("installment-charge-rates", OLInstallmentChargeRateViewSet, basename="ol-installment-charge-rate")
 router.register("cash-surrender-values", OLCashSurrenderValueViewSet, basename="ol-cash-surrender-value")
 router.register("reserve-loadings", OLReserveLoadingViewSet, basename="ol-reserve-loading")
+router.register("rider-setups", OLRiderSetupViewSet, basename="ol-rider-setup")
+router.register("rider-rate-tables", OLRiderRateTableViewSet, basename="ol-rider-rate-table")
+router.register("rider-rate-rows", OLRiderRateRowViewSet, basename="ol-rider-rate-row")
 
 urlpatterns = [
     path("health/", OLParameterHealthView.as_view(), name="ol-parameters-health"),
