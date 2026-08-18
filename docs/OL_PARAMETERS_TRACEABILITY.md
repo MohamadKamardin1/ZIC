@@ -219,3 +219,40 @@ OL Product Setup is now **Implemented** as the next isolated concrete OL Paramet
 | OL Claim Setup | Foundation registry only; planned |
 
 The Product Setup increment is additive and does not alter legacy Ordinary Life product tables or routes. A future controlled reconciliation process may map approved legacy product data into canonical parameter rows, but no implicit data migration or destructive replacement is performed by this delivery.
+
+
+## OL Product Rating Part 1 implementation status
+
+OL Product Rating Part 1 is now **Implemented** as the first isolated rating increment under the canonical OL Parameters bounded context. It covers premium rates, mortality rates, and joint-life setup while preserving the distinction between actuarial configuration and transactional rating execution.
+
+| Requirement | Delivered artifact | Status |
+|---|---|---|
+| Premium rate table | `OLPremiumRateTable` with product/plan scope, rating basis, currency, version, effective dates, and active lifecycle | Implemented |
+| Premium rate rows | `OLPremiumRateRow` with gender, smoker status, age/term bands, frequency, optional sum-assured bands, Decimal rate, and rate unit | Implemented |
+| Mortality rate table | `OLMortalityRateTable` with versioned effective-dated mortality basis metadata | Implemented |
+| Mortality rate rows | `OLMortalityRateRow` with age, gender, optional smoker status, optional policy year, and Decimal mortality rate | Implemented |
+| Joint-life setup | `OLJointLifeSetup` with product/plan scope, joint-life type, age basis, survivor-benefit rule, premium adjustment factor, and underwriting rule | Implemented |
+| Validation | Decimal bounds, age/term ordering, effective-date consistency, table-row containment, product-plan consistency, scope requirements, duplicate dimensions, and active overlap detection | Implemented |
+| APIs | Five table-first resources with CRUD, filters, search, ordering, pagination, CSV export, soft deactivation, and mortality JSON bulk import | Implemented |
+| Permissions | Existing `ol_parameters.view`, `.create`, `.update`, `.deactivate`, and `.configure` enforcement | Implemented |
+| Admin | Permission-aware registrations for all five Product Rating entities | Implemented |
+| Audit | Central audit events through shared mutation services and explicit signal registration for all five entities | Implemented |
+| Seed data | `seed_ol_product_rating` idempotently seeds starter premium, mortality, joint-life data, and five `PRODUCT_RATING` registry contracts | Implemented |
+| Tests | CRUD, filtering/export, bulk import, invalid rates and bands, overlap detection, scope validation, permissions, audit, seed idempotency, and admin registration | Implemented |
+| Migrations | Additive Product Rating migrations `0009` and `0010` | Implemented |
+
+## Updated nine-group status after OL Product Rating Part 1
+
+| Required group | Concrete implementation status after this delivery |
+|---|---|
+| OL Default Setup | **Implemented** |
+| OL Policy Setup | **Parts 1, 2, and 3 implemented**; later policy setup parts remain planned |
+| OL Product Setup | **Implemented** |
+| OL Product Rating | **Part 1 implemented**: premium rates, mortality rates, and joint-life setup; later rating parts remain planned |
+| OL Rider Setup | Foundation registry only; planned |
+| OL Agent Management | Foundation registry only; planned |
+| OL Loan Setup | Foundation registry only; planned |
+| OL Medical / Underwriting | Foundation registry only; planned |
+| OL Claim Setup | Foundation registry only; planned |
+
+The Product Rating Part 1 increment is additive and does not alter transactional product, quotation, proposal, policy, or claim tables. Actuarial starter values are placeholders and must be approved through the future actuarial governance and publication workflow before production rating execution.

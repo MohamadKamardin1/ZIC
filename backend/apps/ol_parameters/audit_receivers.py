@@ -25,6 +25,11 @@ from .models import (
     OLPlanOccupationRiskLimit,
     OLInvestmentFundType,
     OLInvestmentFund,
+    OLPremiumRateTable,
+    OLPremiumRateRow,
+    OLMortalityRateTable,
+    OLMortalityRateRow,
+    OLJointLifeSetup,
     OLMaturityClaimSetup,
     OLMemberCoverConfiguration,
     OLOverrideCommissionSetup,
@@ -69,6 +74,11 @@ AUDITED_MODELS = (
     OLPlanOccupationRiskLimit,
     OLInvestmentFundType,
     OLInvestmentFund,
+    OLPremiumRateTable,
+    OLPremiumRateRow,
+    OLMortalityRateTable,
+    OLMortalityRateRow,
+    OLJointLifeSetup,
 )
 
 

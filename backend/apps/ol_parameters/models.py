@@ -2091,3 +2091,415 @@ def _product_setup_intervals_overlap(start_a, end_a, start_b, end_b):
     if end_b is not None and start_a is not None and end_b < start_a:
         return False
     return True
+
+
+# =============================================================================
+# OL PRODUCT RATING PART 1
+# =============================================================================
+
+
+class OLRatingTableBaseModel(models.Model):
+    """Common table-header identity, lifecycle, effective-dating, and audit fields."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    table_code = models.CharField(max_length=100)
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True, default="")
+    is_active = models.BooleanField(default=True, db_index=True)
+    effective_from = models.DateField(null=True, blank=True, db_index=True)
+    effective_to = models.DateField(null=True, blank=True, db_index=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        abstract = True
+        ordering = ["table_code", "-effective_from", "version"]
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(effective_to__isnull=True)
+                    | models.Q(effective_from__isnull=True)
+                    | models.Q(effective_to__gte=models.F("effective_from"))
+                ),
+                name="%(app_label)s_%(class)s_dates_valid",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["table_code", "is_active", "effective_from"],
+                name="%(app_label)s_%(class)s_table_idx",
+            ),
+            models.Index(
+                fields=["is_active", "effective_from", "effective_to"],
+                name="%(app_label)s_%(class)s_active_idx",
+            ),
+        ]
+
+    def __str__(self):
+        version = getattr(self, "version", "")
+        return f"{self.table_code} v{version}" if version else self.table_code
+
+    def clean(self):
+        super().clean()
+        self.table_code = (self.table_code or "").strip().upper()
+        self.name = (self.name or "").strip()
+        if not self.table_code:
+            raise ValidationError({"table_code": "A rating table code is required."})
+        if not self.name:
+            raise ValidationError({"name": "A rating table name is required."})
+        if self.effective_from and self.effective_to and self.effective_to < self.effective_from:
+            raise ValidationError({"effective_to": "Effective-to cannot be before effective-from."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+def _rating_row_dates_within_table(instance, errors):
+    table = getattr(instance, "table", None)
+    if not instance.table_id:
+        errors["table"] = "A rating table is required."
+        return
+    if not getattr(table, "is_active", True):
+        errors["table"] = "The rating table must be active."
+    if instance.effective_from and table.effective_from and instance.effective_from < table.effective_from:
+        errors["effective_from"] = "Row effective-from cannot precede the table effective-from."
+    if instance.effective_to and table.effective_to and instance.effective_to > table.effective_to:
+        errors["effective_to"] = "Row effective-to cannot extend beyond the table effective-to."
+
+
+def _rating_intervals_overlap(left, right, fields):
+    return all(
+        _product_setup_intervals_overlap(
+            getattr(left, f"{field}_from", getattr(left, field, None)),
+            getattr(left, f"{field}_to", getattr(left, field, None)),
+            getattr(right, f"{field}_from", getattr(right, field, None)),
+            getattr(right, f"{field}_to", getattr(right, field, None)),
+        )
+        for field in fields
+    )
+
+
+class OLPremiumRatingBasis(models.TextChoices):
+    SUM_ASSURED = "SUM_ASSURED", "Sum assured"
+    AGE_TERM = "AGE_TERM", "Age and term"
+    PREMIUM = "PREMIUM", "Premium"
+    FLAT = "FLAT", "Flat"
+    CUSTOM = "CUSTOM", "Custom"
+
+
+class OLPremiumRateUnit(models.TextChoices):
+    PER_THOUSAND_SUM_ASSURED = "PER_THOUSAND_SUM_ASSURED", "Per thousand sum assured"
+    PERCENTAGE = "PERCENTAGE", "Percentage"
+    FIXED_AMOUNT = "FIXED_AMOUNT", "Fixed amount"
+    FACTOR = "FACTOR", "Factor"
+
+
+class OLPremiumRateTable(OLRatingTableBaseModel):
+    """Versioned premium-rate table scoped to a Product Setup product and optional operational plan."""
+
+    product = models.ForeignKey(
+        OLProduct,
+        on_delete=models.PROTECT,
+        related_name="premium_rate_tables",
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        related_name="ol_parameter_premium_rate_tables",
+        null=True,
+        blank=True,
+    )
+    rating_basis = models.CharField(max_length=40, choices=OLPremiumRatingBasis.choices, default=OLPremiumRatingBasis.AGE_TERM)
+    currency = models.CharField(max_length=3, blank=True, default="")
+    version = models.CharField(max_length=50, default="1.0")
+
+    class Meta(OLRatingTableBaseModel.Meta):
+        ordering = ["table_code", "-effective_from", "version"]
+        constraints = [
+            models.CheckConstraint(check=models.Q(effective_to__isnull=True) | models.Q(effective_from__isnull=True) | models.Q(effective_to__gte=models.F("effective_from")), name="ol_prem_table_dates_valid"),
+            models.UniqueConstraint(fields=["table_code", "version"], name="ol_prem_table_code_ver_uq"),
+        ]
+        indexes = [
+            models.Index(fields=["product", "plan", "is_active", "effective_from"], name="ol_prem_table_scope_idx"),
+            models.Index(fields=["table_code", "version"], name="ol_prem_table_ver_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.rating_basis = (self.rating_basis or "").strip().upper()
+        self.currency = (self.currency or "").strip().upper()
+        self.version = (self.version or "").strip()
+        if self.rating_basis not in {choice for choice, _ in OLPremiumRatingBasis.choices}:
+            errors["rating_basis"] = "Unsupported premium rating basis."
+        if not self.version:
+            errors["version"] = "Premium rate table version is required."
+        if self.currency and (len(self.currency) != 3 or not self.currency.isalpha()):
+            errors["currency"] = "Currency must be a three-letter code when supplied."
+        if self.product_id and not getattr(self.product, "is_active", True):
+            errors["product"] = "Premium rate table product must be active."
+        if self.plan_id and not getattr(self.plan, "is_active", True):
+            errors["plan"] = "Premium rate table plan must be active."
+        if errors:
+            raise ValidationError(errors)
+
+
+class OLPremiumRateRow(OLParameterBaseModel):
+    """Multi-dimensional premium rate row belonging to one versioned rate table."""
+
+    table = models.ForeignKey(
+        OLPremiumRateTable,
+        on_delete=models.CASCADE,
+        related_name="rows",
+    )
+    gender = models.CharField(max_length=30, db_index=True)
+    smoker_status = models.CharField(max_length=30, db_index=True)
+    age_from = models.PositiveSmallIntegerField()
+    age_to = models.PositiveSmallIntegerField()
+    term_from = models.PositiveSmallIntegerField()
+    term_to = models.PositiveSmallIntegerField()
+    frequency = models.CharField(max_length=30, db_index=True)
+    sum_assured_band_from = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
+    sum_assured_band_to = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
+    rate = models.DecimalField(max_digits=18, decimal_places=8)
+    rate_unit = models.CharField(max_length=30, choices=OLPremiumRateUnit.choices, default=OLPremiumRateUnit.PER_THOUSAND_SUM_ASSURED)
+
+    class Meta:
+        ordering = ["table", "gender", "smoker_status", "frequency", "age_from", "term_from", "code"]
+        constraints = [
+            models.CheckConstraint(check=models.Q(effective_to__isnull=True) | models.Q(effective_from__isnull=True) | models.Q(effective_to__gte=models.F("effective_from")), name="ol_prem_row_dates_valid"),
+            models.UniqueConstraint(fields=["code"], name="ol_prem_rate_row_code_uq"),
+            models.CheckConstraint(check=models.Q(age_to__gte=models.F("age_from")), name="ol_prem_row_age_valid"),
+            models.CheckConstraint(check=models.Q(term_to__gte=models.F("term_from")), name="ol_prem_row_term_valid"),
+            models.CheckConstraint(check=models.Q(sum_assured_band_from__isnull=True) | models.Q(sum_assured_band_from__gte=0), name="ol_prem_row_sa_from_nonneg"),
+            models.CheckConstraint(check=models.Q(sum_assured_band_to__isnull=True) | models.Q(sum_assured_band_to__gte=0), name="ol_prem_row_sa_to_nonneg"),
+            models.CheckConstraint(check=models.Q(sum_assured_band_to__isnull=True) | models.Q(sum_assured_band_from__isnull=True) | models.Q(sum_assured_band_to__gte=models.F("sum_assured_band_from")), name="ol_prem_row_sa_valid"),
+            models.CheckConstraint(check=models.Q(rate__gte=0), name="ol_prem_row_rate_nonneg"),
+        ]
+        indexes = [
+            models.Index(fields=["table", "gender", "smoker_status", "frequency"], name="ol_prem_row_scope_idx"),
+            models.Index(fields=["age_from", "age_to", "term_from", "term_to"], name="ol_prem_row_band_idx"),
+            models.Index(fields=["is_active", "effective_from"], name="ol_prem_row_dates_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        _rating_row_dates_within_table(self, errors)
+        self.gender = (self.gender or "").strip().upper()
+        self.smoker_status = (self.smoker_status or "").strip().upper()
+        self.frequency = (self.frequency or "").strip().upper()
+        self.rate_unit = (self.rate_unit or "").strip().upper()
+        if not self.gender:
+            errors["gender"] = "Gender is required."
+        if not self.smoker_status:
+            errors["smoker_status"] = "Smoker status is required."
+        if not self.frequency:
+            errors["frequency"] = "Premium frequency is required."
+        if self.age_from < 0 or self.age_to > 150 or self.age_to < self.age_from:
+            errors["age_to"] = "Age band must be ordered and remain between 0 and 150 years."
+        if self.term_from < 1 or self.term_to < self.term_from:
+            errors["term_to"] = "Term band must be ordered and start at one year or later."
+        if self.sum_assured_band_from is not None and self.sum_assured_band_from < 0:
+            errors["sum_assured_band_from"] = "Sum-assured band cannot be negative."
+        if self.sum_assured_band_to is not None and self.sum_assured_band_to < 0:
+            errors["sum_assured_band_to"] = "Sum-assured band cannot be negative."
+        if self.sum_assured_band_from is not None and self.sum_assured_band_to is not None and self.sum_assured_band_to < self.sum_assured_band_from:
+            errors["sum_assured_band_to"] = "Sum-assured band-to cannot be less than band-from."
+        if self.rate is None or self.rate < 0:
+            errors["rate"] = "Premium rate must be a non-negative decimal."
+        if self.rate_unit not in {choice for choice, _ in OLPremiumRateUnit.choices}:
+            errors["rate_unit"] = "Unsupported premium rate unit."
+        elif self.rate_unit == OLPremiumRateUnit.PERCENTAGE and self.rate > 100:
+            errors["rate"] = "Percentage premium rate cannot exceed 100."
+        if errors:
+            raise ValidationError(errors)
+        candidates = self.__class__.objects.filter(
+            table=self.table,
+            gender=self.gender,
+            smoker_status=self.smoker_status,
+            frequency=self.frequency,
+            rate_unit=self.rate_unit,
+            is_active=True,
+        ).exclude(pk=self.pk)
+        for candidate in candidates:
+            if _product_setup_intervals_overlap(self.effective_from, self.effective_to, candidate.effective_from, candidate.effective_to) and _rating_intervals_overlap(self, candidate, ("age", "term", "sum_assured_band")):
+                raise ValidationError({"code": "An active premium-rate row overlaps an existing row in the same table and dimensions."})
+
+
+class OLMortalityRateTable(OLRatingTableBaseModel):
+    """Versioned mortality basis table independent of product-specific premium tables."""
+
+    version = models.CharField(max_length=50, default="1.0")
+
+    class Meta(OLRatingTableBaseModel.Meta):
+        ordering = ["table_code", "-effective_from", "version"]
+        constraints = [
+            models.CheckConstraint(check=models.Q(effective_to__isnull=True) | models.Q(effective_from__isnull=True) | models.Q(effective_to__gte=models.F("effective_from")), name="ol_mort_table_dates_valid"),
+            models.UniqueConstraint(fields=["table_code", "version"], name="ol_mort_table_code_ver_uq"),
+        ]
+        indexes = [
+            models.Index(fields=["table_code", "version"], name="ol_mort_table_ver_idx"),
+            models.Index(fields=["is_active", "effective_from"], name="ol_mort_table_dates_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        self.version = (self.version or "").strip()
+        if not self.version:
+            raise ValidationError({"version": "Mortality table version is required."})
+
+
+class OLMortalityRateRow(OLParameterBaseModel):
+    """Age, gender, smoking, and policy-year mortality assumption row."""
+
+    table = models.ForeignKey(
+        OLMortalityRateTable,
+        on_delete=models.CASCADE,
+        related_name="rows",
+    )
+    age = models.PositiveSmallIntegerField()
+    gender = models.CharField(max_length=30, db_index=True)
+    smoker_status = models.CharField(max_length=30, blank=True, default="", db_index=True)
+    policy_year = models.PositiveSmallIntegerField(null=True, blank=True, db_index=True)
+    mortality_rate = models.DecimalField(max_digits=18, decimal_places=12)
+
+    class Meta:
+        ordering = ["table", "age", "gender", "smoker_status", "policy_year", "code"]
+        constraints = [
+            models.CheckConstraint(check=models.Q(effective_to__isnull=True) | models.Q(effective_from__isnull=True) | models.Q(effective_to__gte=models.F("effective_from")), name="ol_mort_row_dates_valid"),
+            models.UniqueConstraint(fields=["code"], name="ol_mort_rate_row_code_uq"),
+            models.CheckConstraint(check=models.Q(age__lte=150), name="ol_mort_row_age_max_ck"),
+            models.CheckConstraint(check=models.Q(policy_year__isnull=True) | models.Q(policy_year__gt=0), name="ol_mort_row_year_pos_ck"),
+            models.CheckConstraint(check=models.Q(mortality_rate__gte=0), name="ol_mort_row_rate_nonneg"),
+        ]
+        indexes = [
+            models.Index(fields=["table", "age", "gender", "smoker_status", "policy_year"], name="ol_mort_row_scope_idx"),
+            models.Index(fields=["age", "gender", "smoker_status"], name="ol_mort_row_dim_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        _rating_row_dates_within_table(self, errors)
+        self.gender = (self.gender or "").strip().upper()
+        self.smoker_status = (self.smoker_status or "").strip().upper()
+        if not self.gender:
+            errors["gender"] = "Gender is required."
+        if self.age < 0 or self.age > 150:
+            errors["age"] = "Mortality age must be between 0 and 150 years."
+        if self.policy_year is not None and self.policy_year < 1:
+            errors["policy_year"] = "Policy year must be positive when supplied."
+        if self.mortality_rate is None or self.mortality_rate < 0:
+            errors["mortality_rate"] = "Mortality rate must be a non-negative decimal."
+        if errors:
+            raise ValidationError(errors)
+        candidates = self.__class__.objects.filter(
+            table=self.table,
+            age=self.age,
+            gender=self.gender,
+            smoker_status=self.smoker_status,
+            policy_year=self.policy_year,
+            is_active=True,
+        ).exclude(pk=self.pk)
+        for candidate in candidates:
+            if _product_setup_intervals_overlap(self.effective_from, self.effective_to, candidate.effective_from, candidate.effective_to):
+                raise ValidationError({"code": "An active mortality-rate row duplicates an existing row in the same table and dimensions."})
+
+
+class OLJointLifeType(models.TextChoices):
+    FIRST_DEATH = "FIRST_DEATH", "First death"
+    LAST_SURVIVOR = "LAST_SURVIVOR", "Last survivor"
+    JOINT_AND_SURVIVOR = "JOINT_AND_SURVIVOR", "Joint and survivor"
+
+
+class OLJointLifeAgeBasis(models.TextChoices):
+    YOUNGER_LIFE = "YOUNGER_LIFE", "Younger life"
+    OLDER_LIFE = "OLDER_LIFE", "Older life"
+    AVERAGE_AGE = "AVERAGE_AGE", "Average age"
+    JOINT_AGE = "JOINT_AGE", "Joint age"
+
+
+class OLJointLifeSetup(OLEffectiveDateModel):
+    """Effective-dated joint-life product or plan configuration."""
+
+    product = models.ForeignKey(
+        OLProduct,
+        on_delete=models.PROTECT,
+        related_name="joint_life_setups",
+        null=True,
+        blank=True,
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        related_name="ol_parameter_joint_life_setups",
+        null=True,
+        blank=True,
+    )
+    joint_life_type = models.CharField(max_length=30, choices=OLJointLifeType.choices)
+    age_basis = models.CharField(max_length=30, choices=OLJointLifeAgeBasis.choices)
+    survivor_benefit_rule = models.CharField(max_length=120)
+    premium_adjustment_factor = models.DecimalField(max_digits=12, decimal_places=6, default=1)
+    underwriting_rule = models.CharField(max_length=120)
+
+    class Meta:
+        ordering = ["product", "plan", "joint_life_type", "-effective_from", "code"]
+        constraints = [
+            models.CheckConstraint(check=models.Q(effective_to__isnull=True) | models.Q(effective_from__isnull=True) | models.Q(effective_to__gte=models.F("effective_from")), name="ol_joint_life_dates_valid"),
+            models.UniqueConstraint(fields=["code"], name="ol_joint_life_code_uq"),
+            models.CheckConstraint(check=models.Q(premium_adjustment_factor__gt=0), name="ol_joint_life_factor_pos"),
+        ]
+        indexes = [
+            models.Index(fields=["product", "plan", "is_active", "effective_from"], name="ol_joint_life_scope_idx"),
+            models.Index(fields=["joint_life_type", "age_basis", "is_active"], name="ol_joint_life_type_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.joint_life_type = (self.joint_life_type or "").strip().upper()
+        self.age_basis = (self.age_basis or "").strip().upper()
+        self.survivor_benefit_rule = (self.survivor_benefit_rule or "").strip().upper()
+        self.underwriting_rule = (self.underwriting_rule or "").strip().upper()
+        if not self.product_id and not self.plan_id:
+            errors["product"] = "Joint-life setup must be scoped to a product or plan."
+        if self.product_id and not getattr(self.product, "is_active", True):
+            errors["product"] = "Joint-life product must be active."
+        if self.plan_id and not getattr(self.plan, "is_active", True):
+            errors["plan"] = "Joint-life plan must be active."
+        if self.joint_life_type not in {choice for choice, _ in OLJointLifeType.choices}:
+            errors["joint_life_type"] = "Unsupported joint-life type."
+        if self.age_basis not in {choice for choice, _ in OLJointLifeAgeBasis.choices}:
+            errors["age_basis"] = "Unsupported joint-life age basis."
+        if not self.survivor_benefit_rule:
+            errors["survivor_benefit_rule"] = "Survivor benefit rule is required."
+        if not self.underwriting_rule:
+            errors["underwriting_rule"] = "Underwriting rule is required."
+        if self.premium_adjustment_factor is None or self.premium_adjustment_factor <= 0:
+            errors["premium_adjustment_factor"] = "Premium adjustment factor must be greater than zero."
+        if errors:
+            raise ValidationError(errors)
+        candidates = self.__class__.objects.filter(
+            product=self.product,
+            plan=self.plan,
+            joint_life_type=self.joint_life_type,
+            is_active=True,
+        ).exclude(pk=self.pk)
+        if any(_product_setup_intervals_overlap(self.effective_from, self.effective_to, candidate.effective_from, candidate.effective_to) for candidate in candidates):
+            raise ValidationError({"code": "An active joint-life setup overlaps an existing row in the same scope and type."})

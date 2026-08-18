@@ -25,6 +25,11 @@ from .models import (
     OLPlanOccupationRiskLimit,
     OLInvestmentFundType,
     OLInvestmentFund,
+    OLPremiumRateTable,
+    OLPremiumRateRow,
+    OLMortalityRateTable,
+    OLMortalityRateRow,
+    OLJointLifeSetup,
     OLSurrenderSetup,
     OLSurrenderValueRate,
     OLParameterTableRegistry,
@@ -611,6 +616,82 @@ class OLReinstatementWindowAdmin(OLDefaultSetupAdmin):
         ("Identity", {"fields": ("code", "name", "description", "is_active")}),
         ("Scope", {"fields": ("product", "plan")}),
         ("Window and requirements", {"fields": ("days_after_lapse", "maximum_reinstatements", "require_medical_underwriting", "require_outstanding_premium_payment", "interest_rate", "penalty_rate")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLPremiumRateTable)
+class OLPremiumRateTableAdmin(admin.ModelAdmin):
+    list_display = ("table_code", "name", "product", "plan", "rating_basis", "currency", "version", "effective_from", "effective_to", "is_active")
+    list_filter = ("is_active", "rating_basis", "currency", "effective_from", "effective_to")
+    search_fields = ("table_code", "name", "description", "version", "product__code", "plan__code")
+    ordering = ("table_code", "-effective_from", "version")
+    autocomplete_fields = ("product", "plan")
+    fieldsets = (
+        ("Table identity", {"fields": ("table_code", "name", "description", "version", "is_active")}),
+        ("Scope and rating", {"fields": ("product", "plan", "rating_basis", "currency")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+    readonly_fields = ("created_by", "created_at", "updated_by", "updated_at")
+
+
+@admin.register(OLPremiumRateRow)
+class OLPremiumRateRowAdmin(OLDefaultSetupAdmin):
+    list_display = ("table", "code", "gender", "smoker_status", "age_from", "age_to", "term_from", "term_to", "frequency", "rate", "rate_unit", "is_active")
+    list_filter = ("is_active", "gender", "smoker_status", "frequency", "rate_unit", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "table__table_code", "table__version", "gender", "smoker_status", "frequency")
+    ordering = ("table", "gender", "smoker_status", "frequency", "age_from", "term_from", "code")
+    autocomplete_fields = ("table",)
+    fieldsets = (
+        ("Row identity", {"fields": ("code", "name", "description", "table", "is_active")}),
+        ("Rating dimensions", {"fields": ("gender", "smoker_status", "age_from", "age_to", "term_from", "term_to", "frequency", "sum_assured_band_from", "sum_assured_band_to")}),
+        ("Rate", {"fields": ("rate", "rate_unit")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLMortalityRateTable)
+class OLMortalityRateTableAdmin(admin.ModelAdmin):
+    list_display = ("table_code", "name", "version", "effective_from", "effective_to", "is_active")
+    list_filter = ("is_active", "effective_from", "effective_to")
+    search_fields = ("table_code", "name", "description", "version")
+    ordering = ("table_code", "-effective_from", "version")
+    fieldsets = (
+        ("Table identity", {"fields": ("table_code", "name", "description", "version", "is_active")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+    readonly_fields = ("created_by", "created_at", "updated_by", "updated_at")
+
+
+@admin.register(OLMortalityRateRow)
+class OLMortalityRateRowAdmin(OLDefaultSetupAdmin):
+    list_display = ("table", "code", "age", "gender", "smoker_status", "policy_year", "mortality_rate", "is_active")
+    list_filter = ("is_active", "gender", "smoker_status", "policy_year", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "table__table_code", "table__version", "gender", "smoker_status")
+    ordering = ("table", "age", "gender", "smoker_status", "policy_year", "code")
+    autocomplete_fields = ("table",)
+    fieldsets = (
+        ("Row identity", {"fields": ("code", "name", "description", "table", "is_active")}),
+        ("Mortality dimensions", {"fields": ("age", "gender", "smoker_status", "policy_year", "mortality_rate")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLJointLifeSetup)
+class OLJointLifeSetupAdmin(OLDefaultSetupAdmin):
+    list_display = ("code", "name", "product", "plan", "joint_life_type", "age_basis", "premium_adjustment_factor", "is_active", "effective_from", "effective_to")
+    list_filter = ("is_active", "joint_life_type", "age_basis", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "joint_life_type", "age_basis", "survivor_benefit_rule", "underwriting_rule", "product__code", "plan__code")
+    ordering = ("product", "plan", "joint_life_type", "-effective_from", "code")
+    autocomplete_fields = ("product", "plan")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Scope and joint-life rules", {"fields": ("product", "plan", "joint_life_type", "age_basis", "survivor_benefit_rule", "premium_adjustment_factor", "underwriting_rule")}),
         ("Effective dates", {"fields": ("effective_from", "effective_to")}),
         ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
     )

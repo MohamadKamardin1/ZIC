@@ -228,3 +228,68 @@ Each endpoint supports authenticated list/retrieve/create/update, configured sea
 The idempotent `python manage.py seed_ol_product_setup` command seeds six plan types, one safe standard endowment product, starter tax/target-market/risk/occupation rows, three investment fund types, one balanced fund, and eight Product Setup registry contracts. Re-running the command updates the declared baseline without duplicating rows. Starter financial values are deliberately conservative configuration placeholders and must be reviewed before production underwriting or investment execution.
 
 Product Setup is delivered through additive migration `0008_olinvestmentfundtype_olinvestmentfund_olplantype_and_more.py`. It remains isolated from the existing `apps.ordinary_life.OLProduct` transactional model: canonical new configuration consumers should resolve Product Setup rows through `apps.ol_parameters`, while legacy operational tables and routes remain available for compatibility and controlled reconciliation.
+
+## OL Product Rating Part 1 subcontext
+
+OL Product Rating Part 1 is now **Implemented** as an isolated, table-first rating configuration surface for Ordinary Life premium rates, mortality rates, and joint-life setup. These records are actuarial inputs for future quotation, proposal, underwriting, and policy calculation services; they do not execute pricing, mortality projection, underwriting decisions, or policy transactions themselves.
+
+| Entity | Purpose | Main scope or behavior |
+|---|---|---|
+| `OLPremiumRateTable` | Versioned premium-rate table header. | Product and optional plan scope, rating basis, optional currency, version, effective dates, and active lifecycle. |
+| `OLPremiumRateRow` | Premium-rate dimension row. | Gender, smoker status, age band, term band, frequency, optional sum-assured band, Decimal rate, and rate unit. |
+| `OLMortalityRateTable` | Versioned mortality basis header. | Table code, name, description, version, effective dates, and active lifecycle. |
+| `OLMortalityRateRow` | Mortality basis row. | Age, gender, optional smoker status, optional policy year, Decimal mortality rate, and effective dates. |
+| `OLJointLifeSetup` | Joint-life product configuration. | Product or optional plan scope, joint-life type, age basis, survivor-benefit rule, premium adjustment factor, underwriting rule, and effective dates. |
+
+All five resources inherit the standard OL parameter identity, actor, timestamp, active-status, and effective-date contract. Premium and mortality rate values use `DecimalField`; percentage and factor validation occurs in model and serializer validation. Age and term bands are inclusive and require lower bounds no greater than upper bounds. A rate row must belong to an active, effective table whose product/plan scope and effective interval contain the row interval. A row cannot overlap another active row in the same table and complete rating dimensions; this prevents ambiguous runtime resolution while allowing adjacent bands and distinct frequencies, genders, smoker statuses, policy years, or sum-assured bands.
+
+The table-first API surface is exposed under `/api/v1/ol-parameters/`:
+
+| Resource | Endpoint | Table behavior |
+|---|---|---|
+| Premium rate tables | `/premium-rate-tables/` | Header list/detail/create/update/deactivate, product/plan/version/effective-date filters, and CSV export. |
+| Premium rate rows | `/premium-rate-rows/` | Dimension list/detail/create/update/deactivate, product/plan delegation filters, age/term/gender/smoker/frequency filters, and CSV export. |
+| Mortality rate tables | `/mortality-rate-tables/` | Header list/detail/create/update/deactivate, version/effective-date filters, and CSV export. |
+| Mortality rate rows | `/mortality-rate-rows/` | Age/gender/smoker/policy-year filters, list/detail/create/update/deactivate, CSV export, and atomic JSON bulk import. |
+| Joint-life setups | `/joint-life-setups/` | Product/plan/type/age-basis filters, list/detail/create/update/deactivate, and CSV export. |
+
+The mortality bulk-import action is `POST /api/v1/ol-parameters/mortality-rate-rows/bulk-import/` with a JSON body containing a `rows` array. Each row is fully validated using the same serializer and model contract as ordinary CRUD; if any row fails validation, the transaction is rolled back and no partial import is retained. CSV export remains available on every Product Rating resource through the shared table viewset behavior.
+
+The idempotent command `python manage.py seed_ol_product_rating` ensures the Product Setup starter product exists, seeds one safe premium table and row, one mortality table and row, one joint-life setup, and five `PRODUCT_RATING` registry contracts. The starter actuarial values are development placeholders and require formal actuarial review and approval before production use. Re-running the command updates the declared baseline without duplicating records.
+
+All five Product Rating models are registered with the central signal-based audit receiver. API and admin mutations use the shared permission-aware OL mutation service, stamp the actor, capture request correlation data, and emit central audit events. Physical deletion is not exposed; deactivation preserves the rating history required for actuarial governance and reproducibility.
+
+Product Rating Part 1 is delivered through additive migrations `0009_olmortalityratetable_olmortalityraterow_and_more.py` and `0010_oljointlifesetup_ol_joint_life_dates_valid_and_more.py`. The implementation remains separate from operational rating execution and can later be consumed by a publication or pricing-resolution service that selects one active table and one unambiguous row for a requested product, plan, age, term, gender, smoker status, frequency, sum assured, and policy year.
+
+
+## OL Product Rating Part 1 subcontext
+
+OL Product Rating Part 1 is now **Implemented** as the first isolated, table-first actuarial rating configuration surface for Ordinary Life. It covers premium rates, mortality rates, and joint-life configuration. These records are actuarial inputs for future quotation, proposal, underwriting, and policy calculation services; they do not execute pricing, mortality projection, underwriting decisions, or policy transactions themselves.
+
+| Entity | Purpose | Main scope or behavior |
+|---|---|---|
+| `OLPremiumRateTable` | Versioned premium-rate table header. | Product and optional plan scope, rating basis, optional currency, version, effective dates, and active lifecycle. |
+| `OLPremiumRateRow` | Premium-rate dimension row. | Gender, smoker status, age band, term band, frequency, optional sum-assured band, Decimal rate, and rate unit. |
+| `OLMortalityRateTable` | Versioned mortality basis header. | Table code, name, description, version, effective dates, and active lifecycle. |
+| `OLMortalityRateRow` | Mortality basis row. | Age, gender, optional smoker status, optional policy year, Decimal mortality rate, and effective dates. |
+| `OLJointLifeSetup` | Joint-life product configuration. | Product or optional plan scope, joint-life type, age basis, survivor-benefit rule, premium adjustment factor, underwriting rule, and effective dates. |
+
+All five resources use the standard OL parameter identity, actor, timestamp, active-status, and effective-date contract. Premium and mortality values use `DecimalField`; rate, percentage, factor, age, term, policy-year, and scope validation occurs in the model and serializer layers. Age and term bands are inclusive and require lower bounds no greater than upper bounds. A rate row must belong to an active, effective table whose effective interval contains the row interval. Active rows cannot overlap another row with the same table and complete rating dimensions, preventing ambiguous runtime resolution while allowing adjacent bands and distinct frequencies, genders, smoker statuses, policy years, or sum-assured bands.
+
+The table-first API surface is exposed under `/api/v1/ol-parameters/`:
+
+| Resource | Endpoint | Table behavior |
+|---|---|---|
+| Premium rate tables | `/premium-rate-tables/` | Header list/detail/create/update/deactivate, product/plan/version/effective-date filters, and CSV export. |
+| Premium rate rows | `/premium-rate-rows/` | Dimension list/detail/create/update/deactivate, product/plan delegation filters, age/term/gender/smoker/frequency filters, and CSV export. |
+| Mortality rate tables | `/mortality-rate-tables/` | Header list/detail/create/update/deactivate, version/effective-date filters, and CSV export. |
+| Mortality rate rows | `/mortality-rate-rows/` | Age/gender/smoker/policy-year filters, list/detail/create/update/deactivate, CSV export, and atomic JSON bulk import. |
+| Joint-life setups | `/joint-life-setups/` | Product/plan/type/age-basis filters, list/detail/create/update/deactivate, and CSV export. |
+
+The mortality bulk-import action is `POST /api/v1/ol-parameters/mortality-rate-rows/bulk-import/` with a JSON body containing a `rows` array. Each row is validated through the same serializer and model contract as ordinary CRUD. The import is atomic: if any row fails validation, no partial rows are retained. All resources inherit the shared search, filtering, ordering, pagination, authentication, permission, CSV, and soft-deactivation conventions.
+
+The idempotent command `python manage.py seed_ol_product_rating` ensures the Product Setup starter product exists, seeds one development premium table and row, one mortality table and row, one joint-life setup, and five `PRODUCT_RATING` registry contracts. The starter actuarial values are placeholders and require actuarial review and approval before production use. Re-running the command updates the declared baseline without duplicating rows.
+
+All five Product Rating models are registered with the central signal-based audit receiver. API and admin mutations use the shared permission-aware OL mutation service, stamp the actor, capture request correlation data, and emit central audit events. Physical deletion is not exposed; deactivation preserves the rate history required for actuarial governance and reproducibility.
+
+Product Rating Part 1 is delivered through additive migrations `0009_olmortalityratetable_olmortalityraterow_and_more.py` and `0010_oljointlifesetup_ol_joint_life_dates_valid_and_more.py`. The implementation remains separate from operational rating execution and can later be consumed by a publication or pricing-resolution service that selects one active table and one unambiguous row for a requested product, plan, age, term, gender, smoker status, frequency, sum assured, and policy year.

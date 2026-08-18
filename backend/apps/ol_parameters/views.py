@@ -36,6 +36,11 @@ from .models import (
     OLPlanOccupationRiskLimit,
     OLInvestmentFundType,
     OLInvestmentFund,
+    OLPremiumRateTable,
+    OLPremiumRateRow,
+    OLMortalityRateTable,
+    OLMortalityRateRow,
+    OLJointLifeSetup,
     OLSurrenderSetup,
     OLSurrenderValueRate,
     OLParameterTableRegistry,
@@ -72,11 +77,17 @@ from .serializers import (
     OLPlanOccupationRiskLimitSerializer,
     OLInvestmentFundTypeSerializer,
     OLInvestmentFundSerializer,
+    OLPremiumRateTableSerializer,
+    OLPremiumRateRowSerializer,
+    OLMortalityRateTableSerializer,
+    OLMortalityRateRowSerializer,
+    OLJointLifeSetupSerializer,
     OLTableRegistrySerializer,
 )
 from .services.default_setup_service import OLDefaultSetupService
 from .services.parameter_service import OLParameterService
 from .services.policy_setup_service import OLPolicySetupService
+from .services.rating_setup_service import OLRatingSetupService
 
 
 class OLParameterTableRegistryViewSet(viewsets.ModelViewSet):
@@ -287,6 +298,13 @@ class OLParameterHealthView(APIView):
                     "occupation_risk_limits": OLPlanOccupationRiskLimit.objects.filter(is_active=True).count(),
                     "investment_fund_types": OLInvestmentFundType.objects.filter(is_active=True).count(),
                     "investment_funds": OLInvestmentFund.objects.filter(is_active=True).count(),
+                },
+                "product_rating_part1": {
+                    "premium_rate_tables": OLPremiumRateTable.objects.filter(is_active=True).count(),
+                    "premium_rate_rows": OLPremiumRateRow.objects.filter(is_active=True).count(),
+                    "mortality_rate_tables": OLMortalityRateTable.objects.filter(is_active=True).count(),
+                    "mortality_rate_rows": OLMortalityRateRow.objects.filter(is_active=True).count(),
+                    "joint_life_setups": OLJointLifeSetup.objects.filter(is_active=True).count(),
                 },
             }
         )
@@ -597,3 +615,77 @@ class OLInvestmentFundViewSet(OLDefaultSetupViewSet):
     filterset_fields = ["is_active", "fund_type", "currency", "valuation_frequency", "effective_from", "effective_to"]
     ordering_fields = ["code", "name", "fund_type", "currency", "valuation_frequency", "unit_price", "effective_from", "effective_to", "created_at", "updated_at"]
     ordering = ["name", "code"]
+
+
+class OLPremiumRateTableViewSet(OLDefaultSetupViewSet):
+    model = OLPremiumRateTable
+    serializer_class = OLPremiumRateTableSerializer
+    table_slug = "premium-rate-tables"
+    search_fields = ["table_code", "name", "description", "rating_basis", "currency", "version", "product__code", "plan__code"]
+    filterset_fields = ["is_active", "product", "plan", "rating_basis", "currency", "version", "effective_from", "effective_to"]
+    ordering_fields = ["table_code", "name", "version", "rating_basis", "effective_from", "effective_to", "created_at", "updated_at"]
+    ordering = ["table_code", "-effective_from", "version"]
+
+
+class OLPremiumRateRowViewSet(OLDefaultSetupViewSet):
+    model = OLPremiumRateRow
+    serializer_class = OLPremiumRateRowSerializer
+    table_slug = "premium-rate-rows"
+    search_fields = ["code", "name", "description", "table__table_code", "table__version", "gender", "smoker_status", "frequency", "rate_unit"]
+    filterset_fields = [
+        "is_active", "table", "gender", "smoker_status", "age_from", "age_to", "term_from", "term_to",
+        "frequency", "rate_unit", "effective_from", "effective_to",
+    ]
+    ordering_fields = [
+        "code", "name", "table", "gender", "smoker_status", "frequency", "age_from", "term_from",
+        "sum_assured_band_from", "rate", "effective_from", "effective_to", "created_at", "updated_at",
+    ]
+    ordering = ["table", "gender", "smoker_status", "frequency", "age_from", "term_from", "code"]
+
+
+class OLMortalityRateTableViewSet(OLDefaultSetupViewSet):
+    model = OLMortalityRateTable
+    serializer_class = OLMortalityRateTableSerializer
+    table_slug = "mortality-rate-tables"
+    search_fields = ["table_code", "name", "description", "version"]
+    filterset_fields = ["is_active", "version", "effective_from", "effective_to"]
+    ordering_fields = ["table_code", "name", "version", "effective_from", "effective_to", "created_at", "updated_at"]
+    ordering = ["table_code", "-effective_from", "version"]
+
+
+class OLMortalityRateRowViewSet(OLDefaultSetupViewSet):
+    model = OLMortalityRateRow
+    serializer_class = OLMortalityRateRowSerializer
+    table_slug = "mortality-rate-rows"
+    search_fields = ["code", "name", "description", "table__table_code", "table__version", "gender", "smoker_status"]
+    filterset_fields = ["is_active", "table", "age", "gender", "smoker_status", "policy_year", "effective_from", "effective_to"]
+    ordering_fields = ["table", "age", "gender", "smoker_status", "policy_year", "mortality_rate", "created_at", "updated_at"]
+    ordering = ["table", "age", "gender", "smoker_status", "policy_year", "code"]
+
+    @action(detail=False, methods=["post"], url_path="bulk-import")
+    def bulk_import(self, request, *args, **kwargs):
+        payload = request.data.get("rows") if isinstance(request.data, dict) else None
+        if not isinstance(payload, list) or not payload:
+            return Response({"detail": "Request body must contain a non-empty rows list."}, status=status.HTTP_400_BAD_REQUEST)
+        validated_rows = []
+        for row in payload:
+            serializer = self.get_serializer(data=row)
+            serializer.is_valid(raise_exception=True)
+            validated_rows.append(serializer.validated_data)
+        instances = OLRatingSetupService.bulk_create_rows(
+            model=self.model,
+            actor=request.user,
+            rows=validated_rows,
+            request=request,
+        )
+        return Response(self.get_serializer(instances, many=True).data, status=status.HTTP_201_CREATED)
+
+
+class OLJointLifeSetupViewSet(OLDefaultSetupViewSet):
+    model = OLJointLifeSetup
+    serializer_class = OLJointLifeSetupSerializer
+    table_slug = "joint-life-setups"
+    search_fields = ["code", "name", "description", "joint_life_type", "age_basis", "survivor_benefit_rule", "underwriting_rule"]
+    filterset_fields = ["is_active", "product", "plan", "joint_life_type", "age_basis", "effective_from", "effective_to"]
+    ordering_fields = ["code", "name", "joint_life_type", "age_basis", "premium_adjustment_factor", "effective_from", "effective_to", "created_at", "updated_at"]
+    ordering = ["product", "plan", "joint_life_type", "-effective_from", "code"]

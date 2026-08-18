@@ -32,6 +32,11 @@ from .views import (
     OLPlanOccupationRiskLimitViewSet,
     OLInvestmentFundTypeViewSet,
     OLInvestmentFundViewSet,
+    OLPremiumRateTableViewSet,
+    OLPremiumRateRowViewSet,
+    OLMortalityRateTableViewSet,
+    OLMortalityRateRowViewSet,
+    OLJointLifeSetupViewSet,
 )
 
 
@@ -65,6 +70,11 @@ router.register("plan-risk-categories", OLPlanRiskCategoryViewSet, basename="ol-
 router.register("plan-occupation-risk-limits", OLPlanOccupationRiskLimitViewSet, basename="ol-plan-occupation-risk-limit")
 router.register("investment-fund-types", OLInvestmentFundTypeViewSet, basename="ol-investment-fund-type")
 router.register("investment-funds", OLInvestmentFundViewSet, basename="ol-investment-fund")
+router.register("premium-rate-tables", OLPremiumRateTableViewSet, basename="ol-premium-rate-table")
+router.register("premium-rate-rows", OLPremiumRateRowViewSet, basename="ol-premium-rate-row")
+router.register("mortality-rate-tables", OLMortalityRateTableViewSet, basename="ol-mortality-rate-table")
+router.register("mortality-rate-rows", OLMortalityRateRowViewSet, basename="ol-mortality-rate-row")
+router.register("joint-life-setups", OLJointLifeSetupViewSet, basename="ol-joint-life-setup")
 
 urlpatterns = [
     path("health/", OLParameterHealthView.as_view(), name="ol-parameters-health"),

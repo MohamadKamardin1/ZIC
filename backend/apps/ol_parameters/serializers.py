@@ -115,6 +115,11 @@ from .models import (
     OLPlanOccupationRiskLimit,
     OLInvestmentFundType,
     OLInvestmentFund,
+    OLPremiumRateTable,
+    OLPremiumRateRow,
+    OLMortalityRateTable,
+    OLMortalityRateRow,
+    OLJointLifeSetup,
     OLSurrenderSetup,
     OLSurrenderValueRate,
 )
@@ -414,5 +419,40 @@ class OLInvestmentFundTypeSerializer(_ValidatedDefaultSetupModelSerializer):
 class OLInvestmentFundSerializer(_ValidatedDefaultSetupModelSerializer):
     class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
         model = OLInvestmentFund
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLPremiumRateTableSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLPremiumRateTable
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLPremiumRateRowSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLPremiumRateRow
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLMortalityRateTableSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLMortalityRateTable
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLMortalityRateRowSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLMortalityRateRow
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLJointLifeSetupSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLJointLifeSetup
         fields = "__all__"
         read_only_fields = _AUDIT_READ_ONLY
