@@ -55,6 +55,11 @@ from .views import (
     OLMedicalHistoryViewSet,
     OLMedicalFacilityViewSet,
     OLMedicalPractitionerViewSet,
+    OLClaimTypeViewSet,
+    OLClaimReasonViewSet,
+    OLClaimStatusViewSet,
+    OLDischargeTypeViewSet,
+    OLCorrespondentTypeViewSet,
 )
 
 
@@ -111,6 +116,11 @@ router.register("personal-habits", OLPersonalHabitViewSet, basename="ol-personal
 router.register("medical-history", OLMedicalHistoryViewSet, basename="ol-medical-history")
 router.register("medical-facilities", OLMedicalFacilityViewSet, basename="ol-medical-facility")
 router.register("medical-practitioners", OLMedicalPractitionerViewSet, basename="ol-medical-practitioner")
+router.register("claim-types", OLClaimTypeViewSet, basename="ol-claim-type")
+router.register("claim-reasons", OLClaimReasonViewSet, basename="ol-claim-reason")
+router.register("claim-statuses", OLClaimStatusViewSet, basename="ol-claim-status")
+router.register("discharge-types", OLDischargeTypeViewSet, basename="ol-discharge-type")
+router.register("correspondent-types", OLCorrespondentTypeViewSet, basename="ol-correspondent-type")
 
 urlpatterns = [
     path("health/", OLParameterHealthView.as_view(), name="ol-parameters-health"),

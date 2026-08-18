@@ -48,6 +48,11 @@ from .models import (
     OLMedicalHistory,
     OLMedicalFacility,
     OLMedicalPractitioner,
+    OLClaimType,
+    OLClaimReason,
+    OLClaimStatus,
+    OLDischargeType,
+    OLCorrespondentType,
     OLSurrenderSetup,
     OLSurrenderValueRate,
     OLParameterTableRegistry,
@@ -1048,6 +1053,90 @@ class OLRiderRateRowAdmin(OLDefaultSetupAdmin):
         ("Row identity", {"fields": ("code", "name", "description", "table", "is_active")}),
         ("Rating dimensions", {"fields": ("gender", "smoker_status", "age_from", "age_to", "term_from", "term_to", "frequency", "sum_assured_band_from", "sum_assured_band_to")}),
         ("Rate", {"fields": ("rate", "rate_unit")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLClaimType)
+class OLClaimTypeAdmin(OLDefaultSetupAdmin):
+    list_display = (
+        "code", "name", "claim_category", "calculation_basis", "duplicate_check_rule",
+        "waiting_period_days", "allow_waiver_of_premium", "require_approval", "is_active",
+        "effective_from", "effective_to",
+    )
+    list_filter = (
+        "is_active", "claim_category", "calculation_basis", "duplicate_check_rule",
+        "allow_waiver_of_premium", "require_approval", "effective_from", "effective_to",
+    )
+    search_fields = ("code", "name", "description", "claim_category", "calculation_basis", "duplicate_check_rule")
+    ordering = ("claim_category", "name", "code")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "claim_category", "is_active")}),
+        ("Claim rules", {"fields": ("calculation_basis", "duplicate_check_rule", "waiting_period_days", "payable_to_rules", "require_documents", "allow_waiver_of_premium", "require_approval")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLClaimReason)
+class OLClaimReasonAdmin(OLDefaultSetupAdmin):
+    list_display = ("code", "name", "claim_type", "reason_category", "is_active", "effective_from", "effective_to")
+    list_filter = ("is_active", "reason_category", "claim_type", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "reason_category", "claim_type__code", "claim_type__name")
+    ordering = ("reason_category", "claim_type", "name", "code")
+    autocomplete_fields = ("claim_type",)
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Classification", {"fields": ("claim_type", "reason_category")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLClaimStatus)
+class OLClaimStatusAdmin(OLDefaultSetupAdmin):
+    list_display = (
+        "display_order", "code", "name", "badge_type", "is_payable", "is_terminal",
+        "is_active", "effective_from", "effective_to",
+    )
+    list_filter = ("is_active", "badge_type", "is_terminal", "is_payable", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "badge_type")
+    ordering = ("display_order", "name", "code")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Workflow", {"fields": ("display_order", "badge_type", "is_payable", "is_terminal", "allowed_transitions")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLDischargeType)
+class OLDischargeTypeAdmin(OLDefaultSetupAdmin):
+    list_display = ("code", "name", "discharge_category", "template_code", "is_active", "effective_from", "effective_to")
+    list_filter = ("is_active", "discharge_category", "template_code", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "discharge_category", "template_code")
+    ordering = ("discharge_category", "name", "code")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Document template", {"fields": ("discharge_category", "template_code", "variables")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLCorrespondentType)
+class OLCorrespondentTypeAdmin(OLDefaultSetupAdmin):
+    list_display = (
+        "code", "name", "correspondence_category", "communication_channel", "purpose",
+        "is_active", "effective_from", "effective_to",
+    )
+    list_filter = ("is_active", "correspondence_category", "communication_channel", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "correspondence_category", "communication_channel", "purpose")
+    ordering = ("correspondence_category", "name", "code")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Communication", {"fields": ("correspondence_category", "communication_channel", "purpose")}),
         ("Effective dates", {"fields": ("effective_from", "effective_to")}),
         ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
     )

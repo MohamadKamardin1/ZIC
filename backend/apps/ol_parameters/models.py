@@ -1,4 +1,5 @@
 import uuid
+import json
 from decimal import Decimal
 
 from django.conf import settings
@@ -4033,3 +4034,291 @@ class OLMedicalPractitioner(OLParameterBaseModel):
 
 
 # End of OL Medical Underwriting Setup
+
+
+# =============================================================================
+# OL CLAIM SETUP
+# =============================================================================
+class OLClaimCategory(models.TextChoices):
+    DEATH = "DEATH", "Death"
+    CRITICAL_ILLNESS = "CRITICAL_ILLNESS", "Critical illness"
+    DISABILITY = "DISABILITY", "Disability"
+    SURRENDER = "SURRENDER", "Surrender"
+    MATURITY = "MATURITY", "Maturity"
+    MEDICAL = "MEDICAL", "Medical"
+    OTHER = "OTHER", "Other"
+
+
+class OLClaimCalculationBasis(models.TextChoices):
+    SUM_ASSURED = "SUM_ASSURED", "Sum assured"
+    CASH_VALUE = "CASH_VALUE", "Cash value"
+    BENEFIT_AMOUNT = "BENEFIT_AMOUNT", "Benefit amount"
+    FIXED_AMOUNT = "FIXED_AMOUNT", "Fixed amount"
+    PERCENTAGE = "PERCENTAGE", "Percentage"
+    CUSTOM = "CUSTOM", "Custom"
+
+
+class OLClaimDuplicateCheckRule(models.TextChoices):
+    POLICY_AND_TYPE = "POLICY_AND_TYPE", "Policy and claim type"
+    POLICY_AND_REASON = "POLICY_AND_REASON", "Policy and claim reason"
+    POLICY_AND_EVENT_DATE = "POLICY_AND_EVENT_DATE", "Policy and event date"
+    NONE = "NONE", "No duplicate check"
+    CUSTOM = "CUSTOM", "Custom"
+
+
+class OLClaimReasonCategory(models.TextChoices):
+    EVENT = "EVENT", "Insured event"
+    MEDICAL = "MEDICAL", "Medical condition"
+    ADMINISTRATIVE = "ADMINISTRATIVE", "Administrative"
+    FINANCIAL = "FINANCIAL", "Financial"
+    DOCUMENTARY = "DOCUMENTARY", "Documentary"
+    OTHER = "OTHER", "Other"
+
+
+class OLClaimStatusBadgeType(models.TextChoices):
+    NEUTRAL = "NEUTRAL", "Neutral"
+    INFO = "INFO", "Information"
+    WARNING = "WARNING", "Warning"
+    SUCCESS = "SUCCESS", "Success"
+    DANGER = "DANGER", "Danger"
+    PRIMARY = "PRIMARY", "Primary"
+
+
+class OLDischargeCategory(models.TextChoices):
+    FULL_AND_FINAL = "FULL_AND_FINAL", "Full and final"
+    PARTIAL = "PARTIAL", "Partial"
+    RELEASE = "RELEASE", "Release"
+    ASSIGNMENT = "ASSIGNMENT", "Assignment"
+    OTHER = "OTHER", "Other"
+
+
+class OLCorrespondenceCategory(models.TextChoices):
+    CLAIM_ACKNOWLEDGEMENT = "CLAIM_ACKNOWLEDGEMENT", "Claim acknowledgement"
+    DOCUMENT_REQUEST = "DOCUMENT_REQUEST", "Document request"
+    ASSESSMENT = "ASSESSMENT", "Assessment"
+    DECISION = "DECISION", "Decision"
+    PAYMENT = "PAYMENT", "Payment"
+    DISCHARGE = "DISCHARGE", "Discharge"
+    OTHER = "OTHER", "Other"
+
+
+class OLCommunicationChannel(models.TextChoices):
+    LETTER = "LETTER", "Letter"
+    EMAIL = "EMAIL", "Email"
+    SMS = "SMS", "SMS"
+    PORTAL = "PORTAL", "Portal"
+    WHATSAPP = "WHATSAPP", "WhatsApp"
+    SYSTEM = "SYSTEM", "System"
+    OTHER = "OTHER", "Other"
+
+
+def _claim_validate_json(value, field_name, expected_type):
+    if value is None:
+        return
+    if not isinstance(value, expected_type):
+        expected = "object" if expected_type is dict else "array"
+        raise ValidationError({field_name: f"Expected a JSON {expected}."})
+    try:
+        json.dumps(value)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError({field_name: "Value must be valid JSON."}) from exc
+
+
+class OLClaimType(OLParameterBaseModel):
+    """Effective-dated configuration for an Ordinary Life claim type."""
+
+    claim_category = models.CharField(max_length=30, choices=OLClaimCategory.choices, db_index=True)
+    calculation_basis = models.CharField(max_length=30, choices=OLClaimCalculationBasis.choices, default=OLClaimCalculationBasis.SUM_ASSURED)
+    duplicate_check_rule = models.CharField(max_length=35, choices=OLClaimDuplicateCheckRule.choices, default=OLClaimDuplicateCheckRule.POLICY_AND_TYPE)
+    waiting_period_days = models.PositiveIntegerField(null=True, blank=True)
+    payable_to_rules = models.JSONField(default=dict, blank=True)
+    allow_waiver_of_premium = models.BooleanField(default=False)
+    require_documents = models.JSONField(default=list, blank=True)
+    require_approval = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["claim_category", "name", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_claim_type_code_uq"),
+            models.CheckConstraint(
+                check=models.Q(waiting_period_days__isnull=True) | models.Q(waiting_period_days__gte=0),
+                name="ol_claim_type_wait_ck",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["claim_category", "is_active"], name="ol_claim_type_cat_idx"),
+            models.Index(fields=["require_approval", "is_active"], name="ol_claim_type_appr_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.claim_category = (self.claim_category or "").strip().upper()
+        self.calculation_basis = (self.calculation_basis or "").strip().upper()
+        self.duplicate_check_rule = (self.duplicate_check_rule or "").strip().upper()
+        if self.claim_category not in dict(OLClaimCategory.choices):
+            errors["claim_category"] = "Unsupported claim category."
+        if self.calculation_basis not in dict(OLClaimCalculationBasis.choices):
+            errors["calculation_basis"] = "Unsupported claim calculation basis."
+        if self.duplicate_check_rule not in dict(OLClaimDuplicateCheckRule.choices):
+            errors["duplicate_check_rule"] = "Unsupported duplicate-check rule."
+        _claim_validate_json(self.payable_to_rules, "payable_to_rules", dict)
+        _claim_validate_json(self.require_documents, "require_documents", list)
+        if self.waiting_period_days is not None and self.waiting_period_days < 0:
+            errors["waiting_period_days"] = "Waiting period cannot be negative."
+        if errors:
+            raise ValidationError(errors)
+
+
+class OLClaimReason(OLParameterBaseModel):
+    """Catalog of configurable reasons that may be attached to an OL claim."""
+
+    claim_type = models.ForeignKey(
+        OLClaimType,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="claim_reasons",
+    )
+    reason_category = models.CharField(max_length=30, choices=OLClaimReasonCategory.choices, db_index=True)
+
+    class Meta:
+        ordering = ["reason_category", "name", "code"]
+        constraints = [models.UniqueConstraint(fields=["code"], name="ol_claim_reason_code_uq")]
+        indexes = [
+            models.Index(fields=["claim_type", "is_active"], name="ol_claim_reason_type_idx"),
+            models.Index(fields=["reason_category", "is_active"], name="ol_claim_reason_cat_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.reason_category = (self.reason_category or "").strip().upper()
+        if self.reason_category not in dict(OLClaimReasonCategory.choices):
+            errors["reason_category"] = "Unsupported claim-reason category."
+        if self.claim_type_id and not getattr(self.claim_type, "is_active", True):
+            errors["claim_type"] = "Claim reason must reference an active claim type."
+        if errors:
+            raise ValidationError(errors)
+
+
+class OLClaimStatus(OLParameterBaseModel):
+    """Status catalog with a declarative directed transition graph."""
+
+    display_order = models.PositiveIntegerField(default=0)
+    badge_type = models.CharField(max_length=20, choices=OLClaimStatusBadgeType.choices, default=OLClaimStatusBadgeType.NEUTRAL)
+    is_terminal = models.BooleanField(default=False)
+    is_payable = models.BooleanField(default=False)
+    allowed_transitions = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ["display_order", "name", "code"]
+        constraints = [models.UniqueConstraint(fields=["code"], name="ol_claim_status_code_uq")]
+        indexes = [
+            models.Index(fields=["display_order", "is_active"], name="ol_claim_status_order_idx"),
+            models.Index(fields=["is_terminal", "is_active"], name="ol_claim_status_term_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.badge_type = (self.badge_type or "").strip().upper()
+        self.code = (self.code or "").strip().upper()
+        if self.badge_type not in dict(OLClaimStatusBadgeType.choices):
+            errors["badge_type"] = "Unsupported claim-status badge type."
+        _claim_validate_json(self.allowed_transitions, "allowed_transitions", list)
+        transitions = []
+        for transition in self.allowed_transitions or []:
+            if not isinstance(transition, str) or not transition.strip():
+                errors.setdefault("allowed_transitions", "Allowed transitions must be non-empty status codes.")
+                continue
+            normalized = transition.strip().upper()
+            if normalized in transitions:
+                errors.setdefault("allowed_transitions", "Allowed transitions cannot contain duplicates.")
+            transitions.append(normalized)
+        self.allowed_transitions = transitions
+        if self.is_terminal and transitions:
+            errors["allowed_transitions"] = "A terminal claim status cannot have outgoing transitions."
+        if self.code and self.code in transitions:
+            errors["allowed_transitions"] = "A claim status cannot transition to itself."
+        if transitions and not errors.get("allowed_transitions"):
+            existing = {
+                code: active
+                for code, active in OLClaimStatus.objects.exclude(pk=self.pk).filter(code__in=transitions).values_list("code", "is_active")
+            }
+            missing = sorted(set(transitions) - set(existing))
+            inactive = sorted(code for code in transitions if code in existing and not existing[code])
+            if missing:
+                errors["allowed_transitions"] = f"Unknown claim-status transition target(s): {', '.join(missing)}."
+            elif inactive:
+                errors["allowed_transitions"] = f"Transition target(s) must be active: {', '.join(inactive)}."
+        if errors:
+            raise ValidationError(errors)
+
+    def can_transition_to(self, target):
+        target_code = (getattr(target, "code", target) or "").strip().upper()
+        return bool(target_code and target_code in (self.allowed_transitions or []) and not self.is_terminal)
+
+    def validate_transition_to(self, target):
+        if not self.can_transition_to(target):
+            target_code = (getattr(target, "code", target) or "").strip().upper()
+            raise ValidationError({"allowed_transitions": f"Transition from {self.code} to {target_code} is not allowed."})
+
+
+class OLDischargeType(OLParameterBaseModel):
+    """Configurable discharge/release document type for claim settlement."""
+
+    discharge_category = models.CharField(max_length=30, choices=OLDischargeCategory.choices, db_index=True)
+    template_code = models.CharField(max_length=100, blank=True, default="", db_index=True)
+    variables = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["discharge_category", "name", "code"]
+        constraints = [models.UniqueConstraint(fields=["code"], name="ol_discharge_type_code_uq")]
+        indexes = [
+            models.Index(fields=["discharge_category", "is_active"], name="ol_discharge_cat_idx"),
+            models.Index(fields=["template_code", "is_active"], name="ol_discharge_tpl_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.discharge_category = (self.discharge_category or "").strip().upper()
+        self.template_code = (self.template_code or "").strip().upper()
+        if self.discharge_category not in dict(OLDischargeCategory.choices):
+            errors["discharge_category"] = "Unsupported discharge category."
+        _claim_validate_json(self.variables, "variables", dict)
+        if errors:
+            raise ValidationError(errors)
+
+
+class OLCorrespondentType(OLParameterBaseModel):
+    """Catalog of correspondence templates/purposes used by claim workflows."""
+
+    correspondence_category = models.CharField(max_length=35, choices=OLCorrespondenceCategory.choices, db_index=True)
+    communication_channel = models.CharField(max_length=20, choices=OLCommunicationChannel.choices, db_index=True)
+    purpose = models.CharField(max_length=200, blank=True, default="")
+
+    class Meta:
+        ordering = ["correspondence_category", "name", "code"]
+        constraints = [models.UniqueConstraint(fields=["code"], name="ol_correspondent_type_code_uq")]
+        indexes = [
+            models.Index(fields=["correspondence_category", "is_active"], name="ol_corr_cat_idx"),
+            models.Index(fields=["communication_channel", "is_active"], name="ol_corr_chan_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.correspondence_category = (self.correspondence_category or "").strip().upper()
+        self.communication_channel = (self.communication_channel or "").strip().upper()
+        self.purpose = (self.purpose or "").strip()
+        if self.correspondence_category not in dict(OLCorrespondenceCategory.choices):
+            errors["correspondence_category"] = "Unsupported correspondence category."
+        if self.communication_channel not in dict(OLCommunicationChannel.choices):
+            errors["communication_channel"] = "Unsupported communication channel."
+        if errors:
+            raise ValidationError(errors)
+
+
+# End of OL Claim Setup

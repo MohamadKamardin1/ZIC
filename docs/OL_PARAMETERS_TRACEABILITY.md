@@ -410,3 +410,38 @@ The Rider Setup increment is additive and preserves existing policy, product, qu
 | Database migration | Additive migration `0016_olmedicalcode_olmedicalfacility_olmedicalhistory_and_more.py` with foreign keys, range/amount constraints, uniqueness, and query indexes | Implemented |
 
 The Medical Underwriting increment is configuration-only. Starter codes, limits, questions, conditions, facilities, and practitioners are development placeholders and require medical, underwriting, actuarial, product, legal, compliance, and governance approval before production underwriting or evidence workflows consume them.
+
+
+## OL Claim Setup — implemented
+
+| Requirement | Evidence | Status |
+|---|---|---|
+| Claim types | `backend/apps/ol_parameters/models.py`: `OLClaimType` with claim category, calculation basis, duplicate-check rule, waiting period, payable-to rules, required documents, waiver and approval controls, effective dates, active status, uniqueness, and indexes | Implemented |
+| Claim reasons | `OLClaimReason` with optional active claim-type scope, reason category, description, lifecycle, unique code, and indexes | Implemented |
+| Claim status | `OLClaimStatus` with display order, badge type, terminal/payable flags, active transition graph, unique code, indexes, `can_transition_to()`, and `validate_transition_to()` | Implemented |
+| Discharge types | `OLDischargeType` with discharge category, template code, JSON variables, lifecycle, unique code, and indexes | Implemented |
+| Correspondent types | `OLCorrespondentType` with correspondence category, communication channel, purpose, lifecycle, unique code, and indexes | Implemented |
+| Validation | Choice normalization, JSON object/array validation, required status transition targets, duplicate/self transition rejection, terminal-state transition rejection, effective-date consistency, waiting-period checks, and active/inactive behavior | Implemented |
+| APIs | `claim-types/`, `claim-reasons/`, `claim-statuses/`, `discharge-types/`, and `correspondent-types/` with CRUD, filters, search, ordering, pagination, CSV export, and soft deactivation | Implemented |
+| Permissions | Existing `ol_parameters.view`, `.create`, `.update`, `.deactivate`, and `.configure` enforcement through the shared OL parameter viewset | Implemented |
+| Admin | Five table-first, permission-aware admin registrations with list columns, filters, search, fieldsets, relationship autocomplete, lifecycle fields, and audit fields | Implemented |
+| Audit | All five models registered in `backend/apps/ol_parameters/audit_receivers.py` for central create/update/deactivation auditing | Implemented |
+| Seed and registry | `seed_ol_claim_setup.py` idempotently seeds representative claim types, reasons, nine workflow statuses, discharge types, correspondence types, and five `CLAIM_SETUP` registry contracts | Implemented |
+| Tests | `tests/test_claim_setup.py`: six focused tests covering CRUD for all five resources, filters/export/deactivation, transition validation, JSON/category/date validation, unique codes, permissions/audit, seed idempotency, and admin registration | Implemented |
+| Database migration | Additive migration `0017_olclaimtype_olclaimreason_olcorrespondenttype_and_more.py` with five catalogs, unique-code constraints, waiting-period check, foreign key, and query indexes | Implemented |
+
+The Claim Setup increment is configuration-only. Seed statuses, claim categories, discharge templates, correspondence purposes, and transition rules are development placeholders and require claims, actuarial, legal, compliance, product, and governance approval before production workflows consume them.
+
+## Updated nine-group status after OL Claim Setup
+
+| Required group | Status | Evidence |
+|---|---|---|
+| OL Default Setup | Implemented | Models, APIs, admin, seed, tests, and documentation |
+| OL Policy Setup | Parts 1, 2, and 3 implemented | Policy setup models, APIs, seed, tests, and documentation |
+| OL Product Setup | Implemented | Product and supporting table-driven configuration resources |
+| OL Product Rating | Parts 1 and 2 implemented | Premium, mortality, joint-life, reinstatement, bonus, mortgage, installment, surrender, and reserve resources |
+| OL Rider Setup | Implemented | Rider catalog, applicability controls, rate tables, rows, seed, tests, and migration 0013 |
+| OL Agent Management | Implemented | Agent commission setup, seed, tests, audit registration, and migration 0014 |
+| OL Loan Setup | Implemented | Loan system setup and loan interest control, seed, tests, audit registration, and migration 0015 |
+| OL Medical / Underwriting | Implemented | Six medical underwriting resources, seed, tests, audit registration, and migration 0016 |
+| OL Claim Setup | Implemented | Five claim catalogs, transition-aware status configuration, seed, tests, audit registration, and migration 0017 |

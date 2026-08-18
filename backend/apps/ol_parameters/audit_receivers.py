@@ -48,6 +48,11 @@ from .models import (
     OLMedicalHistory,
     OLMedicalFacility,
     OLMedicalPractitioner,
+    OLClaimType,
+    OLClaimReason,
+    OLClaimStatus,
+    OLDischargeType,
+    OLCorrespondentType,
     OLMaturityClaimSetup,
     OLMemberCoverConfiguration,
     OLOverrideCommissionSetup,
@@ -115,6 +120,11 @@ AUDITED_MODELS = (
     OLMedicalHistory,
     OLMedicalFacility,
     OLMedicalPractitioner,
+    OLClaimType,
+    OLClaimReason,
+    OLClaimStatus,
+    OLDischargeType,
+    OLCorrespondentType,
 )
 
 

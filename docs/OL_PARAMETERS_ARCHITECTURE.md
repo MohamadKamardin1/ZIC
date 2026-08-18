@@ -470,3 +470,66 @@ The additive migration `0016_olmedicalcode_olmedicalfacility_olmedicalhistory_an
 ### Design assumptions
 
 The implementation treats `ol_parameters.OLProduct` as the canonical product relation and retains the optional `ordinary_life.OLPlan` relation for plan-level medical limits. A null product and null plan represent a global medical rule. Medical facilities and practitioners link to the existing Partner master without duplicating partner identity data; the medical catalog stores only underwriting-specific facility and practitioner attributes. Medical history and personal-habit outcomes remain configuration inputs at this stage, while future underwriting decision services may add normalized outcomes, referral rules, and case-level evidence transactions.
+
+
+## OL Claim Setup — implemented
+
+OL Claim Setup provides the table-driven claim configuration foundation for future Ordinary Life claims intake, assessment, approval, settlement, discharge, and correspondence workflows. The increment is configuration-only and does not introduce claim transaction processing.
+
+### Claim Type Configuration
+
+`OLClaimType` defines claim categories for death, critical illness, disability, surrender, maturity, medical, and other events. Each row supports calculation basis, duplicate-check rule, optional waiting period, payable-to rules, required document codes, waiver-of-premium behavior, approval requirement, effective dates, active status, and inherited audit attribution.
+
+### Claim Reason Catalog
+
+`OLClaimReason` provides reusable reason codes and descriptions, optionally scoped to an active `OLClaimType`. Reason categories include event, medical, administrative, financial, documentary, and other reasons.
+
+### Claim Status Catalog
+
+`OLClaimStatus` defines the claim workflow status catalog with display order, badge type, terminal/payable flags, and a JSON directed transition graph. Transition targets must exist and be active; duplicate/self transitions are rejected, and terminal statuses cannot have outgoing transitions. Runtime helpers `can_transition_to()` and `validate_transition_to()` provide the future claims engine with a stable transition contract.
+
+The seeded status sequence includes Registered, Documents Pending, Under Assessment, Pending Approval, Approved, Rejected, Payment Pending, Settled, and Closed.
+
+### Discharge Type Catalog
+
+`OLDischargeType` defines settlement discharge/release document types with discharge category, template code, JSON template variables, effective dates, active status, and audit fields. Template variables are validated as JSON objects for future document rendering.
+
+### Correspondence Type Catalog
+
+`OLCorrespondentType` models correspondence templates and purposes. It supports correspondence category, communication channel (Letter, Email, SMS, Portal, WhatsApp, System, or Other), purpose, lifecycle, and audit data for future notification and claim communication services.
+
+### APIs and Administration
+
+The following resources are registered under `/api/v1/ol-parameters/`:
+
+- `claim-types/`
+- `claim-reasons/`
+- `claim-statuses/`
+- `discharge-types/`
+- `correspondent-types/`
+
+Each resource uses the shared OL parameter viewset contract for list, retrieve, create, update, soft deactivation, search, filters, ordering, pagination, and CSV export. Supported filters are aligned to each table’s principal category, lifecycle, relationship, and workflow fields. Django admin provides permission-aware, table-first screens with list columns, filters, search, fieldsets, and audit fields.
+
+### Validation, Audit, and Seed Evidence
+
+All five models use unique code constraints, active/effective lifecycle fields, normalized choice values, database indexes, and model-level `full_clean()` validation. Claim type JSON fields distinguish payable-to objects from required-document arrays. Discharge variables must be JSON objects. Claim status transitions are validated against the active status catalog and cannot create an invalid directed graph.
+
+All five models are registered in `backend/apps/ol_parameters/audit_receivers.py` for central create, update, delete, and lifecycle audit coverage. The idempotent `seed_ol_claim_setup.py` command registers five `CLAIM_SETUP` table contracts and seeds representative claim types, reasons, statuses, discharge templates, and correspondence types.
+
+Focused coverage is provided by `backend/apps/ol_parameters/tests/test_claim_setup.py`, including CRUD for every catalog, filtering/export, deactivation, JSON/category/date validation, status transition consistency, unique-code enforcement, permissions, audit correlation, seed idempotency, and admin table configuration. Migration `0017_olclaimtype_olclaimreason_olcorrespondenttype_and_more.py` provides the additive database schema, uniqueness constraints, waiting-period constraint, indexes, and foreign-key relationship.
+
+The starter records are development configuration placeholders. Claim calculation rules, legal discharge language, approval authorities, transition governance, and correspondence templates require claims, actuarial, legal, compliance, product, and governance approval before production claims workflows consume them.
+
+## Updated nine-group status after OL Claim Setup
+
+| Required group | Status | Evidence |
+|---|---|---|
+| OL Default Setup | Implemented | Models, APIs, admin, seed, tests, and documentation |
+| OL Policy Setup | Parts 1, 2, and 3 implemented | Policy setup models, APIs, seed, tests, and documentation |
+| OL Product Setup | Implemented | Product and supporting table-driven configuration resources |
+| OL Product Rating | Parts 1 and 2 implemented | Premium, mortality, joint-life, reinstatement, bonus, mortgage, installment, surrender, and reserve resources |
+| OL Rider Setup | Implemented | Rider catalog, applicability controls, rate tables, rows, seed, tests, and migration 0013 |
+| OL Agent Management | Implemented | Agent commission setup, seed, tests, audit registration, and migration 0014 |
+| OL Loan Setup | Implemented | Loan system setup and loan interest control, seed, tests, audit registration, and migration 0015 |
+| OL Medical / Underwriting | Implemented | Six medical underwriting resources, seed, tests, audit registration, and migration 0016 |
+| OL Claim Setup | Implemented | Five claim catalogs, status transition graph, seed, tests, audit registration, and migration 0017 |

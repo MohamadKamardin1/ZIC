@@ -140,6 +140,11 @@ from .models import (
     OLMedicalHistory,
     OLMedicalFacility,
     OLMedicalPractitioner,
+    OLClaimType,
+    OLClaimReason,
+    OLClaimStatus,
+    OLDischargeType,
+    OLCorrespondentType,
 )
 
 
@@ -599,5 +604,40 @@ class OLMedicalFacilitySerializer(_ValidatedDefaultSetupModelSerializer):
 class OLMedicalPractitionerSerializer(_ValidatedDefaultSetupModelSerializer):
     class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
         model = OLMedicalPractitioner
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLClaimTypeSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLClaimType
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLClaimReasonSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLClaimReason
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLClaimStatusSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLClaimStatus
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLDischargeTypeSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLDischargeType
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLCorrespondentTypeSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLCorrespondentType
         fields = "__all__"
         read_only_fields = _AUDIT_READ_ONLY

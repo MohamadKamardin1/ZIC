@@ -59,6 +59,11 @@ from .models import (
     OLMedicalHistory,
     OLMedicalFacility,
     OLMedicalPractitioner,
+    OLClaimType,
+    OLClaimReason,
+    OLClaimStatus,
+    OLDischargeType,
+    OLCorrespondentType,
     OLSurrenderSetup,
     OLSurrenderValueRate,
     OLParameterTableRegistry,
@@ -118,6 +123,11 @@ from .serializers import (
     OLMedicalHistorySerializer,
     OLMedicalFacilitySerializer,
     OLMedicalPractitionerSerializer,
+    OLClaimTypeSerializer,
+    OLClaimReasonSerializer,
+    OLClaimStatusSerializer,
+    OLDischargeTypeSerializer,
+    OLCorrespondentTypeSerializer,
     OLTableRegistrySerializer,
 )
 from .services.default_setup_service import OLDefaultSetupService
@@ -995,3 +1005,61 @@ class OLMedicalPractitionerViewSet(OLDefaultSetupViewSet):
 
 
 # End of OL Medical Underwriting viewsets
+
+
+class OLClaimTypeViewSet(OLDefaultSetupViewSet):
+    model = OLClaimType
+    serializer_class = OLClaimTypeSerializer
+    table_slug = "claim-types"
+    search_fields = [
+        "code", "name", "description", "claim_category", "calculation_basis", "duplicate_check_rule",
+    ]
+    filterset_fields = [
+        "is_active", "claim_category", "calculation_basis", "duplicate_check_rule",
+        "allow_waiver_of_premium", "require_approval", "effective_from", "effective_to",
+    ]
+    ordering_fields = [
+        "code", "name", "claim_category", "calculation_basis", "duplicate_check_rule",
+        "waiting_period_days", "effective_from", "effective_to", "created_at", "updated_at",
+    ]
+    ordering = ["claim_category", "name", "code"]
+
+
+class OLClaimReasonViewSet(OLDefaultSetupViewSet):
+    model = OLClaimReason
+    serializer_class = OLClaimReasonSerializer
+    table_slug = "claim-reasons"
+    search_fields = ["code", "name", "description", "reason_category", "claim_type__code", "claim_type__name"]
+    filterset_fields = ["is_active", "claim_type", "reason_category", "effective_from", "effective_to"]
+    ordering_fields = ["code", "name", "claim_type", "reason_category", "effective_from", "effective_to", "created_at", "updated_at"]
+    ordering = ["reason_category", "claim_type", "name", "code"]
+
+
+class OLClaimStatusViewSet(OLDefaultSetupViewSet):
+    model = OLClaimStatus
+    serializer_class = OLClaimStatusSerializer
+    table_slug = "claim-statuses"
+    search_fields = ["code", "name", "description", "badge_type"]
+    filterset_fields = ["is_active", "badge_type", "is_terminal", "is_payable", "effective_from", "effective_to"]
+    ordering_fields = ["code", "name", "display_order", "badge_type", "is_terminal", "is_payable", "effective_from", "effective_to", "created_at", "updated_at"]
+    ordering = ["display_order", "name", "code"]
+
+
+class OLDischargeTypeViewSet(OLDefaultSetupViewSet):
+    model = OLDischargeType
+    serializer_class = OLDischargeTypeSerializer
+    table_slug = "discharge-types"
+    search_fields = ["code", "name", "description", "discharge_category", "template_code"]
+    filterset_fields = ["is_active", "discharge_category", "template_code", "effective_from", "effective_to"]
+    ordering_fields = ["code", "name", "discharge_category", "template_code", "effective_from", "effective_to", "created_at", "updated_at"]
+    ordering = ["discharge_category", "name", "code"]
+
+
+class OLCorrespondentTypeViewSet(OLDefaultSetupViewSet):
+    model = OLCorrespondentType
+    serializer_class = OLCorrespondentTypeSerializer
+    table_slug = "correspondent-types"
+    search_fields = ["code", "name", "description", "correspondence_category", "communication_channel", "purpose"]
+    filterset_fields = ["is_active", "correspondence_category", "communication_channel", "effective_from", "effective_to"]
+    ordering_fields = ["code", "name", "correspondence_category", "communication_channel", "purpose", "effective_from", "effective_to", "created_at", "updated_at"]
+    ordering = ["correspondence_category", "name", "code"]
