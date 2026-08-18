@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 
 from .views import (
     OLAnticipatedEndowmentInstallmentRateViewSet,
+    OLAgentCommissionSetupViewSet,
     OLBeneficialTypeViewSet,
     OLComputationApproachViewSet,
     OLDefaultSystemParameterViewSet,
@@ -53,6 +54,7 @@ router = DefaultRouter()
 router.register("tables", OLParameterTableRegistryViewSet, basename="ol-parameter-table")
 router.register("default-system-parameters", OLDefaultSystemParameterViewSet, basename="ol-default-system-parameter")
 router.register("override-commission-setups", OLOverrideCommissionSetupViewSet, basename="ol-override-commission-setup")
+router.register("agent-commission-setups", OLAgentCommissionSetupViewSet, basename="ol-agent-commission-setup")
 router.register("computation-approaches", OLComputationApproachViewSet, basename="ol-computation-approach")
 router.register("maturity-claim-setups", OLMaturityClaimSetupViewSet, basename="ol-maturity-claim-setup")
 router.register("anticipated-endowment-rates", OLAnticipatedEndowmentInstallmentRateViewSet, basename="ol-anticipated-endowment-rate")

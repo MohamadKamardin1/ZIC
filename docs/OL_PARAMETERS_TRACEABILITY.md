@@ -329,3 +329,32 @@ OL Rider Setup is now **Implemented** as the fifth concrete OL Parameters group.
 | OL Claim Setup | Foundation registry only; planned |
 
 The Rider Setup increment is additive and preserves existing policy, product, quotation, proposal, underwriting, and rating execution boundaries. Starter rider and rate values are development placeholders and must pass formal actuarial and underwriting approval before production consumers resolve them.
+
+## OL Agent Management — implemented
+
+| Requirement | Evidence | Status |
+|---|---|---|
+| Agent commission setup | `backend/apps/ol_parameters/models.py`: `OLAgentCommissionSetup` | Implemented |
+| Product/plan/rider/channel/intermediary scope | Optional partner, plan, rider, currency, and branch relations plus required product, intermediary type, and distribution channel fields | Implemented |
+| Commission types and rates | `FIRST_PREMIUM`, `RENEWAL_PREMIUM`, `ADMINISTRATIVE`, `HIERARCHICAL`, `OVERRIDE`, `OTHER`; `PERCENTAGE`, `FIXED`, and `FACTOR`; Decimal rate and commission caps | Implemented |
+| Effective-dated overlap protection | Model `clean()` compares active records across the complete scope, effective dates, premium-year bands, and policy-year bands | Implemented |
+| API | `agent-commission-setups/` router resource with CRUD, filtering, search, ordering, pagination, CSV export, and deactivation | Implemented |
+| Admin | `OLAgentCommissionSetupAdmin` with table columns, filters, scoped fieldsets, autocomplete relations, permission checks, and soft-deactivation | Implemented |
+| Audit | `audit_receivers.py` registration plus central mutation-service integration and request correlation IDs | Implemented |
+| Seed and registry | `seed_ol_agent_management.py`, stable starter commission row, `AGENT_MANAGEMENT` registry contract, idempotent upsert behavior | Implemented |
+| Tests | `tests/test_agent_management.py`: seven focused tests for CRUD, filters/export/deactivation, validation, overlap, permissions/audit, seed idempotency, and admin registration | Implemented |
+| Database migration | `0014_olagentcommissionsetup_and_more.py` | Implemented |
+
+## Updated nine-group status after OL Agent Management
+
+| Required group | Status | Evidence |
+|---|---|---|
+| OL Default Setup | Implemented | Models, APIs, admin, seed, tests, and documentation |
+| OL Policy Setup | Parts 1, 2, and 3 implemented | Policy setup models, APIs, seed, tests, and documentation |
+| OL Product Setup | Implemented | Product and supporting table-driven configuration resources |
+| OL Product Rating | Parts 1 and 2 implemented | Premium, mortality, joint-life, reinstatement, bonus, mortgage, installment, surrender, and reserve resources |
+| OL Rider Setup | Implemented | Rider catalog, applicability controls, rate tables, rows, seed, tests, and migration 0013 |
+| OL Agent Management | Implemented | Agent commission setup, seed, tests, audit registration, and migration 0014 |
+| OL Loan Setup | Planned | Foundation registry only |
+| OL Medical / Underwriting | Planned | Foundation registry only |
+| OL Claim Setup | Planned | Foundation registry only |

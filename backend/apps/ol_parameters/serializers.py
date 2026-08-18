@@ -87,6 +87,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 
 from .models import (
     OLAnticipatedEndowmentInstallmentRate,
+    OLAgentCommissionSetup,
     OLBeneficialType,
     OLBeneficialTypeCategory,
     OLCommissionRateType,
@@ -506,6 +507,13 @@ class OLCashSurrenderValueSerializer(_ValidatedDefaultSetupModelSerializer):
 class OLReserveLoadingSerializer(_ValidatedDefaultSetupModelSerializer):
     class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
         model = OLReserveLoading
+        fields = "__all__"
+        read_only_fields = _AUDIT_READ_ONLY
+
+
+class OLAgentCommissionSetupSerializer(_ValidatedDefaultSetupModelSerializer):
+    class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
+        model = OLAgentCommissionSetup
         fields = "__all__"
         read_only_fields = _AUDIT_READ_ONLY
 

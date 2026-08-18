@@ -361,6 +361,15 @@ class OLCommissionRateType(models.TextChoices):
     FACTOR = "FACTOR", "Factor"
 
 
+class OLAgentCommissionType(models.TextChoices):
+    FIRST_PREMIUM = "FIRST_PREMIUM", "First premium"
+    RENEWAL_PREMIUM = "RENEWAL_PREMIUM", "Renewal premium"
+    ADMINISTRATIVE = "ADMINISTRATIVE", "Administrative"
+    HIERARCHICAL = "HIERARCHICAL", "Hierarchical"
+    OVERRIDE = "OVERRIDE", "Override"
+    OTHER = "OTHER", "Other"
+
+
 class OLOverrideCommissionSetup(OLEffectiveDateModel):
     """Priority-ordered commission override scoped to partner/product dimensions."""
 
@@ -475,6 +484,184 @@ class OLOverrideCommissionSetup(OLEffectiveDateModel):
                 continue
             if self._ranges_overlap(self.policy_year_from, self.policy_year_to, other.policy_year_from, other.policy_year_to):
                 raise ValidationError({"effective_from": "An active commission override with the same scope and overlapping period already exists."})
+
+
+class OLAgentCommissionSetup(OLEffectiveDateModel):
+    """Effective-dated agent/intermediary commission configuration for Ordinary Life."""
+
+    partner = models.ForeignKey(
+        "partners.Partner",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="ol_agent_commission_setups",
+        help_text="Optional partner or agent scope; agent intermediaries are represented by this relation.",
+    )
+    intermediary_type = models.CharField(max_length=80, blank=True, default="", db_index=True)
+    distribution_channel = models.CharField(max_length=80, blank=True, default="", db_index=True)
+    product = models.ForeignKey(
+        "ol_parameters.OLProduct",
+        on_delete=models.PROTECT,
+        related_name="agent_commission_setups",
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="ol_parameter_agent_commission_setups",
+    )
+    rider = models.ForeignKey(
+        "ol_parameters.OLRiderSetup",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="agent_commission_setups",
+    )
+    currency = models.CharField(max_length=3, blank=True, default="", db_index=True)
+    branch = models.ForeignKey(
+        "partner_onboarding.Branch",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="ol_agent_commission_setups",
+    )
+    commission_type = models.CharField(max_length=30, choices=OLAgentCommissionType.choices, db_index=True)
+    premium_year_from = models.PositiveIntegerField(null=True, blank=True)
+    premium_year_to = models.PositiveIntegerField(null=True, blank=True)
+    policy_year_from = models.PositiveIntegerField(null=True, blank=True)
+    policy_year_to = models.PositiveIntegerField(null=True, blank=True)
+    rate_type = models.CharField(max_length=10, choices=OLCommissionRateType.choices, db_index=True)
+    rate_value = models.DecimalField(max_digits=18, decimal_places=8)
+    minimum_commission = models.DecimalField(max_digits=18, decimal_places=8, null=True, blank=True)
+    maximum_commission = models.DecimalField(max_digits=18, decimal_places=8, null=True, blank=True)
+    priority = models.PositiveIntegerField(default=100, db_index=True)
+    reason = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["priority", "commission_type", "-effective_from", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_agent_comm_setup_code_uq"),
+            models.CheckConstraint(
+                check=models.Q(premium_year_to__isnull=True)
+                | models.Q(premium_year_from__isnull=True)
+                | models.Q(premium_year_to__gte=models.F("premium_year_from")),
+                name="ol_agent_comm_prem_years_ck",
+            ),
+            models.CheckConstraint(
+                check=models.Q(policy_year_to__isnull=True)
+                | models.Q(policy_year_from__isnull=True)
+                | models.Q(policy_year_to__gte=models.F("policy_year_from")),
+                name="ol_agent_comm_policy_years_ck",
+            ),
+            models.CheckConstraint(check=models.Q(rate_value__gte=0), name="ol_agent_comm_rate_nonneg_ck"),
+            models.CheckConstraint(
+                check=models.Q(minimum_commission__isnull=True) | models.Q(minimum_commission__gte=0),
+                name="ol_agent_comm_min_nonneg_ck",
+            ),
+            models.CheckConstraint(
+                check=models.Q(maximum_commission__isnull=True) | models.Q(maximum_commission__gte=0),
+                name="ol_agent_comm_max_nonneg_ck",
+            ),
+            models.CheckConstraint(
+                check=models.Q(maximum_commission__isnull=True)
+                | models.Q(minimum_commission__isnull=True)
+                | models.Q(maximum_commission__gte=models.F("minimum_commission")),
+                name="ol_agent_comm_min_max_ck",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["partner", "product", "plan", "rider", "commission_type", "distribution_channel"],
+                name="ol_agent_comm_scope_idx",
+            ),
+            models.Index(fields=["priority", "is_active", "effective_from"], name="ol_agent_comm_priority_idx"),
+            models.Index(fields=["product", "commission_type", "is_active"], name="ol_agent_comm_product_idx"),
+        ]
+
+    @staticmethod
+    def _ranges_overlap(start_a, end_a, start_b, end_b):
+        if end_a is not None and start_b is not None and end_a < start_b:
+            return False
+        if end_b is not None and start_a is not None and end_b < start_a:
+            return False
+        return True
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        self.intermediary_type = (self.intermediary_type or "").strip().upper()
+        self.distribution_channel = (self.distribution_channel or "").strip().upper()
+        self.currency = (self.currency or "").strip().upper()
+        self.commission_type = (self.commission_type or "").strip().upper()
+        self.rate_type = (self.rate_type or "").strip().upper()
+        if not self.intermediary_type:
+            errors["intermediary_type"] = "Intermediary type is required."
+        if not self.distribution_channel:
+            errors["distribution_channel"] = "Distribution channel is required."
+        if self.currency and len(self.currency) != 3:
+            errors["currency"] = "Currency must be a three-letter code when supplied."
+        if self.commission_type not in dict(OLAgentCommissionType.choices):
+            errors["commission_type"] = "Unsupported agent commission type."
+        if self.rate_type not in dict(OLCommissionRateType.choices):
+            errors["rate_type"] = "Unsupported commission rate type."
+        if self.rate_value is None or self.rate_value < 0:
+            errors["rate_value"] = "Rate value cannot be negative."
+        if self.rate_type == OLCommissionRateType.PERCENTAGE and self.rate_value is not None and self.rate_value > 100:
+            errors["rate_value"] = "Percentage commission rate cannot exceed 100."
+        if self.minimum_commission is not None and self.minimum_commission < 0:
+            errors["minimum_commission"] = "Minimum commission cannot be negative."
+        if self.maximum_commission is not None and self.maximum_commission < 0:
+            errors["maximum_commission"] = "Maximum commission cannot be negative."
+        if (
+            self.minimum_commission is not None
+            and self.maximum_commission is not None
+            and self.maximum_commission < self.minimum_commission
+        ):
+            errors["maximum_commission"] = "Maximum commission cannot be less than minimum commission."
+        if self.premium_year_from is not None and self.premium_year_to is not None and self.premium_year_to < self.premium_year_from:
+            errors["premium_year_to"] = "Premium year-to cannot be before year-from."
+        if self.policy_year_from is not None and self.policy_year_to is not None and self.policy_year_to < self.policy_year_from:
+            errors["policy_year_to"] = "Policy year-to cannot be before year-from."
+        if self.plan_id and self.plan and self.product_id:
+            plan_product_id = getattr(getattr(self.plan, "product_version", None), "product_id", None)
+            if plan_product_id and plan_product_id != self.product_id:
+                errors["plan"] = "Selected plan does not belong to the selected product."
+        if self.rider_id and self.rider and self.rider.product_id and self.rider.product_id != self.product_id:
+            errors["rider"] = "Selected rider does not belong to the selected product."
+        if errors:
+            raise ValidationError(errors)
+
+        scope_fields = (
+            "partner_id",
+            "intermediary_type",
+            "distribution_channel",
+            "product_id",
+            "plan_id",
+            "rider_id",
+            "currency",
+            "branch_id",
+            "commission_type",
+        )
+        filters = {field: getattr(self, field) for field in scope_fields}
+        candidates = type(self).objects.filter(is_active=True, **filters).only(
+            "id",
+            "effective_from",
+            "effective_to",
+            "premium_year_from",
+            "premium_year_to",
+            "policy_year_from",
+            "policy_year_to",
+        )
+        if self.pk:
+            candidates = candidates.exclude(pk=self.pk)
+        for other in candidates:
+            if not self._ranges_overlap(self.effective_from, self.effective_to, other.effective_from, other.effective_to):
+                continue
+            if not self._ranges_overlap(self.premium_year_from, self.premium_year_to, other.premium_year_from, other.premium_year_to):
+                continue
+            if self._ranges_overlap(self.policy_year_from, self.policy_year_to, other.policy_year_from, other.policy_year_to):
+                raise ValidationError({"effective_from": "An active agent commission setup with the same scope and overlapping period already exists."})
 
 
 class OLComputationApproach(OLEffectiveDateModel):

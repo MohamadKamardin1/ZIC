@@ -2,6 +2,7 @@ from django.contrib import admin, messages
 
 from .models import (
     OLAnticipatedEndowmentInstallmentRate,
+    OLAgentCommissionSetup,
     OLBeneficialType,
     OLComputationApproach,
     OLDefaultSystemParameter,
@@ -179,6 +180,32 @@ class OLDefaultSystemParameterAdmin(OLDefaultSetupAdmin):
     fieldsets = (
         ("Identity", {"fields": ("code", "parameter_key", "name", "parameter_category", "description", "is_active")}),
         ("Typed value", {"fields": ("value_type", "string_value", "integer_value", "decimal_value", "boolean_value", "date_value", "json_value")}),
+        ("Effective dates", {"fields": ("effective_from", "effective_to")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLAgentCommissionSetup)
+class OLAgentCommissionSetupAdmin(OLDefaultSetupAdmin):
+    list_display = (
+        "priority", "code", "name", "partner", "product", "plan", "commission_type", "rate_type", "rate_value",
+        "distribution_channel", "effective_from", "effective_to", "is_active",
+    )
+    list_filter = (
+        "is_active", "commission_type", "rate_type", "intermediary_type", "distribution_channel", "currency",
+        "effective_from", "effective_to",
+    )
+    search_fields = (
+        "code", "name", "description", "reason", "intermediary_type", "distribution_channel", "currency",
+        "product__code", "plan__code", "rider__code", "partner__code",
+    )
+    ordering = ("priority", "commission_type", "-effective_from", "code")
+    autocomplete_fields = ("partner", "product", "plan", "rider")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "reason", "is_active", "priority")}),
+        ("Intermediary scope", {"fields": ("partner", "intermediary_type", "distribution_channel", "branch", "currency")}),
+        ("Product scope", {"fields": ("product", "plan", "rider")}),
+        ("Commission", {"fields": ("commission_type", "premium_year_from", "premium_year_to", "policy_year_from", "policy_year_to", "rate_type", "rate_value", "minimum_commission", "maximum_commission")}),
         ("Effective dates", {"fields": ("effective_from", "effective_to")}),
         ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
     )

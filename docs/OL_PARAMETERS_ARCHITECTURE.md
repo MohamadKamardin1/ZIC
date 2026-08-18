@@ -353,3 +353,34 @@ All three resources use `ol_parameters.view`, `.create`, `.update`, `.deactivate
 The idempotent command `python manage.py seed_ol_rider_setup` ensures the Product Setup starter product exists, seeds one development accidental-death rider, one versioned rider rate table, one rider rate row, and three `RIDER_SETUP` registry contracts. Starter actuarial values and exclusion rules are placeholders requiring actuarial and underwriting approval before production use; repeated execution updates the declared baseline without duplicating rows.
 
 Rider Setup is delivered through additive migration `0013_olridersetup_olriderratetable_olriderraterow_and_more.py`. Future quotation and policy consumers should resolve the active rider definition first, then select one unambiguous rate table and rate row for the requested rider, product, plan, demographic profile, frequency, age, term, sum assured, and effective date.
+
+## OL Agent Management implementation status
+OL Agent Management is now **Implemented** as the sixth concrete OL Parameters group. It provides a table-driven commission configuration foundation for first-premium, renewal, administrative, hierarchical, override, and future commission types without coupling configuration to commission settlement transactions.
+
+| Requirement | Delivered artifact | Status |
+|---|---|---|
+| Agent commission setup | `OLAgentCommissionSetup` with optional partner, intermediary type, distribution channel, product, plan, rider, currency, branch, commission type, premium/policy-year bands, rate type, rate value, commission caps, priority, reason, and effective dates | Implemented |
+| Commission scope | Product/plan/rider/channel/intermediary/currency/branch dimensions are persisted as data and exposed for future commission calculation services | Implemented |
+| Validation and invariants | Required product and channel scope, normalized choice values, three-letter currency validation, percentage upper bound, nonnegative Decimal values, minimum/maximum ordering, year-band ordering, effective-date consistency, product/plan and rider/product alignment, and active scoped overlap prevention | Implemented |
+| APIs | `/api/v1/ol-parameters/agent-commission-setups/` with CRUD, search, filters, ordering, pagination, CSV export, and soft deactivation | Implemented |
+| Permissions | Existing `ol_parameters.view`, `.create`, `.update`, `.deactivate`, and `.configure` enforcement through the shared OL parameter permission class | Implemented |
+| Admin | Permission-aware, table-first admin registration showing partner, product/plan, commission type, rate, priority, channel, effective dates, and active status | Implemented |
+| Audit | Central audit receiver registration for `OLAgentCommissionSetup` plus shared mutation-service and request-correlation audit behavior | Implemented |
+| Seed data | `seed_ol_agent_management` idempotently seeds a development starter commission rule and one `AGENT_MANAGEMENT` registry contract; it ensures the standard product and starter rider prerequisites exist | Implemented |
+| Tests | CRUD, filtering, CSV export, deactivation, rate/currency/year/date validation, overlap prevention, non-overlapping periods, permissions, audit correlation, seed idempotency, and admin registration | Implemented |
+| Migrations | Additive migration `0014_olagentcommissionsetup_and_more.py` with uniqueness, nonnegative-rate, year-order, cap-order, scope, priority, and product/type indexes | Implemented |
+
+The Agent Management increment is intentionally configuration-only. Starter commission values are development placeholders and require commercial, actuarial, compliance, and governance approval before production calculation or settlement services consume them.
+
+## Updated nine-group status after OL Agent Management
+| Required group | Concrete implementation status after this delivery |
+|---|---|
+| OL Default Setup | **Implemented** |
+| OL Policy Setup | **Parts 1, 2, and 3 implemented**; later policy setup parts remain planned |
+| OL Product Setup | **Implemented** |
+| OL Product Rating | **Parts 1 and 2 implemented**: premium, mortality, joint life, reinstatement, bonus, mortgage, installment, surrender, and reserve parameters |
+| OL Rider Setup | **Implemented**: rider catalog, applicability rules, rider rate tables, and rider rate rows |
+| OL Agent Management | **Implemented**: effective-dated agent commission setup with scoped rates, priorities, caps, and overlap protection |
+| OL Loan Setup | Foundation registry only; planned |
+| OL Medical / Underwriting | Foundation registry only; planned |
+| OL Claim Setup | Foundation registry only; planned |

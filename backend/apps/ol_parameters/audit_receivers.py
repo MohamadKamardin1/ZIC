@@ -8,6 +8,7 @@ from apps.governance.services.audit_service import AuditService
 
 from .models import (
     OLAnticipatedEndowmentInstallmentRate,
+    OLAgentCommissionSetup,
     OLBeneficialType,
     OLComputationApproach,
     OLDefaultSystemParameter,
@@ -56,6 +57,7 @@ from .models import (
 AUDITED_MODELS = (
     OLParameterTableRegistry,
     OLDefaultSystemParameter,
+    OLAgentCommissionSetup,
     OLOverrideCommissionSetup,
     OLComputationApproach,
     OLMaturityClaimSetup,

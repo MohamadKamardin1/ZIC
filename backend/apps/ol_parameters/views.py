@@ -13,6 +13,7 @@ from apps.core.pagination import StandardPagination
 
 from .models import (
     OLAnticipatedEndowmentInstallmentRate,
+    OLAgentCommissionSetup,
     OLBeneficialType,
     OLComputationApproach,
     OLDefaultSystemParameter,
@@ -59,6 +60,7 @@ from .models import (
 from .permissions import HasOLParameterPermission, has_ol_parameter_permission
 from .serializers import (
     OLAnticipatedEndowmentInstallmentRateSerializer,
+    OLAgentCommissionSetupSerializer,
     OLBeneficialTypeSerializer,
     OLComputationApproachSerializer,
     OLDefaultSystemParameterSerializer,
@@ -242,6 +244,26 @@ class OLOverrideCommissionSetupViewSet(OLDefaultSetupViewSet):
     ]
     ordering_fields = ["priority", "code", "name", "rate_value", "rate_type", "effective_from", "effective_to", "created_at", "updated_at"]
     ordering = ["priority", "-effective_from", "code"]
+
+
+class OLAgentCommissionSetupViewSet(OLDefaultSetupViewSet):
+    model = OLAgentCommissionSetup
+    serializer_class = OLAgentCommissionSetupSerializer
+    table_slug = "agent-commission-setups"
+    search_fields = [
+        "code", "name", "description", "reason", "intermediary_type", "distribution_channel", "currency",
+        "product__code", "plan__code", "rider__code", "partner__code",
+    ]
+    filterset_fields = [
+        "is_active", "partner", "product", "plan", "rider", "branch", "intermediary_type",
+        "distribution_channel", "currency", "commission_type", "rate_type", "priority",
+        "premium_year_from", "premium_year_to", "policy_year_from", "policy_year_to", "effective_from", "effective_to",
+    ]
+    ordering_fields = [
+        "priority", "code", "name", "commission_type", "rate_value", "rate_type", "effective_from", "effective_to",
+        "created_at", "updated_at",
+    ]
+    ordering = ["priority", "commission_type", "-effective_from", "code"]
 
 
 class OLComputationApproachViewSet(OLDefaultSetupViewSet):
