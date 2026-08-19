@@ -10,6 +10,7 @@ from drf_spectacular.views import (
 )
 
 from apps.core.views import health_check, liveness_check, readiness_check
+from apps.authentication.views import AccessMetadataView
 from apps.ol_quotations.views import OLPlanSearchView
 
 api_v1_patterns = [
@@ -17,6 +18,7 @@ api_v1_patterns = [
     path('live/', liveness_check, name='liveness-check'),
     path('ready/', readiness_check, name='readiness-check'),
     path('auth/', include('apps.authentication.urls')),
+    path('iam/me/access/', AccessMetadataView.as_view(), name='iam-me-access'),
     path('users/', include('apps.users.urls')),
     path('partners/', include('apps.partners.urls')),
     path('onboarding/', include('apps.partner_onboarding.urls')),

@@ -181,3 +181,25 @@ def test_me_contains_iam_fields(api_client, approved_user):
 def test_unauthorized_access_returns_401(api_client):
     response = api_client.get(auth_url('me'))
     assert response.status_code == 401
+
+
+@pytest.mark.django_db
+def test_access_metadata_exposes_superuser_and_permissions(api_client):
+    admin = User.objects.create_superuser(
+        username='iam-access-admin',
+        email='iam-access-admin@example.com',
+        password='AdminStrong!123',
+    )
+    api_client.force_authenticate(admin)
+    response = api_client.get('/api/v1/iam/me/access/')
+    assert response.status_code == 200
+    payload = response.data['data']
+    assert payload['is_superuser'] is True
+    assert isinstance(payload['visible_modules'], list)
+    assert isinstance(payload['permissions'], list)
+    assert isinstance(payload['groups'], list)
+
+
+def test_access_metadata_requires_authentication(api_client):
+    response = api_client.get('/api/v1/iam/me/access/')
+    assert response.status_code == 401

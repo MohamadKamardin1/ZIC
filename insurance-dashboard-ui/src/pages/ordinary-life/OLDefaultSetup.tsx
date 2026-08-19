@@ -2,14 +2,14 @@ import { useCallback, useMemo, useState, type ChangeEvent } from "react"
 import { Plus } from "lucide-react"
 import { request } from "../../lib/apiClient"
 import { useAccess } from "../../lib/access"
-import { DataTable } from "../../components/ui/DataTable"
+import { DataTable, normalizeTableResponse } from "../../components/ui/DataTable"
 import { FilterBar } from "../../components/ui/FilterBar"
 import { FormModal, InfoBanner, ConfirmModal } from "../../components/ui/Overlays"
 import { DateInput, DecimalInput, SelectInput, TextareaInput, TextInput, Toggle } from "../../components/ui/FormControls"
 import { MasterDetailPage } from "../../components/ui/Patterns"
 import { StatusBadge } from "../../components/ui/StatusBadge"
 import type { FilterValues } from "../../components/ui/FilterBar"
-import type { FilterDefinition, RowAction, TableColumn, TableResponse } from "../../components/ui/types"
+import type { FilterDefinition, RowAction, TableColumn } from "../../components/ui/types"
 import { useToast } from "../../components/ui/Toast"
 import type { FilterOption } from "../../components/ui/types"
 
@@ -94,8 +94,30 @@ const RATE_TYPES = [
   { label: "Factor", value: "FACTOR" },
 ]
 
-const tableDate = (value?: string | null) => value ? new Intl.DateTimeFormat("en-GB", { dateStyle: "medium" }).format(new Date(`${value}T00:00:00`)) : "—"
+const tableDate = (value?: string | null) => {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return "—"
+  const parsed = new Date(`${value}T00:00:00`)
+  return Number.isNaN(parsed.getTime()) ? "—" : new Intl.DateTimeFormat("en-GB", { dateStyle: "medium" }).format(parsed)
+}
 const valueLabel = (value: unknown) => value === null || value === undefined || value === "" ? "—" : typeof value === "object" ? JSON.stringify(value) : String(value)
+const normalizeParameterRecord = (raw: ParameterRecord & Record<string, unknown>): ParameterRecord => ({
+  ...raw,
+  id: String(raw.id ?? raw.uuid ?? ""),
+  code: String(raw.code ?? raw.parameterKey ?? ""),
+  is_active: Boolean(raw.is_active ?? raw.isActive),
+  effective_from: String(raw.effective_from ?? raw.effectiveFrom ?? ""),
+  effective_to: (raw.effective_to ?? raw.effectiveTo ?? null) as string | null,
+  parameter_key: (raw.parameter_key ?? raw.parameterKey) as string | undefined,
+  parameter_category: (raw.parameter_category ?? raw.parameterCategory) as string | undefined,
+  value_type: (raw.value_type ?? raw.valueType) as string | undefined,
+  value: raw.value ?? raw.typedValue,
+  rate_type: (raw.rate_type ?? raw.rateType) as string | undefined,
+  rate_value: (raw.rate_value ?? raw.rateValue) as string | number | undefined,
+  auto_create_maturity_claim: Boolean(raw.auto_create_maturity_claim ?? raw.autoCreateMaturityClaim),
+  days_before_maturity_to_initiate: (raw.days_before_maturity_to_initiate ?? raw.daysBeforeMaturityToInitiate) as number | undefined,
+  default_payout_method: (raw.default_payout_method ?? raw.defaultPayoutMethod) as string | undefined,
+  require_approval: Boolean(raw.require_approval ?? raw.requireApproval),
+})
 
 const commonColumns = (extra: TableColumn<ParameterRecord>[]): TableColumn<ParameterRecord>[] => [
   { key: "code", label: "Code", field: "code", sortable: true },
@@ -290,7 +312,8 @@ export default function OLDefaultSetup() {
     if (query.search) params.set("search", query.search)
     if (query.ordering) params.set("ordering", query.ordering)
     Object.entries(query.filters ?? {}).forEach(([key, value]) => { if (value !== undefined && value !== null && value !== "") params.set(key, String(value)) })
-    return request<TableResponse<ParameterRecord>>(`${screen.endpoint}?${params.toString()}`)
+    const result = normalizeTableResponse<ParameterRecord>(await request<unknown>(`${screen.endpoint}?${params.toString()}`))
+    return { ...result, results: result.results.map((row) => normalizeParameterRecord(row as ParameterRecord & Record<string, unknown>)) }
   }, [screen.endpoint])
 
   const openCreate = () => setEditor({ open: true, state: emptyEditor(active) })

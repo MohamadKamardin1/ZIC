@@ -259,3 +259,18 @@ class MeView(APIView):
 
     def get(self, request):
         return _success('User info retrieved', {'user': _user_payload(request.user)})
+
+
+class AccessMetadataView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        user_data = _user_payload(request.user)
+        permissions_list = user_data.get('permissions', [])
+        visible_modules = sorted({permission['module'] for permission in permissions_list})
+        return _success('Access metadata retrieved', {
+            'visible_modules': visible_modules,
+            'permissions': permissions_list,
+            'groups': user_data.get('groups', []),
+            'is_superuser': bool(request.user.is_superuser),
+        })
