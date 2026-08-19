@@ -9,6 +9,7 @@ from apps.partner_onboarding.models import Location
 from apps.system_parameters.services.config_service import ConfigurationService
 
 from .permissions import OLQuotationPermission, has_quotation_permission
+from .services.quotation_service import QuotationService
 
 from .models import (
     OLQuotation,
@@ -394,6 +395,13 @@ class OLQuotationVersionSerializer(serializers.ModelSerializer):
         read_only_fields = [field.name for field in OLQuotationVersion._meta.fields]
 
 
+class OLQuotationVersionListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OLQuotationVersion
+        fields = ["id", "version_number", "status", "created_by", "created_at", "change_reason"]
+        read_only_fields = fields
+
+
 class OLQuotationProjectionRowSerializer(serializers.Serializer):
     plan_configuration_id = serializers.CharField(required=False, allow_null=True)
     policy_year = serializers.IntegerField()
@@ -637,6 +645,7 @@ class OLQuotationPersonalDetailsSerializer(serializers.Serializer):
 
 
 class OLQuotationListSerializer(serializers.ModelSerializer):
+    status = serializers.SerializerMethodField()
     prospect_name = serializers.SerializerMethodField()
     plans_summary = serializers.SerializerMethodField()
     plan_count = serializers.SerializerMethodField()
@@ -715,9 +724,13 @@ class OLQuotationListSerializer(serializers.ModelSerializer):
             return annotated
         return sum(1 for configuration in obj.plan_configurations.all() if configuration.is_selected)
 
+    def get_status(self, obj):
+        return QuotationService.effective_status(obj)
+
     def get_status_badge(self, obj):
-        label = obj.get_status_display()
-        return {"code": obj.status, "label": label, "tone": obj.status.lower()}
+        effective_status = self.get_status(obj)
+        label = dict(obj._meta.get_field("status").choices).get(effective_status, effective_status)
+        return {"code": effective_status, "label": label, "tone": effective_status.lower()}
 
     def get_agent(self, obj):
         return self._user_payload(obj.agent)
@@ -748,7 +761,7 @@ class OLQuotationListSerializer(serializers.ModelSerializer):
         }
 
     def get_row_actions(self, obj):
-        status = obj.status
+        status = self.get_status(obj)
         partner_verified = bool(obj.partner_verified)
         return {
             "view": self._action(
@@ -776,6 +789,7 @@ class OLQuotationListSerializer(serializers.ModelSerializer):
 
 
 class OLQuotationSerializer(serializers.ModelSerializer):
+    status = serializers.SerializerMethodField()
     products = OLQuotationProductSerializer(many=True, read_only=True)
     plan_configurations = OLQuotationPlanConfigurationSerializer(many=True, read_only=True)
     members = OLQuotationMemberSerializer(many=True, read_only=True)
@@ -872,6 +886,9 @@ class OLQuotationSerializer(serializers.ModelSerializer):
             "financial_summary",
             "events",
         ]
+
+    def get_status(self, obj):
+        return QuotationService.effective_status(obj)
 
     def validate(self, attrs):
         instance = self.instance or OLQuotation(**attrs)

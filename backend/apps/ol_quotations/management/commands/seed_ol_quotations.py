@@ -267,6 +267,46 @@ class Command(BaseCommand):
                 defaults={"group": system_group, "is_active": True, **parameter},
             )
 
+        lifecycle_parameters = [
+            {
+                "code": "OL_QUOTATION_DEFAULT_EXPIRY_DAYS",
+                "name": "OL Quotation Default Expiry Days",
+                "description": "Number of calendar days after quote date before an OL quotation expires.",
+                "value_type": "INTEGER",
+                "integer_value": 30,
+                "sort_order": 24,
+            },
+            {
+                "code": "OL_QUOTATION_APPROVAL_ENABLED",
+                "name": "OL Quotation Approval Hook Enabled",
+                "description": "Enables threshold evaluation and the QuotationApprovalRequested integration event.",
+                "value_type": "BOOLEAN",
+                "boolean_value": False,
+                "sort_order": 25,
+            },
+            {
+                "code": "OL_QUOTATION_APPROVAL_SUM_ASSURED_LIMIT",
+                "name": "OL Quotation Approval Sum Assured Limit",
+                "description": "Optional sum-assured threshold above which quotation approval is required.",
+                "value_type": "FLOAT",
+                "float_value": None,
+                "sort_order": 26,
+            },
+            {
+                "code": "OL_QUOTATION_APPROVAL_LOAN_LIKE_LIMIT",
+                "name": "OL Quotation Approval Loan-like Amount Limit",
+                "description": "Optional loan-like amount threshold above which quotation approval is required.",
+                "value_type": "FLOAT",
+                "float_value": None,
+                "sort_order": 27,
+            },
+        ]
+        for parameter in lifecycle_parameters:
+            SystemParameter.objects.update_or_create(
+                code=parameter["code"],
+                defaults={"group": system_group, "is_active": True, **parameter},
+            )
+
         self.stdout.write(
             self.style.SUCCESS(
                 "OL Quotations seeded: "

@@ -96,7 +96,17 @@ The aggregate supports the following lifecycle:
 | `CONVERTED` | None |
 | `EXPIRED` | None |
 
-Finalization locks the quotation into a reproducible calculation state. It validates the wizard, calculates selected plan and rider totals, writes `total_sum_assured` and `total_premium`, and stores the selected child identifiers and calculation currency in `calculation_snapshot`. Conversion is intentionally a future integration hook and does not yet create a policy.
+Finalization locks the quotation into a reproducible calculation state. It requires every applicable wizard prerequisite, including a current Financial Details summary whose input fingerprint still matches the quotation. It writes `total_sum_assured` and `total_premium`, stores the selected child identifiers and calculation currency in `calculation_snapshot`, sets `FINALIZED`, and emits `QuotationFinalized`. A missing, stale, or incomplete prerequisite returns a blocking validation response and leaves the quotation in `DRAFT`. Conversion is intentionally a future integration hook and does not yet create a policy.
+
+### BR-02 versioning and lifecycle operations
+
+Quotation changes do not destroy prior business values. A finalized quotation can be revised through `POST /quotations/{id}/revise/`; the service records the finalized aggregate and child-state snapshot as an immutable `OLQuotationVersion`, marks that historical version `SUPERSEDED`, increments the active version number, and returns the same quotation aggregate as a new editable `DRAFT`. The editable revision invalidates the current financial summary for recalculation rather than presenting stale premium values as current. The prior version remains available for audit, comparison, and as-of retrieval.
+
+Version history is available at `GET /quotations/{id}/versions/`, returning version number, status, creator, creation timestamp, and change reason. `GET /quotations/{id}/as-of-version/{version_number}/` returns the immutable snapshot for a selected version; this endpoint is read-only and does not restore or mutate the active quotation. Version creation and revision emit `QuotationVersionCreated`, and the corresponding audit records include the before-state, after-state, actor, reason, and correlation metadata.
+
+Expiry is parameterized by `OL_QUOTATION_DEFAULT_EXPIRY_DAYS` and is applied when a draft is created unless an explicit expiry date is supplied. Read endpoints compute an effective `EXPIRED` status when a draft or finalized quotation has an expiry date before the evaluation date, while preserving the stored status until batch persistence is requested. The idempotent `python manage.py expire_ol_quotations [--as-of YYYY-MM-DD] [--dry-run]` command persists eligible expirations, increments the version, writes an immutable snapshot, and emits `QuotationExpired`. Expired quotations cannot be finalized, revised, printed, converted, or deleted.
+
+Finalization evaluates the approval integration hook after the quotation is otherwise valid. When `OL_QUOTATION_APPROVAL_ENABLED` is active and the configured `OL_QUOTATION_APPROVAL_SUM_ASSURED_LIMIT` or `OL_QUOTATION_APPROVAL_LOAN_LIKE_LIMIT` is exceeded, the quotation is finalized with `approval_required=true`, the threshold reasons are retained in lifecycle metadata, and `QuotationApprovalRequested` is emitted. This is deliberately a clean hand-off to a future approval engine; the quotation module does not create or resolve approval tasks.
 
 All financial values use `DecimalField`, date ranges reject an expiry date before the quote date, member ages are derived at the quote date, allocation percentages are bounded from 0 to 100, installment rate periods cannot overlap, and beneficiary percentages must total 100% when beneficiaries are supplied.
 
@@ -132,12 +142,17 @@ The API is mounted under `/api/v1/ol-quotations/`.
 | Rider and benefit options | `GET /quotations/{id}/riders/options/?plan_config_id={id}` |
 | Financial Details calculation | `POST /quotations/{id}/calculate/` |
 | Financial Details summary | `GET /quotations/{id}/financial-details/` |
+| Finalize quotation | `POST /quotations/{id}/finalize/` |
+| Revise finalized quotation | `POST /quotations/{id}/revise/` |
+| Quotation version history | `GET /quotations/{id}/versions/` |
+| As-of version snapshot | `GET /quotations/{id}/as-of-version/{version_number}/` |
+| Expire quotation | `POST /quotations/{id}/expire/` |
 | Add dependent member | `POST /quotations/{id}/members/` |
 | Update dependent member | `PATCH /quotations/{id}/members/{member_id}/` |
 | Remove dependent member | `DELETE /quotations/{id}/members/{member_id}/` |
 | Personal Details options | `GET /quotations/personal-details-options/` |
 
-Quotation list endpoints support filtering, search, ordering, pagination, and partner row-level scoping. Lifecycle actions are exposed as `POST /quotations/{id}/finalize/`, `/expire/`, and `/convert/`; the wizard state is available at `GET /quotations/{id}/wizard-summary/`.
+Quotation list endpoints support filtering, search, ordering, pagination, partner row-level scoping, and effective expiry status. Lifecycle actions are exposed as `POST /quotations/{id}/finalize/`, `/revise/`, `/expire/`, and `/convert/`; version history and as-of snapshots are read-only; and the wizard state is available at `GET /quotations/{id}/wizard-summary/`.
 
 `personal-details-options` returns identity types, genders, smoker statuses, active locations, and active partners assigned to the configured `OL_AGENT_PARTNER_TYPE_CODE`. It accepts an optional `search` parameter for location and agent lookup. `plans/search` searches active, effective product versions and plans. `plan-options` returns payment frequencies from the selected product version, quote-basis and premium-factor choice lists from system parameters, and feature availability derived from product/plan flags and effective OL Joint Life, Mortgage Interest Factor, and Rider Setup rows. Bonus-rate defaults are resolved from the effective OL Bonus Rate scope for the selected product/plan. `members` resolves the most specific effective Member Cover Configuration for each relation (plan scope, then product scope, then global scope), exposing relation, age, waiting-period, coverage-basis, and benefit-limit metadata. No select option is hardcoded in the quotation view; these catalogs remain editable through the platform configuration workflow.
 
@@ -145,7 +160,7 @@ Responses follow the platform API envelope and standard pagination contract. Val
 
 ## Permission and row-level scope
 
-The module uses the `ol_quotations` permission namespace with `VIEW`, `CREATE`, `UPDATE`, `DELETE`, `CONFIGURE`, `PRINT`, and `CONVERT` actions. The Personal Details mutation maps to `UPDATE`, its options endpoint maps to `VIEW`, plan search and plan options map to `VIEW`, plan selection and section configuration map to `UPDATE`, Member Coverage reads map to `VIEW`, dependent add/update/remove actions map to `UPDATE`, Installments state/template/configuration map to `VIEW`/`VIEW`/`UPDATE`, and Investment Funds state/options/configuration map to `VIEW`/`VIEW`/`UPDATE` respectively. The seed command creates the following groups:
+The module uses the `ol_quotations` permission namespace with `VIEW`, `CREATE`, `UPDATE`, `DELETE`, `CONFIGURE`, `PRINT`, and `CONVERT` actions. Financial Details uses explicit `financial_view` (`VIEW`) and `financial_calculate` (`UPDATE`) mappings; revision uses `revise` (`UPDATE`); and version history/as-of retrieval uses `versions`/`as_of_version` (`VIEW`). Finalize and expiry use their lifecycle-specific permission mappings and are additionally constrained by effective status and wizard validation. The Personal Details mutation maps to `UPDATE`, its options endpoint maps to `VIEW`, plan search and plan options map to `VIEW`, plan selection and section configuration map to `UPDATE`, Member Coverage reads map to `VIEW`, dependent add/update/remove actions map to `UPDATE`, Installments state/template/configuration map to `VIEW`/`VIEW`/`UPDATE`, and Investment Funds state/options/configuration map to `VIEW`/`VIEW`/`UPDATE` respectively. The seed command creates the following groups:
 
 | Group | Intended access |
 |---|---|
@@ -160,7 +175,7 @@ Non-superusers are restricted to partners returned by `user.visible_partners()`.
 
 Quotation creation, draft updates, and lifecycle transitions use `AuditService` with before-state, after-state, changed-field, actor, request, reason, and correlation context. Automatic audit receivers cover the quotation header and all wizard child tables. Lifecycle transitions additionally persist immutable `OLQuotationEvent` rows.
 
-The service creates durable `DomainEvent` rows in the existing transactional outbox for `QuotationCreated`, `QuotationUpdated`, `QuotationFinalized`, `QuotationExpired`, and `QuotationConverted`. Events carry the quotation identifier, quote number, actor identifier, status transition, and metadata. Future proposal, policy, payment, notification, and reporting workers can consume these events without coupling to the quotation request transaction.
+The service creates durable `DomainEvent` rows in the existing transactional outbox for `QuotationCreated`, `QuotationUpdated`, `QuotationFinalized`, `QuotationExpired`, `QuotationConverted`, `QuotationVersionCreated`, `QuotationApprovalRequested`, and `QuotationPremiumCalculated`. Events carry the quotation identifier, quote number, actor identifier, status transition, and metadata. Future proposal, policy, payment, notification, and reporting workers can consume these events without coupling to the quotation request transaction.
 
 ## Administration and operations
 
@@ -171,7 +186,7 @@ python manage.py migrate
 python manage.py seed_ol_quotations
 ```
 
-The command creates module permissions, role groups, the `OL_QUOTATION` numbering configuration, the `SMOKER_STATUS_CHOICES`, `OL_QUOTE_BASIS_CHOICES`, and `OL_PREMIUM_FACTOR_CHOICES` choice lists, and the Personal Details parameters `OL_MAX_QUOTATION_AGE`, `OL_MIN_QUOTATION_AGE`, `OL_AGENT_PARTNER_TYPE_CODE`, and `OL_IDENTITY_FORMAT_RULES` without duplicating existing rows. Production deployments should run the command after migrations and before enabling quotation menus.
+The command creates module permissions, role groups, the `OL_QUOTATION` numbering configuration, the `SMOKER_STATUS_CHOICES`, `OL_QUOTE_BASIS_CHOICES`, and `OL_PREMIUM_FACTOR_CHOICES` choice lists, the Personal Details parameters `OL_MAX_QUOTATION_AGE`, `OL_MIN_QUOTATION_AGE`, `OL_AGENT_PARTNER_TYPE_CODE`, and `OL_IDENTITY_FORMAT_RULES`, and lifecycle defaults `OL_QUOTATION_DEFAULT_EXPIRY_DAYS`, `OL_QUOTATION_APPROVAL_ENABLED`, `OL_QUOTATION_APPROVAL_SUM_ASSURED_LIMIT`, and `OL_QUOTATION_APPROVAL_LOAN_LIKE_LIMIT` without duplicating existing rows. Production deployments should run the command after migrations and before enabling quotation menus. Batch expiry can then be run with `python manage.py expire_ol_quotations --dry-run` before the first persistence run.
 
 ## Future integration points
 

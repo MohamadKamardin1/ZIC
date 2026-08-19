@@ -113,6 +113,56 @@ class QuotationService:
         }
 
     @staticmethod
+    def _normalize_snapshot_value(value):
+        if isinstance(value, (date,)):
+            return value.isoformat()
+        if hasattr(value, "isoformat") and not isinstance(value, str):
+            return value.isoformat()
+        if isinstance(value, Decimal):
+            return str(value)
+        if hasattr(value, "pk"):
+            return str(value.pk)
+        return value
+
+    @staticmethod
+    def version_snapshot(quotation):
+        """Return a complete, JSON-safe immutable snapshot of the quote aggregate."""
+        snapshot = QuotationService.snapshot(quotation)
+        snapshot["financial_summary"] = None
+        try:
+            summary = quotation.financial_summary
+        except OLQuotationFinancialSummary.DoesNotExist:
+            summary = None
+        if summary is not None:
+            snapshot["financial_summary"] = {
+                field.name: QuotationService._normalize_snapshot_value(getattr(summary, field.attname))
+                for field in summary._meta.concrete_fields
+                if field.name != "quotation"
+            }
+
+        children = {}
+        skip_models = {OLQuotationVersion, OLQuotationEvent}
+        for relation in quotation._meta.related_objects:
+            related_model = relation.related_model
+            if related_model in skip_models or relation.field.name != "quotation":
+                continue
+            accessor = relation.get_accessor_name()
+            related = getattr(quotation, accessor, None)
+            if related is None:
+                continue
+            rows = related.all() if hasattr(related, "all") else [related]
+            payload = []
+            for row in rows:
+                payload.append({
+                    field.name: QuotationService._normalize_snapshot_value(getattr(row, field.attname))
+                    for field in row._meta.concrete_fields
+                    if field.name != "quotation"
+                })
+            children[related_model._meta.label_lower] = payload
+        snapshot["children"] = children
+        return json.loads(json.dumps(snapshot, default=str))
+
+    @staticmethod
     def _plan_requires_investment_funds(plan_config, quotation=None):
         rules = dict(plan_config.coverage_rules or {})
         for key in ("investment_linked", "investment_linked_plan", "requires_investment_funds"):
@@ -168,6 +218,13 @@ class QuotationService:
             or quotation.address
             or quotation.location
         )
+        financial = False
+        if payment and underwriting:
+            try:
+                state = QuotationService.financial_summary_state(quotation)
+                financial = state["exists"] and not state["recalculation_required"]
+            except Exception:
+                financial = False
         return {
             "1_personal_details": personal_details,
             "2_plan_and_sub_products": selected_plan,
@@ -175,21 +232,26 @@ class QuotationService:
             "4_installments": selected_installments,
             "5_investment_funds": fund_complete,
             "6_riders_and_benefits": riders_or_benefits,
-            "7_financial_details": payment and underwriting,
+            "7_financial_details": financial,
+            "payment_details": payment,
+            "underwriting": underwriting,
         }
 
     @staticmethod
-    def _record_version(quotation, actor=None, reason=""):
-        snapshot = QuotationService.snapshot(quotation)
-        return OLQuotationVersion.objects.create(
+    def _record_version(quotation, actor=None, reason="", snapshot=None, status=None):
+        snapshot = snapshot or QuotationService.version_snapshot(quotation)
+        version, _ = OLQuotationVersion.objects.update_or_create(
             quotation=quotation,
             version_number=quotation.current_version_number,
-            status=quotation.status,
-            snapshot=snapshot,
-            change_reason=reason or "Quotation version captured.",
-            created_by=QuotationService.actor(actor),
-            updated_by=QuotationService.actor(actor),
+            defaults={
+                "status": status or quotation.status,
+                "snapshot": snapshot,
+                "change_reason": reason or "Quotation version captured.",
+                "created_by": QuotationService.actor(actor),
+                "updated_by": QuotationService.actor(actor),
+            },
         )
+        return version
 
     @staticmethod
     def _record_event(
@@ -272,6 +334,11 @@ class QuotationService:
             errors["payment_detail"] = "Payment details must be captured before finalization."
         if errors:
             raise QuotationServiceError({"detail": "Quotation wizard is incomplete.", "errors": errors})
+        financial_state = QuotationService.financial_summary_state(quotation)
+        if not financial_state["exists"] or financial_state["recalculation_required"]:
+            errors["financial_details"] = "Financial details must be calculated for the current quotation inputs."
+        if errors:
+            raise QuotationServiceError({"detail": "Quotation wizard is incomplete.", "errors": errors})
         return True
 
     @staticmethod
@@ -301,6 +368,7 @@ class QuotationService:
         payload.pop("quote_number", None)
         payload["status"] = QuotationStatus.DRAFT
         payload["currency"] = (payload.get("currency") or QuotationService.default_currency()).upper()
+        payload.setdefault("expiry_date", QuotationService.default_expiry_date(payload.get("quote_date")))
         if payload.get("linked_partner") and not payload.get("partner"):
             payload["partner"] = payload["linked_partner"]
         payload["created_by"] = QuotationService.actor(actor)
@@ -2137,6 +2205,9 @@ class QuotationService:
             QuotationStatus.EXPIRED: set(),
         }
         locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
+        current_status = QuotationService.effective_status(locked)
+        if current_status == QuotationStatus.EXPIRED and target_status != QuotationStatus.EXPIRED:
+            raise QuotationServiceError("Expired quotations cannot be transitioned; create a new revision where permitted.")
         if target_status not in allowed.get(locked.status, set()):
             raise QuotationServiceError(
                 {
@@ -2148,44 +2219,46 @@ class QuotationService:
             )
         if target_status == QuotationStatus.FINALIZED:
             QuotationService.validate_wizard(locked)
-            total_sum_assured, total_premium = QuotationService.calculate_totals(locked)
-            locked.total_sum_assured = total_sum_assured
-            locked.total_premium = total_premium
-            locked.calculation_snapshot = {
-                "calculated_at": timezone.now().isoformat(),
-                "currency": locked.currency,
-                "total_sum_assured": str(total_sum_assured),
-                "total_premium": str(total_premium),
-                "plan_configuration_ids": [str(pk) for pk in locked.plan_configurations.filter(is_selected=True).values_list("pk", flat=True)],
-                "rider_selection_ids": [str(pk) for pk in locked.rider_selections.filter(is_selected=True).values_list("pk", flat=True)],
-                "benefit_ids": [str(pk) for pk in locked.benefits.filter(is_selected=True).values_list("pk", flat=True)],
-                "version_number": locked.current_version_number,
-            }
+            financial_state = QuotationService.financial_summary_state(locked)
+            if not financial_state["exists"] or financial_state["recalculation_required"]:
+                raise QuotationServiceError({
+                    "detail": "Quotation financial details must be calculated for the current inputs before finalization.",
+                    "financial_details": "Calculate premium and financial details before finalizing the quotation.",
+                })
+            locked.total_sum_assured = financial_state["summary"].total_sum_assured
+            locked.total_premium = financial_state["summary"].total_premium
+            locked.calculation_snapshot = financial_state["summary"].calculation_snapshot or {}
         if target_status == QuotationStatus.CONVERTED and not locked.partner_verified:
             raise QuotationServiceError("Partner verification is required before conversion.")
         if target_status == QuotationStatus.EXPIRED and locked.expiry_date and locked.expiry_date > date.today():
             raise QuotationServiceError("A quotation cannot be expired before its configured expiry date.")
-        before = QuotationService.snapshot(locked)
+        before = QuotationService.version_snapshot(locked)
         locked.status = target_status
-        locked.wizard_step_completion = QuotationService.wizard_completion(locked)
         locked.current_version_number += 1
         locked.updated_by = QuotationService.actor(actor)
-        locked.save(update_fields=["status", "total_sum_assured", "total_premium", "calculation_snapshot", "wizard_step_completion", "current_version_number", "updated_by", "updated_at"])
-        after = QuotationService.snapshot(locked)
-        QuotationService._record_version(locked, actor=actor, reason=f"Quotation transitioned to {target_status}.")
+        approval_metadata = QuotationService.approval_requirement(locked)
+        locked.approval_required = approval_metadata["required"]
+        locked.wizard_step_completion = QuotationService.wizard_completion(locked)
+        locked.save(update_fields=["status", "total_sum_assured", "total_premium", "calculation_snapshot", "wizard_step_completion", "current_version_number", "approval_required", "updated_by", "updated_at"])
         if target_status == QuotationStatus.FINALIZED:
-            OLQuotationFinancialSummary.objects.update_or_create(
-                quotation=locked,
-                defaults={
-                    "total_sum_assured": locked.total_sum_assured or Decimal("0"),
-                    "total_premium": locked.total_premium or Decimal("0"),
-                    "total_rider_premium": sum((item.premium_amount or Decimal("0") for item in locked.rider_selections.filter(is_selected=True)), Decimal("0")),
-                    "total_benefit_premium": sum((item.premium_amount or Decimal("0") for item in locked.benefits.filter(is_selected=True)), Decimal("0")),
-                    "currency": locked.currency,
-                    "calculation_snapshot": locked.calculation_snapshot or {},
-                    "created_by": QuotationService.actor(actor),
-                    "updated_by": QuotationService.actor(actor),
-                },
+            summary = OLQuotationFinancialSummary.objects.get(quotation=locked)
+            summary.quotation_version_number = locked.current_version_number
+            summary.updated_by = QuotationService.actor(actor)
+            summary.save(update_fields=["quotation_version_number", "updated_by", "updated_at"])
+        after = QuotationService.version_snapshot(locked)
+        QuotationService._record_version(locked, actor=actor, reason=f"Quotation transitioned to {target_status}.", snapshot=after)
+        if target_status == QuotationStatus.FINALIZED and approval_metadata["required"] and not before.get("approval_required"):
+            QuotationService._record_event(
+                locked,
+                "APPROVAL_REQUESTED",
+                actor=actor,
+                from_status=target_status,
+                to_status=target_status,
+                notes="Quotation approval is required by configured thresholds.",
+                metadata=approval_metadata,
+                before_state=before,
+                after_state=after,
+                request=request,
             )
         QuotationService._record_event(
             locked,
@@ -2206,12 +2279,31 @@ class QuotationService:
         locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
         if locked.status != QuotationStatus.FINALIZED:
             raise QuotationServiceError("Only finalized quotations can be revised.")
-        before = QuotationService.snapshot(locked)
+        previous_version_number = locked.current_version_number
+        before = QuotationService.version_snapshot(locked)
+        previous_version = OLQuotationVersion.objects.filter(
+            quotation=locked,
+            version_number=previous_version_number,
+        ).first()
+        if previous_version is None:
+            previous_version = QuotationService._record_version(
+                locked,
+                actor=actor,
+                reason="Finalized quotation snapshot preserved before revision.",
+                snapshot=before,
+                status=QuotationStatus.FINALIZED,
+            )
+        previous_version.status = QuotationStatus.SUPERSEDED
+        previous_version.change_reason = "Superseded by a new editable quotation revision."
+        previous_version.updated_by = QuotationService.actor(actor)
+        previous_version.save(update_fields=["status", "change_reason", "updated_by", "updated_at"])
+
         locked.status = QuotationStatus.DRAFT
         locked.total_sum_assured = None
         locked.total_premium = None
         locked.calculation_snapshot = {}
-        locked.current_version_number += 1
+        locked.approval_required = False
+        locked.current_version_number = previous_version_number + 1
         locked.wizard_step_completion = QuotationService.wizard_completion(locked)
         locked.updated_by = QuotationService.actor(actor)
         locked.save(update_fields=[
@@ -2219,24 +2311,52 @@ class QuotationService:
             "total_sum_assured",
             "total_premium",
             "calculation_snapshot",
-            "current_version_number",
+            "approval_required",
             "wizard_step_completion",
+            "current_version_number",
             "updated_by",
             "updated_at",
         ])
-        OLQuotationFinancialSummary.objects.filter(quotation=locked).delete()
-        after = QuotationService.snapshot(locked)
-        QuotationService._record_version(locked, actor=actor, reason="Quotation returned to draft for revision.")
+        summary = OLQuotationFinancialSummary.objects.filter(quotation=locked).first()
+        if summary is not None:
+            summary.recalculation_required = True
+            summary.quotation_version_number = locked.current_version_number
+            summary.updated_by = QuotationService.actor(actor)
+            summary.save(update_fields=["recalculation_required", "quotation_version_number", "updated_by", "updated_at"])
+        after = QuotationService.version_snapshot(locked)
+        QuotationService._record_version(
+            locked,
+            actor=actor,
+            reason="New editable quotation revision created.",
+            snapshot=after,
+            status=QuotationStatus.DRAFT,
+        )
         QuotationService._record_event(
             locked,
             "REVISED",
             actor=actor,
             from_status=QuotationStatus.FINALIZED,
             to_status=QuotationStatus.DRAFT,
-            notes="Quotation returned to draft for revision.",
+            notes="New editable quotation revision created; prior finalized version superseded.",
+            metadata={
+                "previous_version_number": previous_version_number,
+                "new_version_number": locked.current_version_number,
+                "superseded_version_number": previous_version_number,
+            },
             before_state=before,
             after_state=after,
             request=request,
+        )
+        DomainEvent.objects.create(
+            event_type="QuotationVersionCreated",
+            aggregate_type="OLQuotation",
+            aggregate_id=str(locked.pk),
+            payload={
+                "quotation_id": str(locked.pk),
+                "quote_number": locked.quote_number,
+                "previous_version_number": previous_version_number,
+                "new_version_number": locked.current_version_number,
+            },
         )
         return locked
 
@@ -2282,12 +2402,114 @@ class QuotationService:
         return locked
 
     @staticmethod
-    def ensure_expired(quotation):
-        return bool(
+    def default_expiry_days():
+        return max(0, ConfigurationService.get_int_parameter("OL_QUOTATION_DEFAULT_EXPIRY_DAYS", 30))
+
+    @staticmethod
+    def default_expiry_date(quote_date=None):
+        base_date = quote_date or timezone.localdate()
+        return base_date + timedelta(days=QuotationService.default_expiry_days())
+
+    @staticmethod
+    def effective_status(quotation, as_of=None):
+        as_of = as_of or timezone.localdate()
+        if (
             quotation.status in {QuotationStatus.DRAFT, QuotationStatus.FINALIZED}
             and quotation.expiry_date
-            and quotation.expiry_date < date.today()
+            and quotation.expiry_date < as_of
+        ):
+            return QuotationStatus.EXPIRED
+        return quotation.status
+
+    @staticmethod
+    def approval_requirement(quotation):
+        """Evaluate the configured approval hook without creating approval workflow records."""
+        approval_enabled = ConfigurationService.get_bool_parameter("OL_QUOTATION_APPROVAL_ENABLED", False)
+        sum_limit_raw = ConfigurationService.get_str_parameter("OL_QUOTATION_APPROVAL_SUM_ASSURED_LIMIT", "")
+        loan_limit_raw = ConfigurationService.get_str_parameter("OL_QUOTATION_APPROVAL_LOAN_LIKE_LIMIT", "")
+        try:
+            sum_limit = Decimal(sum_limit_raw) if sum_limit_raw else None
+        except Exception:
+            sum_limit = None
+        try:
+            loan_limit = Decimal(loan_limit_raw) if loan_limit_raw else None
+        except Exception:
+            loan_limit = None
+        total_sum_assured = quotation.total_sum_assured or sum(
+            (item.base_sum_assured or Decimal("0") for item in quotation.plan_configurations.filter(is_selected=True)),
+            Decimal("0"),
         )
+        metadata = quotation.metadata or {}
+        loan_like_amount = Decimal("0")
+        for key in ("loan_amount", "loan_like_amount", "mortgage_amount"):
+            raw_value = metadata.get(key)
+            if raw_value not in (None, ""):
+                try:
+                    loan_like_amount = max(loan_like_amount, Decimal(str(raw_value)))
+                except Exception:
+                    continue
+        required = bool(
+            approval_enabled
+            and ((sum_limit is not None and total_sum_assured > sum_limit)
+                 or (loan_limit is not None and loan_like_amount > loan_limit))
+        )
+        return {
+            "required": required,
+            "approval_enabled": approval_enabled,
+            "total_sum_assured": str(total_sum_assured),
+            "sum_assured_limit": str(sum_limit) if sum_limit is not None else None,
+            "loan_like_amount": str(loan_like_amount),
+            "loan_like_limit": str(loan_limit) if loan_limit is not None else None,
+            "reasons": [
+                reason for reason, condition in (
+                    ("SUM_ASSURED_THRESHOLD", sum_limit is not None and total_sum_assured > sum_limit),
+                    ("LOAN_LIKE_AMOUNT_THRESHOLD", loan_limit is not None and loan_like_amount > loan_limit),
+                ) if condition
+            ],
+        }
+
+    @staticmethod
+    def ensure_expired(quotation, as_of=None):
+        return QuotationService.effective_status(quotation, as_of=as_of) == QuotationStatus.EXPIRED
+
+    @staticmethod
+    def expirable_queryset(*, as_of=None, for_update=False):
+        as_of = as_of or timezone.localdate()
+        queryset = OLQuotation.objects.filter(
+            status__in=[QuotationStatus.DRAFT, QuotationStatus.FINALIZED],
+            expiry_date__lt=as_of,
+        )
+        return queryset.select_for_update() if for_update else queryset
+
+    @staticmethod
+    @transaction.atomic
+    def expire_batch(*, actor=None, as_of=None, request=None):
+        as_of = as_of or timezone.localdate()
+        queryset = QuotationService.expirable_queryset(as_of=as_of, for_update=True)
+        expired = []
+        for quotation in queryset:
+            before = QuotationService.version_snapshot(quotation)
+            quotation.status = QuotationStatus.EXPIRED
+            quotation.updated_by = QuotationService.actor(actor)
+            quotation.current_version_number += 1
+            quotation.wizard_step_completion = QuotationService.wizard_completion(quotation)
+            quotation.save(update_fields=["status", "updated_by", "current_version_number", "wizard_step_completion", "updated_at"])
+            after = QuotationService.version_snapshot(quotation)
+            QuotationService._record_version(quotation, actor=actor, reason="Quotation expired by batch expiry process.", snapshot=after)
+            QuotationService._record_event(
+                quotation,
+                "EXPIRED",
+                actor=actor,
+                from_status=before["status"],
+                to_status=QuotationStatus.EXPIRED,
+                notes="Quotation expired by batch expiry process.",
+                metadata={"as_of": as_of.isoformat()},
+                before_state=before,
+                after_state=after,
+                request=request,
+            )
+            expired.append(quotation)
+        return expired
 
     @staticmethod
     def _effective_queryset(queryset, quote_date):
@@ -2739,6 +2961,7 @@ class QuotationService:
         fingerprint = QuotationService._compute_input_fingerprint(locked)
         calculation_version = int(locked.current_version_number or 1) + 1
         calculation_snapshot = json.loads(json.dumps({
+            "currency": locked.currency,
             "plan_breakdowns": plan_breakdowns,
             "rider_breakdowns": rider_breakdown,
             "tax_breakdown": tax_breakdown,

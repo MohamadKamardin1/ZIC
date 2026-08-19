@@ -36,6 +36,8 @@ from apps.ol_quotations.models import (
 from apps.partner_onboarding.models import Branch, Location
 from apps.partners.models import Partner, PartnerKYCProfile, PartnerType, PartnerTypeAssignment
 from apps.users.models import User, UserGroup
+from apps.system_parameters.models import SystemParameter
+from apps.system_parameters.services.config_service import ConfigurationService
 from apps.ordinary_life.models import OLPlan, OLProduct as LegacyOLProduct, OLProductVersion
 
 
@@ -330,7 +332,16 @@ class OLQuotationAPITests(TestCase):
 
     def test_finalize_computes_totals_snapshot_and_status(self):
         draft = self.create_draft()
+        personal = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/personal-details/",
+            self.personal_details_payload(),
+            format="json",
+        )
+        self.assertEqual(personal.status_code, 200, personal.data)
         self.populate_wizard(draft["id"])
+        self.create_financial_rate()
+        calculation = self.calculate_financial_details(draft)
+        self.assertEqual(calculation.status_code, 200, calculation.data)
         response = self.client.post(
             f"/api/v1/ol-quotations/quotations/{draft['id']}/finalize/",
             {},
@@ -340,7 +351,7 @@ class OLQuotationAPITests(TestCase):
         quotation = OLQuotation.objects.get(pk=draft["id"])
         self.assertEqual(quotation.status, QuotationStatus.FINALIZED)
         self.assertEqual(quotation.total_sum_assured, Decimal("250000.00"))
-        self.assertEqual(quotation.total_premium, Decimal("12500.00"))
+        self.assertEqual(quotation.total_premium, Decimal("2500.00"))
         self.assertEqual(quotation.calculation_snapshot["currency"], "TZS")
         self.assertTrue(OLQuotationEvent.objects.filter(quotation=quotation, event_type="FINALIZED").exists())
         self.assertTrue(DomainEvent.objects.filter(event_type="QuotationFinalized", aggregate_id=str(quotation.pk)).exists())
@@ -503,7 +514,15 @@ class OLQuotationAPITests(TestCase):
 
     def test_work_queue_action_visibility_changes_by_status_and_permissions(self):
         draft = self.create_draft()
+        personal = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/personal-details/",
+            self.personal_details_payload(identity_number="ID-OLQ-VISIBILITY"),
+            format="json",
+        )
+        self.assertEqual(personal.status_code, 200, personal.data)
         self.populate_wizard(draft["id"])
+        self.create_financial_rate()
+        self.calculate_financial_details(draft)
         finalized = self.client.post(
             f"/api/v1/ol-quotations/quotations/{draft['id']}/finalize/", {}, format="json"
         )
@@ -532,7 +551,15 @@ class OLQuotationAPITests(TestCase):
 
     def test_work_queue_actions_are_enforced_and_audited(self):
         draft = self.create_draft()
+        personal = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/personal-details/",
+            self.personal_details_payload(identity_number="ID-OLQ-ACTIONS"),
+            format="json",
+        )
+        self.assertEqual(personal.status_code, 200, personal.data)
         self.populate_wizard(draft["id"])
+        self.create_financial_rate()
+        self.calculate_financial_details(draft)
         response = self.client.get(f"/api/v1/ol-quotations/quotations/{draft['id']}/print/")
         self.assertEqual(response.status_code, 400, response.data)
 
@@ -556,7 +583,15 @@ class OLQuotationAPITests(TestCase):
     def test_work_queue_summary_returns_kpi_counts(self):
         draft = self.create_draft()
         finalized_draft = self.create_draft()
+        personal = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{finalized_draft['id']}/personal-details/",
+            self.personal_details_payload(identity_number="ID-OLQ-SUMMARY"),
+            format="json",
+        )
+        self.assertEqual(personal.status_code, 200, personal.data)
         self.populate_wizard(finalized_draft["id"])
+        self.create_financial_rate()
+        self.calculate_financial_details(finalized_draft)
         finalized = self.client.post(
             f"/api/v1/ol-quotations/quotations/{finalized_draft['id']}/finalize/", {}, format="json"
         )
@@ -2010,6 +2045,146 @@ class OLQuotationAPITests(TestCase):
             DomainEvent.objects.filter(
                 event_type="QuotationPremiumCalculated",
                 aggregate_id=draft["id"],
+            ).exists()
+        )
+
+    def _prepare_finalizable_lifecycle_quotation(self, identity_number):
+        draft = self.create_draft()
+        personal = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/personal-details/",
+            self.personal_details_payload(identity_number=identity_number),
+            format="json",
+        )
+        self.assertEqual(personal.status_code, 200, personal.data)
+        self.populate_wizard(draft["id"])
+        self.create_financial_rate()
+        calculation = self.calculate_financial_details(draft)
+        self.assertEqual(calculation.status_code, 200, calculation.data)
+        return draft
+
+    def test_finalize_requires_current_financial_details(self):
+        draft = self.create_draft()
+        personal = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/personal-details/",
+            self.personal_details_payload(identity_number="ID-OLQ-NO-FINANCIAL"),
+            format="json",
+        )
+        self.assertEqual(personal.status_code, 200, personal.data)
+        self.populate_wizard(draft["id"])
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/finalize/",
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("financial", str(response.data).lower())
+        quotation = OLQuotation.objects.get(pk=draft["id"])
+        self.assertEqual(quotation.status, QuotationStatus.DRAFT)
+
+    def test_revise_preserves_finalized_snapshot_and_creates_editable_version(self):
+        draft = self._prepare_finalizable_lifecycle_quotation("ID-OLQ-BR02")
+        finalized = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/finalize/",
+            {},
+            format="json",
+        )
+        self.assertEqual(finalized.status_code, 200, finalized.data)
+        finalized_quotation = OLQuotation.objects.get(pk=draft["id"])
+        old_total_premium = str(finalized_quotation.total_premium)
+        old_version_number = finalized_quotation.current_version_number
+
+        revised = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/revise/",
+            {},
+            format="json",
+        )
+        self.assertEqual(revised.status_code, 200, revised.data)
+        revised_quotation = OLQuotation.objects.get(pk=draft["id"])
+        self.assertEqual(revised_quotation.status, QuotationStatus.DRAFT)
+        self.assertIsNone(revised_quotation.total_premium)
+        self.assertGreater(revised_quotation.current_version_number, old_version_number)
+
+        versions_response = self.client.get(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/versions/"
+        )
+        self.assertEqual(versions_response.status_code, 200, versions_response.data)
+        versions = versions_response.data["data"]["versions"]
+        superseded = next(item for item in versions if item["status"] == "SUPERSEDED")
+        editable = next(item for item in versions if item["status"] == QuotationStatus.DRAFT)
+        self.assertEqual(editable["version_number"], revised_quotation.current_version_number)
+
+        as_of = self.client.get(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/as-of-version/{superseded['version_number']}/"
+        )
+        self.assertEqual(as_of.status_code, 200, as_of.data)
+        self.assertEqual(as_of.data["data"]["status"], "SUPERSEDED")
+        self.assertEqual(
+            as_of.data["data"]["snapshot"]["total_premium"],
+            old_total_premium,
+        )
+        self.assertTrue(
+            DomainEvent.objects.filter(
+                event_type="QuotationVersionCreated",
+                aggregate_id=str(draft["id"]),
+            ).exists()
+        )
+
+    def test_expiry_is_computed_on_read_and_batch_command_persists_status(self):
+        draft = self.create_draft()
+        quotation = OLQuotation.objects.get(pk=draft["id"])
+        quotation.expiry_date = date.today() - timedelta(days=1)
+        quotation.save(update_fields=["expiry_date", "updated_at"])
+
+        detail = self.client.get(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/"
+        )
+        self.assertEqual(detail.status_code, 200, detail.data)
+        self.assertEqual(detail.data["data"]["status"], QuotationStatus.EXPIRED)
+        quotation.refresh_from_db()
+        self.assertEqual(quotation.status, QuotationStatus.DRAFT)
+
+        call_command(
+            "expire_ol_quotations",
+            "--as-of",
+            date.today().isoformat(),
+            verbosity=0,
+        )
+        quotation.refresh_from_db()
+        self.assertEqual(quotation.status, QuotationStatus.EXPIRED)
+        self.assertTrue(
+            DomainEvent.objects.filter(
+                event_type="QuotationExpired",
+                aggregate_id=str(quotation.pk),
+            ).exists()
+        )
+
+    def test_finalize_sets_approval_required_when_configured_threshold_is_exceeded(self):
+        enabled = SystemParameter.objects.get(code="OL_QUOTATION_APPROVAL_ENABLED")
+        enabled.value_type = "BOOLEAN"
+        enabled.boolean_value = True
+        enabled.is_active = True
+        enabled.save(update_fields=["value_type", "boolean_value", "is_active", "updated_at"])
+        limit = SystemParameter.objects.get(code="OL_QUOTATION_APPROVAL_SUM_ASSURED_LIMIT")
+        limit.value_type = "FLOAT"
+        limit.float_value = 1.0
+        limit.is_active = True
+        limit.save(update_fields=["value_type", "float_value", "is_active", "updated_at"])
+        ConfigurationService.invalidate_parameter("OL_QUOTATION_APPROVAL_ENABLED")
+        ConfigurationService.invalidate_parameter("OL_QUOTATION_APPROVAL_SUM_ASSURED_LIMIT")
+
+        draft = self._prepare_finalizable_lifecycle_quotation("ID-OLQ-APPROVAL")
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/finalize/",
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        quotation = OLQuotation.objects.get(pk=draft["id"])
+        self.assertTrue(quotation.approval_required)
+        self.assertTrue(
+            DomainEvent.objects.filter(
+                event_type="QuotationApprovalRequested",
+                aggregate_id=str(quotation.pk),
             ).exists()
         )
 

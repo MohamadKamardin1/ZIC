@@ -62,6 +62,7 @@ from .serializers import (
     OLQuotationSerializer,
     OLQuotationUnderwritingSerializer,
     OLQuotationVersionSerializer,
+    OLQuotationVersionListSerializer,
     OLQuotationBenefitSerializer,
     OLQuotationDocumentSerializer,
     OLQuotationFinancialSummarySerializer,
@@ -297,8 +298,8 @@ class OLQuotationViewSet(QuotationScopedViewSet):
     def summary(self, request, *args, **kwargs):
         queryset = self._scope_queryset(self.queryset.all())
         counts = {status_code: 0 for status_code, _label in QuotationStatus.choices}
-        for row in queryset.values("status").annotate(total=Count("pk")):
-            counts[row["status"]] = row["total"]
+        for quotation in queryset:
+            counts[QuotationService.effective_status(quotation)] += 1
         return _response(
             {
                 "total": sum(counts.values()),
@@ -761,8 +762,11 @@ class OLQuotationViewSet(QuotationScopedViewSet):
 
     @action(detail=True, methods=["post"], url_path="revise")
     def revise(self, request, pk=None):
+        quotation = self.get_object()
+        if QuotationService.effective_status(quotation) != QuotationStatus.FINALIZED:
+            raise DRFValidationError({"status": "Only non-expired finalized quotations can be revised."})
         quotation = QuotationService.revise(
-            quotation=self.get_object(),
+            quotation=quotation,
             actor=request.user,
             request=request,
         )
@@ -771,8 +775,8 @@ class OLQuotationViewSet(QuotationScopedViewSet):
     @action(detail=True, methods=["get"], url_path="print")
     def print_quotation(self, request, pk=None):
         quotation = self.get_object()
-        if quotation.status not in {QuotationStatus.FINALIZED, QuotationStatus.CONVERTED}:
-            raise DRFValidationError({"status": "Only finalized or converted quotations can be printed."})
+        if QuotationService.effective_status(quotation) not in {QuotationStatus.FINALIZED, QuotationStatus.CONVERTED}:
+            raise DRFValidationError({"status": "Only non-expired finalized or converted quotations can be printed."})
         QuotationService.record_print(quotation=quotation, actor=request.user, request=request)
         return _response(
             {
@@ -788,16 +792,53 @@ class OLQuotationViewSet(QuotationScopedViewSet):
     @action(detail=True, methods=["post"], url_path="convert")
     def convert(self, request, pk=None):
         quotation = self.get_object()
+        if QuotationService.effective_status(quotation) != QuotationStatus.FINALIZED:
+            raise DRFValidationError({"status": "Only non-expired finalized quotations can be converted."})
         if not quotation.partner_verified:
             raise DRFValidationError({"partner_verified": "Partner verification is required before conversion."})
         return self._lifecycle_response(request, quotation, QuotationStatus.CONVERTED, "Quotation converted.")
 
     def destroy(self, request, *args, **kwargs):
         quotation = self.get_object()
-        if quotation.status != QuotationStatus.DRAFT:
-            raise DRFValidationError({"status": "Only draft quotations can be deleted."})
+        if QuotationService.effective_status(quotation) != QuotationStatus.DRAFT:
+            raise DRFValidationError({"status": "Only non-expired draft quotations can be deleted."})
         QuotationService.delete_draft(quotation=quotation, actor=request.user, request=request)
         return _response({"id": str(quotation.pk), "deleted": True}, "Quotation draft deleted.")
+
+    @action(detail=True, methods=["get"], url_path="versions")
+    def versions(self, request, pk=None):
+        quotation = self.get_object()
+        queryset = quotation.versions.order_by("-version_number")
+        serializer = OLQuotationVersionListSerializer(queryset, many=True)
+        return _response(
+            {
+                "quotation_id": str(quotation.pk),
+                "current_version_number": quotation.current_version_number,
+                "versions": serializer.data,
+            },
+            "Quotation versions retrieved.",
+        )
+
+    @action(detail=True, methods=["get"], url_path=r"as-of-version/(?P<version_number>[0-9]+)")
+    def as_of_version(self, request, version_number=None, pk=None):
+        quotation = self.get_object()
+        try:
+            version = quotation.versions.get(version_number=int(version_number))
+        except (ValueError, OLQuotationVersion.DoesNotExist):
+            raise DRFValidationError({"version_number": "Quotation version was not found."})
+        return _response(
+            {
+                "quotation_id": str(quotation.pk),
+                "quote_number": quotation.quote_number,
+                "version_number": version.version_number,
+                "status": version.status,
+                "created_by": str(version.created_by_id) if version.created_by_id else None,
+                "created_at": version.created_at,
+                "change_reason": version.change_reason,
+                "snapshot": version.snapshot,
+            },
+            "Quotation version snapshot retrieved.",
+        )
 
     @action(detail=True, methods=["get"], url_path="wizard-summary")
     def wizard_summary(self, request, pk=None):

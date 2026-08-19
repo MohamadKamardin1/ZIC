@@ -13,6 +13,7 @@ class QuotationStatus(models.TextChoices):
     FINALIZED = "FINALIZED", "Finalized"
     CONVERTED = "CONVERTED", "Converted"
     EXPIRED = "EXPIRED", "Expired"
+    SUPERSEDED = "SUPERSEDED", "Superseded"
 
 
 class QuotationBaseModel(models.Model):
