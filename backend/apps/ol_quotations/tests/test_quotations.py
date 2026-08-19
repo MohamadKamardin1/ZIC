@@ -870,6 +870,25 @@ class OLQuotationAPITests(TestCase):
         self.assertTrue(options["plan_features"]["joint_life"])
         self.assertEqual(options["selected_plan_id"], str(self.plan.pk))
 
+    def test_investment_linked_plan_search_exposes_parameter_driven_flag(self):
+        self.product.investment_linked = True
+        self.product.save(update_fields=["investment_linked", "updated_at"])
+        self.product_version.servicing_rules = {
+            "investment_linked": True,
+            "requires_investment_funds": True,
+        }
+        self.product_version.save(update_fields=["servicing_rules", "updated_at"])
+
+        self.client.force_authenticate(self.admin)
+        response = self.client.get("/api/v1/ol/plans/search/?limit=200")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        card = next(
+            item for item in response.data["data"]["plans"]
+            if item["plan_id"] == str(self.plan.pk)
+        )
+        self.assertTrue(card["investment_linked"])
+
     def test_plan_selection_rejects_term_outside_product_setup(self):
         draft = self.create_draft()
         payload = self.plan_selection_payload(

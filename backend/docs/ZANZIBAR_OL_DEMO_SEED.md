@@ -20,8 +20,11 @@ The command first runs the complete OL parameter release seed and the Ordinary L
 | Riders | Product-scoped accidental-death and premium-waiver riders |
 | Investment funds | Money market, balanced, and equity growth TZS funds |
 | OL parameters | Default setup, policy setup, product setup, rating, riders, agent, loans, medical underwriting, claims, permissions, and registry tables |
+| Calculation and servicing | Premium, rider, tax, and projection computation approaches; investment-linked servicing flags; active effective-dated rules |
+| Claims and commission | Term and investment-linked maturity claim setups; Zanzibar agent commission override |
+| Distribution | Active `AGENT` partner type and demo agent Asha Salim (`ZIC-AGENT-0001`) |
 
-The seed uses Tanzanian Shillings (`TZS`), Tanzania-specific descriptions and underwriting metadata, active effective-dated rows, standard payment frequencies, and realistic age, term, sum-assured, rider, and fund-allocation constraints.
+The seed uses Tanzanian Shillings (`TZS`), Tanzania-specific descriptions and underwriting metadata, active effective-dated rows, standard payment frequencies, and realistic age, term, sum-assured, rider, and fund-allocation constraints. The parameter-side `OLProduct.investment_linked` flag and the operational product-version servicing rules are both populated for `OL_INVESTMENT_LINKED`, so the funds step is applicable only to the two Jenga Kesho plans.
 
 ## Verify
 
@@ -31,7 +34,7 @@ pytest -q apps/ol_parameters/tests/test_zanzibar_seed.py
 pytest -q apps/ol_quotations/tests/test_quotations.py -k 'plan_search or investment_fund or rider_option'
 ```
 
-The regression test runs the command twice and asserts that the seeded product, version, plan, rider, and fund counts remain stable. The quotation option tests verify that the data is usable by plan search, investment-fund options, and rider-option flows.
+The regression test runs the command twice and asserts that the seeded product, version, plan, rider, and fund counts remain stable. The quotation option tests verify that the data is usable by plan search, investment-fund options, and rider-option flows. The plan-card contract exposes `investmentLinked: true` for the linked product, while non-linked plans return `false`. API responses are camelCase; for example, use `identityTypes`, `smokerStatuses`, `paymentFrequencies`, `quoteBases`, `premiumFactors`, `planFeatures`, and `planRows` in frontend diagnostics.
 
 ## Frontend smoke test
 

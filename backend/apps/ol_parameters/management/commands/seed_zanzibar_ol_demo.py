@@ -4,11 +4,20 @@ from decimal import Decimal
 from django.core.management import call_command
 from django.core.management.base import BaseCommand
 from django.db import transaction
+from django.utils import timezone
 
 from apps.ol_parameters.models import (
+    OLCommissionRateType,
+    OLComputationApproach as ParameterComputationApproach,
     OLInvestmentFund,
     OLInvestmentFundRiskProfile,
     OLInvestmentFundType,
+    OLMaturityClaimSetup,
+    OLOverrideCommissionSetup,
+    OLPremiumRateRow,
+    OLPremiumRateTable,
+    OLRiderRateRow,
+    OLRiderRateTable,
     OLProduct as ParameterProduct,
     OLPlanType,
     OLRiderSetup,
@@ -20,11 +29,13 @@ from apps.ordinary_life.models import (
     OLProductVersion,
     OLRateBand,
 )
+from apps.partners.models import Partner, PartnerType, PartnerTypeAssignment
 
 
 SEED_COMMANDS = (
     "seed_ol_parameters_release",
     "seed_ordinary_life_reference_data",
+    "seed_ol_quotations",
 )
 EFFECTIVE_FROM = date(2026, 1, 1)
 
@@ -35,11 +46,116 @@ class Command(BaseCommand):
         "for parameter dropdowns and quotation-wizard testing without flushing data."
     )
 
+    def _seed_demo_agent(self):
+        agent_type, _ = PartnerType.objects.update_or_create(
+            code="AGENT",
+            defaults={
+                "name": "Insurance Agent",
+                "description": "Active agent type used by Zanzibar Insurance OL quotation demos.",
+                "is_active": True,
+            },
+        )
+        agent, _ = Partner.objects.update_or_create(
+            partner_number="ZIC-AGENT-0001",
+            defaults={
+                "partner_type": "AGENT",
+                "partner_category": "INDIVIDUAL",
+                "party_type": "INDIVIDUAL",
+                "legal_name": "Asha Salim Insurance Agency",
+                "status": "ACTIVE",
+                "is_active": True,
+                "identification_type": "NATIONAL_ID",
+                "identification_number": "19900101-00001-00001-01",
+                "national_id": "19900101-00001-00001-01",
+                "title": "MS",
+                "first_name": "Asha",
+                "surname": "Salim",
+                "gender": "FEMALE",
+                "date_of_birth": date(1990, 1, 1),
+                "nationality": "Tanzanian",
+                "email": "asha.salim.agent@zic.co.tz",
+                "phone": "+255242000001",
+                "telephone_number": "+255242000001",
+                "mobile_number": "+255712000001",
+                "physical_address": "Malindi, Zanzibar, Tanzania",
+                "postal_address": "P.O. Box 1234, Zanzibar, Tanzania",
+                "political_risk": "LOW",
+                "aml_risk": "LOW",
+                "activated_at": timezone.now(),
+            },
+        )
+        PartnerTypeAssignment.objects.update_or_create(
+            partner=agent,
+            partner_type=agent_type,
+            defaults={
+                "status": "ACTIVE",
+                "effective_date": EFFECTIVE_FROM,
+                "share_data_externally": False,
+            },
+        )
+        return agent
+
     @transaction.atomic
     def handle(self, *args, **options):
         for command_name in SEED_COMMANDS:
             self.stdout.write(f"Running {command_name}...")
             call_command(command_name, verbosity=0)
+
+        agent = self._seed_demo_agent()
+
+        for code, name, area, basis, formula, sequence, configuration in [
+            (
+                "ZIC_PREMIUM_CALCULATION",
+                "ZIC Premium Calculation",
+                "PREMIUM",
+                "RATE_PER_SUM_ASSURED",
+                "OL_BASE_PREMIUM_V1",
+                1,
+                {"rounding": "HALF_UP", "decimal_places": 2, "currency": "TZS"},
+            ),
+            (
+                "ZIC_RIDER_CALCULATION",
+                "ZIC Rider Calculation",
+                "RIDER",
+                "RATE_PER_SUM_ASSURED",
+                "OL_RIDER_PREMIUM_V1",
+                2,
+                {"rounding": "HALF_UP", "decimal_places": 2, "currency": "TZS"},
+            ),
+            (
+                "ZIC_TAX_CALCULATION",
+                "ZIC Tax Calculation",
+                "TAX",
+                "SEQUENTIAL",
+                "OL_PLAN_TAX_V1",
+                3,
+                {"sequence": "configured", "rounding": "HALF_UP", "decimal_places": 2},
+            ),
+            (
+                "ZIC_PROJECTION_CALCULATION",
+                "ZIC Projection Calculation",
+                "PROJECTION",
+                "POLICY_YEAR",
+                "OL_VALUE_PROJECTION_V1",
+                4,
+                {"bonus_basis": "PER_MILLE", "currency": "TZS"},
+            ),
+        ]:
+            ParameterComputationApproach.objects.update_or_create(
+                code=code,
+                defaults={
+                    "name": name,
+                    "description": f"Zanzibar Insurance {name.lower()} configuration.",
+                    "calculation_area": area,
+                    "calculation_basis": basis,
+                    "formula_key": formula,
+                    "sequence": sequence,
+                    "configuration": configuration,
+                    "effective_from": EFFECTIVE_FROM,
+                    "effective_to": None,
+                    "is_active": True,
+                },
+            )
 
         computation, _ = OLComputationApproach.objects.update_or_create(
             code="LEVEL_PREMIUM",
@@ -153,7 +269,20 @@ class Command(BaseCommand):
                         "automatic_acceptance": False,
                         "resident_country": "TANZANIA",
                     },
-                    "servicing_rules": {"grace_period_days": 30, "reinstatement_window_months": 12},
+                    "servicing_rules": {
+                        "grace_period_days": 30,
+                        "reinstatement_window_months": 12,
+                        "investment_linked": investment_linked,
+                        "requires_investment_funds": investment_linked,
+                        "allow_riders": True,
+                        "allow_loans": True,
+                        "allow_withdrawals": True,
+                        "allow_surrender": True,
+                        "allow_paidup": True,
+                        "allow_bonus": allow_bonus,
+                        "personal_accident": True,
+                        "premium_waiver": True,
+                    },
                     "snapshot": {"seed_key": f"ZIC_{code}_V1", "currency": currency},
                     "is_active": True,
                 },
@@ -203,6 +332,118 @@ class Command(BaseCommand):
                             "is_active": True,
                         },
                     )
+
+                premium_table, _ = OLPremiumRateTable.objects.update_or_create(
+                    table_code=f"ZIC_{plan_code}_PREMIUM",
+                    version="1.0",
+                    defaults={
+                        "name": f"{plan_name} Premium Rates",
+                        "description": f"Zanzibar Insurance starter premium rates for {plan_name}.",
+                        "product": parameter_products[code],
+                        "plan": plan,
+                        "rating_basis": "AGE_TERM",
+                        "currency": "TZS",
+                        "effective_from": EFFECTIVE_FROM,
+                        "effective_to": None,
+                        "is_active": True,
+                    },
+                )
+                for gender in ("MALE", "FEMALE", "OTHER"):
+                    for smoker_status in ("NON_SMOKER", "SMOKER"):
+                        for frequency in ("MONTHLY", "QUARTERLY", "SEMI_ANNUAL", "ANNUAL"):
+                            for min_age, max_age, min_term, max_term, rate in [
+                                (18, 35, 5, 30, Decimal("1.20000000")),
+                                (36, 50, 5, 25, Decimal("2.10000000")),
+                                (51, 65, 5, 15, Decimal("4.50000000")),
+                            ]:
+                                OLPremiumRateRow.objects.update_or_create(
+                                    code=(
+                                        f"ZIC_{plan_code}_{gender}_{smoker_status}_{frequency}_"
+                                        f"{min_age}_{max_age}_{min_term}_{max_term}"
+                                    ),
+                                    defaults={
+                                        "table": premium_table,
+                                        "name": f"{plan_name} {gender} {smoker_status} {frequency} {min_age}-{max_age}",
+                                        "gender": gender,
+                                        "smoker_status": smoker_status,
+                                        "age_from": min_age,
+                                        "age_to": max_age,
+                                        "term_from": min_term,
+                                        "term_to": max_term,
+                                        "frequency": frequency,
+                                        "sum_assured_band_from": None,
+                                        "sum_assured_band_to": None,
+                                        "rate": rate,
+                                        "rate_unit": "PER_THOUSAND_SUM_ASSURED",
+                                        "effective_from": EFFECTIVE_FROM,
+                                        "effective_to": None,
+                                        "is_active": True,
+                                    },
+                                )
+
+        term_product = operational_products["OL_TERM_LIFE"]
+        term_plan = OLPlan.objects.get(product_version__product=term_product, code="OL_TERM_STANDARD")
+        linked_product = operational_products["OL_INVESTMENT_LINKED"]
+        linked_plan = OLPlan.objects.get(product_version__product=linked_product, code="OL_JENGA_BALANCED")
+
+        OLMaturityClaimSetup.objects.update_or_create(
+            code="ZIC_TERM_MATURITY_CLAIM",
+            defaults={
+                "name": "ZIC Term Maturity Claim Setup",
+                "description": "Automatic maturity workflow for eligible Zanzibar Insurance plans.",
+                "product": term_product,
+                "plan": term_plan,
+                "auto_create_maturity_claim": True,
+                "days_before_maturity_to_initiate": 30,
+                "notification_days": 14,
+                "default_payout_method": "BANK_TRANSFER",
+                "require_documents": True,
+                "require_approval": True,
+                "maturity_claim_status_to_create": "REPORTED",
+                "effective_from": EFFECTIVE_FROM,
+                "effective_to": None,
+                "is_active": True,
+            },
+        )
+        OLMaturityClaimSetup.objects.update_or_create(
+            code="ZIC_LINKED_MATURITY_CLAIM",
+            defaults={
+                "name": "ZIC Investment Maturity Claim Setup",
+                "description": "Maturity workflow for investment-linked Zanzibar Insurance plans.",
+                "product": linked_product,
+                "plan": linked_plan,
+                "auto_create_maturity_claim": True,
+                "days_before_maturity_to_initiate": 45,
+                "notification_days": 21,
+                "default_payout_method": "BANK_TRANSFER",
+                "require_documents": True,
+                "require_approval": False,
+                "maturity_claim_status_to_create": "REPORTED",
+                "effective_from": EFFECTIVE_FROM,
+                "effective_to": None,
+                "is_active": True,
+            },
+        )
+        OLOverrideCommissionSetup.objects.update_or_create(
+            code="ZIC_AGENT_TERM_OVERRIDE",
+            defaults={
+                "name": "ZIC Agent Term Override",
+                "description": "Demo agent commission override for term assurance.",
+                "partner": agent,
+                "intermediary_type": "AGENT",
+                "product": term_product,
+                "plan": term_plan,
+                "channel": "AGENCY",
+                "currency": "TZS",
+                "rate_type": OLCommissionRateType.PERCENTAGE,
+                "rate_value": Decimal("2.50000000"),
+                "priority": 10,
+                "reason": "Zanzibar Insurance OL demo distribution setup.",
+                "effective_from": EFFECTIVE_FROM,
+                "effective_to": None,
+                "is_active": True,
+            },
+        )
 
         # Product-scoped rider records make PA and premium-waiver selections visible.
         rider_rows = [
@@ -261,6 +502,61 @@ class Command(BaseCommand):
                     },
                 )
 
+        rider_rate_specs = {
+            "ZIC_ACCIDENTAL_DEATH_RIDER": Decimal("0.50000000"),
+            "ZIC_PREMIUM_WAIVER_RIDER": Decimal("0.30000000"),
+        }
+        for rider_code, rider_rate in rider_rate_specs.items():
+            for product_code, parameter_product in parameter_products.items():
+                rider = OLRiderSetup.objects.get(code=f"{rider_code}_{product_code}")
+                rider_table, _ = OLRiderRateTable.objects.update_or_create(
+                    table_code=f"ZIC_{rider_code}_{product_code}_RATES",
+                    version="1.0",
+                    defaults={
+                        "name": f"{rider.name} Rates - {product_code}",
+                        "description": f"Zanzibar Insurance starter rates for {rider.name}.",
+                        "rider": rider,
+                        "product": parameter_product,
+                        "plan": None,
+                        "rating_basis": "AGE_TERM",
+                        "effective_from": EFFECTIVE_FROM,
+                        "effective_to": None,
+                        "is_active": True,
+                    },
+                )
+                for gender in ("MALE", "FEMALE", "OTHER"):
+                    for smoker_status in ("NON_SMOKER", "SMOKER"):
+                        for frequency in ("MONTHLY", "QUARTERLY", "SEMI_ANNUAL", "ANNUAL"):
+                            for min_age, max_age, min_term, max_term in [
+                                (18, 35, 5, 30),
+                                (36, 50, 5, 25),
+                                (51, 65, 5, 15),
+                            ]:
+                                OLRiderRateRow.objects.update_or_create(
+                                    code=(
+                                        f"ZIC_{rider_code}_{product_code}_{gender}_{smoker_status}_"
+                                        f"{frequency}_{min_age}_{max_age}_{min_term}_{max_term}"
+                                    ),
+                                    defaults={
+                                        "table": rider_table,
+                                        "name": f"{rider.name} {gender} {smoker_status} {frequency} {min_age}-{max_age}",
+                                        "gender": gender,
+                                        "smoker_status": smoker_status,
+                                        "age_from": min_age,
+                                        "age_to": max_age,
+                                        "term_from": min_term,
+                                        "term_to": max_term,
+                                        "frequency": frequency,
+                                        "sum_assured_band_from": None,
+                                        "sum_assured_band_to": None,
+                                        "rate": rider_rate,
+                                        "rate_unit": "PER_THOUSAND_SUM_ASSURED",
+                                        "effective_from": EFFECTIVE_FROM,
+                                        "effective_to": None,
+                                        "is_active": True,
+                                    },
+                                )
+
         fund_types = {}
         for code, name, risk in [
             ("ZIC_FUND_MONEY_MARKET", "ZIC Money Market Fund", OLInvestmentFundRiskProfile.CONSERVATIVE),
@@ -299,5 +595,5 @@ class Command(BaseCommand):
             )
 
         self.stdout.write(self.style.SUCCESS("Zanzibar Insurance OL demo seed completed successfully."))
-        self.stdout.write("Seeded all OL parameter groups, 3 operational products, 6 plans, rating bands, riders, and 3 investment funds.")
+        self.stdout.write("Seeded all OL parameter groups, four calculation approaches, maturity and commission setups, 3 operational products, 6 plans, rating bands, riders, and 3 investment funds.")
         self.stdout.write("Existing records were updated in place; no database flush or destructive reset was performed.")

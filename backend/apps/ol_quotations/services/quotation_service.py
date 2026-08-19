@@ -511,6 +511,13 @@ class QuotationService:
             ),
             as_of,
         )
+        investment_linked = bool(getattr(parameter_product, "investment_linked", False))
+        if not investment_linked and plan is not None:
+            servicing_rules = dict(getattr(plan.product_version, "servicing_rules", {}) or {})
+            investment_linked = any(
+                bool(servicing_rules.get(key))
+                for key in ("investment_linked", "investment_linked_plan", "requires_investment_funds")
+            )
         if age is not None:
             rider_qs = rider_qs.filter(min_age__lte=age, max_age__gte=age)
         if term is not None:
@@ -534,6 +541,7 @@ class QuotationService:
             "premium_waiver": rider_qs.filter(
                 Q(rider_category="WAIVER") | Q(benefit_type="WAIVER_PREMIUM")
             ).exists(),
+            "investment_linked": investment_linked,
         }
 
     @staticmethod
@@ -591,6 +599,7 @@ class QuotationService:
             "mortgage": flags["mortgage"],
             "personal_accident": flags["personal_accident"],
             "premium_waiver": flags["premium_waiver"],
+            "investment_linked": flags["investment_linked"],
             "minimum_sum_assured": str(plan.minimum_sum_assured) if plan.minimum_sum_assured is not None else None,
             "maximum_sum_assured": str(plan.maximum_sum_assured) if plan.maximum_sum_assured is not None else None,
             "currency": product_version.currency,
@@ -666,6 +675,7 @@ class QuotationService:
             "mortgage": False,
             "personal_accident": False,
             "premium_waiver": False,
+            "investment_linked": False,
         }
         quote_bases = ConfigurationService.get_choice_list("OL_QUOTE_BASIS_CHOICES")
         premium_factors = ConfigurationService.get_choice_list("OL_PREMIUM_FACTOR_CHOICES")
