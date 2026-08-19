@@ -1,0 +1,152 @@
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? import.meta.env.VITE_API_BASE ?? "").replace(/\/$/, "")
+
+export type QueryValue = string | number | boolean | null | undefined
+export type QueryParams = Record<string, QueryValue>
+
+export interface NormalizedApiErrorShape {
+  status: number
+  code: string
+  message: string
+  fieldErrors: Record<string, string[]>
+  correlationId?: string
+  details?: unknown
+}
+
+export class ApiClientError extends Error implements NormalizedApiErrorShape {
+  status: number
+  code: string
+  fieldErrors: Record<string, string[]>
+  correlationId?: string
+  details?: unknown
+
+  constructor(error: NormalizedApiErrorShape) {
+    super(error.message)
+    this.name = "ApiClientError"
+    this.status = error.status
+    this.code = error.code
+    this.fieldErrors = error.fieldErrors
+    this.correlationId = error.correlationId
+    this.details = error.details
+  }
+}
+
+export interface TableQuery {
+  page?: number
+  pageSize?: number
+  search?: string
+  ordering?: string
+  filters?: QueryParams
+}
+
+export function buildQueryString(params: QueryParams = {}): string {
+  const search = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== null && value !== undefined && value !== "") search.set(key, String(value))
+  })
+  const result = search.toString()
+  return result ? `?${result}` : ""
+}
+
+export function buildTableQuery(query: TableQuery = {}): string {
+  return buildQueryString({
+    page: query.page,
+    page_size: query.pageSize,
+    search: query.search,
+    ordering: query.ordering,
+    ...(query.filters ?? {}),
+  })
+}
+
+function createCorrelationId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID()
+  return `zic-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function collectFieldErrors(value: unknown): Record<string, string[]> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {}
+  const errors: Record<string, string[]> = {}
+  Object.entries(value as Record<string, unknown>).forEach(([field, detail]) => {
+    if (Array.isArray(detail)) errors[field] = detail.map(String)
+    else if (typeof detail === "string") errors[field] = [detail]
+    else if (detail && typeof detail === "object") errors[field] = [JSON.stringify(detail)]
+  })
+  return errors
+}
+
+export async function normalizeResponseError(response: Response): Promise<ApiClientError> {
+  const correlationId = response.headers.get("X-Correlation-ID") ?? response.headers.get("X-Request-ID") ?? undefined
+  const body = await response.json().catch(() => null)
+  const envelope = body && typeof body === "object" && "data" in body ? (body as Record<string, unknown>) : null
+  const payload = (envelope?.data ?? body) as unknown
+  const record = payload && typeof payload === "object" ? payload as Record<string, unknown> : {}
+  const fieldErrors = collectFieldErrors(record)
+  const message = typeof record.detail === "string"
+    ? record.detail
+    : typeof record.message === "string"
+      ? record.message
+      : Object.values(fieldErrors)[0]?.[0] ?? `Request failed (${response.status}).`
+  const code = typeof record.code === "string" ? record.code : `HTTP_${response.status}`
+  return new ApiClientError({ status: response.status, code, message, fieldErrors, correlationId, details: body })
+}
+
+export interface ApiRequestOptions extends RequestInit {
+  skipAuth?: boolean
+  correlationId?: string
+}
+
+export async function request<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
+  const headers = new Headers(options.headers)
+  headers.set("Accept", "application/json")
+  if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json")
+  const correlationId = options.correlationId ?? createCorrelationId()
+  headers.set("X-Correlation-ID", correlationId)
+
+  const token = options.skipAuth ? null : sessionStorage.getItem("aims_access_token")
+  if (token) headers.set("Authorization", `Bearer ${token}`)
+
+  const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers })
+  if (!response.ok) throw await normalizeResponseError(response)
+  if (response.status === 204) return undefined as T
+  const payload = await response.json()
+  return (payload && typeof payload === "object" && "data" in payload ? payload.data : payload) as T
+}
+
+export interface AccessPermission {
+  module: string
+  action: string
+}
+
+export interface AccessMetadata {
+  visibleModules: string[]
+  permissions: AccessPermission[]
+  groups: string[]
+  fetchedAt?: string
+}
+
+export async function fetchAccessMetadata(): Promise<AccessMetadata | null> {
+  try {
+    const payload = await request<Partial<AccessMetadata> | { access?: Partial<AccessMetadata> }>("/api/v1/iam/me/access/")
+    const raw = payload && typeof payload === "object" && "access" in payload
+      ? payload.access
+      : payload as Partial<AccessMetadata>
+    if (!raw) return null
+    return {
+      visibleModules: raw.visibleModules ?? [],
+      permissions: raw.permissions ?? [],
+      groups: raw.groups ?? [],
+      fetchedAt: new Date().toISOString(),
+    }
+  } catch (error) {
+    if (error instanceof ApiClientError && error.status === 404) return null
+    throw error
+  }
+}
+
+export async function getExchangeRate(): Promise<{ baseCurrency: string; quoteCurrency: string; rate: string } | null> {
+  try {
+    return await request("/api/v1/dashboard/currencies/current/")
+  } catch (error) {
+    if (error instanceof ApiClientError && [404, 405].includes(error.status)) return null
+    throw error
+  }
+}

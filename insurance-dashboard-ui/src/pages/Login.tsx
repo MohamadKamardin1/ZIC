@@ -1,21 +1,33 @@
 import { useState, type FormEvent, useEffect } from "react"
+import { useForm } from "react-hook-form"
+import { z } from "zod"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { useNavigate } from "react-router-dom"
 import { Eye, EyeOff, Lock, User, ShieldCheck, ArrowLeft, KeyRound } from "lucide-react"
 import { useAuth } from "../lib/auth"
 import { ZicLogo } from "../components/ZicLogo"
 
+const credentialsSchema = z.object({
+  email: z.string().trim().email("Enter a valid email address."),
+  password: z.string().min(1, "Enter your password."),
+})
+type Credentials = z.infer<typeof credentialsSchema>
+
 export default function Login() {
+
   const { signIn, complete2FA, cancel2FA, requires2FA, pendingEmail } = useAuth()
   const navigate = useNavigate()
 
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
   const [show, setShow] = useState(false)
   const [otpCode, setOtpCode] = useState("")
   const [error, setError] = useState("")
-  const [loading, setLoading] = useState(false)
-
+    const [loading, setLoading] = useState(false)
+  const { register, handleSubmit, formState: { errors } } = useForm<Credentials>({
+    resolver: zodResolver(credentialsSchema),
+    defaultValues: { email: "", password: "" },
+  })
   // If already in a 2FA flow and user navigates away/back, reset
+
   useEffect(() => {
     if (!requires2FA) {
       setOtpCode("")
@@ -23,12 +35,11 @@ export default function Login() {
     }
   }, [requires2FA])
 
-  async function onCredentialsSubmit(e: FormEvent) {
-    e.preventDefault()
+  async function onCredentialsSubmit(values: Credentials) {
     setError("")
     setLoading(true)
     try {
-      const needs2FA = await signIn(email, password)
+      const needs2FA = await signIn(values.email, values.password)
       if (!needs2FA) navigate("/", { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to sign in.")
@@ -143,25 +154,24 @@ export default function Login() {
           <h1 className="mt-6 text-2xl font-bold text-foreground">AIMS Life Login</h1>
           <p className="mt-1 text-sm text-muted-foreground">Sign In to your account</p>
 
-          <form onSubmit={onCredentialsSubmit} className="mt-8 w-full max-w-sm">
+          <form onSubmit={handleSubmit(onCredentialsSubmit)} className="mt-8 w-full max-w-sm" noValidate>
             <div className="flex items-center gap-3 rounded-lg border border-input bg-secondary/60 px-3 focus-within:ring-2 focus-within:ring-ring/40">
               <User className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
               <input
                 type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                {...register("email")}
                 placeholder="Email"
                 autoComplete="email"
                 className="w-full bg-transparent py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground"
               />
             </div>
+            {errors.email && <p className="mt-1 text-xs font-medium text-destructive">{errors.email.message}</p>}
 
             <div className="mt-4 flex items-center gap-3 rounded-lg border border-input bg-secondary/60 px-3 focus-within:ring-2 focus-within:ring-ring/40">
               <Lock className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
               <input
                 type={show ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                {...register("password")}
                 placeholder="Password"
                 autoComplete="current-password"
                 className="w-full bg-transparent py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground"
@@ -175,6 +185,7 @@ export default function Login() {
                 {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
+            {errors.password && <p className="mt-1 text-xs font-medium text-destructive">{errors.password.message}</p>}
 
             <p className="mt-3 text-sm text-foreground">
               Forgot Your Password?{" "}

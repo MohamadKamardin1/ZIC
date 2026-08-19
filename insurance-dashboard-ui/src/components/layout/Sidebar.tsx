@@ -39,6 +39,7 @@ import {
 import { ZicLogo } from "../ZicLogo"
 import { useAuth } from "../../lib/auth"
 import { useLanguage } from "../../lib/language"
+import { routeModuleKey, useAccess } from "../../lib/access"
 
 interface SubNavItem {
   label: string
@@ -92,7 +93,7 @@ const NAV: NavItem[] = [
     { label: "Withdrawals", icon: FileText, path: "/ordinary-life/withdrawals" },
     { label: "Claims", icon: FileText, path: "/ordinary-life/claims" },
     { label: "Maturity Installments", icon: FileText, path: "/ordinary-life/maturity-installments" },
-    { label: "Setup", icon: Settings, path: "/ordinary-life/setup" },
+    { label: "Parameters", icon: Settings, path: "/ordinary-life/setup" },
   ] },
   { label: "Group Life", icon: ShieldCheck, expandable: true, children: [
     { label: "Quotations", icon: FileText, path: "/group-life/quotations" },
@@ -156,6 +157,7 @@ const NAV: NavItem[] = [
     ],
   },
   { label: "Approvals", icon: CheckSquare, path: "/approvals" },
+  { label: "Help & Support", icon: HelpCircle, path: "/help" },
 ]
 
 function isActivePath(path: string | undefined, current: string): boolean {
@@ -167,7 +169,14 @@ function isParentOfAny(paths: (string | undefined)[], current: string): boolean 
   return paths.some((p) => p && p !== "/" && current.startsWith(p))
 }
 
-function SubMenuItem({ item, depth }: { item: SubNavItem; depth: number }) {
+function isNavItemVisible(item: SubNavItem | NavItem, canAccess: (moduleKey: string) => boolean): boolean {
+  const key = item.path ? routeModuleKey(item.path) : null
+  if (key && !canAccess(key)) return false
+  if (!item.children?.length) return true
+  return item.children.some((child) => isNavItemVisible(child, canAccess))
+}
+
+function SubMenuItem({ item, depth, canAccess }: { item: SubNavItem; depth: number; canAccess: (moduleKey: string) => boolean }) {
   const location = useLocation()
   const navigate = useNavigate()
   const [open, setOpen] = useState(isParentOfAny((item.children ?? []).map((c) => c.path), location.pathname))
@@ -202,8 +211,8 @@ function SubMenuItem({ item, depth }: { item: SubNavItem; depth: number }) {
       </button>
       {hasChildren && open && (
         <ul className="flex flex-col gap-0.5 pt-0.5">
-          {item.children!.map((child) => (
-            <SubMenuItem key={child.label} item={child} depth={depth + 1} />
+          {item.children!.filter((child) => isNavItemVisible(child, canAccess)).map((child) => (
+            <SubMenuItem key={child.label} item={child} depth={depth + 1} canAccess={canAccess} />
           ))}
         </ul>
       )}
@@ -216,6 +225,7 @@ export function Sidebar({ open }: { open: boolean }) {
   const navigate = useNavigate()
   const { user } = useAuth()
   const { t } = useLanguage()
+  const { canAccess } = useAccess()
   const [expanded, setExpanded] = useState<string[]>(() => {
     const items: string[] = []
     for (const item of NAV) {
@@ -242,13 +252,7 @@ export function Sidebar({ open }: { open: boolean }) {
     return paths
   }
 
-  function filterByPermission(items: SubNavItem[]): SubNavItem[] {
-    return items
-  }
-
-  function filterNavItems(items: NavItem[]): NavItem[] {
-    return items
-  }
+  const visibleNav = NAV.filter((item) => isNavItemVisible(item, canAccess))
 
   return (
     <aside
@@ -260,7 +264,7 @@ export function Sidebar({ open }: { open: boolean }) {
 
       <nav className="flex-1 overflow-y-auto px-3 py-4">
         <ul className="flex flex-col gap-1">
-          {NAV.map((item) => {
+          {visibleNav.map((item) => {
             const active = item.path
               ? location.pathname === item.path || location.pathname.startsWith(item.path + "/")
               : false
@@ -295,8 +299,8 @@ export function Sidebar({ open }: { open: boolean }) {
 
                 {item.children && isExpanded && (
                   <ul className="flex flex-col gap-0.5 pt-0.5">
-                    {item.children.map((child) => (
-                      <SubMenuItem key={child.label} item={child} depth={1} />
+                    {item.children.filter((child) => isNavItemVisible(child, canAccess)).map((child) => (
+                      <SubMenuItem key={child.label} item={child} depth={1} canAccess={canAccess} />
                     ))}
                   </ul>
                 )}

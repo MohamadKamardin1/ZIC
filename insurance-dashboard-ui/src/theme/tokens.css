@@ -29,20 +29,22 @@
   --color-text-on-warning: #ffffff;
 
   /* ---- Brand (dynamic — overridden by ThemeProvider) ---- */
-  --color-brand-primary: #2563eb;
-  --color-brand-secondary: #f1f5f9;
-  --color-brand-accent: #1d4ed8;
+  --color-brand-primary: #5b4bdb;
+  --color-brand-secondary: #f4f2ff;
+  --color-brand-accent: #4338ca;
 
   /* ---- Borders & Rings ---- */
   --color-border-default: #e2e8f0;
   --color-border-input: #e2e8f0;
-  --color-border-focus: #2563eb;
+  --color-border-focus: #5b4bdb;
 
   /* ---- Feedback / Semantic ---- */
   --color-feedback-success: #10b981;
   --color-feedback-warning: #f59e0b;
   --color-feedback-destructive: #ef4444;
   --color-feedback-info: #2563eb;
+  --color-section-from: #4f6fd9;
+  --color-section-to: #314eb7;
 
   --color-bg-success-soft: #d1fae5;
   --color-bg-warning-soft: #fef3c7;
@@ -120,6 +122,8 @@
   --chart-5: var(--color-chart-5);
   --hero-from: var(--color-hero-from);
   --hero-to: var(--color-hero-to);
+  --section-from: var(--color-section-from);
+  --section-to: var(--color-section-to);
 }
 
 /* =============================================
@@ -170,8 +174,10 @@
   --color-chart-4: #f87171;
   --color-chart-5: #a78bfa;
 
-  --color-hero-from: #1e3a5f;
-  --color-hero-to: #0f172a;
+  --color-hero-from: #312e81;
+  --color-hero-to: #17153c;
+  --color-section-from: #334fbd;
+  --color-section-to: #182a75;
 
   --shadow-card-elevated: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
 

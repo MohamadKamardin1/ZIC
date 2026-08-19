@@ -5,6 +5,7 @@ import { Topbar } from "./Topbar"
 import { Footer } from "./Footer"
 import { AIAssistantPanel } from "../ai/AIAssistantPanel"
 import { aiAnalyzePrompt, aiExecutePartnerCreation, aiClarify } from "../../lib/api"
+import { AccessGate } from "../../lib/access"
 
 export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -35,9 +36,11 @@ export default function DashboardLayout() {
           <Topbar onToggleSidebar={() => setSidebarOpen((o) => !o)} />
         </div>
 
-        <main className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-5 md:px-6">
-          <Outlet />
-        </main>
+          <main className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-5 md:px-6">
+            <AccessGate>
+              <Outlet />
+            </AccessGate>
+          </main>
 
         <div className="flex-none">
           <Footer />

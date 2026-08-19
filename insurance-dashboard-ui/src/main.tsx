@@ -6,6 +6,7 @@ import "./index.css"
 import "./lit/index"
 import App from "./App"
 import { AuthProvider } from "./lib/auth"
+import { AccessProvider } from "./lib/access"
 import { AIProvider } from "./components/ai/AIContext"
 import { ThemeProvider } from "./theme/ThemeProvider"
 import { LanguageProvider } from "./lib/language"
@@ -26,9 +27,11 @@ createRoot(document.getElementById("root")!).render(
         <ThemeProvider>
           <LanguageProvider>
             <AuthProvider>
-              <AIProvider>
-                <App />
-              </AIProvider>
+              <AccessProvider>
+                <AIProvider>
+                  <App />
+                </AIProvider>
+              </AccessProvider>
             </AuthProvider>
           </LanguageProvider>
         </ThemeProvider>
