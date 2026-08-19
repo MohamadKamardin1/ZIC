@@ -332,3 +332,175 @@ class OLQuotationAPITests(TestCase):
         self.assertFalse(
             self.viewer.has_module_permission("ol_quotations", "FINALIZE")
         )
+
+    def test_work_queue_list_returns_table_columns_and_action_metadata(self):
+        draft = self.create_draft()
+        response = self.client.get("/api/v1/ol/quotations/quotations/?per_page=10")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["pagination"]["total"], 1)
+        row = response.data["data"][0]
+        self.assertEqual(row["id"], draft["id"])
+        self.assertEqual(
+            {
+                "quote_number",
+                "quote_name",
+                "prospect_name",
+                "plans_summary",
+                "plan_count",
+                "total_premium",
+                "currency",
+                "status",
+                "status_badge",
+                "version",
+                "quote_date",
+                "agent",
+                "created_by",
+                "row_actions",
+            },
+            set(row) - {"id"},
+        )
+        self.assertEqual(row["status_badge"]["code"], QuotationStatus.DRAFT)
+        self.assertTrue(row["row_actions"]["view"]["visible"])
+        self.assertTrue(row["row_actions"]["edit"]["visible"])
+        self.assertTrue(row["row_actions"]["finalize"]["visible"])
+        self.assertFalse(row["row_actions"]["revise"]["visible"])
+        self.assertFalse(row["row_actions"]["print"]["visible"])
+        self.assertFalse(row["row_actions"]["convert_to_proposal"]["visible"])
+        self.assertTrue(row["row_actions"]["delete"]["visible"])
+
+    def test_work_queue_search_and_filters_cover_identity_plan_agent_location_and_date(self):
+        draft = self.create_draft()
+        quotation = OLQuotation.objects.get(pk=draft["id"])
+        quotation.quote_name = "Amina Annual Protection"
+        quotation.identity_number = "NIDA-QUEUE-001"
+        quotation.location = "Zanzibar Urban"
+        quotation.quote_date = date(2026, 1, 15)
+        quotation.agent = self.officer
+        quotation.save(update_fields=["quote_name", "identity_number", "location", "quote_date", "agent", "updated_at"])
+        self.populate_wizard(draft["id"])
+
+        for query in ["Amina Annual", "NIDA-QUEUE-001"]:
+            response = self.client.get(f"/api/v1/ol/quotations/quotations/?search={query}")
+            self.assertEqual(response.status_code, 200, response.data)
+            self.assertEqual(response.data["pagination"]["total"], 1, query)
+
+        for query in [
+            "status=DRAFT",
+            "status=DRAFT,FINALIZED",
+            "plan=TERM-20",
+            "agent=ol-quotation-officer",
+            "location=Urban",
+            "quote_date_from=2026-01-01&quote_date_to=2026-01-31",
+        ]:
+            response = self.client.get(f"/api/v1/ol/quotations/quotations/?{query}")
+            self.assertEqual(response.status_code, 200, response.data)
+            self.assertEqual(response.data["pagination"]["total"], 1, query)
+
+        response = self.client.get("/api/v1/ol/quotations/quotations/?quote_date_from=not-a-date")
+        self.assertEqual(response.status_code, 400, response.data)
+
+    def test_work_queue_action_visibility_changes_by_status_and_permissions(self):
+        draft = self.create_draft()
+        self.populate_wizard(draft["id"])
+        finalized = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/finalize/", {}, format="json"
+        )
+        self.assertEqual(finalized.status_code, 200, finalized.data)
+
+        row = self.client.get("/api/v1/ol-quotations/quotations/").data["data"][0]
+        actions = row["row_actions"]
+        self.assertFalse(actions["edit"]["visible"])
+        self.assertTrue(actions["revise"]["visible"])
+        self.assertTrue(actions["print"]["visible"])
+        self.assertFalse(actions["convert_to_proposal"]["visible"])
+        self.assertFalse(actions["delete"]["visible"])
+
+        quotation = OLQuotation.objects.get(pk=draft["id"])
+        quotation.partner_verified = True
+        quotation.save(update_fields=["partner_verified", "updated_at"])
+        row = self.client.get("/api/v1/ol-quotations/quotations/").data["data"][0]
+        self.assertTrue(row["row_actions"]["convert_to_proposal"]["visible"])
+
+        self.client.force_authenticate(self.viewer)
+        row = self.client.get("/api/v1/ol-quotations/quotations/").data["data"][0]
+        self.assertFalse(row["row_actions"]["edit"]["visible"])
+        self.assertFalse(row["row_actions"]["finalize"]["visible"])
+        self.assertFalse(row["row_actions"]["print"]["visible"])
+        self.assertTrue(row["row_actions"]["view"]["visible"])
+
+    def test_work_queue_actions_are_enforced_and_audited(self):
+        draft = self.create_draft()
+        self.populate_wizard(draft["id"])
+        response = self.client.get(f"/api/v1/ol-quotations/quotations/{draft['id']}/print/")
+        self.assertEqual(response.status_code, 400, response.data)
+
+        finalized = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/finalize/", {}, format="json"
+        )
+        self.assertEqual(finalized.status_code, 200, finalized.data)
+        response = self.client.get(f"/api/v1/ol-quotations/quotations/{draft['id']}/print/")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(AuditEvent.objects.filter(object_id=str(draft["id"]), action="PRINT").exists())
+
+        revised = self.client.post(f"/api/v1/ol-quotations/quotations/{draft['id']}/revise/", {}, format="json")
+        self.assertEqual(revised.status_code, 200, revised.data)
+        self.assertEqual(revised.data["data"]["status"], QuotationStatus.DRAFT)
+        self.assertTrue(OLQuotationEvent.objects.filter(quotation_id=draft["id"], event_type="REVISED").exists())
+
+        deleted = self.client.delete(f"/api/v1/ol-quotations/quotations/{draft['id']}/")
+        self.assertEqual(deleted.status_code, 200, deleted.data)
+        self.assertTrue(AuditEvent.objects.filter(object_id=str(draft["id"]), action="DELETE").exists())
+
+    def test_work_queue_summary_returns_kpi_counts(self):
+        draft = self.create_draft()
+        finalized_draft = self.create_draft()
+        self.populate_wizard(finalized_draft["id"])
+        finalized = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{finalized_draft['id']}/finalize/", {}, format="json"
+        )
+        self.assertEqual(finalized.status_code, 200, finalized.data)
+        converted = OLQuotation.objects.get(pk=finalized_draft["id"])
+        converted.partner_verified = True
+        converted.save(update_fields=["partner_verified", "updated_at"])
+        converted_response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{finalized_draft['id']}/convert/", {}, format="json"
+        )
+        self.assertEqual(converted_response.status_code, 200, converted_response.data)
+
+        expired = self.create_draft()
+        expired_obj = OLQuotation.objects.get(pk=expired["id"])
+        expired_obj.status = QuotationStatus.EXPIRED
+        expired_obj.save(update_fields=["status", "updated_at"])
+
+        response = self.client.get("/api/v1/ol-quotations/quotations/summary/")
+        self.assertEqual(response.status_code, 200, response.data)
+        summary = response.data["data"]
+        self.assertEqual(summary["drafts"], 1)
+        self.assertEqual(summary["finalized"], 0)
+        self.assertEqual(summary["converted"], 1)
+        self.assertEqual(summary["expired"], 1)
+        self.assertEqual(summary["total"], 3)
+        self.assertEqual(draft["id"] is not None, True)
+
+    def test_admin_work_queue_columns_filters_and_search_contract(self):
+        from django.contrib import admin
+
+        quotation_admin = admin.site._registry[OLQuotation]
+        self.assertTrue(
+            {
+                "quote_number",
+                "quote_name",
+                "prospect_name",
+                "plans_summary",
+                "plan_count",
+                "total_premium",
+                "currency",
+                "status_badge",
+                "version",
+                "quote_date",
+                "agent",
+                "created_by",
+            }.issubset(set(quotation_admin.list_display))
+        )
+        self.assertTrue({"status", "quote_date", "product", "agent", "location"}.issubset(set(quotation_admin.list_filter)))
+        self.assertTrue({"quote_number", "quote_name", "identity_number", "location"}.issubset(set(quotation_admin.search_fields)))

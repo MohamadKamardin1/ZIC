@@ -28,31 +28,83 @@ class QuotationAuditFieldsMixin:
 class OLQuotationAdmin(QuotationAuditFieldsMixin, admin.ModelAdmin):
     list_display = [
         "quote_number",
-        "quote_date",
         "quote_name",
-        "partner",
-        "linked_partner",
-        "product",
-        "currency",
-        "identity_type",
-        "identity_number",
-        "status",
-        "expiry_date",
-        "total_sum_assured",
+        "prospect_name",
+        "plans_summary",
+        "plan_count",
         "total_premium",
-        "created_at",
+        "currency",
+        "status_badge",
+        "version",
+        "quote_date",
+        "agent",
+        "created_by",
     ]
-    list_filter = ["status", "currency", "quote_date", "expiry_date", "product"]
+    list_filter = [
+        "status",
+        "currency",
+        "quote_date",
+        "expiry_date",
+        "product",
+        "agent",
+        "location",
+    ]
     search_fields = [
         "quote_number",
+        "quote_name",
+        "identity_number",
+        "location",
+        "members__identity_number",
         "partner__partner_number",
         "partner__legal_name",
         "partner__company_name",
         "partner__first_name",
         "partner__surname",
+        "agent__username",
+        "agent__first_name",
+        "agent__last_name",
     ]
     ordering = ["-created_at"]
-    list_select_related = ["partner", "product", "product_version"]
+    list_select_related = ["partner", "linked_partner", "product", "product_version", "agent", "created_by"]
+
+    @admin.display(description="Prospect", ordering="identity_number")
+    def prospect_name(self, obj):
+        member = next(
+            (item for item in obj.members.all() if item.member_type == "LIFE_ASSURED"),
+            None,
+        )
+        if member:
+            return " ".join(
+                part for part in [member.first_name, member.middle_name, member.last_name] if part
+            ).strip()
+        return obj.quote_name or obj.identity_number or "—"
+
+    @admin.display(description="Plans")
+    def plans_summary(self, obj):
+        labels = []
+        for configuration in obj.plan_configurations.all():
+            if not configuration.is_selected:
+                continue
+            label = (
+                f"{configuration.plan.code} - {configuration.plan.name}"
+                if configuration.plan
+                else configuration.sub_product_code or str(configuration.product_version)
+            )
+            if label and label not in labels:
+                labels.append(label)
+        return ", ".join(labels) or "—"
+
+    @admin.display(description="Plan count")
+    def plan_count(self, obj):
+        return sum(1 for configuration in obj.plan_configurations.all() if configuration.is_selected)
+
+    @admin.display(description="Status")
+    def status_badge(self, obj):
+        return f"{obj.get_status_display()} ({obj.status})"
+
+    @admin.display(description="Version", ordering="current_version_number")
+    def version(self, obj):
+        return obj.current_version_number
 
 
 @admin.register(OLQuotationProduct)

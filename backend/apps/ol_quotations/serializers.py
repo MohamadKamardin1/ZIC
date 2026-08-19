@@ -1,6 +1,8 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
+from .permissions import OLQuotationPermission, has_quotation_permission
+
 from .models import (
     OLQuotation,
     OLQuotationBeneficiary,
@@ -156,6 +158,145 @@ class OLQuotationEventSerializer(serializers.ModelSerializer):
         model = OLQuotationEvent
         fields = "__all__"
         read_only_fields = [field.name for field in OLQuotationEvent._meta.fields]
+
+
+class OLQuotationListSerializer(serializers.ModelSerializer):
+    prospect_name = serializers.SerializerMethodField()
+    plans_summary = serializers.SerializerMethodField()
+    plan_count = serializers.SerializerMethodField()
+    status_badge = serializers.SerializerMethodField()
+    version = serializers.IntegerField(source="current_version_number", read_only=True)
+    agent = serializers.SerializerMethodField()
+    created_by = serializers.SerializerMethodField()
+    row_actions = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OLQuotation
+        fields = [
+            "id",
+            "quote_number",
+            "quote_name",
+            "prospect_name",
+            "plans_summary",
+            "plan_count",
+            "total_premium",
+            "currency",
+            "status",
+            "status_badge",
+            "version",
+            "quote_date",
+            "agent",
+            "created_by",
+            "row_actions",
+        ]
+        read_only_fields = fields
+
+    @staticmethod
+    def _user_payload(user):
+        if not user:
+            return None
+        name = " ".join(
+            part for part in [
+                getattr(user, "first_name", ""),
+                getattr(user, "last_name", ""),
+            ] if part
+        ).strip() or getattr(user, "username", "")
+        return {"id": str(user.pk), "name": name, "username": getattr(user, "username", "")}
+
+    def get_prospect_name(self, obj):
+        members = list(obj.members.all())
+        prospect = next((member for member in members if member.member_type == "LIFE_ASSURED"), None)
+        if prospect is None and members:
+            prospect = members[0]
+        if prospect:
+            name = " ".join(
+                part for part in [
+                    getattr(prospect, "first_name", ""),
+                    getattr(prospect, "middle_name", ""),
+                    getattr(prospect, "last_name", ""),
+                ] if part
+            ).strip()
+            if name:
+                return name
+        return obj.quote_name or ""
+
+    def get_plans_summary(self, obj):
+        plans = []
+        for configuration in obj.plan_configurations.all():
+            if not configuration.is_selected:
+                continue
+            if configuration.plan:
+                label = f"{configuration.plan.code} - {configuration.plan.name}"
+            else:
+                label = configuration.sub_product_code or str(configuration.product_version)
+            if label and label not in plans:
+                plans.append(label)
+        return ", ".join(plans)
+
+    def get_plan_count(self, obj):
+        annotated = getattr(obj, "work_queue_plan_count", None)
+        if annotated is not None:
+            return annotated
+        return sum(1 for configuration in obj.plan_configurations.all() if configuration.is_selected)
+
+    def get_status_badge(self, obj):
+        label = obj.get_status_display()
+        return {"code": obj.status, "label": label, "tone": obj.status.lower()}
+
+    def get_agent(self, obj):
+        return self._user_payload(obj.agent)
+
+    def get_created_by(self, obj):
+        return self._user_payload(obj.created_by)
+
+    def _action(self, obj, *, key, permission, state_allowed, method, suffix, reason=None):
+        request = self.context.get("request")
+        permission_code = OLQuotationPermission.code_for(permission)
+        has_permission = has_quotation_permission(request.user if request else None, permission)
+        visible = bool(has_permission and state_allowed)
+        if reason is None:
+            if not has_permission:
+                reason = "Insufficient permission."
+            elif not state_allowed:
+                reason = "Action is not available for this quotation status."
+        path = f"/api/v1/ol/quotations/quotations/{obj.pk}{suffix}"
+        return {
+            "key": key,
+            "visible": visible,
+            "enabled": visible,
+            "method": method,
+            "url": path,
+            "permission": permission_code,
+            "state_allowed": bool(state_allowed),
+            "reason": reason,
+        }
+
+    def get_row_actions(self, obj):
+        status = obj.status
+        partner_verified = bool(obj.partner_verified)
+        return {
+            "view": self._action(
+                obj, key="view", permission="view", state_allowed=True, method="GET", suffix="/"
+            ),
+            "edit": self._action(
+                obj, key="edit", permission="update", state_allowed=status == "DRAFT", method="PATCH", suffix="/"
+            ),
+            "revise": self._action(
+                obj, key="revise", permission="update", state_allowed=status == "FINALIZED", method="POST", suffix="/revise/"
+            ),
+            "finalize": self._action(
+                obj, key="finalize", permission="finalize", state_allowed=status == "DRAFT", method="POST", suffix="/finalize/"
+            ),
+            "print": self._action(
+                obj, key="print", permission="print", state_allowed=status in {"FINALIZED", "CONVERTED"}, method="GET", suffix="/print/"
+            ),
+            "convert_to_proposal": self._action(
+                obj, key="convert_to_proposal", permission="convert", state_allowed=status == "FINALIZED" and partner_verified, method="POST", suffix="/convert/"
+            ),
+            "delete": self._action(
+                obj, key="delete", permission="destroy", state_allowed=status == "DRAFT", method="DELETE", suffix="/"
+            ),
+        }
 
 
 class OLQuotationSerializer(serializers.ModelSerializer):

@@ -2,6 +2,10 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.exceptions import ValidationError as DRFValidationError
+from django.db.models import Count, Q
+from django.utils.dateparse import parse_date
+from uuid import UUID
 
 from apps.core.pagination import StandardPagination
 
@@ -36,6 +40,7 @@ from .serializers import (
     OLQuotationPlanConfigurationSerializer,
     OLQuotationProductSerializer,
     OLQuotationRiderSelectionSerializer,
+    OLQuotationListSerializer,
     OLQuotationSerializer,
     OLQuotationUnderwritingSerializer,
     OLQuotationVersionSerializer,
@@ -124,9 +129,11 @@ class QuotationScopedViewSet(viewsets.ModelViewSet):
 
 
 class OLQuotationViewSet(QuotationScopedViewSet):
-    queryset = OLQuotation.objects.select_related("partner", "product", "product_version").prefetch_related(
+    queryset = OLQuotation.objects.select_related(
+        "partner", "product", "product_version", "agent", "created_by"
+    ).prefetch_related(
         "products",
-        "plan_configurations",
+        "plan_configurations__plan",
         "members",
         "installment_configurations__rate_rows",
         "fund_allocations",
@@ -142,22 +149,114 @@ class OLQuotationViewSet(QuotationScopedViewSet):
     )
     serializer_class = OLQuotationSerializer
     model_has_partner_scope = True
-    filterset_fields = ["status", "partner", "product", "product_version", "currency"]
+    filterset_fields = ["partner", "product", "product_version", "currency"]
     search_fields = [
         "quote_number",
+        "quote_name",
+        "identity_number",
+        "location",
+        "members__identity_number",
         "partner__partner_number",
         "partner__legal_name",
         "partner__company_name",
         "partner__first_name",
         "partner__surname",
+        "agent__username",
+        "agent__first_name",
+        "agent__last_name",
     ]
-    ordering_fields = ["quote_number", "quote_date", "expiry_date", "status", "created_at", "updated_at"]
+    ordering_fields = [
+        "quote_number",
+        "quote_name",
+        "quote_date",
+        "expiry_date",
+        "status",
+        "total_premium",
+        "current_version_number",
+        "created_at",
+        "updated_at",
+    ]
+
+    def get_serializer_class(self):
+        if self.action == "list":
+            return OLQuotationListSerializer
+        return super().get_serializer_class()
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        if self.request.query_params.get("include_expired") != "true":
+        params = self.request.query_params
+
+        if params.get("include_expired") != "true":
             queryset = queryset.exclude(status=QuotationStatus.EXPIRED)
-        return queryset
+
+        statuses = [value.strip().upper() for value in params.get("status", "").split(",") if value.strip()]
+        if statuses:
+            queryset = queryset.filter(status__in=statuses)
+
+        plan = params.get("plan")
+        if plan:
+            plan_filter = Q(
+                plan_configurations__plan__code__iexact=plan
+            ) | Q(plan_configurations__plan__name__icontains=plan)
+            try:
+                UUID(str(plan))
+            except (ValueError, TypeError, AttributeError):
+                pass
+            else:
+                plan_filter |= Q(plan_configurations__plan_id=plan)
+            queryset = queryset.filter(plan_filter)
+
+        agent = params.get("agent")
+        if agent:
+            agent_filter = (
+                Q(agent__username__icontains=agent)
+                | Q(agent__first_name__icontains=agent)
+                | Q(agent__last_name__icontains=agent)
+            )
+            try:
+                UUID(str(agent))
+            except (ValueError, TypeError, AttributeError):
+                pass
+            else:
+                agent_filter |= Q(agent_id=agent)
+            queryset = queryset.filter(agent_filter)
+
+        location = params.get("location")
+        if location:
+            queryset = queryset.filter(location__icontains=location)
+
+        for parameter, lookup in (("quote_date_from", "quote_date__gte"), ("quote_date_to", "quote_date__lte")):
+            value = params.get(parameter)
+            if value:
+                parsed = parse_date(value)
+                if parsed is None:
+                    raise DRFValidationError({parameter: "Use an ISO date in YYYY-MM-DD format."})
+                queryset = queryset.filter(**{lookup: parsed})
+
+        return queryset.annotate(
+            work_queue_plan_count=Count(
+                "plan_configurations",
+                filter=Q(plan_configurations__is_selected=True),
+                distinct=True,
+            )
+        ).distinct()
+
+    @action(detail=False, methods=["get"], url_path="summary")
+    def summary(self, request, *args, **kwargs):
+        queryset = self._scope_queryset(self.queryset.all())
+        counts = {status_code: 0 for status_code, _label in QuotationStatus.choices}
+        for row in queryset.values("status").annotate(total=Count("pk")):
+            counts[row["status"]] = row["total"]
+        return _response(
+            {
+                "total": sum(counts.values()),
+                "drafts": counts[QuotationStatus.DRAFT],
+                "finalized": counts[QuotationStatus.FINALIZED],
+                "converted": counts[QuotationStatus.CONVERTED],
+                "expired": counts[QuotationStatus.EXPIRED],
+            },
+            "Quotation work-queue summary retrieved.",
+        )
 
     def perform_create(self, serializer):
         quotation = QuotationService.create_draft(
@@ -192,9 +291,45 @@ class OLQuotationViewSet(QuotationScopedViewSet):
     def expire(self, request, pk=None):
         return self._lifecycle_response(request, self.get_object(), QuotationStatus.EXPIRED, "Quotation expired.")
 
+    @action(detail=True, methods=["post"], url_path="revise")
+    def revise(self, request, pk=None):
+        quotation = QuotationService.revise(
+            quotation=self.get_object(),
+            actor=request.user,
+            request=request,
+        )
+        return _response(self.get_serializer(quotation).data, "Quotation returned to draft for revision.")
+
+    @action(detail=True, methods=["get"], url_path="print")
+    def print_quotation(self, request, pk=None):
+        quotation = self.get_object()
+        if quotation.status not in {QuotationStatus.FINALIZED, QuotationStatus.CONVERTED}:
+            raise DRFValidationError({"status": "Only finalized or converted quotations can be printed."})
+        QuotationService.record_print(quotation=quotation, actor=request.user, request=request)
+        return _response(
+            {
+                "quotation_id": quotation.pk,
+                "quote_number": quotation.quote_number,
+                "status": quotation.status,
+                "print_ready": True,
+                "document_url": None,
+            },
+            "Quotation print metadata prepared.",
+        )
+
     @action(detail=True, methods=["post"], url_path="convert")
     def convert(self, request, pk=None):
-        return self._lifecycle_response(request, self.get_object(), QuotationStatus.CONVERTED, "Quotation converted.")
+        quotation = self.get_object()
+        if not quotation.partner_verified:
+            raise DRFValidationError({"partner_verified": "Partner verification is required before conversion."})
+        return self._lifecycle_response(request, quotation, QuotationStatus.CONVERTED, "Quotation converted.")
+
+    def destroy(self, request, *args, **kwargs):
+        quotation = self.get_object()
+        if quotation.status != QuotationStatus.DRAFT:
+            raise DRFValidationError({"status": "Only draft quotations can be deleted."})
+        QuotationService.delete_draft(quotation=quotation, actor=request.user, request=request)
+        return _response({"id": str(quotation.pk), "deleted": True}, "Quotation draft deleted.")
 
     @action(detail=True, methods=["get"], url_path="wizard-summary")
     def wizard_summary(self, request, pk=None):

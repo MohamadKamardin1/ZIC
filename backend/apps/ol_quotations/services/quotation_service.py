@@ -323,6 +323,8 @@ class QuotationService:
                 "benefit_ids": [str(pk) for pk in locked.benefits.filter(is_selected=True).values_list("pk", flat=True)],
                 "version_number": locked.current_version_number,
             }
+        if target_status == QuotationStatus.CONVERTED and not locked.partner_verified:
+            raise QuotationServiceError("Partner verification is required before conversion.")
         if target_status == QuotationStatus.EXPIRED and locked.expiry_date and locked.expiry_date > date.today():
             raise QuotationServiceError("A quotation cannot be expired before its configured expiry date.")
         before = QuotationService.snapshot(locked)
@@ -358,6 +360,87 @@ class QuotationService:
             after_state=after,
             request=request,
         )
+        return locked
+
+    @staticmethod
+    @transaction.atomic
+    def revise(*, quotation, actor, request=None):
+        locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
+        if locked.status != QuotationStatus.FINALIZED:
+            raise QuotationServiceError("Only finalized quotations can be revised.")
+        before = QuotationService.snapshot(locked)
+        locked.status = QuotationStatus.DRAFT
+        locked.total_sum_assured = None
+        locked.total_premium = None
+        locked.calculation_snapshot = {}
+        locked.current_version_number += 1
+        locked.wizard_step_completion = QuotationService.wizard_completion(locked)
+        locked.updated_by = QuotationService.actor(actor)
+        locked.save(update_fields=[
+            "status",
+            "total_sum_assured",
+            "total_premium",
+            "calculation_snapshot",
+            "current_version_number",
+            "wizard_step_completion",
+            "updated_by",
+            "updated_at",
+        ])
+        OLQuotationFinancialSummary.objects.filter(quotation=locked).delete()
+        after = QuotationService.snapshot(locked)
+        QuotationService._record_version(locked, actor=actor, reason="Quotation returned to draft for revision.")
+        QuotationService._record_event(
+            locked,
+            "REVISED",
+            actor=actor,
+            from_status=QuotationStatus.FINALIZED,
+            to_status=QuotationStatus.DRAFT,
+            notes="Quotation returned to draft for revision.",
+            before_state=before,
+            after_state=after,
+            request=request,
+        )
+        return locked
+
+    @staticmethod
+    def record_print(*, quotation, actor, request=None):
+        snapshot = QuotationService.snapshot(quotation)
+        return AuditService.log_action(
+            action="PRINT",
+            instance=quotation,
+            actor=actor,
+            request=request,
+            before_state=snapshot,
+            after_state=snapshot,
+            reason="Quotation print metadata requested.",
+            changed_fields=[],
+        )
+
+    @staticmethod
+    @transaction.atomic
+    def delete_draft(*, quotation, actor, request=None):
+        locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
+        if locked.status != QuotationStatus.DRAFT:
+            raise QuotationServiceError("Only draft quotations can be deleted.")
+        before = QuotationService.snapshot(locked)
+        AuditService.log_delete(
+            instance=locked,
+            actor=actor,
+            request=request,
+            reason="Quotation draft deleted.",
+        )
+        DomainEvent.objects.create(
+            event_type="QuotationDeleted",
+            aggregate_type="OLQuotation",
+            aggregate_id=str(locked.pk),
+            payload={
+                "quote_number": locked.quote_number,
+                "quotation_id": str(locked.pk),
+                "actor_id": str(actor.pk) if actor and getattr(actor, "pk", None) else None,
+                "before_state": before,
+            },
+        )
+        locked.delete()
         return locked
 
     @staticmethod
