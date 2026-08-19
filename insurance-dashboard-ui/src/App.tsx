@@ -52,7 +52,7 @@ import OLDocuments from "./pages/ordinary-life/OLDocuments"
 import OLNotes from "./pages/ordinary-life/OLNotes"
 import OLApprovals from "./pages/ordinary-life/OLApprovals"
 import OLAuditHistory from "./pages/ordinary-life/OLAuditHistory"
-import OLQuotations from "./pages/ordinary-life/OLQuotations"
+import OLQuotations, { OLQuotationDetail, OLQuotationWizard } from "./pages/ordinary-life/OLQuotations"
 import OLCommitments from "./pages/ordinary-life/OLCommitments"
 import OLProposals from "./pages/ordinary-life/OLProposals"
 import OLPolicies from "./pages/ordinary-life/OLPolicies"
@@ -160,6 +160,9 @@ export default function App() {
         <Route path="ordinary-life/parameters/claim-setup" element={<OLMOrbClaimSetup section="claims" />} />
         <Route path="ordinary-life/applications" element={<OLApplications />} />
         <Route path="ordinary-life/quotations" element={<OLQuotations />} />
+        <Route path="ordinary-life/quotations/new" element={<OLQuotationWizard />} />
+        <Route path="ordinary-life/quotations/:id/edit" element={<OLQuotationDetail />} />
+        <Route path="ordinary-life/quotations/:id" element={<OLQuotationDetail />} />
         <Route path="ordinary-life/commitments" element={<OLCommitments />} />
         <Route path="ordinary-life/proposals" element={<OLProposals />} />
         <Route path="ordinary-life/policies" element={<OLPolicies />} />
