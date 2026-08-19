@@ -277,6 +277,95 @@ class OLQuotationInvestmentFundOptionsSerializer(serializers.Serializer):
     funds = OLQuotationInvestmentFundOptionSerializer(many=True)
 
 
+class OLQuotationRiderOptionSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    code = serializers.CharField()
+    name = serializers.CharField()
+    rider_category = serializers.CharField()
+    benefit_type = serializers.CharField()
+    calculation_basis = serializers.CharField()
+    min_age = serializers.IntegerField()
+    max_age = serializers.IntegerField()
+    min_term = serializers.IntegerField()
+    max_term = serializers.IntegerField()
+    min_sum_assured = serializers.DecimalField(max_digits=18, decimal_places=2, allow_null=True)
+    max_sum_assured = serializers.DecimalField(max_digits=18, decimal_places=2, allow_null=True)
+    waiting_period_days = serializers.IntegerField()
+    allows_standalone = serializers.BooleanField()
+    requires_underwriting = serializers.BooleanField()
+    product_id = serializers.UUIDField(allow_null=True)
+    plan_id = serializers.UUIDField(allow_null=True)
+    selectable = serializers.BooleanField()
+    synchronized_option = serializers.CharField(allow_blank=True)
+
+
+class OLQuotationBenefitInputSerializer(serializers.Serializer):
+    beneficial_type_id = serializers.UUIDField(required=False, allow_null=True)
+    benefit_type = serializers.CharField(required=False, allow_blank=True, max_length=80)
+    basis = serializers.ChoiceField(choices=["FIXED", "RATIO", "LOADED", "DISCOUNTED", "CAPPED"])
+    value = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=Decimal("0"), required=False, allow_null=True)
+    loading = serializers.DecimalField(max_digits=9, decimal_places=4, min_value=Decimal("0"), max_value=Decimal("100"), required=False)
+    discount = serializers.DecimalField(max_digits=9, decimal_places=4, min_value=Decimal("0"), max_value=Decimal("100"), required=False)
+    maximum_cap = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=Decimal("0"), required=False, allow_null=True)
+    code = serializers.CharField(required=False, allow_blank=True, max_length=80)
+    name = serializers.CharField(required=False, allow_blank=True, max_length=255)
+
+    def validate(self, attrs):
+        basis = attrs.get("basis")
+        value = attrs.get("value")
+        if basis == "RATIO" and (value is None or not 0 < value <= Decimal("100")):
+            raise serializers.ValidationError({"value": "Ratio benefit value must be greater than 0 and no greater than 100 percent."})
+        if basis == "CAPPED" and attrs.get("maximum_cap") is None:
+            raise serializers.ValidationError({"maximum_cap": "A maximum cap is required for a capped benefit."})
+        if attrs.get("maximum_cap") is not None and value is not None and basis != "RATIO" and attrs["maximum_cap"] < value:
+            raise serializers.ValidationError({"maximum_cap": "Maximum cap cannot be less than the benefit value."})
+        return attrs
+
+
+class OLQuotationRiderSelectionInputSerializer(serializers.Serializer):
+    rider_id = serializers.UUIDField()
+    plan_config_id = serializers.UUIDField(required=False, allow_null=True)
+    rider_sum_assured = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=Decimal("0.01"))
+    rider_term_years = serializers.IntegerField(min_value=1, required=False, allow_null=True)
+    beneficial_type_id = serializers.UUIDField(required=False, allow_null=True)
+    benefit_basis = serializers.ChoiceField(choices=["FIXED", "RATIO", "LOADED", "DISCOUNTED", "CAPPED"], required=False, default="FIXED")
+    benefit_value = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=Decimal("0"), required=False, allow_null=True)
+    loading = serializers.DecimalField(max_digits=9, decimal_places=4, min_value=Decimal("0"), max_value=Decimal("100"), required=False, default=Decimal("0"))
+    discount = serializers.DecimalField(max_digits=9, decimal_places=4, min_value=Decimal("0"), max_value=Decimal("100"), required=False, default=Decimal("0"))
+    maximum_cap = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=Decimal("0"), required=False, allow_null=True)
+    benefits = OLQuotationBenefitInputSerializer(many=True, required=False, default=list)
+
+    def validate(self, attrs):
+        basis = attrs.get("benefit_basis", "FIXED")
+        value = attrs.get("benefit_value")
+        if basis == "RATIO" and (value is None or not 0 < value <= Decimal("100")):
+            raise serializers.ValidationError({"benefit_value": "Ratio benefit value must be greater than 0 and no greater than 100 percent."})
+        if basis == "CAPPED" and attrs.get("maximum_cap") is None:
+            raise serializers.ValidationError({"maximum_cap": "A maximum cap is required for a capped benefit."})
+        if attrs.get("maximum_cap") is not None and value is not None and basis != "RATIO" and attrs["maximum_cap"] < value:
+            raise serializers.ValidationError({"maximum_cap": "Maximum cap cannot be less than the benefit value."})
+        return attrs
+
+
+class OLQuotationRidersConfigureSerializer(serializers.Serializer):
+    selections = OLQuotationRiderSelectionInputSerializer(many=True, allow_empty=True, default=list)
+
+
+class OLQuotationRiderStateSerializer(serializers.Serializer):
+    plan_rows = serializers.ListField(child=serializers.DictField())
+    available_benefit_types = serializers.ListField(child=serializers.DictField())
+    requires_configuration = serializers.BooleanField()
+    wizard_complete = serializers.BooleanField()
+
+
+class OLQuotationRiderOptionsSerializer(serializers.Serializer):
+    plan_configuration_id = serializers.UUIDField(allow_null=True)
+    quotation_age = serializers.IntegerField(allow_null=True)
+    quotation_currency = serializers.CharField()
+    riders = OLQuotationRiderOptionSerializer(many=True)
+    benefit_types = serializers.ListField(child=serializers.DictField())
+
+
 class OLQuotationRiderSelectionSerializer(QuotationNestedReadMixin, QuotationValidatedModelSerializer):
     class Meta:
         model = OLQuotationRiderSelection

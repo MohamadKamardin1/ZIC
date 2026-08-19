@@ -20,6 +20,7 @@ from apps.ol_parameters.models import (
     OLMortgageInterestFactor,
     OLInvestmentFund,
     OLRiderSetup,
+    OLBeneficialType,
     OLProduct as ParameterProduct,
 )
 from apps.ordinary_life.models import OLPlan, OLProductVersion
@@ -32,6 +33,9 @@ from apps.ol_quotations.models import (
     OLQuotationMember,
     OLQuotationFundAllocation,
     OLQuotationPlanConfiguration,
+    OLQuotationRiderSelection,
+    OLQuotationBenefit,
+    OLQuotationBenefitBasis,
     OLQuotationVersion,
     QuotationStatus,
 )
@@ -1008,6 +1012,326 @@ class QuotationService:
             request=request,
         )
         return {"not_applicable": False, "state": QuotationService.investment_fund_state(quotation=locked)}
+
+    @staticmethod
+    def _rider_scope_queryset(*, plan_configuration, as_of=None):
+        as_of = as_of or timezone.localdate()
+        legacy_product = getattr(getattr(plan_configuration, "product_version", None), "product", None)
+        parameter_product = QuotationService._parameter_product_for_legacy_product(legacy_product)
+        scope = Q(plan=plan_configuration.plan)
+        scope |= Q(plan__isnull=True, product__isnull=True)
+        if parameter_product:
+            scope |= Q(plan__isnull=True, product=parameter_product)
+        queryset = OLRiderSetup.objects.filter(scope)
+        return QuotationService._effective_queryset(queryset, as_of).select_related("product", "plan")
+
+    @staticmethod
+    def _rider_option(rider, *, plan_configuration, synchronized_option=""):
+        return {
+            "id": rider.pk,
+            "code": rider.code,
+            "name": rider.name,
+            "rider_category": rider.rider_category,
+            "benefit_type": rider.benefit_type,
+            "calculation_basis": rider.calculation_basis,
+            "min_age": rider.min_age,
+            "max_age": rider.max_age,
+            "min_term": rider.min_term,
+            "max_term": rider.max_term,
+            "min_sum_assured": rider.min_sum_assured,
+            "max_sum_assured": rider.max_sum_assured,
+            "waiting_period_days": rider.waiting_period_days,
+            "allows_standalone": rider.allows_standalone,
+            "requires_underwriting": rider.requires_underwriting,
+            "product_id": rider.product_id,
+            "plan_id": rider.plan_id,
+            "selectable": True,
+            "synchronized_option": synchronized_option,
+        }
+
+    @staticmethod
+    def _benefit_type_options(*, as_of=None):
+        as_of = as_of or timezone.localdate()
+        rows = QuotationService._effective_queryset(OLBeneficialType.objects.all(), as_of).order_by("category", "name", "code")
+        return [
+            {
+                "id": row.pk,
+                "code": row.code,
+                "name": row.name,
+                "category": row.category,
+                "calculation_basis": row.calculation_basis,
+                "default_ratio": row.default_ratio,
+                "allows_multiple": row.allows_multiple,
+            }
+            for row in rows
+        ]
+
+    @staticmethod
+    def rider_options(*, quotation, plan_config_id=None):
+        configurations = quotation.plan_configurations.filter(is_selected=True).select_related("product_version__product", "plan")
+        if plan_config_id:
+            configurations = configurations.filter(pk=plan_config_id)
+        configuration = configurations.order_by("section_number", "created_at").first()
+        if plan_config_id and not configuration:
+            raise QuotationServiceError({"plan_config_id": "Selected quotation plan configuration was not found."})
+        age = quotation.age_at_quote
+        riders = []
+        if configuration:
+            rider_queryset = QuotationService._rider_scope_queryset(plan_configuration=configuration)
+            if age is not None:
+                rider_queryset = rider_queryset.filter(min_age__lte=age, max_age__gte=age)
+            rider_queryset = rider_queryset.filter(min_term__lte=configuration.term_years, max_term__gte=configuration.term_years)
+            for rider in rider_queryset.order_by("rider_category", "benefit_type", "name", "code"):
+                riders.append(QuotationService._rider_option(rider, plan_configuration=configuration))
+        return {
+            "plan_configuration_id": configuration.pk if configuration else None,
+            "quotation_age": age,
+            "quotation_currency": quotation.currency,
+            "riders": riders,
+            "benefit_types": QuotationService._benefit_type_options(),
+        }
+
+    @staticmethod
+    def _rider_selection_snapshot(selection):
+        return {
+            "id": str(selection.pk),
+            "rider_id": str(selection.rider_id),
+            "rider_code": selection.rider.code,
+            "plan_configuration_id": str(selection.plan_configuration_id) if selection.plan_configuration_id else None,
+            "rider_sum_assured": str(selection.rider_sum_assured),
+            "rider_term_years": selection.rider_term_years,
+            "beneficial_type_id": str(selection.beneficial_type_id) if selection.beneficial_type_id else None,
+            "benefit_basis": selection.benefit_basis,
+            "benefit_value": str(selection.benefit_value) if selection.benefit_value is not None else None,
+            "loading": str(selection.loading),
+            "discount": str(selection.discount),
+            "maximum_cap": str(selection.maximum_cap) if selection.maximum_cap is not None else None,
+            "premium_amount": str(selection.premium_amount) if selection.premium_amount is not None else None,
+            "metadata": selection.metadata or {},
+        }
+
+    @staticmethod
+    def _benefit_snapshot(benefit):
+        return {
+            "id": str(benefit.pk),
+            "code": benefit.code,
+            "name": benefit.name,
+            "rider_selection_id": str(benefit.rider_selection_id) if benefit.rider_selection_id else None,
+            "plan_configuration_id": str(benefit.plan_configuration_id) if benefit.plan_configuration_id else None,
+            "beneficial_type_id": str(benefit.beneficial_type_id) if benefit.beneficial_type_id else None,
+            "benefit_type": benefit.benefit_type,
+            "basis": benefit.basis,
+            "value": str(benefit.value) if benefit.value is not None else None,
+            "loading": str(benefit.loading),
+            "discount": str(benefit.discount),
+            "maximum_cap": str(benefit.maximum_cap) if benefit.maximum_cap is not None else None,
+            "sum_assured": str(benefit.sum_assured) if benefit.sum_assured is not None else None,
+        }
+
+    @staticmethod
+    def _rider_state(*, quotation):
+        selections = quotation.rider_selections.filter(is_selected=True).select_related("rider", "beneficial_type", "plan_configuration")
+        benefits = quotation.benefits.filter(is_selected=True).select_related("beneficial_type", "rider_selection", "plan_configuration")
+        plan_rows = []
+        for configuration in quotation.plan_configurations.filter(is_selected=True).select_related("plan"):
+            selected = [row for row in selections if row.plan_configuration_id == configuration.pk]
+            plan_rows.append({
+                "plan_configuration_id": configuration.pk,
+                "section_number": configuration.section_number,
+                "plan_code": configuration.plan.code if configuration.plan else None,
+                "plan_name": configuration.plan.name if configuration.plan else configuration.product_version.name,
+                "riders": [QuotationService._rider_selection_snapshot(row) for row in selected],
+                "benefits": [QuotationService._benefit_snapshot(row) for row in benefits if row.plan_configuration_id == configuration.pk],
+                "status": "CONFIGURED" if selected or any(row.plan_configuration_id == configuration.pk for row in benefits) else "READY_TO_CONFIGURE",
+            })
+        return {
+            "plan_rows": plan_rows,
+            "available_benefit_types": QuotationService._benefit_type_options(),
+            "requires_configuration": bool(plan_rows),
+            "wizard_complete": bool((quotation.wizard_step_completion or {}).get("6_riders_and_benefits")),
+        }
+
+    @staticmethod
+    def rider_state(*, quotation):
+        return QuotationService._rider_state(quotation=quotation)
+
+    @staticmethod
+    def _synchronized_rider(*, plan_configuration, option):
+        category = option in {"PERSONAL_ACCIDENT", "PA"} and "ACCIDENT" or "WAIVER"
+        riders = QuotationService._rider_scope_queryset(plan_configuration=plan_configuration).filter(
+            Q(rider_category__icontains=category) | Q(benefit_type__icontains=category)
+        ).order_by("code")
+        return riders.first()
+
+    @staticmethod
+    def _validate_rider_selection(*, quotation, plan_configuration, payload, rider):
+        if plan_configuration is None and not rider.allows_standalone:
+            raise QuotationServiceError({"rider_id": "This rider must be attached to a selected plan."})
+        age = quotation.age_at_quote
+        if age is None:
+            raise QuotationServiceError({"rider_id": "Personal Details age is required before attaching riders."})
+        if age < rider.min_age or age > rider.max_age:
+            raise QuotationServiceError({"rider_id": f"Rider is not applicable at age {age}."})
+        term = payload.get("rider_term_years") or (plan_configuration.term_years if plan_configuration else None)
+        if term is None or term < rider.min_term or term > rider.max_term:
+            raise QuotationServiceError({"rider_term_years": "Rider term is outside the configured applicability range."})
+        if plan_configuration and term > plan_configuration.term_years:
+            raise QuotationServiceError({"rider_term_years": "Rider term cannot exceed the selected plan term."})
+        amount = payload.get("rider_sum_assured")
+        if rider.min_sum_assured is not None and amount < rider.min_sum_assured:
+            raise QuotationServiceError({"rider_sum_assured": "Rider sum assured is below the configured minimum."})
+        if rider.max_sum_assured is not None and amount > rider.max_sum_assured:
+            raise QuotationServiceError({"rider_sum_assured": "Rider sum assured exceeds the configured maximum."})
+        return term
+
+    @staticmethod
+    @transaction.atomic
+    def configure_riders(*, quotation, actor, validated_data, request=None):
+        locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
+        if locked.status != QuotationStatus.DRAFT:
+            raise QuotationServiceError({"quotation": "Only draft quotations can configure riders and benefits."})
+        before = {
+            "riders": [QuotationService._rider_selection_snapshot(row) for row in locked.rider_selections.filter(is_selected=True).select_related("rider", "beneficial_type", "plan_configuration")],
+            "benefits": [QuotationService._benefit_snapshot(row) for row in locked.benefits.filter(is_selected=True).select_related("beneficial_type", "rider_selection", "plan_configuration")],
+        }
+        plan_configs = list(locked.plan_configurations.filter(is_selected=True).select_related("product_version__product", "plan"))
+        config_map = {str(row.pk): row for row in plan_configs}
+        seen = set()
+        locked.rider_selections.filter(is_selected=True).delete()
+        locked.benefits.filter(is_selected=True).delete()
+        created_selections = []
+        created_benefits = []
+        for raw in validated_data.get("selections", []):
+            config_id = raw.get("plan_config_id")
+            if not config_id and len(plan_configs) == 1:
+                plan_configuration = plan_configs[0]
+            else:
+                plan_configuration = config_map.get(str(config_id))
+            if config_id and not plan_configuration:
+                raise QuotationServiceError({"plan_config_id": "Selected quotation plan configuration was not found."})
+            rider = OLRiderSetup.objects.filter(pk=raw["rider_id"], is_active=True).first()
+            if not rider:
+                raise QuotationServiceError({"rider_id": "Selected rider is inactive or unavailable."})
+            allowed = set(QuotationService._rider_scope_queryset(plan_configuration=plan_configuration).values_list("pk", flat=True)) if plan_configuration else set()
+            if plan_configuration and rider.pk not in allowed:
+                raise QuotationServiceError({"rider_id": "Selected rider is not applicable to the selected plan."})
+            term = QuotationService._validate_rider_selection(quotation=locked, plan_configuration=plan_configuration, payload=raw, rider=rider)
+            key = (str(plan_configuration.pk) if plan_configuration else None, str(rider.pk))
+            if key in seen:
+                raise QuotationServiceError({"rider_id": "Duplicate rider selection is not allowed for the same plan."})
+            seen.add(key)
+            beneficial = None
+            if raw.get("beneficial_type_id"):
+                beneficial = QuotationService._effective_queryset(OLBeneficialType.objects.filter(pk=raw["beneficial_type_id"]), timezone.localdate()).first()
+                if not beneficial:
+                    raise QuotationServiceError({"beneficial_type_id": "Selected benefit type is inactive or unavailable."})
+            selection = OLQuotationRiderSelection.objects.create(
+                quotation=locked,
+                plan_configuration=plan_configuration,
+                rider=rider,
+                rider_sum_assured=raw["rider_sum_assured"],
+                rider_term_years=term,
+                beneficial_type=beneficial,
+                benefit_basis=raw.get("benefit_basis", OLQuotationBenefitBasis.FIXED),
+                benefit_value=raw.get("benefit_value"),
+                loading=raw.get("loading", Decimal("0")),
+                discount=raw.get("discount", Decimal("0")),
+                maximum_cap=raw.get("maximum_cap"),
+                is_selected=True,
+                metadata={},
+                created_by=QuotationService.actor(actor),
+                updated_by=QuotationService.actor(actor),
+            )
+            selection.full_clean()
+            selection.save(update_fields=["updated_at"])
+            created_selections.append(selection)
+            for index, benefit_payload in enumerate(raw.get("benefits", []), start=1):
+                benefit_type_ref = None
+                if benefit_payload.get("beneficial_type_id"):
+                    benefit_type_ref = QuotationService._effective_queryset(OLBeneficialType.objects.filter(pk=benefit_payload["beneficial_type_id"]), timezone.localdate()).first()
+                    if not benefit_type_ref:
+                        raise QuotationServiceError({"beneficial_type_id": "Selected benefit type is inactive or unavailable."})
+                benefit_code = (benefit_payload.get("code") or f"{rider.code}-{str(selection.pk)[:8]}-BENEFIT-{index}").strip().upper()
+                benefit_name = benefit_payload.get("name") or benefit_type_ref.name if benefit_type_ref else benefit_payload.get("name") or rider.name
+                benefit = OLQuotationBenefit.objects.create(
+                    quotation=locked,
+                    plan_configuration=plan_configuration,
+                    rider_selection=selection,
+                    beneficial_type=benefit_type_ref,
+                    code=benefit_code,
+                    name=benefit_name,
+                    benefit_type=benefit_payload.get("benefit_type") or (benefit_type_ref.code if benefit_type_ref else rider.benefit_type),
+                    basis=benefit_payload["basis"],
+                    value=benefit_payload.get("value"),
+                    loading=benefit_payload.get("loading", Decimal("0")),
+                    discount=benefit_payload.get("discount", Decimal("0")),
+                    maximum_cap=benefit_payload.get("maximum_cap"),
+                    sum_assured=raw["rider_sum_assured"],
+                    is_selected=True,
+                    created_by=QuotationService.actor(actor),
+                    updated_by=QuotationService.actor(actor),
+                )
+                benefit.full_clean()
+                benefit.save(update_fields=["updated_at"])
+                created_benefits.append(benefit)
+        for plan_configuration in plan_configs:
+            for enabled, option in ((plan_configuration.personal_accident, "PERSONAL_ACCIDENT"), (plan_configuration.premium_waiver, "PREMIUM_WAIVER")):
+                if not enabled:
+                    continue
+                synchronized = QuotationService._synchronized_rider(plan_configuration=plan_configuration, option=option)
+                if not synchronized:
+                    continue
+                key = (str(plan_configuration.pk), str(synchronized.pk))
+                if key in seen:
+                    continue
+                term = QuotationService._validate_rider_selection(
+                    quotation=locked,
+                    plan_configuration=plan_configuration,
+                    payload={"rider_sum_assured": plan_configuration.base_sum_assured, "rider_term_years": plan_configuration.term_years},
+                    rider=synchronized,
+                )
+                selection = OLQuotationRiderSelection.objects.create(
+                    quotation=locked,
+                    plan_configuration=plan_configuration,
+                    rider=synchronized,
+                    rider_sum_assured=plan_configuration.base_sum_assured,
+                    rider_term_years=term,
+                    benefit_basis=OLQuotationBenefitBasis.FIXED,
+                    benefit_value=plan_configuration.base_sum_assured,
+                    metadata={"synchronized_option": option},
+                    created_by=QuotationService.actor(actor),
+                    updated_by=QuotationService.actor(actor),
+                )
+                selection.full_clean()
+                selection.save(update_fields=["updated_at"])
+                created_selections.append(selection)
+                seen.add(key)
+        locked.updated_by = QuotationService.actor(actor)
+        locked.wizard_step_completion = QuotationService.wizard_completion(locked)
+        locked.current_version_number += 1
+        locked.save(update_fields=["updated_by", "wizard_step_completion", "current_version_number", "updated_at"])
+        for selection in created_selections:
+            AuditService.log_create(selection, actor=actor, request=request, reason="Quotation rider attached or synchronized.")
+        for benefit in created_benefits:
+            AuditService.log_create(benefit, actor=actor, request=request, reason="Quotation rider benefit configured.")
+        after = {
+            "riders": [QuotationService._rider_selection_snapshot(row) for row in locked.rider_selections.filter(is_selected=True).select_related("rider", "beneficial_type", "plan_configuration")],
+            "benefits": [QuotationService._benefit_snapshot(row) for row in locked.benefits.filter(is_selected=True).select_related("beneficial_type", "rider_selection", "plan_configuration")],
+        }
+        QuotationService._record_version(locked, actor=actor, reason="Riders and Benefits wizard step updated.")
+        QuotationService._record_event(
+            locked,
+            "RIDERS_AND_BENEFITS_UPDATED",
+            actor=actor,
+            from_status=locked.status,
+            to_status=locked.status,
+            notes="Quotation riders and benefits configured.",
+            metadata={"rider_count": len(created_selections), "benefit_count": len(created_benefits)},
+            before_state=before,
+            after_state=after,
+            request=request,
+        )
+        return locked, QuotationService._rider_state(quotation=locked)
 
     @staticmethod
     def installment_state(*, quotation):

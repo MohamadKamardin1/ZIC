@@ -260,13 +260,47 @@ class OLQuotationVersion(QuotationBaseModel):
             raise ValidationError({"snapshot": "Version snapshot must be a JSON object."})
 
 
+class OLQuotationBenefitBasis(models.TextChoices):
+    FIXED = "FIXED", "Fixed"
+    RATIO = "RATIO", "Ratio"
+    LOADED = "LOADED", "Loaded"
+    DISCOUNTED = "DISCOUNTED", "Discounted"
+    CAPPED = "CAPPED", "Capped"
+
+
 class OLQuotationBenefit(QuotationBaseModel):
-    """Optional benefit selection retained separately from rider selection."""
+    """Benefit configuration attached to a quotation rider or standalone benefit."""
 
     quotation = models.ForeignKey(OLQuotation, on_delete=models.CASCADE, related_name="benefits")
+    plan_configuration = models.ForeignKey(
+        "OLQuotationPlanConfiguration",
+        on_delete=models.CASCADE,
+        related_name="benefits",
+        null=True,
+        blank=True,
+    )
+    rider_selection = models.ForeignKey(
+        "OLQuotationRiderSelection",
+        on_delete=models.CASCADE,
+        related_name="benefit_configurations",
+        null=True,
+        blank=True,
+    )
+    beneficial_type = models.ForeignKey(
+        "ol_parameters.OLBeneficialType",
+        on_delete=models.PROTECT,
+        related_name="quotation_benefits",
+        null=True,
+        blank=True,
+    )
     code = models.CharField(max_length=80)
     name = models.CharField(max_length=255)
     benefit_type = models.CharField(max_length=80, blank=True, default="")
+    basis = models.CharField(max_length=20, choices=OLQuotationBenefitBasis.choices, default=OLQuotationBenefitBasis.FIXED)
+    value = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
+    loading = models.DecimalField(max_digits=9, decimal_places=4, default=Decimal("0"))
+    discount = models.DecimalField(max_digits=9, decimal_places=4, default=Decimal("0"))
+    maximum_cap = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
     sum_assured = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
     premium_amount = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
     is_selected = models.BooleanField(default=True)
@@ -279,16 +313,37 @@ class OLQuotationBenefit(QuotationBaseModel):
             models.UniqueConstraint(fields=["quotation", "code"], name="ol_quotation_benefit_code_unique"),
             models.CheckConstraint(check=Q(sum_assured__isnull=True) | Q(sum_assured__gte=0), name="ol_quotation_benefit_sum_nonnegative"),
             models.CheckConstraint(check=Q(premium_amount__isnull=True) | Q(premium_amount__gte=0), name="ol_quotation_benefit_premium_nonnegative"),
+            models.CheckConstraint(check=Q(value__isnull=True) | Q(value__gte=0), name="ol_quotation_benefit_value_nonnegative"),
+            models.CheckConstraint(check=Q(loading__gte=0) & Q(loading__lte=100), name="ol_quotation_benefit_loading_valid"),
+            models.CheckConstraint(check=Q(discount__gte=0) & Q(discount__lte=100), name="ol_quotation_benefit_discount_valid"),
+            models.CheckConstraint(check=Q(maximum_cap__isnull=True) | Q(maximum_cap__gte=0), name="ol_quotation_benefit_cap_nonnegative"),
         ]
 
     def clean(self):
         errors = {}
         self.code = (self.code or "").strip().upper()
         self.name = (self.name or "").strip()
+        self.basis = (self.basis or OLQuotationBenefitBasis.FIXED).strip().upper()
         if not self.code:
             errors["code"] = "Benefit code is required."
         if not self.name:
             errors["name"] = "Benefit name is required."
+        if self.basis not in {choice for choice, _ in OLQuotationBenefitBasis.choices}:
+            errors["basis"] = "Unsupported benefit basis."
+        if self.value is not None and self.value < 0:
+            errors["value"] = "Benefit value cannot be negative."
+        if self.loading is None or not 0 <= self.loading <= 100:
+            errors["loading"] = "Benefit loading must be between 0 and 100."
+        if self.discount is None or not 0 <= self.discount <= 100:
+            errors["discount"] = "Benefit discount must be between 0 and 100."
+        if self.maximum_cap is not None and self.maximum_cap < 0:
+            errors["maximum_cap"] = "Benefit maximum cap cannot be negative."
+        if self.basis == OLQuotationBenefitBasis.RATIO and (self.value is None or not 0 < self.value <= 100):
+            errors["value"] = "Ratio benefit value must be greater than 0 and no greater than 100 percent."
+        if self.basis == OLQuotationBenefitBasis.CAPPED and self.maximum_cap is None:
+            errors["maximum_cap"] = "A maximum cap is required for a capped benefit."
+        if self.maximum_cap is not None and self.value is not None and self.basis != OLQuotationBenefitBasis.RATIO and self.maximum_cap < self.value:
+            errors["maximum_cap"] = "Maximum cap cannot be less than the benefit value."
         if self.sum_assured is not None and self.sum_assured < 0:
             errors["sum_assured"] = "Benefit sum assured cannot be negative."
         if self.premium_amount is not None and self.premium_amount < 0:
@@ -744,6 +799,19 @@ class OLQuotationRiderSelection(QuotationBaseModel):
         blank=True,
     )
     rider_sum_assured = models.DecimalField(max_digits=18, decimal_places=2)
+    rider_term_years = models.PositiveSmallIntegerField(null=True, blank=True)
+    beneficial_type = models.ForeignKey(
+        "ol_parameters.OLBeneficialType",
+        on_delete=models.PROTECT,
+        related_name="quotation_rider_selections",
+        null=True,
+        blank=True,
+    )
+    benefit_basis = models.CharField(max_length=20, choices=OLQuotationBenefitBasis.choices, default=OLQuotationBenefitBasis.FIXED)
+    benefit_value = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
+    loading = models.DecimalField(max_digits=9, decimal_places=4, default=Decimal("0"))
+    discount = models.DecimalField(max_digits=9, decimal_places=4, default=Decimal("0"))
+    maximum_cap = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
     premium_amount = models.DecimalField(
         max_digits=18, decimal_places=2, null=True, blank=True
     )
@@ -766,12 +834,36 @@ class OLQuotationRiderSelection(QuotationBaseModel):
                 check=Q(premium_amount__isnull=True) | Q(premium_amount__gte=0),
                 name="ol_quotation_rider_premium_nonnegative",
             ),
+            models.CheckConstraint(check=Q(rider_term_years__isnull=True) | Q(rider_term_years__gt=0), name="ol_quotation_rider_term_positive"),
+            models.CheckConstraint(check=Q(benefit_value__isnull=True) | Q(benefit_value__gte=0), name="ol_quotation_rider_benefit_nonnegative"),
+            models.CheckConstraint(check=Q(loading__gte=0) & Q(loading__lte=100), name="ol_quotation_rider_loading_valid"),
+            models.CheckConstraint(check=Q(discount__gte=0) & Q(discount__lte=100), name="ol_quotation_rider_discount_valid"),
+            models.CheckConstraint(check=Q(maximum_cap__isnull=True) | Q(maximum_cap__gte=0), name="ol_quotation_rider_cap_nonnegative"),
         ]
 
     def clean(self):
         errors = {}
+        self.benefit_basis = (self.benefit_basis or OLQuotationBenefitBasis.FIXED).strip().upper()
         if self.rider_sum_assured is not None and self.rider_sum_assured <= 0:
             errors["rider_sum_assured"] = "Rider sum assured must be greater than zero."
+        if self.rider_term_years is not None and self.rider_term_years <= 0:
+            errors["rider_term_years"] = "Rider term must be positive."
+        if self.benefit_basis not in {choice for choice, _ in OLQuotationBenefitBasis.choices}:
+            errors["benefit_basis"] = "Unsupported benefit basis."
+        if self.benefit_value is not None and self.benefit_value < 0:
+            errors["benefit_value"] = "Benefit value cannot be negative."
+        if self.loading is None or not 0 <= self.loading <= 100:
+            errors["loading"] = "Benefit loading must be between 0 and 100."
+        if self.discount is None or not 0 <= self.discount <= 100:
+            errors["discount"] = "Benefit discount must be between 0 and 100."
+        if self.maximum_cap is not None and self.maximum_cap < 0:
+            errors["maximum_cap"] = "Maximum cap cannot be negative."
+        if self.benefit_basis == OLQuotationBenefitBasis.RATIO and (self.benefit_value is None or not 0 < self.benefit_value <= 100):
+            errors["benefit_value"] = "Ratio benefit value must be greater than 0 and no greater than 100 percent."
+        if self.benefit_basis == OLQuotationBenefitBasis.CAPPED and self.maximum_cap is None:
+            errors["maximum_cap"] = "A maximum cap is required for a capped benefit."
+        if self.maximum_cap is not None and self.benefit_value is not None and self.benefit_basis != OLQuotationBenefitBasis.RATIO and self.maximum_cap < self.benefit_value:
+            errors["maximum_cap"] = "Maximum cap cannot be less than the benefit value."
         if errors:
             raise ValidationError(errors)
 

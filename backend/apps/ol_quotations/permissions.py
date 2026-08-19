@@ -44,6 +44,9 @@ class OLQuotationPermission:
         "investment_funds": VIEW,
         "investment_fund_options": VIEW,
         "investment_fund_configure": UPDATE,
+        "riders_and_benefits": VIEW,
+        "rider_options": VIEW,
+        "rider_configure": UPDATE,
     }
 
     @classmethod

@@ -16,6 +16,8 @@ from apps.ol_parameters.models import (
     OLJointLifeType,
     OLInvestmentFund,
     OLInvestmentFundType,
+    OLBeneficialType,
+    OLRiderSetup,
     OLPlanType,
     OLProduct,
     OLPaidUpRate,
@@ -24,6 +26,8 @@ from apps.ol_quotations.models import (
     OLQuotation,
     OLQuotationEvent,
     OLQuotationMember,
+    OLQuotationRiderSelection,
+    OLQuotationBenefit,
     QuotationStatus,
 )
 from apps.partner_onboarding.models import Branch, Location
@@ -1540,3 +1544,286 @@ class OLQuotationAPITests(TestCase):
         )
         self.assertEqual(response.status_code, 400, response.data)
         self.assertIn("compatible", str(response.data).lower())
+
+
+    def create_quotation_rider(self, *, code=None, min_age=18, max_age=65, rider_category="ACCIDENT", benefit_type="ACCIDENTAL_DEATH", allows_standalone=False, plan=None):
+        code = code or f"RIDER-{self._testMethodName.upper()[:18]}"
+        return OLRiderSetup.objects.create(
+            code=code,
+            name="Accidental Death Rider",
+            description="Quotation rider fixture.",
+            rider_category=rider_category,
+            benefit_type=benefit_type,
+            calculation_basis="SUM_ASSURED",
+            min_age=min_age,
+            max_age=max_age,
+            min_term=5,
+            max_term=20,
+            min_sum_assured=Decimal("100.00"),
+            max_sum_assured=Decimal("10000000.00"),
+            waiting_period_days=30,
+            allows_standalone=allows_standalone,
+            requires_underwriting=True,
+            product=None,
+            plan=plan if plan is not None else self.plan,
+            effective_from=date.today(),
+            is_active=True,
+        )
+
+    def create_quotation_benefit_type(self, *, code=None):
+        return OLBeneficialType.objects.create(
+            code=code or f"BENEFIT-{self._testMethodName.upper()[:18]}",
+            name="Accidental Death Benefit",
+            description="Quotation benefit type fixture.",
+            category="BENEFIT",
+            calculation_basis="PERCENTAGE",
+            default_ratio=Decimal("100.0000"),
+            allows_multiple=True,
+            effective_from=date.today(),
+            is_active=True,
+        )
+
+    def prepare_rider_quotation(self, *, personal_accident=False, premium_waiver=False):
+        draft = self.create_draft()
+        personal_response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/personal-details/",
+            self.personal_details_payload(),
+            format="json",
+        )
+        self.assertEqual(personal_response.status_code, 200, personal_response.data)
+        plan_payload = self.plan_selection_payload()
+        plan_payload["plans"][0]["personal_accident"] = personal_accident
+        plan_payload["plans"][0]["premium_waiver"] = premium_waiver
+        plan_response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/plans/",
+            plan_payload,
+            format="json",
+        )
+        self.assertEqual(plan_response.status_code, 200, plan_response.data)
+        return {**draft, "plan_config_id": plan_response.data["data"]["configurations"][0]["id"]}
+
+    def test_rider_options_are_filtered_by_selected_plan_applicability(self):
+        applicable = self.create_quotation_rider(code="RIDER-APPLICABLE", plan=self.plan)
+        other_plan = OLPlan.objects.create(
+            product_version=self.product_version,
+            code="TERM-OTHER-RIDER",
+            name="Other Rider Plan",
+            minimum_sum_assured=Decimal("1000.00"),
+            maximum_sum_assured=Decimal("10000000.00"),
+        )
+        self.create_quotation_rider(code="RIDER-OTHER-PLAN", plan=other_plan)
+        draft = self.prepare_rider_quotation()
+        response = self.client.get(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/riders/options/?plan_config_id={draft['plan_config_id']}"
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        codes = {row["code"] for row in response.data["data"]["riders"]}
+        self.assertIn(applicable.code, codes)
+        self.assertNotIn("RIDER-OTHER-PLAN", codes)
+
+    def test_attach_rider_validates_age_and_persists_benefit(self):
+        rider = self.create_quotation_rider(code="RIDER-VALID-AGE")
+        benefit_type = self.create_quotation_benefit_type()
+        draft = self.prepare_rider_quotation()
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/riders/",
+            {
+                "selections": [
+                    {
+                        "rider_id": str(rider.pk),
+                        "plan_config_id": draft["plan_config_id"],
+                        "rider_sum_assured": "1000.00",
+                        "rider_term_years": 20,
+                        "beneficial_type_id": str(benefit_type.pk),
+                        "benefit_basis": "CAPPED",
+                        "benefit_value": "1000.00",
+                        "maximum_cap": "1500.00",
+                        "benefits": [
+                            {
+                                "beneficial_type_id": str(benefit_type.pk),
+                                "basis": "CAPPED",
+                                "value": "1000.00",
+                                "maximum_cap": "1500.00",
+                            }
+                        ],
+                    }
+                ]
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data["data"]["wizard_step_complete"])
+        self.assertEqual(response.data["data"]["state"]["plan_rows"][0]["riders"][0]["benefit_basis"], "CAPPED")
+        self.assertEqual(OLQuotationRiderSelection.objects.filter(quotation_id=draft["id"]).count(), 1)
+        self.assertEqual(OLQuotationBenefit.objects.filter(quotation_id=draft["id"]).count(), 1)
+        self.assertTrue(AuditEvent.objects.filter(action__icontains="CREATE").exists())
+
+    def test_attach_rider_rejects_age_outside_parameter_range(self):
+        rider = self.create_quotation_rider(code="RIDER-AGE-INVALID", min_age=40, max_age=50)
+        draft = self.prepare_rider_quotation()
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/riders/",
+            {
+                "selections": [
+                    {
+                        "rider_id": str(rider.pk),
+                        "plan_config_id": draft["plan_config_id"],
+                        "rider_sum_assured": "1000.00",
+                    }
+                ]
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("age", str(response.data).lower())
+
+    def test_benefit_basis_validation_rejects_invalid_ratio_and_capped_payloads(self):
+        rider = self.create_quotation_rider(code="RIDER-BASIS-VALIDATION")
+        draft = self.prepare_rider_quotation()
+        ratio_response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/riders/",
+            {
+                "selections": [{
+                    "rider_id": str(rider.pk),
+                    "plan_config_id": draft["plan_config_id"],
+                    "rider_sum_assured": "1000.00",
+                    "benefit_basis": "RATIO",
+                    "benefit_value": "101.00",
+                }]
+            },
+            format="json",
+        )
+        self.assertEqual(ratio_response.status_code, 400, ratio_response.data)
+        capped_response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/riders/",
+            {
+                "selections": [{
+                    "rider_id": str(rider.pk),
+                    "plan_config_id": draft["plan_config_id"],
+                    "rider_sum_assured": "1000.00",
+                    "benefit_basis": "CAPPED",
+                    "benefit_value": "1000.00",
+                }]
+            },
+            format="json",
+        )
+        self.assertEqual(capped_response.status_code, 400, capped_response.data)
+        self.assertIn("cap", str(capped_response.data).lower())
+
+    def test_plan_pa_and_wp_flags_synchronize_to_parameter_riders(self):
+        pa = self.create_quotation_rider(
+            code="RIDER-PA-SYNC",
+            rider_category="ACCIDENT",
+            benefit_type="ACCIDENTAL_DEATH",
+        )
+        wp = self.create_quotation_rider(
+            code="RIDER-WP-SYNC",
+            rider_category="WAIVER",
+            benefit_type="WAIVER_PREMIUM",
+        )
+        draft = self.prepare_rider_quotation(personal_accident=True, premium_waiver=True)
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/riders/",
+            {"selections": []},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        synced = OLQuotationRiderSelection.objects.filter(quotation_id=draft["id"], metadata__synchronized_option__isnull=False)
+        self.assertEqual(synced.count(), 2)
+        self.assertEqual({row.rider_id for row in synced}, {pa.pk, wp.pk})
+        self.assertTrue(response.data["data"]["wizard_step_complete"])
+        state_response = self.client.get(f"/api/v1/ol-quotations/quotations/{draft['id']}/riders/")
+        self.assertEqual(state_response.status_code, 200, state_response.data)
+        self.assertEqual(len(state_response.data["data"]["plan_rows"][0]["riders"]), 2)
+
+    def test_rider_options_endpoint_returns_benefit_type_parameters(self):
+        rider = self.create_quotation_rider(code="RIDER-OPTION-BENEFIT")
+        benefit_type = self.create_quotation_benefit_type(code="BENEFIT-OPTION-TYPE")
+        draft = self.prepare_rider_quotation()
+        response = self.client.get(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/riders/options/"
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertIn(rider.code, {row["code"] for row in response.data["data"]["riders"]})
+        self.assertIn(benefit_type.code, {row["code"] for row in response.data["data"]["benefit_types"]})
+
+    def test_duplicate_rider_attachment_is_rejected(self):
+        rider = self.create_quotation_rider(code="RIDER-DUPLICATE")
+        draft = self.prepare_rider_quotation()
+        payload = {"selections": [{"rider_id": str(rider.pk), "plan_config_id": draft["plan_config_id"], "rider_sum_assured": "1000.00"}]}
+        first = self.client.post(f"/api/v1/ol-quotations/quotations/{draft['id']}/riders/", payload, format="json")
+        self.assertEqual(first.status_code, 200, first.data)
+        duplicate = self.client.post(f"/api/v1/ol-quotations/quotations/{draft['id']}/riders/", {"selections": payload["selections"] * 2}, format="json")
+        self.assertEqual(duplicate.status_code, 400, duplicate.data)
+        self.assertIn("duplicate", str(duplicate.data).lower())
+
+    def test_rider_configuration_is_rejected_for_inactive_parameter(self):
+        rider = self.create_quotation_rider(code="RIDER-INACTIVE")
+        rider.is_active = False
+        rider.save(update_fields=["is_active", "updated_at"])
+        draft = self.prepare_rider_quotation()
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/riders/",
+            {"selections": [{"rider_id": str(rider.pk), "plan_config_id": draft["plan_config_id"], "rider_sum_assured": "1000.00"}]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("inactive", str(response.data).lower())
+
+    def test_rider_state_is_empty_and_complete_when_no_optional_rider_selected(self):
+        draft = self.prepare_rider_quotation()
+        response = self.client.get(f"/api/v1/ol-quotations/quotations/{draft['id']}/riders/")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data["data"]["wizard_complete"])
+        self.assertEqual(response.data["data"]["plan_rows"][0]["status"], "READY_TO_CONFIGURE")
+
+    def test_standalone_rule_rejects_unscoped_rider_selection(self):
+        rider = self.create_quotation_rider(code="RIDER-NO-STANDALONE", allows_standalone=False)
+        draft = self.create_draft()
+        personal_response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/personal-details/",
+            self.personal_details_payload(),
+            format="json",
+        )
+        self.assertEqual(personal_response.status_code, 200, personal_response.data)
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/riders/",
+            {"selections": [{"rider_id": str(rider.pk), "rider_sum_assured": "1000.00"}]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("selected plan", str(response.data).lower())
+
+    def test_loaded_and_discounted_benefits_validate_percentage_limits(self):
+        rider = self.create_quotation_rider(code="RIDER-LOAD-DISCOUNT")
+        draft = self.prepare_rider_quotation()
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/riders/",
+            {"selections": [{
+                "rider_id": str(rider.pk),
+                "plan_config_id": draft["plan_config_id"],
+                "rider_sum_assured": "1000.00",
+                "benefit_basis": "LOADED",
+                "benefit_value": "1000.00",
+                "loading": "101.00",
+            }]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("loading", str(response.data).lower())
+
+    def test_rider_step_writes_domain_event(self):
+        rider = self.create_quotation_rider(code="RIDER-EVENT")
+        draft = self.prepare_rider_quotation()
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/riders/",
+            {"selections": [{"rider_id": str(rider.pk), "plan_config_id": draft["plan_config_id"], "rider_sum_assured": "1000.00"}]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(DomainEvent.objects.filter(event_type="QuotationRidersAndBenefitsUpdated").exists())
+        self.assertTrue(AuditEvent.objects.filter(action__icontains="CREATE").exists())
+
+
+if __name__ == "__main__":
+    pass

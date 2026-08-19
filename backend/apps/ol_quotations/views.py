@@ -47,6 +47,9 @@ from .serializers import (
     OLQuotationInvestmentFundConfigureSerializer,
     OLQuotationInvestmentFundOptionsSerializer,
     OLQuotationInvestmentFundStateSerializer,
+    OLQuotationRiderOptionsSerializer,
+    OLQuotationRidersConfigureSerializer,
+    OLQuotationRiderStateSerializer,
     OLQuotationMemberSerializer,
     OLQuotationMemberStepSerializer,
     OLQuotationMemberStepResponseSerializer,
@@ -639,6 +642,50 @@ class OLQuotationViewSet(QuotationScopedViewSet):
         return _response(
             OLQuotationInvestmentFundOptionsSerializer(payload).data,
             "Investment fund options retrieved.",
+        )
+
+    @action(detail=True, methods=["get", "post"], url_path="riders")
+    def riders_and_benefits(self, request, pk=None):
+        quotation = self.get_object()
+        if request.method.lower() == "get":
+            if not has_quotation_permission(request.user, "riders_and_benefits"):
+                raise PermissionDenied("You do not have permission to view quotation riders and benefits.")
+            payload = QuotationService.rider_state(quotation=quotation)
+            return _response(
+                OLQuotationRiderStateSerializer(payload).data,
+                "Quotation riders and benefits retrieved.",
+            )
+        if not has_quotation_permission(request.user, "rider_configure"):
+            raise PermissionDenied("You do not have permission to configure quotation riders and benefits.")
+        serializer = OLQuotationRidersConfigureSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        updated, payload = QuotationService.configure_riders(
+            quotation=quotation,
+            actor=request.user,
+            validated_data=serializer.validated_data,
+            request=request,
+        )
+        return _response(
+            {
+                "quotation_id": str(updated.pk),
+                "state": OLQuotationRiderStateSerializer(payload).data,
+                "wizard_step_complete": bool((updated.wizard_step_completion or {}).get("6_riders_and_benefits")),
+            },
+            "Quotation riders and benefits saved.",
+        )
+
+    @action(detail=True, methods=["get"], url_path="riders/options")
+    def rider_options(self, request, pk=None):
+        quotation = self.get_object()
+        if not has_quotation_permission(request.user, "rider_options"):
+            raise PermissionDenied("You do not have permission to view quotation rider options.")
+        payload = QuotationService.rider_options(
+            quotation=quotation,
+            plan_config_id=request.query_params.get("plan_config_id"),
+        )
+        return _response(
+            OLQuotationRiderOptionsSerializer(payload).data,
+            "Quotation rider options retrieved.",
         )
 
     @action(detail=True, methods=["get"], url_path="installments")
