@@ -10,10 +10,13 @@ import {
   LoaderCircle,
   MapPin,
   PanelLeft,
+  Pencil,
+  Plus,
   RotateCcw,
   Save,
   Search,
   ShieldCheck,
+  Trash2,
   UserRound,
   UsersRound,
   WalletCards,
@@ -36,6 +39,7 @@ import {
   Toggle,
 } from "../../components/ui/FormControls"
 import type { FilterOption } from "../../components/ui/types"
+import { InfoBanner, Modal } from "../../components/ui/Overlays"
 
 const QUOTATION_PREFIX = "/api/v1/ol-quotations/quotations/"
 const PLAN_SEARCH_ENDPOINT = "/api/v1/ol/plans/search/"
@@ -152,6 +156,106 @@ type PlanOptions = {
 
 type ApiFieldErrors = Record<string, string[]>
 
+type MemberRow = {
+  id: string | null
+  member_type?: string
+  full_name: string
+  first_name?: string
+  last_name?: string
+  relation: string
+  date_of_birth: string | null
+  age_at_quote: number | null
+  gender: string
+  sum_assured: string | number | null
+  coverage_basis?: string
+  waiting_period_days?: number
+  is_principal?: boolean
+}
+
+type MemberCoverageState = {
+  quotation_id?: string
+  principal_member?: MemberRow | null
+  members?: MemberRow[]
+  additional_members?: MemberRow[]
+  requires_additional_coverage: boolean
+  info_banner?: string | null
+  allowed_configurations?: Array<{ relation: string; min_age?: number | null; max_age?: number | null; waiting_period_days?: number; benefit_limit?: string | number | null; coverage_basis?: string }>
+  wizard_step_complete?: boolean
+}
+
+type InstallmentRateRow = {
+  sequence: number
+  description: string
+  rate_percent: string | number
+  paid_up_rate: string | number | null
+}
+
+type InstallmentPlanRow = {
+  plan_configuration_id: string
+  plan_code: string
+  plan_name: string
+  policy_term_years: number
+  payment_mode: string
+  total_number_of_installments: number
+  status: "READY_TO_CONFIGURE" | "CONFIGURED"
+  can_configure: boolean
+}
+
+type InstallmentState = {
+  rows: InstallmentPlanRow[]
+  requires_configuration: boolean
+  wizard_complete: boolean
+}
+
+type InstallmentTemplate = {
+  plan_configuration_id: string
+  has_template: boolean
+  banner: string
+  policy_term_years: number
+  payment_mode: string
+  available_payment_modes: string[]
+  rate_rows: InstallmentRateRow[]
+}
+
+type FundOption = {
+  id: string
+  code: string
+  name: string
+  description?: string
+  fund_type_name?: string
+  risk_profile?: string
+  currency?: string
+  valuation_frequency?: string
+  unit_price?: string | number | null
+  currency_compatible: boolean
+  currency_conversion_allowed: boolean
+  selectable: boolean
+}
+
+type FundAllocation = {
+  id?: string
+  plan_config_id: string
+  fund_id: string
+  allocation_percent: string | number
+  allocated_amount: string | number | null
+  fund_name?: string
+  fund_code?: string
+}
+
+type InvestmentFundState = {
+  plan_rows: Array<{ plan_configuration_id: string; plan_code: string; plan_name: string; investment_linked: boolean; status: string; allocation_total: string | number; allocations: FundAllocation[]; can_configure: boolean }>
+  requires_allocation: boolean
+  not_applicable: boolean
+  wizard_complete: boolean
+}
+
+type InvestmentFundOptions = {
+  plan_configuration_id: string | null
+  not_applicable: boolean
+  quotation_currency: string
+  funds: FundOption[]
+}
+
 type ApiPayload = {
   quotation?: Quotation
   configurations?: PlanConfiguration[]
@@ -169,6 +273,26 @@ type ApiPayload = {
   quote_bases?: Choice[]
   premium_factors?: Choice[]
   plan_features?: PlanOptions["plan_features"]
+  principal_member?: MemberRow | null
+  members?: MemberRow[]
+  additional_members?: MemberRow[]
+  requires_additional_coverage?: boolean
+  info_banner?: string | null
+  allowed_configurations?: MemberCoverageState["allowed_configurations"]
+  rows?: InstallmentPlanRow[]
+  requires_configuration?: boolean
+  has_template?: boolean
+  banner?: string
+  policy_term_years?: number
+  payment_mode?: string
+  available_payment_modes?: string[]
+  rate_rows?: InstallmentRateRow[]
+  plan_configuration_id?: string | null
+  plan_rows?: InvestmentFundState["plan_rows"]
+  not_applicable?: boolean
+  quotation_currency?: string
+  funds?: FundOption[]
+  state?: MemberCoverageState | InstallmentState | InvestmentFundState
 }
 
 function asChoices(value: unknown): Choice[] {
@@ -318,6 +442,55 @@ function PlanConfigurationSection({ index, config, card, options, errors, onChan
   </div></section>
 }
 
+type MemberForm = { full_name: string; relation: string; date_of_birth: string; gender: string; sum_assured: string }
+
+function MemberCoverageStep({ quotation, state, genderOptions, errors, onSaveMember, onRemoveMember }: { quotation: Quotation; state: MemberCoverageState | null; genderOptions: Choice[]; errors: ApiFieldErrors; onSaveMember: (member: MemberForm, memberId?: string) => Promise<boolean>; onRemoveMember: (memberId: string) => Promise<void> }) {
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editing, setEditing] = useState<MemberRow | null>(null)
+  const [member, setMember] = useState<MemberForm>({ full_name: "", relation: "", date_of_birth: "", gender: "", sum_assured: "" })
+  const age = computeAge(member.date_of_birth, quotation.quote_date ?? today())
+  const allowedRelations = (state?.allowed_configurations ?? []).map((configuration) => ({ value: configuration.relation, label: configuration.relation.replace(/_/g, " ").replace(/\\b\\w/g, (letter) => letter.toUpperCase()) }))
+  const additionalMembers = state?.additional_members ?? state?.members?.filter((item) => !item.is_principal) ?? []
+  const openAdd = () => { setEditing(null); setMember({ full_name: "", relation: allowedRelations[0]?.value ?? "", date_of_birth: "", gender: "", sum_assured: "" }); setModalOpen(true) }
+  const openEdit = (row: MemberRow) => { setEditing(row); setMember({ full_name: row.full_name, relation: row.relation, date_of_birth: row.date_of_birth ?? "", gender: row.gender, sum_assured: row.sum_assured == null ? "" : String(row.sum_assured) }); setModalOpen(true) }
+  const save = async () => { if (await onSaveMember(member, editing?.id ?? undefined)) { setModalOpen(false); setEditing(null) } }
+  const principal = state?.principal_member
+  return <div className="space-y-4">
+    <div className="surface-card overflow-hidden"><StepHeader eyebrow="Step 3 of 7" title="Member Coverage" description="Configure the principal member and any additional members required by the selected plans." /><div className="p-5">
+      <div className="rounded-[12px] border bg-[var(--muted)]/25 p-4"><div className="mb-3 flex items-center gap-2"><UserRound size={17} aria-hidden="true" /><h3 className="font-bold">Principal Member (Policy Holder)</h3><span className="rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em]">Automatic</span></div>{principal ? <div className="grid gap-4 md:grid-cols-3"><ReadOnlyField label="Name" value={principal.full_name || quotation.quote_name || "—"} /><ReadOnlyField label="Date of Birth" value={principal.date_of_birth ?? quotation.date_of_birth ?? "—"} /><ReadOnlyField label="Gender" value={principal.gender || quotation.gender || "—"} /></div> : <p className="text-sm text-[var(--muted-foreground)]">Save Personal Details to configure the principal member automatically.</p>}</div>
+      {!state?.requires_additional_coverage ? <InfoBanner title="No additional coverage required" className="mt-5">{state?.info_banner ?? "Selected plans do not require additional member coverage configuration. Principal member is configured automatically."}</InfoBanner> : <div className="mt-5 space-y-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-bold">Additional Members</h3><p className="text-xs text-[var(--muted-foreground)]">Add dependents only when selected plan configurations permit additional coverage.</p></div><button type="button" className="button-primary" onClick={openAdd}><Plus size={15} aria-hidden="true" />Add member</button></div>{fieldError(errors, "members") && <p className="text-sm font-semibold text-[var(--destructive)]" role="alert">{fieldError(errors, "members")}</p>}{additionalMembers.length ? <div className="overflow-x-auto rounded-[10px] border"><table className="w-full min-w-[700px] text-left text-sm"><thead className="bg-[var(--muted)]/40 text-xs uppercase tracking-[0.08em] text-[var(--muted-foreground)]"><tr><th scope="col" className="px-3 py-3">Relation</th><th scope="col" className="px-3 py-3">Name</th><th scope="col" className="px-3 py-3">Date of Birth</th><th scope="col" className="px-3 py-3">Age</th><th scope="col" className="px-3 py-3">Gender</th><th scope="col" className="px-3 py-3">Sum Assured</th><th scope="col" className="px-3 py-3"><span className="sr-only">Actions</span></th></tr></thead><tbody className="divide-y divide-[var(--border)]">{additionalMembers.map((row) => <tr key={row.id ?? row.full_name}><td className="px-3 py-3 font-semibold">{row.relation}</td><td className="px-3 py-3">{row.full_name}</td><td className="px-3 py-3">{row.date_of_birth ?? "—"}</td><td className="px-3 py-3">{row.age_at_quote ?? "—"}</td><td className="px-3 py-3">{row.gender || "—"}</td><td className="px-3 py-3">{row.sum_assured ?? "—"}</td><td className="px-3 py-3"><div className="flex justify-end gap-1"><button type="button" className="rounded-md p-2 hover:bg-[var(--muted)]" aria-label={`Edit ${row.full_name}`} onClick={() => openEdit(row)}><Pencil size={15} aria-hidden="true" /></button><button type="button" className="rounded-md p-2 text-[var(--destructive)] hover:bg-[var(--destructive)]/10" aria-label={`Remove ${row.full_name}`} onClick={() => row.id && void onRemoveMember(row.id)}><Trash2 size={15} aria-hidden="true" /></button></div></td></tr>)}</tbody></table></div> : <div className="rounded-[10px] border border-dashed p-8 text-center text-sm text-[var(--muted-foreground)]">No additional members configured.</div>}</div>}
+    </div></div>
+    <Modal open={modalOpen} title={editing ? "Edit Additional Member" : "Add Additional Member"} description="Member limits and waiting periods are determined by OL Member Cover Configuration." onClose={() => setModalOpen(false)} size="lg" footer={<><button type="button" className="button-secondary" onClick={() => setModalOpen(false)}>Cancel</button><button type="button" className="button-primary" onClick={() => void save()}>Save member</button></>}><div className="space-y-5"><FormGrid columns={2}><ChoiceSelect label="Relation" name="member_relation" required value={member.relation} options={allowedRelations} error={fieldError(errors, "relation")} onChange={(value) => setMember((current) => ({ ...current, relation: value }))} /><TextInput label="Full Name" name="member_full_name" required value={member.full_name} error={fieldError(errors, "full_name")} onChange={(event) => setMember((current) => ({ ...current, full_name: event.target.value }))} /><DateInput label="Date of Birth" name="member_date_of_birth" required value={member.date_of_birth} error={fieldError(errors, "date_of_birth")} onChange={(event) => setMember((current) => ({ ...current, date_of_birth: event.target.value }))} /><ReadOnlyField label="Age" value={age === null ? "—" : `${age} years`} /><ChoiceSelect label="Gender" name="member_gender" required value={member.gender} options={genderOptions} error={fieldError(errors, "gender")} onChange={(value) => setMember((current) => ({ ...current, gender: value }))} /><DecimalInput label="Sum Assured" name="member_sum_assured" value={member.sum_assured} error={fieldError(errors, "sum_assured")} onChange={(event) => setMember((current) => ({ ...current, sum_assured: event.target.value }))} /></FormGrid></div></Modal>
+  </div>
+}
+
+function InstallmentRateGrid({ rows, onChange, error }: { rows: InstallmentRateRow[]; onChange: (rows: InstallmentRateRow[]) => void; error?: string }) {
+  const total = rows.reduce((sum, row) => sum + (Number(row.rate_percent) || 0), 0)
+  const update = (index: number, patch: Partial<InstallmentRateRow>) => onChange(rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row))
+  return <div className="overflow-hidden rounded-[10px] border"><div className="flex items-center justify-between border-b bg-[var(--muted)]/40 px-4 py-3"><div><h3 className="text-sm font-bold">Installment Rate Details</h3><p className="text-xs text-[var(--muted-foreground)]">Rates must sum exactly to 100%.</p></div><button type="button" className="button-secondary !min-h-9 !px-3" onClick={() => onChange([...rows, { sequence: rows.length + 1, description: `Installment ${rows.length + 1}`, rate_percent: "", paid_up_rate: null }])}><Plus size={15} aria-hidden="true" />Add row</button></div><div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead className="bg-[var(--muted)]/25 text-xs uppercase tracking-[0.08em] text-[var(--muted-foreground)]"><tr><th className="px-3 py-3">Installment #</th><th className="px-3 py-3">Description<span className="ml-1 text-[var(--destructive)]">*</span></th><th className="px-3 py-3">Rate (%)<span className="ml-1 text-[var(--destructive)]">*</span></th><th className="px-3 py-3">Paid Up Rate</th><th className="px-3 py-3"><span className="sr-only">Remove</span></th></tr></thead><tbody className="divide-y divide-[var(--border)]">{rows.map((row, index) => <tr key={`${row.sequence}-${index}`}><td className="px-3 py-2"><div className="flex h-10 items-center rounded-[10px] border bg-[var(--muted)] px-3 text-sm font-semibold text-[var(--muted-foreground)]">{row.sequence}</div></td><td className="px-3 py-2"><input aria-label={`Installment ${index + 1} description`} value={row.description} onChange={(event) => update(index, { description: event.target.value })} className="h-10 w-full rounded-[10px] border bg-[var(--card)] px-3 text-sm outline-none focus:border-[var(--ring)]" /></td><td className="px-3 py-2"><input aria-label={`Installment ${index + 1} rate`} type="number" step="0.0001" min="0" max="100" value={String(row.rate_percent)} onChange={(event) => update(index, { rate_percent: event.target.value })} className="h-10 w-full rounded-[10px] border bg-[var(--card)] px-3 text-sm outline-none focus:border-[var(--ring)]" /></td><td className="px-3 py-2"><div className="flex h-10 items-center rounded-[10px] border bg-[var(--muted)] px-3 text-sm text-[var(--muted-foreground)]">{row.paid_up_rate ?? "—"}</div></td><td className="px-3 py-2"><button type="button" className="rounded-md p-2 text-[var(--destructive)] hover:bg-[var(--destructive)]/10" aria-label={`Remove installment row ${index + 1}`} onClick={() => onChange(rows.filter((_, rowIndex) => rowIndex !== index))}><Trash2 size={16} aria-hidden="true" /></button></td></tr>)}</tbody><tfoot className="border-t bg-[var(--muted)]/35"><tr><th colSpan={4} className="px-3 py-3 text-right">Total Rate</th><td className={`px-3 py-3 text-right font-extrabold ${Math.abs(total - 100) < 0.0001 ? "text-[var(--success)]" : "text-[var(--destructive)]"}`}>{total.toFixed(2)} / 100.00</td></tr></tfoot></table></div>{error && <p className="border-t px-4 py-3 text-sm font-semibold text-[var(--destructive)]" role="alert">{error}</p>}</div>
+}
+
+function ConfigureInstallmentModal({ open, plan, template, loading, saving, errors, onClose, onSave }: { open: boolean; plan: InstallmentPlanRow | null; template: InstallmentTemplate | null; loading: boolean; saving: boolean; errors: ApiFieldErrors; onClose: () => void; onSave: (payload: { annuity_period_years: number; payment_mode: string; after_maturity_benefits: boolean; before_maturity_benefits: boolean; rate_rows: InstallmentRateRow[] }) => Promise<boolean> }) {
+  const [annuityPeriod, setAnnuityPeriod] = useState("1")
+  const [paymentMode, setPaymentMode] = useState("")
+  const [afterMaturity, setAfterMaturity] = useState(false)
+  const [beforeMaturity, setBeforeMaturity] = useState(false)
+  const [rows, setRows] = useState<InstallmentRateRow[]>([])
+  useEffect(() => { if (open && template) { setAnnuityPeriod("1"); setPaymentMode(template.payment_mode || template.available_payment_modes[0] || ""); setRows(template.rate_rows?.length ? template.rate_rows : [{ sequence: 1, description: "Installment 1", rate_percent: "", paid_up_rate: null }]); setAfterMaturity(false); setBeforeMaturity(false) } }, [open, template])
+  const total = rows.reduce((sum, row) => sum + (Number(row.rate_percent) || 0), 0)
+  const save = async () => { const ok = await onSave({ annuity_period_years: Number(annuityPeriod), payment_mode: paymentMode, after_maturity_benefits: afterMaturity, before_maturity_benefits: beforeMaturity, rate_rows: rows }) ; if (ok) onClose() }
+  return <Modal open={open} title="Configure Installments" description={plan ? `${plan.plan_code} — ${plan.plan_name}` : undefined} onClose={onClose} size="xl" footer={<><button type="button" className="button-secondary" onClick={onClose} disabled={saving}>Cancel</button><button type="button" className="button-primary" onClick={() => void save()} disabled={saving || loading}>{saving ? "Saving…" : "Save configuration"}</button></>}><div className="space-y-5">{loading ? <div className="py-12 text-center text-sm text-[var(--muted-foreground)]"><LoaderCircle className="mx-auto mb-2 animate-spin" size={22} aria-hidden="true" />Loading installment template…</div> : <><InfoBanner title={template?.has_template ? "Template loaded" : "Manual configuration available"}>{template?.banner || "Template rows were loaded from the configured installment parameters."}</InfoBanner><FormGrid columns={2}><TextInput label="Annuity Period (years)" name="annuity_period_years" required type="number" min={1} max={plan?.policy_term_years} value={annuityPeriod} error={fieldError(errors, "annuity_period_years")} onChange={(event) => setAnnuityPeriod(event.target.value)} /><ChoiceSelect label="Payment Mode" name="installment_payment_mode" required value={paymentMode} options={(template?.available_payment_modes ?? []).map((value) => ({ value, label: value.replace(/_/g, " ").replace(/\\b\\w/g, (letter) => letter.toUpperCase()) }))} error={fieldError(errors, "payment_mode")} onChange={setPaymentMode} /><ReadOnlyField label="Policy Term" value={plan?.policy_term_years ? `${plan.policy_term_years} years` : "—"} /><ReadOnlyField label="Total Number of Installments" value={rows.length} /></FormGrid><div className="grid gap-3 rounded-[10px] border bg-[var(--muted)]/25 p-4 md:grid-cols-2"><Toggle label="After Maturity Benefits" checked={afterMaturity} onChange={setAfterMaturity} hint="Include installment payouts after the maturity date." /><Toggle label="Before Maturity Benefits" checked={beforeMaturity} onChange={setBeforeMaturity} hint="Include installment payouts before the maturity date." /></div><InstallmentRateGrid rows={rows} onChange={setRows} error={fieldError(errors, "rate_rows") || (Math.abs(total - 100) >= 0.0001 ? "Installment rates must sum exactly to 100." : undefined)} /></>}</div></Modal>
+}
+
+function InstallmentsStep({ rows, loading, selectedPlan, template, templateLoading, saving, errors, onConfigure, onCloseModal, onSave, modalOpen }: { rows: InstallmentPlanRow[]; loading: boolean; selectedPlan: InstallmentPlanRow | null; template: InstallmentTemplate | null; templateLoading: boolean; saving: boolean; errors: ApiFieldErrors; onConfigure: (plan: InstallmentPlanRow) => void; onCloseModal: () => void; onSave: (payload: { annuity_period_years: number; payment_mode: string; after_maturity_benefits: boolean; before_maturity_benefits: boolean; rate_rows: InstallmentRateRow[] }) => Promise<boolean>; modalOpen: boolean }) {
+  return <div className="surface-card overflow-hidden"><StepHeader eyebrow="Step 4 of 7" title="Installments" description="Review installment requirements for each selected plan and configure the rate schedule when required." /><div className="p-5">{loading ? <div className="py-12 text-center text-sm text-[var(--muted-foreground)]"><LoaderCircle className="mx-auto mb-2 animate-spin" size={22} aria-hidden="true" />Loading installment requirements…</div> : rows.length ? <div className="overflow-x-auto rounded-[10px] border"><table className="w-full min-w-[800px] text-left text-sm"><thead className="bg-[var(--muted)]/35 text-xs uppercase tracking-[0.08em] text-[var(--muted-foreground)]"><tr><th className="px-3 py-3">Plan/Sub-Product</th><th className="px-3 py-3">Policy Term (Years)</th><th className="px-3 py-3">Payment Mode</th><th className="px-3 py-3">No. of Installments</th><th className="px-3 py-3">Status</th><th className="px-3 py-3"><span className="sr-only">Action</span></th></tr></thead><tbody className="divide-y divide-[var(--border)]">{rows.map((row) => <tr key={row.plan_configuration_id}><td className="px-3 py-3"><p className="font-semibold">{row.plan_code}</p><p className="text-xs text-[var(--muted-foreground)]">{row.plan_name}</p></td><td className="px-3 py-3">{row.policy_term_years}</td><td className="px-3 py-3">{row.payment_mode || "—"}</td><td className="px-3 py-3">{row.total_number_of_installments}</td><td className="px-3 py-3"><span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${row.status === "CONFIGURED" ? "border-[var(--success)]/40 text-[var(--success)]" : "border-[var(--warning)]/50 text-[var(--warning)]"}`}>{row.status === "CONFIGURED" ? "Configured" : "Ready to Configure"}</span></td><td className="px-3 py-3 text-right"><button type="button" className="button-secondary !min-h-9 !px-3" disabled={!row.can_configure} onClick={() => onConfigure(row)}>{row.status === "CONFIGURED" ? "Edit" : "Configure"}<ChevronRight size={14} aria-hidden="true" /></button></td></tr>)}</tbody></table></div> : <div className="rounded-[10px] border border-dashed p-8 text-center text-sm text-[var(--muted-foreground)]">Select plans in Step 2 to configure installments.</div>}</div><ConfigureInstallmentModal open={modalOpen} plan={selectedPlan} template={template} loading={templateLoading} saving={saving} errors={errors} onClose={onCloseModal} onSave={onSave} /></div>
+}
+
+function InvestmentFundsStep({ quotation, state, optionsByPlan, allocations, errors, onChange, onSave }: { quotation: Quotation; state: InvestmentFundState | null; optionsByPlan: Record<string, InvestmentFundOptions>; allocations: Record<string, FundAllocation[]>; errors: ApiFieldErrors; onChange: (planConfigId: string, rows: FundAllocation[]) => void; onSave: () => Promise<boolean> }) {
+  const applicableRows = state?.plan_rows.filter((row) => row.investment_linked) ?? []
+  return <div className="surface-card overflow-hidden"><StepHeader eyebrow="Step 5 of 7" title="Investment Funds" description="Allocate investment-linked quotation amounts across active, currency-compatible funds." /><div className="space-y-5 p-5">{state?.not_applicable && <InfoBanner title="Not applicable">The selected plans are not investment-linked, so investment fund allocation is not required.</InfoBanner>}{state?.requires_allocation === false && !state?.not_applicable && <InfoBanner title="Investment funds configured">All applicable investment-linked plans have valid 100% allocations.</InfoBanner>}{applicableRows.map((plan) => { const options = optionsByPlan[plan.plan_configuration_id]?.funds ?? []; const rows = allocations[plan.plan_configuration_id] ?? []; const total = rows.reduce((sum, row) => sum + (Number(row.allocation_percent) || 0), 0); return <section key={plan.plan_configuration_id} className="rounded-[12px] border"><div className="flex flex-wrap items-center justify-between gap-3 border-b bg-[var(--muted)]/35 px-4 py-3"><div><p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">{plan.plan_code}</p><h3 className="mt-1 font-bold">{plan.plan_name}</h3></div><span className={`rounded-full border px-3 py-1 text-xs font-bold ${plan.status === "CONFIGURED" ? "border-[var(--success)]/40 text-[var(--success)]" : "border-[var(--warning)]/50 text-[var(--warning)]"}`}>{plan.status === "CONFIGURED" ? "Configured" : "Ready to Configure"}</span></div><div className="space-y-4 p-4"><div className="flex items-center justify-between text-sm"><span className="font-semibold">Allocation total</span><span className={Math.abs(total - 100) < 0.0001 ? "font-bold text-[var(--success)]" : "font-bold text-[var(--destructive)]"}>{total.toFixed(2)} / 100.00%</span></div><div className="overflow-x-auto rounded-[10px] border"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-[var(--muted)]/30 text-xs uppercase tracking-[0.08em] text-[var(--muted-foreground)]"><tr><th className="px-3 py-3">Investment Fund</th><th className="px-3 py-3">Risk Profile</th><th className="px-3 py-3">Currency</th><th className="px-3 py-3">Allocation (%)</th><th className="px-3 py-3">Allocated Amount</th><th className="px-3 py-3"><span className="sr-only">Remove</span></th></tr></thead><tbody className="divide-y divide-[var(--border)]">{rows.map((row, index) => { const option = options.find((item) => item.id === row.fund_id); return <tr key={`${row.fund_id}-${index}`}><td className="px-3 py-2"><SelectInput label="" name={`fund_${plan.plan_configuration_id}_${index}`} value={row.fund_id} onChange={(event) => onChange(plan.plan_configuration_id, rows.map((item, rowIndex) => rowIndex === index ? { ...item, fund_id: event.target.value, fund_name: option?.name, fund_code: option?.code } : item))}><option value="">Select fund</option>{options.map((fund) => <option key={fund.id} value={fund.id} disabled={!fund.selectable}>{fund.code} — {fund.name}{fund.selectable ? "" : " (Not compatible)"}</option>)}</SelectInput></td><td className="px-3 py-2">{option?.risk_profile ?? "—"}</td><td className="px-3 py-2">{option?.currency ?? quotation.currency ?? "—"}</td><td className="px-3 py-2"><input aria-label={`Allocation percentage ${index + 1}`} type="number" step="0.0001" min="0" max="100" value={String(row.allocation_percent)} onChange={(event) => onChange(plan.plan_configuration_id, rows.map((item, rowIndex) => rowIndex === index ? { ...item, allocation_percent: event.target.value } : item))} className="h-10 w-full rounded-[10px] border bg-[var(--card)] px-3 text-sm outline-none focus:border-[var(--ring)]" /></td><td className="px-3 py-2"><input aria-label={`Allocated amount ${index + 1}`} type="number" step="0.01" min="0" value={row.allocated_amount == null ? "" : String(row.allocated_amount)} onChange={(event) => onChange(plan.plan_configuration_id, rows.map((item, rowIndex) => rowIndex === index ? { ...item, allocated_amount: event.target.value } : item))} className="h-10 w-full rounded-[10px] border bg-[var(--card)] px-3 text-sm outline-none focus:border-[var(--ring)]" /></td><td className="px-3 py-2"><button type="button" className="rounded-md p-2 text-[var(--destructive)]" aria-label={`Remove fund allocation ${index + 1}`} onClick={() => onChange(plan.plan_configuration_id, rows.filter((_, rowIndex) => rowIndex !== index))}><Trash2 size={15} aria-hidden="true" /></button></td></tr>})}</tbody></table></div>{fieldError(errors, "allocations") && <p className="text-sm font-semibold text-[var(--destructive)]" role="alert">{fieldError(errors, "allocations")}</p>}<button type="button" className="button-secondary" onClick={() => onChange(plan.plan_configuration_id, [...rows, { plan_config_id: plan.plan_configuration_id, fund_id: "", allocation_percent: "", allocated_amount: null }])}><Plus size={15} aria-hidden="true" />Add fund</button></div></section>})}{!state?.not_applicable && applicableRows.length > 0 && <div className="flex justify-end"><button type="button" className="button-primary" onClick={() => void onSave()}>Save fund allocations</button></div>}</div></div>
+}
+
 function FutureStep({ step, index }: { step: string; index: number }) {
   return <div className="surface-card overflow-hidden"><StepHeader eyebrow={`Step ${index + 1} of 7`} title={step} description="This wizard step is reserved for the next quotation module increment." /><div className="p-5"><div className="rounded-[10px] border border-dashed p-8 text-center text-sm text-[var(--muted-foreground)]">Complete the Personal Details and Plan & Sub-Products steps first. Your draft will remain available to resume later.</div></div></div>
 }
@@ -341,6 +514,18 @@ export default function OLQuotationWizard() {
   const [configurations, setConfigurations] = useState<PlanConfiguration[]>([])
   const [planOptions, setPlanOptions] = useState<PlanOptions>({ payment_frequencies: [], quote_bases: [], premium_factors: [] })
   const [planErrors, setPlanErrors] = useState<Record<string, ApiFieldErrors>>({})
+  const [memberState, setMemberState] = useState<MemberCoverageState | null>(null)
+  const [memberErrors, setMemberErrors] = useState<ApiFieldErrors>({})
+  const [installmentState, setInstallmentState] = useState<InstallmentState | null>(null)
+  const [installmentTemplate, setInstallmentTemplate] = useState<InstallmentTemplate | null>(null)
+  const [installmentTemplateLoading, setInstallmentTemplateLoading] = useState(false)
+  const [installmentModalOpen, setInstallmentModalOpen] = useState(false)
+  const [selectedInstallmentPlan, setSelectedInstallmentPlan] = useState<InstallmentPlanRow | null>(null)
+  const [installmentErrors, setInstallmentErrors] = useState<ApiFieldErrors>({})
+  const [fundState, setFundState] = useState<InvestmentFundState | null>(null)
+  const [fundOptions, setFundOptions] = useState<Record<string, InvestmentFundOptions>>({})
+  const [fundAllocations, setFundAllocations] = useState<Record<string, FundAllocation[]>>({})
+  const [fundErrors, setFundErrors] = useState<ApiFieldErrors>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [detailsOpen, setDetailsOpen] = useState(false)
@@ -421,6 +606,154 @@ export default function OLQuotationWizard() {
       toast({ tone: "danger", title: "Unable to load plan options", message: parseApiError(error).message })
     }
   }, [quotationId, toast])
+
+  const loadMemberCoverage = useCallback(async () => {
+    if (!quotationId) return
+    try {
+      const payload = await request<MemberCoverageState>(`${QUOTATION_PREFIX}${quotationId}/members/`)
+      setMemberState(payload)
+    } catch (error) {
+      toast({ tone: "danger", title: "Unable to load member coverage", message: parseApiError(error).message })
+    }
+  }, [quotationId, toast])
+
+  const loadInstallments = useCallback(async () => {
+    if (!quotationId) return
+    try {
+      const payload = await request<InstallmentState>(`${QUOTATION_PREFIX}${quotationId}/installments/`)
+      setInstallmentState(payload)
+    } catch (error) {
+      toast({ tone: "danger", title: "Unable to load installments", message: parseApiError(error).message })
+    }
+  }, [quotationId, toast])
+
+  const loadInstallmentTemplate = useCallback(async (plan: InstallmentPlanRow) => {
+    if (!quotationId) return
+    setSelectedInstallmentPlan(plan)
+    setInstallmentTemplate(null)
+    setInstallmentErrors({})
+    setInstallmentModalOpen(true)
+    setInstallmentTemplateLoading(true)
+    try {
+      const payload = await request<InstallmentTemplate>(`${QUOTATION_PREFIX}${quotationId}/installments/${plan.plan_configuration_id}/template/`)
+      setInstallmentTemplate(payload)
+    } catch (error) {
+      setInstallmentErrors(parseApiError(error).fieldErrors)
+      toast({ tone: "danger", title: "Unable to load installment template", message: parseApiError(error).message })
+    } finally {
+      setInstallmentTemplateLoading(false)
+    }
+  }, [quotationId, toast])
+
+  const saveInstallment = useCallback(async (payload: { annuity_period_years: number; payment_mode: string; after_maturity_benefits: boolean; before_maturity_benefits: boolean; rate_rows: InstallmentRateRow[] }) => {
+    if (!quotationId || !selectedInstallmentPlan) return false
+    const total = payload.rate_rows.reduce((sum, row) => sum + (Number(row.rate_percent) || 0), 0)
+    if (Math.abs(total - 100) >= 0.0001) {
+      setInstallmentErrors({ rate_rows: ["Installment rates must sum exactly to 100."] })
+      return false
+    }
+    setSaving(true)
+    setInstallmentErrors({})
+    try {
+      await request(`${QUOTATION_PREFIX}${quotationId}/installments/${selectedInstallmentPlan.plan_configuration_id}/configure/`, { method: "POST", body: JSON.stringify(payload) })
+      await loadInstallments()
+      setCompletedSteps((current) => new Set(current).add(3))
+      toast({ tone: "success", title: "Installments configured" })
+      return true
+    } catch (error) {
+      const parsed = parseApiError(error)
+      setInstallmentErrors(parsed.fieldErrors)
+      toast({ tone: "danger", title: "Installment configuration needs attention", message: parsed.message })
+      return false
+    } finally { setSaving(false) }
+  }, [loadInstallments, quotationId, selectedInstallmentPlan, toast])
+
+  const loadInvestmentFunds = useCallback(async () => {
+    if (!quotationId) return
+    try {
+      const payload = await request<InvestmentFundState>(`${QUOTATION_PREFIX}${quotationId}/investment-funds/`)
+      setFundState(payload)
+      const nextAllocations: Record<string, FundAllocation[]> = {}
+      for (const row of payload.plan_rows ?? []) nextAllocations[row.plan_configuration_id] = row.allocations ?? []
+      setFundAllocations(nextAllocations)
+      const applicable = (payload.plan_rows ?? []).filter((row) => row.investment_linked)
+      await Promise.all(applicable.map(async (row) => {
+        try {
+          const options = await request<InvestmentFundOptions>(`${QUOTATION_PREFIX}${quotationId}/investment-funds/options/?plan_config_id=${encodeURIComponent(row.plan_configuration_id)}`)
+          setFundOptions((current) => ({ ...current, [row.plan_configuration_id]: options }))
+        } catch (error) {
+          toast({ tone: "danger", title: "Unable to load investment funds", message: parseApiError(error).message })
+        }
+      }))
+    } catch (error) {
+      toast({ tone: "danger", title: "Unable to load investment fund allocations", message: parseApiError(error).message })
+    }
+  }, [quotationId, toast])
+
+  const saveFunds = useCallback(async () => {
+    if (!quotationId || !fundState || fundState.not_applicable) return true
+    const applicable = fundState.plan_rows.filter((row) => row.investment_linked)
+    const invalid = applicable.some((row) => {
+      const allocations = fundAllocations[row.plan_configuration_id] ?? []
+      const total = allocations.reduce((sum, allocation) => sum + (Number(allocation.allocation_percent) || 0), 0)
+      return !allocations.length || allocations.some((allocation) => !allocation.fund_id) || Math.abs(total - 100) >= 0.0001
+    })
+    if (invalid) {
+      setFundErrors({ allocations: ["Each investment-linked plan must have fund allocations totaling exactly 100%."] })
+      return false
+    }
+    setSaving(true)
+    setFundErrors({})
+    try {
+      await request(`${QUOTATION_PREFIX}${quotationId}/investment-funds/`, { method: "POST", body: JSON.stringify({ allocations: Object.values(fundAllocations).flat() }) })
+      await loadInvestmentFunds()
+      setCompletedSteps((current) => new Set(current).add(4))
+      toast({ tone: "success", title: "Investment fund allocations saved" })
+      return true
+    } catch (error) {
+      const parsed = parseApiError(error)
+      setFundErrors(parsed.fieldErrors)
+      toast({ tone: "danger", title: "Investment fund allocations need attention", message: parsed.message })
+      return false
+    } finally { setSaving(false) }
+  }, [fundAllocations, fundState, loadInvestmentFunds, quotationId, toast])
+
+  useEffect(() => {
+    if (!quotationId) return
+    if (activeStep === 2) void loadMemberCoverage()
+    if (activeStep === 3) void loadInstallments()
+    if (activeStep === 4) void loadInvestmentFunds()
+  }, [activeStep, loadInstallments, loadInvestmentFunds, loadMemberCoverage, quotationId])
+
+  const saveMember = useCallback(async (member: MemberForm, memberId?: string) => {
+    if (!quotationId) return false
+    setSaving(true)
+    setMemberErrors({})
+    try {
+      const path = memberId ? `${QUOTATION_PREFIX}${quotationId}/members/${memberId}/` : `${QUOTATION_PREFIX}${quotationId}/members/`
+      await request(path, { method: memberId ? "PATCH" : "POST", body: JSON.stringify(member) })
+      await loadMemberCoverage()
+      setCompletedSteps((current) => new Set(current).add(2))
+      toast({ tone: "success", title: memberId ? "Member updated" : "Member added" })
+      return true
+    } catch (error) {
+      const parsed = parseApiError(error)
+      setMemberErrors(parsed.fieldErrors)
+      toast({ tone: "danger", title: "Member details need attention", message: parsed.message })
+      return false
+    } finally { setSaving(false) }
+  }, [loadMemberCoverage, quotationId, toast])
+
+  const removeMember = useCallback(async (memberId: string) => {
+    if (!quotationId) return
+    try {
+      await request(`${QUOTATION_PREFIX}${quotationId}/members/${memberId}/`, { method: "DELETE" })
+      await loadMemberCoverage()
+      toast({ tone: "success", title: "Member removed" })
+    } catch (error) {
+      toast({ tone: "danger", title: "Unable to remove member", message: parseApiError(error).message })
+    }
+  }, [loadMemberCoverage, quotationId, toast])
 
   const age = computeAge(personal.date_of_birth, personal.quote_date)
 
@@ -513,7 +846,7 @@ export default function OLQuotationWizard() {
 
   const validateAndNavigate = async (target: number) => {
     if (target > activeStep) {
-      const valid = activeStep === 0 ? await savePersonal() : activeStep === 1 ? await savePlans() : true
+      const valid = activeStep === 0 ? await savePersonal() : activeStep === 1 ? await savePlans() : activeStep === 4 ? await saveFunds() : true
       if (!valid) return
     }
     setActiveStep(Math.min(Math.max(target, 0), steps.length - 1))
@@ -541,7 +874,10 @@ export default function OLQuotationWizard() {
     <div className="flex flex-col gap-4 lg:flex-row lg:items-start"><PlanSelectionPanel plans={plans} selectedPlanIds={selectedPlanIds} search={planSearch} loading={plansLoading} onSearch={setPlanSearch} onToggle={handlePlanToggle} /><main className="min-w-0 flex-1">
       {currentStep === "personal" && <PersonalDetailsStep form={personal} options={personalOptions} errors={personalErrors} age={age} onChange={handlePersonalChange} />}
       {currentStep === "plans" && <div className="space-y-4"><div className="surface-card overflow-hidden"><StepHeader eyebrow="Step 2 of 7" title="Plan & Sub-Products" description="Configure each selected plan using effective product setup and Ordinary Life parameter options." /><div className="p-5">{fieldError(planErrors.selection ?? {}, "plans") && <div className="mb-4"><div className="rounded-[10px] border border-[var(--destructive)]/35 bg-[var(--destructive)]/5 p-3 text-sm font-semibold text-[var(--destructive)]" role="alert">{fieldError(planErrors.selection ?? {}, "plans")}</div></div>}{!configurations.length && <div className="rounded-[10px] border border-dashed p-8 text-center text-sm text-[var(--muted-foreground)]">Select one or more plans from the left panel, then continue to create configuration sections.</div>}</div></div>{configurations.map((config, index) => <PlanConfigurationSection key={config.id} index={index} config={config} card={cardByPlanId.get(configurationPlanId(config) ?? "")} options={planOptions} errors={planErrors[config.id] ?? {}} onChange={(field, value) => void patchConfiguration(config, field, value)} />)}</div>}
-      {activeStep >= 2 && <FutureStep step={steps[activeStep].label} index={activeStep} />}
+      {currentStep === "members" && <MemberCoverageStep quotation={quotation} state={memberState} genderOptions={personalOptions.genders} errors={memberErrors} onSaveMember={saveMember} onRemoveMember={removeMember} />}
+      {currentStep === "installments" && <InstallmentsStep rows={installmentState?.rows ?? []} loading={!installmentState} selectedPlan={selectedInstallmentPlan} template={installmentTemplate} templateLoading={installmentTemplateLoading} saving={saving} errors={installmentErrors} onConfigure={(plan) => void loadInstallmentTemplate(plan)} onCloseModal={() => { setInstallmentModalOpen(false); setSelectedInstallmentPlan(null) }} onSave={saveInstallment} modalOpen={installmentModalOpen} />}
+      {currentStep === "funds" && <InvestmentFundsStep quotation={quotation} state={fundState} optionsByPlan={fundOptions} allocations={fundAllocations} errors={fundErrors} onChange={(planConfigId, rows) => setFundAllocations((current) => ({ ...current, [planConfigId]: rows }))} onSave={saveFunds} />}
+      {(currentStep === "riders" || currentStep === "financial") && <FutureStep step={steps[activeStep].label} index={activeStep} />}
     </main></div>
     <footer className="surface-card flex flex-wrap items-center justify-between gap-3 px-5 py-4"><button type="button" className="button-secondary" onClick={() => navigate("/ordinary-life/quotations")}><X size={15} aria-hidden="true" />Cancel</button><div className="flex gap-2"><button type="button" className="button-secondary" disabled={activeStep === 0 || saving} onClick={() => setActiveStep((current) => Math.max(0, current - 1))}><ChevronLeft size={15} aria-hidden="true" />Previous</button><button type="button" className="button-primary" disabled={saving} onClick={() => void validateAndNavigate(activeStep + 1)}>{saving ? <LoaderCircle className="animate-spin" size={15} aria-hidden="true" /> : null}{activeStep === steps.length - 1 ? "Complete" : "Next"}<ChevronRight size={15} aria-hidden="true" /></button></div></footer>
   </div>
