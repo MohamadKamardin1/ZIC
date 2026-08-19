@@ -208,6 +208,29 @@ class Command(BaseCommand):
             },
         )
 
+        SystemParameter.objects.update_or_create(
+            code="OL_PROPOSAL_PREFIX",
+            defaults={
+                "group": system_group,
+                "name": "Ordinary Life Proposal Number Prefix",
+                "description": "Prefix used by the canonical OL proposal numbering engine.",
+                "value_type": "STRING",
+                "string_value": "OLP",
+                "is_active": True,
+            },
+        )
+        SystemParameter.objects.update_or_create(
+            code="OL_QUOTATION_PARTNER_TYPE_CODE",
+            defaults={
+                "group": system_group,
+                "name": "OL Quotation Completion Partner Type",
+                "description": "Active partner type assigned to individuals completed from an OL quotation.",
+                "value_type": "STRING",
+                "string_value": "CLIENT",
+                "is_active": True,
+            },
+        )
+
         for choice_code, choice_payload in CHOICE_LIST_SEEDS.items():
             choice_list, _ = ChoiceList.objects.update_or_create(
                 code=choice_code,

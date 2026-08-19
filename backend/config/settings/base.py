@@ -67,6 +67,7 @@ INSTALLED_APPS = [
     'apps.ordinary_life.apps.OrdinaryLifeConfig',
     'apps.ol_parameters.apps.OLParametersConfig',
     'apps.ol_quotations.apps.OLQuotationsConfig',
+    'apps.ol_proposals.apps.OLProposalsConfig',
     'apps.group_credit',
     'apps.front_office',
 ]

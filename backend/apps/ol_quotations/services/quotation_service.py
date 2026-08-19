@@ -10,6 +10,10 @@ from rest_framework.exceptions import ValidationError
 
 from apps.common.models import DomainEvent
 from apps.governance.services.audit_service import AuditService
+from apps.partner_onboarding.models import ApplicationPartnerType, PartnerApplication
+from apps.partner_onboarding.services.application_service import ApplicationService
+from apps.partners.models import Partner, PartnerType
+from apps.ol_proposals.models import OLProposal, ProposalStatus
 from apps.system_parameters.services.config_service import ConfigurationService
 from apps.system_parameters.services.numbering_service import NumberingEngine
 
@@ -2194,6 +2198,302 @@ class QuotationService:
                 request=request,
             )
         return locked
+
+    @staticmethod
+    @transaction.atomic
+    def verify_partner(*, quotation, actor=None, request=None):
+        """Match the quotation prospect against the compliant partner master."""
+        locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
+        before = QuotationService.snapshot(locked)
+        matching = Partner.objects.filter(
+            identification_type=(locked.identity_type or "").strip().upper(),
+            identification_number=(locked.identity_number or "").strip(),
+            date_of_birth=locked.date_of_birth,
+        ).first()
+        partner_exists = matching is not None
+        compliant = bool(matching and matching.status == "ACTIVE" and matching.is_active)
+        missing_fields = []
+        field_map = {
+            "identification_type": "identification_type",
+            "identification_number": "identification_number",
+            "date_of_birth": "date_of_birth",
+            "gender": "gender",
+        }
+        if matching:
+            for quotation_field, partner_field in field_map.items():
+                quotation_value = getattr(locked, quotation_field, None)
+                partner_value = getattr(matching, partner_field, None)
+                if quotation_value and not partner_value:
+                    missing_fields.append(partner_field)
+            if compliant and not missing_fields:
+                locked.partner = matching
+                locked.linked_partner = matching
+                locked.partner_verified = True
+            else:
+                locked.partner_verified = False
+        else:
+            missing_fields = [
+                "identification_type",
+                "identification_number",
+                "date_of_birth",
+                "first_name",
+                "surname",
+                "email",
+                "mobile_number",
+                "nationality",
+            ]
+            locked.partner_verified = False
+        locked.updated_by = QuotationService.actor(actor)
+        locked.wizard_step_completion = QuotationService.wizard_completion(locked)
+        locked.save(update_fields=["partner", "linked_partner", "partner_verified", "wizard_step_completion", "updated_by", "updated_at"])
+        after = QuotationService.snapshot(locked)
+        AuditService.log_update(
+            locked,
+            before_state=before,
+            actor=actor,
+            request=request,
+            reason="Quotation partner verification completed.",
+        )
+        DomainEvent.objects.create(
+            event_type="PartnerVerificationCompleted",
+            aggregate_type="OLQuotation",
+            aggregate_id=str(locked.pk),
+            payload={
+                "quotation_id": str(locked.pk),
+                "quote_number": locked.quote_number,
+                "partner_exists": partner_exists,
+                "partner_id": str(matching.pk) if matching else None,
+                "compliant": compliant,
+                "missing_fields": missing_fields,
+            },
+        )
+        return {
+            "partner_exists": partner_exists,
+            "partner_id": str(matching.pk) if matching else None,
+            "compliant": compliant and not missing_fields,
+            "missing_fields": missing_fields,
+            "partner_number": matching.partner_number if matching else None,
+            "partner_display_name": matching.display_name if matching else None,
+            "quotation": locked,
+        }
+
+    @staticmethod
+    @transaction.atomic
+    def complete_partner(*, quotation, actor, data, request=None):
+        """Create an individual partner through the canonical onboarding conversion service."""
+        locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
+        payload = dict(data or {})
+        payload.pop("application_number", None)
+        payload["partner_type"] = "INDIVIDUAL"
+        field_values = {
+            "identification_type": locked.identity_type,
+            "identification_number": locked.identity_number,
+            "date_of_birth": locked.date_of_birth,
+            "gender": locked.gender,
+        }
+        for field, value in field_values.items():
+            if not payload.get(field) and value:
+                payload[field] = value
+        payload["first_name"] = (payload.get("first_name") or "").strip()
+        payload["other_name"] = (payload.get("other_name") or "").strip()
+        payload["surname"] = (payload.get("surname") or "").strip()
+        payload["email"] = (payload.get("email") or "").strip().lower()
+        payload["mobile_number"] = (payload.get("mobile_number") or "").strip()
+        payload["telephone_number"] = (payload.get("telephone_number") or "").strip()
+        payload["nationality"] = (payload.get("nationality") or "").strip()
+        payload["occupation"] = (payload.get("occupation") or "").strip()
+        payload["submitted_by"] = QuotationService.actor(actor)
+        missing = [
+            field for field in (
+                "identification_type",
+                "identification_number",
+                "first_name",
+                "surname",
+                "email",
+                "mobile_number",
+                "date_of_birth",
+                "nationality",
+                "gender",
+            ) if not payload.get(field)
+        ]
+        if missing:
+            raise QuotationServiceError({
+                "detail": "Partner completion requires the configured individual KYC fields.",
+                "missing_fields": missing,
+            })
+        payload["identification_type"] = str(payload["identification_type"]).strip().upper()
+        payload["gender"] = str(payload["gender"]).strip().upper()
+
+        partner_type_code = ConfigurationService.get_str_parameter("OL_QUOTATION_PARTNER_TYPE_CODE", "")
+        partner_types = PartnerType.objects.filter(is_active=True)
+        if partner_type_code:
+            partner_type = partner_types.filter(code=partner_type_code.strip().upper()).first()
+        else:
+            partner_type = partner_types.order_by("name").first()
+        if partner_type is None:
+            raise QuotationServiceError("No active partner type is configured for quotation partner completion.")
+
+        application = ApplicationService.create_draft(actor, payload)
+        ApplicationPartnerType.objects.create(application=application, partner_type=partner_type)
+        application = ApplicationService.submit(application, actor)
+        application = ApplicationService.start_review(
+            application,
+            actor,
+            notes="Quotation partner completion review.",
+        )
+        application = ApplicationService.send_to_compliance(
+            application,
+            actor,
+            notes="Quotation partner completion compliance review.",
+        )
+        application = ApplicationService.approve(
+            application,
+            actor,
+            notes="Quotation partner completion approved after KYC validation.",
+        )
+        partner = ApplicationService.convert_to_partner(application, actor)
+        before = QuotationService.snapshot(locked)
+        locked.partner = partner
+        locked.linked_partner = partner
+        locked.partner_verified = bool(partner.status == "ACTIVE" and partner.is_active)
+        locked.updated_by = QuotationService.actor(actor)
+        locked.wizard_step_completion = QuotationService.wizard_completion(locked)
+        locked.save(update_fields=["partner", "linked_partner", "partner_verified", "wizard_step_completion", "updated_by", "updated_at"])
+        after = QuotationService.snapshot(locked)
+        AuditService.log_update(
+            locked,
+            before_state=before,
+            actor=actor,
+            request=request,
+            reason="Partner completed and linked to quotation.",
+        )
+        DomainEvent.objects.create(
+            event_type="PartnerCompleted",
+            aggregate_type="OLQuotation",
+            aggregate_id=str(locked.pk),
+            payload={
+                "quotation_id": str(locked.pk),
+                "quote_number": locked.quote_number,
+                "partner_id": str(partner.pk),
+                "application_id": str(application.pk),
+            },
+        )
+        return {
+            "partner": partner,
+            "application": application,
+            "quotation": locked,
+            "partner_verified": locked.partner_verified,
+        }
+
+    @staticmethod
+    @transaction.atomic
+    def convert_to_proposal(*, quotation, actor, notes="", request=None):
+        """Convert a finalized, verified quotation into an immutable proposal handoff."""
+        locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
+        if locked.status != QuotationStatus.FINALIZED:
+            raise QuotationServiceError({
+                "detail": "Only finalized quotations can be converted to proposals.",
+                "status": locked.status,
+            })
+        if locked.expiry_date and locked.expiry_date < date.today():
+            raise QuotationServiceError({
+                "detail": "Expired quotations cannot be converted to proposals.",
+                "status": QuotationStatus.EXPIRED,
+            })
+        if not locked.partner_verified:
+            raise QuotationServiceError("Partner verification is required before conversion to proposal.")
+        if locked.approval_required:
+            raise QuotationServiceError("Quotation approval must be resolved before conversion to proposal.")
+
+        source_version = OLQuotationVersion.objects.filter(
+            quotation=locked,
+            version_number=locked.current_version_number,
+        ).first()
+        if source_version is None:
+            source_version = QuotationService._record_version(
+                locked,
+                actor=actor,
+                reason="Finalized quotation snapshot preserved for proposal conversion.",
+                status=QuotationStatus.FINALIZED,
+            )
+        full_snapshot = source_version.snapshot or QuotationService.version_snapshot(locked)
+        children = full_snapshot.get("children", {}) if isinstance(full_snapshot, dict) else {}
+        plans_snapshot = children.get("ol_quotations.olquotationplanconfiguration", [])
+        if not plans_snapshot:
+            plans_snapshot = children.get("ol_quotations.olquotationproduct", [])
+        financial_snapshot = full_snapshot.get("financial_summary") or {}
+        proposal = OLProposal.objects.create(
+            quotation=locked,
+            quotation_version=source_version,
+            proposal_number=NumberingEngine.generate_number(
+                numbering_code="OL_PROPOSAL",
+                model_class=OLProposal,
+                field_name="proposal_number",
+            ),
+            status=ProposalStatus.DRAFT,
+            prospect_snapshot={
+                "quote_number": locked.quote_number,
+                "quote_name": locked.quote_name,
+                "quote_date": locked.quote_date.isoformat() if locked.quote_date else None,
+                "identity_type": locked.identity_type,
+                "identity_number": locked.identity_number,
+                "date_of_birth": locked.date_of_birth.isoformat() if locked.date_of_birth else None,
+                "age_at_quote": locked.age_at_quote,
+                "gender": locked.gender,
+                "smoker_status": locked.smoker_status,
+                "location": locked.location,
+                "address": locked.address,
+                "currency": locked.currency,
+                "partner_id": str(locked.partner_id or locked.linked_partner_id) if (locked.partner_id or locked.linked_partner_id) else None,
+            },
+            plans_snapshot=plans_snapshot,
+            financial_summary_snapshot=financial_snapshot,
+            created_by=QuotationService.actor(actor),
+        )
+        AuditService.log_create(proposal, actor=actor, request=request)
+        before = QuotationService.snapshot(locked)
+        locked.status = QuotationStatus.CONVERTED
+        locked.current_version_number += 1
+        locked.updated_by = QuotationService.actor(actor)
+        locked.wizard_step_completion = QuotationService.wizard_completion(locked)
+        locked.save(update_fields=["status", "current_version_number", "wizard_step_completion", "updated_by", "updated_at"])
+        after = QuotationService.snapshot(locked)
+        QuotationService._record_version(
+            locked,
+            actor=actor,
+            reason=notes or "Quotation converted to proposal.",
+            snapshot=QuotationService.version_snapshot(locked),
+            status=QuotationStatus.CONVERTED,
+        )
+        QuotationService._record_event(
+            locked,
+            "CONVERTED",
+            actor=actor,
+            from_status=QuotationStatus.FINALIZED,
+            to_status=QuotationStatus.CONVERTED,
+            notes=notes or "Quotation converted to proposal.",
+            metadata={
+                "proposal_id": str(proposal.pk),
+                "proposal_number": proposal.proposal_number,
+                "quotation_version_id": str(source_version.pk),
+            },
+            before_state=before,
+            after_state=after,
+            request=request,
+        )
+        DomainEvent.objects.create(
+            event_type="ProposalCreated",
+            aggregate_type="OLProposal",
+            aggregate_id=str(proposal.pk),
+            payload={
+                "proposal_id": str(proposal.pk),
+                "proposal_number": proposal.proposal_number,
+                "quotation_id": str(locked.pk),
+                "quote_number": locked.quote_number,
+                "quotation_version_id": str(source_version.pk),
+            },
+        )
+        return proposal
 
     @staticmethod
     @transaction.atomic

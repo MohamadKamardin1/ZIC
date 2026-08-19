@@ -7,6 +7,7 @@ from django.utils import timezone
 from apps.partners.models import Partner, PartnerKYCProfile, PartnerTypeAssignment
 from apps.partner_onboarding.models import Location
 from apps.system_parameters.services.config_service import ConfigurationService
+from apps.ol_proposals.models import OLProposal
 
 from .permissions import OLQuotationPermission, has_quotation_permission
 from .services.quotation_service import QuotationService
@@ -29,6 +30,64 @@ from .models import (
     OLQuotationUnderwriting,
     OLQuotationVersion,
 )
+
+
+class OLQuotationPartnerVerificationSerializer(serializers.Serializer):
+    partner_exists = serializers.BooleanField(read_only=True)
+    partner_id = serializers.UUIDField(read_only=True, allow_null=True)
+    compliant = serializers.BooleanField(read_only=True)
+    missing_fields = serializers.ListField(child=serializers.CharField(), read_only=True)
+    partner_number = serializers.CharField(read_only=True, allow_null=True)
+    partner_display_name = serializers.CharField(read_only=True, allow_null=True)
+
+
+class OLQuotationPartnerCompletionSerializer(serializers.Serializer):
+    first_name = serializers.CharField(required=False, allow_blank=True, max_length=100)
+    surname = serializers.CharField(required=False, allow_blank=True, max_length=100)
+    other_name = serializers.CharField(required=False, allow_blank=True, max_length=100)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    mobile_number = serializers.CharField(required=False, allow_blank=True, max_length=20)
+    telephone_number = serializers.CharField(required=False, allow_blank=True, max_length=20)
+    gender = serializers.CharField(required=False, allow_blank=True, max_length=10)
+    date_of_birth = serializers.DateField(required=False, allow_null=True)
+    identification_type = serializers.CharField(required=False, allow_blank=True, max_length=50)
+    identification_number = serializers.CharField(required=False, allow_blank=True, max_length=120)
+    nationality = serializers.CharField(required=False, allow_blank=True, max_length=100)
+    occupation = serializers.CharField(required=False, allow_blank=True, max_length=200)
+
+    def validate(self, attrs):
+        quotation = self.context.get("quotation")
+        if quotation is not None:
+            for field, quotation_field in {
+                "identification_type": "identity_type",
+                "identification_number": "identity_number",
+                "date_of_birth": "date_of_birth",
+                "gender": "gender",
+            }.items():
+                if field not in attrs or attrs[field] in (None, ""):
+                    value = getattr(quotation, quotation_field, None)
+                    if value not in (None, ""):
+                        attrs[field] = value
+        if attrs.get("date_of_birth") and attrs["date_of_birth"] > timezone.localdate():
+            raise serializers.ValidationError({"date_of_birth": "Date of birth cannot be in the future."})
+        return attrs
+
+
+class OLProposalSerializer(serializers.ModelSerializer):
+    quotation_id = serializers.UUIDField(source="quotation.pk", read_only=True)
+    quotation_version_id = serializers.UUIDField(source="quotation_version.pk", read_only=True, allow_null=True)
+
+    class Meta:
+        model = OLProposal
+        fields = [
+            "id",
+            "proposal_number",
+            "status",
+            "quotation_id",
+            "quotation_version_id",
+            "created_at",
+        ]
+        read_only_fields = fields
 
 
 class QuotationValidatedModelSerializer(serializers.ModelSerializer):

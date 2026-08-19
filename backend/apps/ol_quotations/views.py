@@ -71,6 +71,9 @@ from .serializers import (
     OLQuotationPersonalDetailsSerializer,
     OLQuotationPlanSelectionSerializer,
     OLQuotationPlanConfigurationPatchSerializer,
+    OLQuotationPartnerVerificationSerializer,
+    OLQuotationPartnerCompletionSerializer,
+    OLProposalSerializer,
 )
 from .services.quotation_service import QuotationService
 from .services.document_service import QuotationDocumentService
@@ -813,14 +816,64 @@ class OLQuotationViewSet(QuotationScopedViewSet):
             return self.get_paginated_response(payload)
         return _response(payload, "Quotation documents retrieved.")
 
+    @action(detail=True, methods=["get"], url_path="partner-verification")
+    def partner_verification(self, request, pk=None):
+        quotation = self.get_object()
+        result = QuotationService.verify_partner(
+            quotation=quotation,
+            actor=request.user,
+            request=request,
+        )
+        payload = OLQuotationPartnerVerificationSerializer(result).data
+        return _response(payload, "Quotation partner verification completed.")
+
+    @action(detail=True, methods=["post"], url_path="partner-completion")
+    def partner_completion(self, request, pk=None):
+        quotation = self.get_object()
+        serializer = OLQuotationPartnerCompletionSerializer(
+            data=request.data,
+            context={"quotation": quotation, "request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        result = QuotationService.complete_partner(
+            quotation=quotation,
+            actor=request.user,
+            data=serializer.validated_data,
+            request=request,
+        )
+        return _response(
+            {
+                "quotation_id": str(result["quotation"].pk),
+                "partner_id": str(result["partner"].pk),
+                "partner_number": result["partner"].partner_number,
+                "partner_verified": result["partner_verified"],
+                "application_id": str(result["application"].pk),
+            },
+            "Partner completed and linked to quotation.",
+            status.HTTP_201_CREATED,
+        )
+
+    def _convert_to_proposal_response(self, request, quotation):
+        notes = request.data.get("notes", "") if hasattr(request.data, "get") else ""
+        proposal = QuotationService.convert_to_proposal(
+            quotation=quotation,
+            actor=request.user,
+            notes=notes,
+            request=request,
+        )
+        return _response(
+            OLProposalSerializer(proposal).data,
+            "Quotation converted to proposal.",
+            status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["post"], url_path="convert-to-proposal")
+    def convert_to_proposal(self, request, pk=None):
+        return self._convert_to_proposal_response(request, self.get_object())
+
     @action(detail=True, methods=["post"], url_path="convert")
     def convert(self, request, pk=None):
-        quotation = self.get_object()
-        if QuotationService.effective_status(quotation) != QuotationStatus.FINALIZED:
-            raise DRFValidationError({"status": "Only non-expired finalized quotations can be converted."})
-        if not quotation.partner_verified:
-            raise DRFValidationError({"partner_verified": "Partner verification is required before conversion."})
-        return self._lifecycle_response(request, quotation, QuotationStatus.CONVERTED, "Quotation converted.")
+        return self._convert_to_proposal_response(request, self.get_object())
 
     def destroy(self, request, *args, **kwargs):
         quotation = self.get_object()

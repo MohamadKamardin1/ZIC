@@ -8,7 +8,7 @@ The application deliberately consumes parameterized product, plan, rider, and fu
 
 ## Seven-step wizard contract
 
-A quotation is a draft aggregate completed through seven independently saveable steps:
+A quotation is a draft aggregate completed through seven independently saveable wizard steps, followed by a partner-verification handoff step:
 
 | Step | Resource | Completion rule |
 |---|---|---|
@@ -19,6 +19,7 @@ A quotation is a draft aggregate completed through seven independently saveable 
 | 5 | `OLQuotationFundAllocation` | Not applicable when no selected plan is investment-linked; otherwise every applicable plan must have allocations totaling 100% |
 | 6 | `OLQuotationRiderSelection` | Optional rider selections driven by OL Rider Setup |
 | 7 | `OLQuotationPaymentDetail` and `OLQuotationUnderwriting` | One payment detail record and one underwriting answer record |
+| 8 | Partner verification and completion | A compliant partner is matched or an individual onboarding application is completed and converted to a partner. |
 
 The `wizard-summary` endpoint exposes the completion state without requiring the frontend to duplicate domain rules. Child resources are independently listable, filterable, paginated, and editable while the quotation remains in `DRAFT` status.
 
@@ -124,7 +125,7 @@ The aggregate supports the following lifecycle:
 | `CONVERTED` | None |
 | `EXPIRED` | None |
 
-Finalization locks the quotation into a reproducible calculation state. It requires every applicable wizard prerequisite, including a current Financial Details summary whose input fingerprint still matches the quotation. It writes `total_sum_assured` and `total_premium`, stores the selected child identifiers and calculation currency in `calculation_snapshot`, sets `FINALIZED`, and emits `QuotationFinalized`. A missing, stale, or incomplete prerequisite returns a blocking validation response and leaves the quotation in `DRAFT`. Conversion is intentionally a future integration hook and does not yet create a policy.
+Finalization locks the quotation into a reproducible calculation state. It requires every applicable wizard prerequisite, including a current Financial Details summary whose input fingerprint still matches the quotation. It writes `total_sum_assured` and `total_premium`, stores the selected child identifiers and calculation currency in `calculation_snapshot`, sets `FINALIZED`, and emits `QuotationFinalized`. A missing, stale, or incomplete prerequisite returns a blocking validation response and leaves the quotation in `DRAFT`. Conversion creates only an `OLProposal` handoff skeleton; policy issuance remains outside this bounded context.
 
 ### BR-02 versioning and lifecycle operations
 
@@ -174,6 +175,9 @@ The API is mounted under `/api/v1/ol-quotations/`.
 | Revise finalized quotation | `POST /quotations/{id}/revise/` |
 | Quotation version history | `GET /quotations/{id}/versions/` |
 | As-of version snapshot | `GET /quotations/{id}/as-of-version/{version_number}/` |
+| Partner verification | `GET /quotations/{id}/partner-verification/` |
+| Partner completion | `POST /quotations/{id}/partner-completion/` |
+| Convert to proposal | `POST /quotations/{id}/convert-to-proposal/` (legacy alias: `/convert/`) |
 | Expire quotation | `POST /quotations/{id}/expire/` |
 | Add dependent member | `POST /quotations/{id}/members/` |
 | Update dependent member | `PATCH /quotations/{id}/members/{member_id}/` |
@@ -203,7 +207,7 @@ Non-superusers are restricted to partners returned by `user.visible_partners()`.
 
 Quotation creation, draft updates, and lifecycle transitions use `AuditService` with before-state, after-state, changed-field, actor, request, reason, and correlation context. Automatic audit receivers cover the quotation header and all wizard child tables. Lifecycle transitions additionally persist immutable `OLQuotationEvent` rows.
 
-The service creates durable `DomainEvent` rows in the existing transactional outbox for `QuotationCreated`, `QuotationUpdated`, `QuotationFinalized`, `QuotationExpired`, `QuotationConverted`, `QuotationVersionCreated`, `QuotationApprovalRequested`, and `QuotationPremiumCalculated`. Events carry the quotation identifier, quote number, actor identifier, status transition, and metadata. Future proposal, policy, payment, notification, and reporting workers can consume these events without coupling to the quotation request transaction.
+The service creates durable `DomainEvent` rows in the existing transactional outbox for `QuotationCreated`, `QuotationUpdated`, `QuotationFinalized`, `QuotationExpired`, `QuotationConverted`, `QuotationVersionCreated`, `QuotationApprovalRequested`, `QuotationPremiumCalculated`, `PartnerVerified`, `PartnerCompleted`, and `ProposalCreated`. Events carry the quotation identifier, quote number, actor identifier, status transition, proposal/version references, and metadata. Future proposal, policy, payment, notification, and reporting workers can consume these events without coupling to the quotation request transaction.
 
 ## Administration and operations
 
@@ -215,6 +219,14 @@ python manage.py seed_ol_quotations
 ```
 
 The command creates module permissions, role groups, the `OL_QUOTATION` numbering configuration, the `SMOKER_STATUS_CHOICES`, `OL_QUOTE_BASIS_CHOICES`, and `OL_PREMIUM_FACTOR_CHOICES` choice lists, the Personal Details parameters `OL_MAX_QUOTATION_AGE`, `OL_MIN_QUOTATION_AGE`, `OL_AGENT_PARTNER_TYPE_CODE`, and `OL_IDENTITY_FORMAT_RULES`, and lifecycle defaults `OL_QUOTATION_DEFAULT_EXPIRY_DAYS`, `OL_QUOTATION_APPROVAL_ENABLED`, `OL_QUOTATION_APPROVAL_SUM_ASSURED_LIMIT`, and `OL_QUOTATION_APPROVAL_LOAN_LIKE_LIMIT` without duplicating existing rows. Production deployments should run the command after migrations and before enabling quotation menus. Batch expiry can then be run with `python manage.py expire_ol_quotations --dry-run` before the first persistence run.
+
+## Partner verification and proposal conversion
+
+Partner verification matches `identity_type`, `identity_number`, and `date_of_birth` against `partners.Partner`. A matching partner is compliant only when its status is `ACTIVE` and `is_active` is true. The response also reports quotation fields that are blank on the matched partner. A compliant match is linked to both quotation partner relationships and marks `partner_verified=true`.
+
+When a matching partner is missing, `partner-completion` builds an individual `PartnerApplication` from Personal Details plus submitted KYC fields. It delegates draft creation, submission, review, compliance approval, duplicate checking, and conversion to `ApplicationService`, preserving the onboarding state machine and central audit behavior. Configured nested requirements remain authoritative; the bridge does not bypass required onboarding validation.
+
+BR-01 is enforced by `convert-to-proposal`: the quotation must be effectively `FINALIZED`, unexpired, partner verified, and free of unresolved approval requirements. The operation locks the quotation, creates one `ol_proposals.OLProposal` record for the current finalized quotation version, copies prospect, plan, and financial-summary snapshots, assigns a parameter-backed proposal number, changes the quotation to `CONVERTED`, and emits `QuotationConverted` and `ProposalCreated`. The proposal starts in `DRAFT` status for the separate OL Proposals workflow. A unique quotation/version constraint prevents duplicate handoffs.
 
 ## Future integration points
 

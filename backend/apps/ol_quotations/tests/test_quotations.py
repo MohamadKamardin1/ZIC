@@ -41,6 +41,7 @@ from apps.users.models import User, UserGroup
 from apps.system_parameters.models import SystemParameter
 from apps.system_parameters.services.config_service import ConfigurationService
 from apps.ordinary_life.models import OLPlan, OLProduct as LegacyOLProduct, OLProductVersion
+from apps.ol_proposals.models import OLProposal
 
 
 class OLQuotationAPITests(TestCase):
@@ -600,7 +601,8 @@ class OLQuotationAPITests(TestCase):
         self.assertEqual(finalized.status_code, 200, finalized.data)
         converted = OLQuotation.objects.get(pk=finalized_draft["id"])
         converted.partner_verified = True
-        converted.save(update_fields=["partner_verified", "updated_at"])
+        converted.approval_required = False
+        converted.save(update_fields=["partner_verified", "approval_required", "updated_at"])
         converted_response = self.client.post(
             f"/api/v1/ol-quotations/quotations/{finalized_draft['id']}/convert/", {}, format="json"
         )
@@ -2263,6 +2265,265 @@ class OLQuotationAPITests(TestCase):
         self.assertEqual(rows[0]["template_version"], generated.data["data"]["template_version"])
         self.assertTrue(rows[0]["pdf_url"])
 
+
+    def test_partner_verification_finds_existing_partner(self):
+        matching = Partner.objects.create(
+            partner_number="PT-OLQ-MATCH-001",
+            partner_type="INDIVIDUAL",
+            party_type="INDIVIDUAL",
+            first_name="Amina",
+            surname="Verified",
+            email="verified.match.olq@example.com",
+            mobile_number="255700000011",
+            identification_type="NIN",
+            identification_number="ID-OLQ-MATCH-001",
+            date_of_birth=date(1990, 1, 1),
+            gender="FEMALE",
+            nationality="Tanzanian",
+            is_active=True,
+            status="ACTIVE",
+        )
+        draft = self.create_draft()
+        personal = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/personal-details/",
+            self.personal_details_payload(
+                identity_number=matching.identification_number,
+                date_of_birth="1990-01-01",
+            ),
+            format="json",
+        )
+        self.assertEqual(personal.status_code, 200, personal.data)
+        response = self.client.get(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/partner-verification/"
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        data = response.data["data"]
+        self.assertTrue(data["partner_exists"])
+        self.assertEqual(data["partner_id"], str(matching.pk))
+        self.assertTrue(data["compliant"])
+        self.assertEqual(data["missing_fields"], [])
+        self.assertTrue(OLQuotation.objects.get(pk=draft["id"]).partner_verified)
+
+    def test_partner_verification_returns_missing_fields_when_not_found(self):
+        draft = self.create_draft()
+        personal = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/personal-details/",
+            self.personal_details_payload(identity_number="ID-OLQ-NOT-FOUND"),
+            format="json",
+        )
+        self.assertEqual(personal.status_code, 200, personal.data)
+        response = self.client.get(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/partner-verification/"
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        data = response.data["data"]
+        self.assertFalse(data["partner_exists"])
+        self.assertIsNone(data["partner_id"])
+        self.assertFalse(data["compliant"])
+        self.assertIn("first_name", data["missing_fields"])
+        self.assertFalse(OLQuotation.objects.get(pk=draft["id"]).partner_verified)
+
+    def test_partner_completion_creates_and_links_partner(self):
+        PartnerType.objects.get_or_create(
+            code="CLIENT",
+            defaults={"name": "Individual Client", "is_active": True},
+        )
+        draft = self.create_draft()
+        personal = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/personal-details/",
+            self.personal_details_payload(
+                identity_number="ID-OLQ-COMPLETE-001",
+                date_of_birth="1991-02-03",
+            ),
+            format="json",
+        )
+        self.assertEqual(personal.status_code, 200, personal.data)
+        completion = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/partner-completion/",
+            {
+                "first_name": "Zainab",
+                "surname": "Completed",
+                "email": "completed.partner.olq@example.com",
+                "mobile_number": "255700000012",
+                "gender": "FEMALE",
+                "date_of_birth": "1991-02-03",
+                "identification_type": "NIN",
+                "identification_number": "ID-OLQ-COMPLETE-001",
+                "nationality": "Tanzanian",
+                "occupation": "Engineer",
+            },
+            format="json",
+        )
+        self.assertEqual(completion.status_code, 201, completion.data)
+        data = completion.data["data"]
+        quotation = OLQuotation.objects.get(pk=draft["id"])
+        self.assertTrue(data["partner_verified"])
+        self.assertEqual(str(quotation.partner_id), data["partner_id"])
+        created_partner = Partner.objects.get(pk=quotation.partner_id)
+        self.assertEqual(created_partner.identification_number, "ID-OLQ-COMPLETE-001")
+        self.assertEqual(created_partner.nationality, "Tanzanian")
+        self.assertEqual(str(created_partner.created_from_application_id), data["application_id"])
+        self.assertTrue(
+            DomainEvent.objects.filter(
+                event_type="PartnerCompleted",
+                aggregate_id=str(quotation.pk),
+            ).exists()
+        )
+
+    def test_convert_to_proposal_blocked_when_draft(self):
+        draft = self.create_draft()
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/convert-to-proposal/",
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("finalized", str(response.data).lower())
+
+    def test_convert_to_proposal_blocked_when_expired(self):
+        draft = self._prepare_finalizable_lifecycle_quotation("ID-OLQ-EXPIRED-CONVERT")
+        finalized = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/finalize/",
+            {},
+            format="json",
+        )
+        self.assertEqual(finalized.status_code, 200, finalized.data)
+        quotation = OLQuotation.objects.get(pk=draft["id"])
+        quotation.expiry_date = date.today() - timedelta(days=1)
+        quotation.save(update_fields=["expiry_date", "updated_at"])
+        quotation.partner_verified = True
+        quotation.save(update_fields=["partner_verified", "updated_at"])
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/convert-to-proposal/",
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("expired", str(response.data).lower())
+
+    def test_convert_to_proposal_blocked_when_partner_not_verified(self):
+        draft = self._prepare_finalizable_lifecycle_quotation("ID-OLQ-NOT-VERIFIED")
+        finalized = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/finalize/",
+            {},
+            format="json",
+        )
+        self.assertEqual(finalized.status_code, 200, finalized.data)
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/convert-to-proposal/",
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("partner verification", str(response.data).lower())
+
+    def test_convert_to_proposal_blocked_when_approval_required(self):
+        draft = self._prepare_finalizable_lifecycle_quotation("ID-OLQ-APPROVAL")
+        finalized = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/finalize/",
+            {},
+            format="json",
+        )
+        self.assertEqual(finalized.status_code, 200, finalized.data)
+        quotation = OLQuotation.objects.get(pk=draft["id"])
+        quotation.partner_verified = True
+        quotation.approval_required = True
+        quotation.save(update_fields=["partner_verified", "approval_required", "updated_at"])
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/convert-to-proposal/",
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("approval", str(response.data).lower())
+
+    def test_convert_success_creates_proposal_and_converts_quotation(self):
+        draft = self._prepare_finalizable_lifecycle_quotation("ID-OLQ-CONVERT-SUCCESS")
+        finalized = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/finalize/",
+            {},
+            format="json",
+        )
+        self.assertEqual(finalized.status_code, 200, finalized.data)
+        quotation = OLQuotation.objects.get(pk=draft["id"])
+        quotation.partner = self.partner
+        quotation.linked_partner = self.partner
+        quotation.partner_verified = True
+        quotation.save(update_fields=["partner", "linked_partner", "partner_verified", "updated_at"])
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/convert-to-proposal/",
+            {"notes": "Ready for proposal underwriting."},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        data = response.data["data"]
+        proposal = OLProposal.objects.get(pk=data["id"])
+        self.assertTrue(data["proposal_number"].startswith("OLP-"))
+        self.assertEqual(data["status"], "DRAFT")
+        self.assertEqual(proposal.quotation_id, quotation.pk)
+        self.assertIsNotNone(proposal.quotation_version_id)
+        self.assertEqual(proposal.quotation_version.status, QuotationStatus.FINALIZED)
+        self.assertEqual(OLQuotation.objects.get(pk=quotation.pk).status, QuotationStatus.CONVERTED)
+        self.assertTrue(
+            DomainEvent.objects.filter(
+                event_type="ProposalCreated",
+                aggregate_id=str(proposal.pk),
+            ).exists()
+        )
+        self.assertTrue(
+            DomainEvent.objects.filter(
+                event_type="QuotationConverted",
+                aggregate_id=str(quotation.pk),
+            ).exists()
+        )
+
+    def test_end_to_end_wizard_print_verify_and_convert(self):
+        matching = Partner.objects.create(
+            partner_number="PT-OLQ-E2E-001",
+            partner_type="INDIVIDUAL",
+            party_type="INDIVIDUAL",
+            first_name="Amina",
+            surname="EndToEnd",
+            email="e2e.partner.olq@example.com",
+            mobile_number="255700000013",
+            identification_type="NIN",
+            identification_number="ID-OLQ-E2E-001",
+            date_of_birth=date(1990, 1, 1),
+            gender="FEMALE",
+            nationality="Tanzanian",
+            is_active=True,
+            status="ACTIVE",
+        )
+        draft = self._prepare_finalizable_lifecycle_quotation("ID-OLQ-E2E-001")
+        finalized = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/finalize/",
+            {},
+            format="json",
+        )
+        self.assertEqual(finalized.status_code, 200, finalized.data)
+        printed = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/print/",
+            {},
+            format="json",
+        )
+        self.assertEqual(printed.status_code, 201, printed.data)
+        verification = self.client.get(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/partner-verification/"
+        )
+        self.assertEqual(verification.status_code, 200, verification.data)
+        self.assertEqual(verification.data["data"]["partner_id"], str(matching.pk))
+        self.assertTrue(verification.data["data"]["compliant"])
+        converted = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/convert-to-proposal/",
+            {},
+            format="json",
+        )
+        self.assertEqual(converted.status_code, 200, converted.data)
+        self.assertEqual(converted.data["data"]["status"], "DRAFT")
+        self.assertEqual(
+            OLQuotation.objects.get(pk=draft["id"]).status,
+            QuotationStatus.CONVERTED,
+        )
 
 if __name__ == "__main__":
     pass
