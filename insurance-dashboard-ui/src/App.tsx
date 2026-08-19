@@ -38,6 +38,8 @@ import UserGroups from "./pages/user-management/UserGroups"
 import Users from "./pages/user-management/Users"
 import GLSetup from "./pages/group-life/GLSetup"
 import OLSetup from "./pages/ordinary-life/OLSetup"
+import OLDefaultSetup from "./pages/ordinary-life/OLDefaultSetup"
+import OLParameterPlaceholder from "./pages/ordinary-life/OLParameterPlaceholder"
 import OLApplications from "./pages/ordinary-life/OLApplications"
 import OLDocuments from "./pages/ordinary-life/OLDocuments"
 import OLNotes from "./pages/ordinary-life/OLNotes"
@@ -138,6 +140,17 @@ export default function App() {
 
         {/* Ordinary Life */}
         <Route path="ordinary-life/setup" element={<OLSetup />} />
+        <Route path="ordinary-life/parameters" element={<OLDefaultSetup />} />
+        <Route path="ordinary-life/parameters/default-setup" element={<OLDefaultSetup />} />
+        <Route path="ordinary-life/parameters/:screen" element={<OLDefaultSetup />} />
+        <Route path="ordinary-life/parameters/policy-setup" element={<OLParameterPlaceholder title="Policy Setup" />} />
+        <Route path="ordinary-life/parameters/product-setup" element={<OLParameterPlaceholder title="Product Setup" />} />
+        <Route path="ordinary-life/parameters/product-rating" element={<OLParameterPlaceholder title="Product Rating" />} />
+        <Route path="ordinary-life/parameters/rider-setup" element={<OLParameterPlaceholder title="Rider Setup" />} />
+        <Route path="ordinary-life/parameters/agent-management" element={<OLParameterPlaceholder title="Agent Management" />} />
+        <Route path="ordinary-life/parameters/loan-setup" element={<OLParameterPlaceholder title="Loan Setup" />} />
+        <Route path="ordinary-life/parameters/medical-uw" element={<OLParameterPlaceholder title="Medical Underwriting" />} />
+        <Route path="ordinary-life/parameters/claim-setup" element={<OLParameterPlaceholder title="Claim Setup" />} />
         <Route path="ordinary-life/applications" element={<OLApplications />} />
         <Route path="ordinary-life/quotations" element={<OLQuotations />} />
         <Route path="ordinary-life/commitments" element={<OLCommitments />} />

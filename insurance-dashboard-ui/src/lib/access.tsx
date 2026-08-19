@@ -74,6 +74,7 @@ const ROUTE_MODULES: Array<[string, string]> = [
   ["/ordinary-life/withdrawals", "ol_withdrawals"],
   ["/ordinary-life/commitments", "ol_commitments"],
   ["/ordinary-life/maturity-installments", "ol_maturity_installments"],
+  ["/ordinary-life/parameters", "ol_parameters"],
   ["/ordinary-life/setup", "ol_parameters"],
   ["/ordinary-life", "ordinary_life"],
   ["/group-life/quotations", "gl_quotations"],

@@ -79,6 +79,18 @@ const PARTNER_PARAMS_CHILDREN: SubNavItem[] = [
   { label: "Partner Type Config", icon: UserCog, children: PARTNER_TYPE_CHILDREN },
 ]
 
+const OL_PARAMETER_CHILDREN: SubNavItem[] = [
+  { label: "Default Setup", icon: Settings, path: "/ordinary-life/parameters" },
+  { label: "Policy Setup", icon: FileText, path: "/ordinary-life/parameters/policy-setup" },
+  { label: "Product Setup", icon: ShieldCheck, path: "/ordinary-life/parameters/product-setup" },
+  { label: "Product Rating", icon: BarChart3, path: "/ordinary-life/parameters/product-rating" },
+  { label: "Rider Setup", icon: FileCheck, path: "/ordinary-life/parameters/rider-setup" },
+  { label: "Agent Management", icon: UserCog, path: "/ordinary-life/parameters/agent-management" },
+  { label: "Loan Setup", icon: Banknote, path: "/ordinary-life/parameters/loan-setup" },
+  { label: "Medical U/W", icon: Users, path: "/ordinary-life/parameters/medical-uw" },
+  { label: "Claim Setup", icon: FileSpreadsheet, path: "/ordinary-life/parameters/claim-setup" },
+]
+
 const NAV: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, path: "/" },
   { label: "Partner On-boarding", icon: UserPlus, children: [
@@ -93,7 +105,7 @@ const NAV: NavItem[] = [
     { label: "Withdrawals", icon: FileText, path: "/ordinary-life/withdrawals" },
     { label: "Claims", icon: FileText, path: "/ordinary-life/claims" },
     { label: "Maturity Installments", icon: FileText, path: "/ordinary-life/maturity-installments" },
-    { label: "Parameters", icon: Settings, path: "/ordinary-life/setup" },
+    { label: "Ordinary Life Parameters", icon: Settings, children: OL_PARAMETER_CHILDREN },
   ] },
   { label: "Group Life", icon: ShieldCheck, expandable: true, children: [
     { label: "Quotations", icon: FileText, path: "/group-life/quotations" },
