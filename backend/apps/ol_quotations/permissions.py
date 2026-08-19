@@ -29,6 +29,8 @@ class OLQuotationPermission:
         "as_of_version": VIEW,
         "convert": CONVERT,
         "print": PRINT,
+        "print_quotation": PRINT,
+        "documents": VIEW,
         "configure": CONFIGURE,
         "personal_details": UPDATE,
         "personal_details_options": VIEW,

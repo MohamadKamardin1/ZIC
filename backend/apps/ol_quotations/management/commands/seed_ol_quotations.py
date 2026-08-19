@@ -4,6 +4,8 @@ from django.db import transaction
 from apps.system_parameters.models import ChoiceList, ChoiceOption, ParameterGroup, SystemParameter
 from apps.users.models import PermissionGroup, UserGroup, UserPermission
 
+from apps.ol_quotations.services.document_service import QuotationDocumentService
+
 
 PERMISSIONS = [
     {
@@ -307,10 +309,16 @@ class Command(BaseCommand):
                 defaults={"group": system_group, "is_active": True, **parameter},
             )
 
+        print_template = QuotationDocumentService.default_template()
+        print_template.template_html = QuotationDocumentService.DEFAULT_TEMPLATE_HTML
+        print_template.layout_variables = {"company_name": "Zanzibar Insurance Company"}
+        print_template.is_active = True
+        print_template.save(update_fields=["template_html", "layout_variables", "is_active", "updated_at"])
+
         self.stdout.write(
             self.style.SUCCESS(
                 "OL Quotations seeded: "
                 f"{len(permission_map)} permissions, {created_roles} roles created, "
-                f"{updated_roles} roles updated, numbering prefix and Personal Details parameters configured."
+                f"{updated_roles} roles updated, numbering prefix, lifecycle parameters, and print template configured."
             )
         )

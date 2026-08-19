@@ -116,6 +116,8 @@ class OLQuotation(QuotationBaseModel):
     partner_verified = models.BooleanField(default=False)
     approval_required = models.BooleanField(default=False)
     expiry_date = models.DateField(null=True, blank=True)
+    is_deleted = models.BooleanField(default=False, db_index=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
     total_sum_assured = models.DecimalField(
         max_digits=18, decimal_places=2, null=True, blank=True
     )
@@ -391,28 +393,109 @@ class OLQuotationFinancialSummary(QuotationBaseModel):
             raise ValidationError(errors)
 
 
+class OLQuotationPrintTemplate(QuotationBaseModel):
+    """Versioned, parameter-managed HTML template used for quotation printouts."""
+
+    code = models.CharField(max_length=80)
+    name = models.CharField(max_length=255)
+    version = models.PositiveIntegerField(default=1)
+    description = models.TextField(blank=True, default="")
+    template_html = models.TextField()
+    layout_variables = models.JSONField(default=dict, blank=True)
+    effective_from = models.DateField(null=True, blank=True)
+    effective_to = models.DateField(null=True, blank=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        db_table = "ol_quotation_print_template"
+        ordering = ["code", "-version"]
+        constraints = [
+            models.UniqueConstraint(fields=["code", "version"], name="ol_quote_print_template_code_version_uq"),
+        ]
+        indexes = [
+            models.Index(fields=["code", "is_active", "effective_from", "effective_to"]),
+        ]
+
+    def __str__(self):
+        return f"{self.code} v{self.version}"
+
+    def clean(self):
+        errors = {}
+        self.code = (self.code or "").strip().upper()
+        self.name = (self.name or "").strip()
+        self.template_html = self.template_html or ""
+        if not self.code:
+            errors["code"] = "Template code is required."
+        if not self.name:
+            errors["name"] = "Template name is required."
+        if self.version < 1:
+            errors["version"] = "Template version must be positive."
+        if not self.template_html.strip():
+            errors["template_html"] = "Template HTML is required."
+        if not isinstance(self.layout_variables, dict):
+            errors["layout_variables"] = "Layout variables must be a JSON object."
+        if self.effective_from and self.effective_to and self.effective_to < self.effective_from:
+            errors["effective_to"] = "Effective-to cannot be before effective-from."
+        if errors:
+            raise ValidationError(errors)
+
+
 class OLQuotationDocument(QuotationBaseModel):
-    """Document reference captured during quotation preparation."""
+    """Generated quotation document linked to its source transaction and versions."""
 
     quotation = models.ForeignKey(OLQuotation, on_delete=models.CASCADE, related_name="documents")
+    source_version = models.ForeignKey(
+        "OLQuotationVersion",
+        on_delete=models.PROTECT,
+        related_name="generated_documents",
+        null=True,
+        blank=True,
+    )
+    template = models.ForeignKey(
+        OLQuotationPrintTemplate,
+        on_delete=models.PROTECT,
+        related_name="generated_documents",
+        null=True,
+        blank=True,
+    )
+    template_version = models.PositiveIntegerField(null=True, blank=True)
     document_type = models.CharField(max_length=80)
     file_reference = models.CharField(max_length=500)
-    status = models.CharField(max_length=40, default="PENDING")
+    html_reference = models.CharField(max_length=500, blank=True, default="")
+    mime_type = models.CharField(max_length=120, default="application/pdf")
+    status = models.CharField(max_length=40, default="GENERATED")
+    generated_by = models.ForeignKey(
+        "users.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ol_quotation_documents_generated",
+    )
+    generated_at = models.DateTimeField(default=timezone.now)
     metadata = models.JSONField(default=dict, blank=True)
 
     class Meta:
         db_table = "ol_quotation_document"
-        ordering = ["quotation", "document_type", "created_at"]
-        indexes = [models.Index(fields=["quotation", "document_type", "status"])]
+        ordering = ["quotation", "-generated_at", "document_type"]
+        indexes = [
+            models.Index(fields=["quotation", "document_type", "status"]),
+            models.Index(fields=["quotation", "source_version", "template_version"]),
+        ]
 
     def clean(self):
         errors = {}
         self.document_type = (self.document_type or "").strip().upper()
         self.file_reference = (self.file_reference or "").strip()
+        self.html_reference = (self.html_reference or "").strip()
+        self.mime_type = (self.mime_type or "application/pdf").strip().lower()
         if not self.document_type:
             errors["document_type"] = "Document type is required."
         if not self.file_reference:
             errors["file_reference"] = "File reference is required."
+        if self.template_id and self.template_version is not None and self.template.version != self.template_version:
+            errors["template_version"] = "Stored template version must match the selected template."
+        if self.source_version_id and self.source_version.quotation_id != self.quotation_id:
+            errors["source_version"] = "Source version must belong to the same quotation."
         if errors:
             raise ValidationError(errors)
 

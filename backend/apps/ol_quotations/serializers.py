@@ -382,10 +382,34 @@ class OLQuotationBenefitSerializer(QuotationNestedReadMixin, QuotationValidatedM
 
 
 class OLQuotationDocumentSerializer(QuotationNestedReadMixin, QuotationValidatedModelSerializer):
+    source_version_number = serializers.SerializerMethodField()
+    template_code = serializers.SerializerMethodField()
+    pdf_url = serializers.SerializerMethodField()
+    html_url = serializers.SerializerMethodField()
+
+    def get_source_version_number(self, obj):
+        return obj.source_version.version_number if obj.source_version_id else None
+
+    def get_template_code(self, obj):
+        return obj.template.code if obj.template_id else None
+
+    def get_pdf_url(self, obj):
+        from django.core.files.storage import default_storage
+        return default_storage.url(obj.file_reference) if obj.file_reference else None
+
+    def get_html_url(self, obj):
+        from django.core.files.storage import default_storage
+        return default_storage.url(obj.html_reference) if obj.html_reference else None
+
     class Meta:
         model = OLQuotationDocument
-        fields = "__all__"
-        read_only_fields = ["id", "created_at", "updated_at", "created_by", "updated_by"]
+        fields = [
+            "id", "quotation", "source_version", "source_version_number", "template", "template_code",
+            "template_version", "document_type", "file_reference", "html_reference", "pdf_url", "html_url",
+            "mime_type", "status", "generated_by", "generated_at", "metadata", "created_at", "updated_at",
+            "created_by", "updated_by",
+        ]
+        read_only_fields = fields
 
 
 class OLQuotationVersionSerializer(serializers.ModelSerializer):

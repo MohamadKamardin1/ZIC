@@ -31,6 +31,8 @@ from apps.ol_quotations.models import (
     OLQuotationMember,
     OLQuotationRiderSelection,
     OLQuotationBenefit,
+    OLQuotationDocument,
+    OLQuotationPrintTemplate,
     QuotationStatus,
 )
 from apps.partner_onboarding.models import Branch, Location
@@ -2187,6 +2189,80 @@ class OLQuotationAPITests(TestCase):
                 aggregate_id=str(quotation.pk),
             ).exists()
         )
+
+    def test_generate_printout_for_finalized_quotation(self):
+        draft = self._prepare_finalizable_lifecycle_quotation("ID-OLQ-PRINT-001")
+        finalized = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/finalize/",
+            {},
+            format="json",
+        )
+        self.assertEqual(finalized.status_code, 200, finalized.data)
+
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/print/",
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        data = response.data["data"]
+        self.assertEqual(str(data["quotation_id"]), str(draft["id"]))
+        self.assertTrue(data["pdf_url"])
+        self.assertTrue(data["html_url"])
+        self.assertEqual(data["mime_type"], "application/pdf")
+
+        document = OLQuotationDocument.objects.get(quotation_id=draft["id"])
+        self.assertIsNotNone(document.source_version_id)
+        self.assertEqual(str(document.source_version.quotation_id), str(draft["id"]))
+        self.assertIsNotNone(document.template_id)
+        self.assertEqual(document.template.version, document.template_version)
+        self.assertTrue(document.file_reference)
+        self.assertTrue(document.html_reference)
+
+    def test_print_requires_print_permission(self):
+        draft = self._prepare_finalizable_lifecycle_quotation("ID-OLQ-PRINT-002")
+        finalized = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/finalize/",
+            {},
+            format="json",
+        )
+        self.assertEqual(finalized.status_code, 200, finalized.data)
+        self.client.force_authenticate(self.viewer)
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/print/",
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403, response.data)
+
+    def test_quotation_documents_list_returns_generated_documents(self):
+        draft = self._prepare_finalizable_lifecycle_quotation("ID-OLQ-PRINT-003")
+        finalized = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/finalize/",
+            {},
+            format="json",
+        )
+        self.assertEqual(finalized.status_code, 200, finalized.data)
+        generated = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/print/",
+            {},
+            format="json",
+        )
+        self.assertEqual(generated.status_code, 201, generated.data)
+
+        response = self.client.get(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/documents/"
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        if "results" in response.data:
+            rows = response.data["results"]
+        else:
+            rows = response.data["data"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(str(rows[0]["quotation"]), str(draft["id"]))
+        self.assertEqual(rows[0]["template_version"], generated.data["data"]["template_version"])
+        self.assertTrue(rows[0]["pdf_url"])
+
 
 if __name__ == "__main__":
     pass

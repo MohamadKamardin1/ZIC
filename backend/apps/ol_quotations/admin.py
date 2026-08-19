@@ -5,6 +5,7 @@ from .models import (
     OLQuotationBeneficiary,
     OLQuotationBenefit,
     OLQuotationDocument,
+    OLQuotationPrintTemplate,
     OLQuotationEvent,
     OLQuotationFinancialSummary,
     OLQuotationFundAllocation,
@@ -227,12 +228,34 @@ class OLQuotationBenefitAdmin(QuotationAuditFieldsMixin, admin.ModelAdmin):
     list_select_related = ["quotation"]
 
 
+@admin.register(OLQuotationPrintTemplate)
+class OLQuotationPrintTemplateAdmin(QuotationAuditFieldsMixin, admin.ModelAdmin):
+    list_display = ["code", "name", "version", "effective_from", "effective_to", "is_active", "updated_at"]
+    list_filter = ["is_active", "effective_from", "effective_to"]
+    search_fields = ["code", "name", "description"]
+    ordering = ["code", "-version"]
+    readonly_fields = ["id", "created_at", "updated_at", "created_by", "updated_by"]
+
+
 @admin.register(OLQuotationDocument)
 class OLQuotationDocumentAdmin(QuotationAuditFieldsMixin, admin.ModelAdmin):
-    list_display = ["quotation", "document_type", "file_reference", "status", "created_at"]
-    list_filter = ["document_type", "status"]
-    search_fields = ["quotation__quote_number", "document_type", "file_reference"]
-    list_select_related = ["quotation"]
+    list_display = [
+        "quotation", "document_type", "template", "template_version", "source_version",
+        "mime_type", "status", "generated_by", "generated_at",
+    ]
+    list_filter = ["document_type", "status", "mime_type", "template", "template_version", "generated_at"]
+    search_fields = ["quotation__quote_number", "document_type", "file_reference", "html_reference"]
+    list_select_related = ["quotation", "source_version", "template", "generated_by"]
+    readonly_fields = [field.name for field in OLQuotationDocument._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(OLQuotationVersion)

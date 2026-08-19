@@ -2387,6 +2387,12 @@ class QuotationService:
             request=request,
             reason="Quotation draft deleted.",
         )
+        preserve_provenance = locked.documents.exists() or locked.versions.exists()
+        if preserve_provenance:
+            locked.is_deleted = True
+            locked.deleted_at = timezone.now()
+            locked.updated_by = actor
+            locked.save(update_fields=["is_deleted", "deleted_at", "updated_by", "updated_at"])
         DomainEvent.objects.create(
             event_type="QuotationDeleted",
             aggregate_type="OLQuotation",
@@ -2396,9 +2402,11 @@ class QuotationService:
                 "quotation_id": str(locked.pk),
                 "actor_id": str(actor.pk) if actor and getattr(actor, "pk", None) else None,
                 "before_state": before,
+                "soft_deleted": preserve_provenance,
             },
         )
-        locked.delete()
+        if not preserve_provenance:
+            locked.delete()
         return locked
 
     @staticmethod

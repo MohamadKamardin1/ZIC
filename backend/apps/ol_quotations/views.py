@@ -73,6 +73,7 @@ from .serializers import (
     OLQuotationPlanConfigurationPatchSerializer,
 )
 from .services.quotation_service import QuotationService
+from .services.document_service import QuotationDocumentService
 
 
 def _response(data=None, message="Data retrieved successfully", status_code=status.HTTP_200_OK):
@@ -236,7 +237,7 @@ class OLQuotationViewSet(QuotationScopedViewSet):
         return super().get_serializer_class()
 
     def get_queryset(self):
-        queryset = super().get_queryset()
+        queryset = super().get_queryset().filter(is_deleted=False)
         params = self.request.query_params
 
         if params.get("include_expired") != "true":
@@ -296,7 +297,7 @@ class OLQuotationViewSet(QuotationScopedViewSet):
 
     @action(detail=False, methods=["get"], url_path="summary")
     def summary(self, request, *args, **kwargs):
-        queryset = self._scope_queryset(self.queryset.all())
+        queryset = self._scope_queryset(self.queryset.filter(is_deleted=False))
         counts = {status_code: 0 for status_code, _label in QuotationStatus.choices}
         for quotation in queryset:
             counts[QuotationService.effective_status(quotation)] += 1
@@ -772,22 +773,45 @@ class OLQuotationViewSet(QuotationScopedViewSet):
         )
         return _response(self.get_serializer(quotation).data, "Quotation returned to draft for revision.")
 
-    @action(detail=True, methods=["get"], url_path="print")
+    @action(detail=True, methods=["get", "post"], url_path="print")
     def print_quotation(self, request, pk=None):
         quotation = self.get_object()
-        if QuotationService.effective_status(quotation) not in {QuotationStatus.FINALIZED, QuotationStatus.CONVERTED}:
-            raise DRFValidationError({"status": "Only non-expired finalized or converted quotations can be printed."})
-        QuotationService.record_print(quotation=quotation, actor=request.user, request=request)
-        return _response(
-            {
-                "quotation_id": quotation.pk,
-                "quote_number": quotation.quote_number,
-                "status": quotation.status,
-                "print_ready": True,
-                "document_url": None,
-            },
-            "Quotation print metadata prepared.",
-        )
+        request_data = request.data if request.method.upper() == "POST" else request.query_params
+        preview_value = request_data.get("preview", False)
+        preview = preview_value is True or str(preview_value).strip().lower() in {"1", "true", "yes"}
+        template_code = request_data.get("template_code") or None
+        try:
+            document = QuotationDocumentService.generate(
+                quotation=quotation,
+                actor=request.user,
+                request=request,
+                template_code=template_code,
+                preview=preview,
+            )
+        except DRFValidationError as exc:
+            detail = getattr(exc, "detail", str(exc))
+            return _response(detail, "Quotation printout could not be generated.", status.HTTP_400_BAD_REQUEST)
+        payload = OLQuotationDocumentSerializer(document).data
+        payload.update(QuotationDocumentService.document_urls(document))
+        payload["quotation_id"] = str(quotation.pk)
+        payload["quote_number"] = quotation.quote_number
+        response_status = status.HTTP_201_CREATED if request.method.upper() == "POST" else status.HTTP_200_OK
+        return _response(payload, "Quotation printout generated.", response_status)
+
+    @action(detail=True, methods=["get"], url_path="documents")
+    def documents(self, request, pk=None):
+        quotation = self.get_object()
+        queryset = quotation.documents.select_related("source_version", "template", "generated_by").order_by("-generated_at", "-created_at")
+        page = self.paginate_queryset(queryset)
+        rows = page if page is not None else queryset
+        payload = []
+        for document in rows:
+            row = OLQuotationDocumentSerializer(document).data
+            row.update(QuotationDocumentService.document_urls(document))
+            payload.append(row)
+        if page is not None:
+            return self.get_paginated_response(payload)
+        return _response(payload, "Quotation documents retrieved.")
 
     @action(detail=True, methods=["post"], url_path="convert")
     def convert(self, request, pk=None):
