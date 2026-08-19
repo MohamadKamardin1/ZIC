@@ -45,7 +45,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [pendingCreds, setPendingCreds] = useState<{ email: string; password: string } | null>(null)
 
   const hasPermission = useCallback((module: string, action: string): boolean => {
-    if (!user || !user.permissions) return false
+    if (!user) return false
+    const normalizedUserType = user.userType?.toUpperCase().replace(/[\s-]+/g, "_")
+    const isSuperAdmin = normalizedUserType === "SUPER_ADMIN" || user.groups?.some(
+      (group) => group.toUpperCase().replace(/[\s-]+/g, "_") === "SUPER_ADMIN",
+    )
+    if (isSuperAdmin) return true
+    if (!user.permissions) return false
     return user.permissions.some((p) => p.module === module && p.action === action)
   }, [user])
 

@@ -124,20 +124,38 @@ export interface AccessMetadata {
 }
 
 export async function fetchAccessMetadata(): Promise<AccessMetadata | null> {
-  try {
-    const payload = await request<Partial<AccessMetadata> | { access?: Partial<AccessMetadata> }>("/api/v1/iam/me/access/")
-    const raw = payload && typeof payload === "object" && "access" in payload
-      ? payload.access
-      : payload as Partial<AccessMetadata>
-    if (!raw) return null
+  const normalize = (payload: unknown): AccessMetadata | null => {
+    if (!payload || typeof payload !== "object") return null
+    const envelope = payload as Record<string, unknown>
+    const raw = envelope.access && typeof envelope.access === "object"
+      ? envelope.access as Record<string, unknown>
+      : envelope
+    const profile = raw.user && typeof raw.user === "object"
+      ? raw.user as Record<string, unknown>
+      : raw
+    const permissions = (raw.permissions ?? profile.permissions ?? []) as AccessMetadata["permissions"]
+    const groups = (raw.groups ?? profile.groups ?? []) as string[]
+    const visibleModules = (raw.visibleModules ?? profile.visibleModules ?? permissions.map((permission) => permission.module)) as string[]
     return {
-      visibleModules: raw.visibleModules ?? [],
-      permissions: raw.permissions ?? [],
-      groups: raw.groups ?? [],
+      visibleModules,
+      permissions,
+      groups,
       fetchedAt: new Date().toISOString(),
     }
+  }
+
+  try {
+    const payload = await request<Partial<AccessMetadata> | { access?: Partial<AccessMetadata> }>("/api/v1/iam/me/access/")
+    return normalize(payload)
   } catch (error) {
-    if (error instanceof ApiClientError && error.status === 404) return null
+    if (!(error instanceof ApiClientError) || ![404, 405].includes(error.status)) throw error
+  }
+
+  try {
+    const payload = await request<{ user?: Partial<AccessMetadata> }>("/api/v1/auth/me/")
+    return normalize(payload)
+  } catch (error) {
+    if (error instanceof ApiClientError && [404, 405].includes(error.status)) return null
     throw error
   }
 }

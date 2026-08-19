@@ -37,8 +37,15 @@ export function AccessProvider({ children }: { children: ReactNode }) {
     }
   }, [query.data, user?.groups, user?.permissions])
 
+  const isSuperAdmin = useMemo(() => {
+    const normalizedUserType = user?.userType?.toUpperCase().replace(/[\s-]+/g, "_")
+    return normalizedUserType === "SUPER_ADMIN" || user?.groups?.some(
+      (group) => group.toUpperCase().replace(/[\s-]+/g, "_") === "SUPER_ADMIN",
+    ) === true
+  }, [user?.groups, user?.userType])
+
   const canAccess = (moduleKey: string): boolean => {
-    if (!moduleKey) return true
+    if (!moduleKey || isSuperAdmin) return true
     const aliases = new Set([moduleKey.toLowerCase()])
     if (moduleKey.toLowerCase().startsWith("ol_")) aliases.add("ordinary_life")
     if (moduleKey.toLowerCase().startsWith("gl_")) aliases.add("group_life")
