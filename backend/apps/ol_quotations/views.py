@@ -40,6 +40,10 @@ from .serializers import (
     OLQuotationFundAllocationSerializer,
     OLQuotationInstallmentConfigurationSerializer,
     OLQuotationInstallmentRateRowSerializer,
+    OLQuotationInstallmentConfigureSerializer,
+    OLQuotationInstallmentPlanRowSerializer,
+    OLQuotationInstallmentStateSerializer,
+    OLQuotationInstallmentTemplateSerializer,
     OLQuotationMemberSerializer,
     OLQuotationMemberStepSerializer,
     OLQuotationMemberStepResponseSerializer,
@@ -586,6 +590,57 @@ class OLQuotationViewSet(QuotationScopedViewSet):
             actor=self.request.user,
             validated_data=serializer.validated_data,
             request=self.request,
+        )
+
+    @action(detail=True, methods=["get"], url_path="installments")
+    def installments(self, request, pk=None):
+        quotation = self.get_object()
+        if not has_quotation_permission(request.user, "installment_view"):
+            raise PermissionDenied("You do not have permission to view quotation installments.")
+        payload = QuotationService.installment_state(quotation=quotation)
+        return _response(
+            OLQuotationInstallmentStateSerializer(payload).data,
+            "Quotation Installments retrieved.",
+        )
+
+    @action(detail=True, methods=["get"], url_path=r"installments/(?P<plan_config_id>[^/.]+)/template")
+    def installment_template(self, request, pk=None, plan_config_id=None):
+        quotation = self.get_object()
+        if not has_quotation_permission(request.user, "installment_template"):
+            raise PermissionDenied("You do not have permission to view installment templates.")
+        payload = QuotationService.installment_template(
+            quotation=quotation,
+            plan_config_id=plan_config_id,
+        )
+        return _response(
+            OLQuotationInstallmentTemplateSerializer(payload).data,
+            "Quotation installment template retrieved.",
+        )
+
+    @action(detail=True, methods=["post"], url_path=r"installments/(?P<plan_config_id>[^/.]+)/configure")
+    def configure_installment(self, request, pk=None, plan_config_id=None):
+        quotation = self.get_object()
+        if not has_quotation_permission(request.user, "installment_configure"):
+            raise PermissionDenied("You do not have permission to configure quotation installments.")
+        serializer = OLQuotationInstallmentConfigureSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        configuration = QuotationService.configure_installments(
+            quotation=quotation,
+            plan_config_id=plan_config_id,
+            actor=request.user,
+            validated_data=serializer.validated_data,
+            request=request,
+        )
+        locked = OLQuotation.objects.get(pk=quotation.pk)
+        return _response(
+            {
+                "quotation_id": str(locked.pk),
+                "plan_configuration_id": str(plan_config_id),
+                "configuration": OLQuotationInstallmentConfigurationSerializer(configuration).data,
+                "total_number_of_installments": configuration.number_of_installments,
+                "wizard_step_complete": bool((locked.wizard_step_completion or {}).get("4_installments")),
+            },
+            "Quotation installments configured.",
         )
 
     def _lifecycle_response(self, request, instance, target, message):

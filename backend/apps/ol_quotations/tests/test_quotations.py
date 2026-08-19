@@ -8,6 +8,7 @@ from rest_framework.test import APIClient
 from apps.common.models import DomainEvent
 from apps.governance.models import AuditEvent
 from apps.ol_parameters.models import (
+    OLAnticipatedEndowmentInstallmentRate,
     OLBonusRate,
     OLJointLifeAgeBasis,
     OLJointLifeSetup,
@@ -15,6 +16,7 @@ from apps.ol_parameters.models import (
     OLJointLifeType,
     OLPlanType,
     OLProduct,
+    OLPaidUpRate,
 )
 from apps.ol_quotations.models import (
     OLQuotation,
@@ -1096,3 +1098,239 @@ class OLQuotationAPITests(TestCase):
         self.assertEqual(remove.status_code, 200, remove.data)
         self.assertEqual(len(remove.data["data"]["additional_members"]), 0)
         self.assertIsNotNone(remove.data["data"]["principal_member"])
+
+
+    def prepare_installment_quotation(self):
+        draft = self.create_draft()
+        personal_response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/personal-details/",
+            self.personal_details_payload(),
+            format="json",
+        )
+        self.assertEqual(personal_response.status_code, 200, personal_response.data)
+        plan_response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/plans/",
+            self.plan_selection_payload(),
+            format="json",
+        )
+        self.assertEqual(plan_response.status_code, 200, plan_response.data)
+        plan_config_id = plan_response.data["data"]["configurations"][0]["id"]
+        return {**draft, "plan_config_id": plan_config_id}
+
+    def test_installment_state_returns_plan_rows_with_ready_status(self):
+        draft = self.prepare_installment_quotation()
+        response = self.client.get(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/installments/"
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        data = response.data["data"]
+        self.assertEqual(len(data["rows"]), 1)
+        self.assertEqual(data["rows"][0]["status"], "READY_TO_CONFIGURE")
+        self.assertTrue(data["requires_configuration"])
+        self.assertFalse(data["wizard_complete"])
+
+    def test_installment_template_without_parameter_data_returns_banner(self):
+        draft = self.prepare_installment_quotation()
+        response = self.client.get(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/installments/"
+            f"{draft['plan_config_id']}/template/"
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        data = response.data["data"]
+        self.assertFalse(data["has_template"])
+        self.assertIn("No templates available", data["banner"])
+        self.assertEqual(data["rate_rows"], [])
+
+    def test_installment_template_with_parameter_data_returns_prefilled_rows(self):
+        OLAnticipatedEndowmentInstallmentRate.objects.create(
+            code="OLQ-ENDOW-01",
+            name="OLQ Annual Endowment Installment",
+            product=self.legacy_product,
+            plan=self.plan,
+            installment_type="ANTICIPATED_ENDOWMENT",
+            frequency="ANNUAL",
+            age_from=18,
+            age_to=65,
+            term_from=20,
+            term_to=20,
+            policy_year_from=1,
+            policy_year_to=1,
+            rate_factor=Decimal("100.00000000"),
+            currency="TZS",
+            effective_from=date.today(),
+            is_active=True,
+        )
+        draft = self.prepare_installment_quotation()
+        response = self.client.get(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/installments/"
+            f"{draft['plan_config_id']}/template/"
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        data = response.data["data"]
+        self.assertTrue(data["has_template"])
+        self.assertEqual(data["available_payment_modes"], ["ANNUAL", "MONTHLY"])
+        self.assertEqual(len(data["rate_rows"]), 1)
+        self.assertEqual(data["rate_rows"][0]["sequence"], 1)
+        self.assertEqual(data["rate_rows"][0]["rate_percent"], "100.0000")
+
+    def test_installment_configure_saves_valid_configuration(self):
+        draft = self.prepare_installment_quotation()
+        endpoint = (
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/installments/"
+            f"{draft['plan_config_id']}/configure/"
+        )
+        response = self.client.post(
+            endpoint,
+            {
+                "annuity_period_years": 5,
+                "payment_mode": "ANNUAL",
+                "after_maturity_benefits": True,
+                "before_maturity_benefits": False,
+                "rate_rows": [
+                    {
+                        "sequence": 1,
+                        "description": "First installment",
+                        "rate_percent": "40.0000",
+                    },
+                    {
+                        "sequence": 2,
+                        "description": "Second installment",
+                        "rate_percent": "60.0000",
+                    },
+                ],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        data = response.data["data"]
+        self.assertEqual(data["total_number_of_installments"], 2)
+        self.assertTrue(data["wizard_step_complete"])
+        configuration = data["configuration"]
+        self.assertEqual(configuration["frequency"], "ANNUAL")
+        self.assertEqual(configuration["annuity_period_years"], 5)
+        self.assertEqual(len(configuration["rate_rows"]), 2)
+
+    def test_installment_configure_rejects_rate_sum_not_100(self):
+        draft = self.prepare_installment_quotation()
+        endpoint = (
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/installments/"
+            f"{draft['plan_config_id']}/configure/"
+        )
+        response = self.client.post(
+            endpoint,
+            {
+                "annuity_period_years": 5,
+                "payment_mode": "ANNUAL",
+                "rate_rows": [
+                    {
+                        "sequence": 1,
+                        "description": "Incomplete allocation",
+                        "rate_percent": "90.0000",
+                    }
+                ],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("rate_rows", str(response.data))
+
+    def test_installment_configure_rejects_annuity_period_exceeding_term(self):
+        draft = self.prepare_installment_quotation()
+        endpoint = (
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/installments/"
+            f"{draft['plan_config_id']}/configure/"
+        )
+        response = self.client.post(
+            endpoint,
+            {
+                "annuity_period_years": 25,
+                "payment_mode": "ANNUAL",
+                "rate_rows": [
+                    {
+                        "sequence": 1,
+                        "description": "Full allocation",
+                        "rate_percent": "100.0000",
+                    }
+                ],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("annuity_period_years", str(response.data))
+
+    def test_installment_configure_paid_up_rate_defaults_from_parameter(self):
+        OLPaidUpRate.objects.create(
+            code="OLQ-PAID-UP-01",
+            name="OLQ Paid-Up Rate",
+            product=self.legacy_product,
+            plan=self.plan,
+            table_code="OLQ-PAID-UP",
+            rate_table_version="V1",
+            gender="FEMALE",
+            smoker_status="NON_SMOKER",
+            age_from=18,
+            age_to=65,
+            term_from=20,
+            term_to=20,
+            policy_year_from=1,
+            policy_year_to=1,
+            rate_factor=Decimal("0.75000000"),
+            row_order=1,
+            effective_from=date.today(),
+            is_active=True,
+        )
+        draft = self.prepare_installment_quotation()
+        endpoint = (
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/installments/"
+            f"{draft['plan_config_id']}/configure/"
+        )
+        response = self.client.post(
+            endpoint,
+            {
+                "annuity_period_years": 5,
+                "payment_mode": "ANNUAL",
+                "rate_rows": [
+                    {
+                        "sequence": 1,
+                        "description": "Full allocation",
+                        "rate_percent": "100.0000",
+                    }
+                ],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        rate_row = response.data["data"]["configuration"]["rate_rows"][0]
+        self.assertEqual(rate_row["paid_up_rate"], "0.75000000")
+
+    def test_installment_state_shows_configured_after_save(self):
+        draft = self.prepare_installment_quotation()
+        configure_endpoint = (
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/installments/"
+            f"{draft['plan_config_id']}/configure/"
+        )
+        configure_response = self.client.post(
+            configure_endpoint,
+            {
+                "annuity_period_years": 5,
+                "payment_mode": "MONTHLY",
+                "rate_rows": [
+                    {
+                        "sequence": 1,
+                        "description": "Configured installment",
+                        "rate_percent": "100.0000",
+                    }
+                ],
+            },
+            format="json",
+        )
+        self.assertEqual(configure_response.status_code, 200, configure_response.data)
+        state_response = self.client.get(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/installments/"
+        )
+        self.assertEqual(state_response.status_code, 200, state_response.data)
+        row = state_response.data["data"]["rows"][0]
+        self.assertEqual(row["status"], "CONFIGURED")
+        self.assertEqual(row["payment_mode"], "MONTHLY")
+        self.assertEqual(row["total_number_of_installments"], 1)
+        self.assertTrue(state_response.data["data"]["wizard_complete"])

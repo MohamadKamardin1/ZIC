@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
@@ -162,6 +164,57 @@ class OLQuotationInstallmentConfigurationSerializer(QuotationNestedReadMixin, Qu
         model = OLQuotationInstallmentConfiguration
         fields = "__all__"
         read_only_fields = ["id", "created_at", "updated_at", "created_by", "updated_by"]
+
+
+class OLQuotationInstallmentTemplateRateRowSerializer(serializers.Serializer):
+    sequence = serializers.IntegerField(min_value=1)
+    description = serializers.CharField(max_length=255)
+    rate_percent = serializers.DecimalField(max_digits=7, decimal_places=4, min_value=Decimal("0"), max_value=Decimal("100"))
+    paid_up_rate = serializers.DecimalField(max_digits=18, decimal_places=8, min_value=Decimal("0"), allow_null=True, required=False)
+
+
+class OLQuotationInstallmentConfigureSerializer(serializers.Serializer):
+    annuity_period_years = serializers.IntegerField(min_value=1)
+    payment_mode = serializers.CharField(max_length=40)
+    after_maturity_benefits = serializers.BooleanField(required=False, default=False)
+    before_maturity_benefits = serializers.BooleanField(required=False, default=False)
+    rate_rows = OLQuotationInstallmentTemplateRateRowSerializer(many=True, allow_empty=False)
+
+    def validate_rate_rows(self, value):
+        sequences = [row["sequence"] for row in value]
+        if len(sequences) != len(set(sequences)):
+            raise serializers.ValidationError("Installment row sequences must be unique.")
+        total = sum((row["rate_percent"] for row in value), Decimal("0"))
+        if total != Decimal("100"):
+            raise serializers.ValidationError("Installment rates must sum exactly to 100.")
+        return value
+
+
+class OLQuotationInstallmentPlanRowSerializer(serializers.Serializer):
+    plan_configuration_id = serializers.UUIDField()
+    plan_code = serializers.CharField(allow_blank=True)
+    plan_name = serializers.CharField(allow_blank=True)
+    policy_term_years = serializers.IntegerField()
+    payment_mode = serializers.CharField(allow_blank=True)
+    total_number_of_installments = serializers.IntegerField(min_value=0)
+    status = serializers.ChoiceField(choices=["READY_TO_CONFIGURE", "CONFIGURED"])
+    can_configure = serializers.BooleanField()
+
+
+class OLQuotationInstallmentTemplateSerializer(serializers.Serializer):
+    plan_configuration_id = serializers.UUIDField()
+    has_template = serializers.BooleanField()
+    banner = serializers.CharField(allow_blank=True)
+    policy_term_years = serializers.IntegerField()
+    payment_mode = serializers.CharField(allow_blank=True)
+    available_payment_modes = serializers.ListField(child=serializers.CharField())
+    rate_rows = OLQuotationInstallmentTemplateRateRowSerializer(many=True)
+
+
+class OLQuotationInstallmentStateSerializer(serializers.Serializer):
+    rows = OLQuotationInstallmentPlanRowSerializer(many=True)
+    requires_configuration = serializers.BooleanField()
+    wizard_complete = serializers.BooleanField()
 
 
 class OLQuotationFundAllocationSerializer(QuotationNestedReadMixin, QuotationValidatedModelSerializer):

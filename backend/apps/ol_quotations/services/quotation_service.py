@@ -13,6 +13,8 @@ from apps.system_parameters.services.numbering_service import NumberingEngine
 
 from apps.ol_parameters.models import (
     OLBonusRate,
+    OLAnticipatedEndowmentInstallmentRate,
+    OLPaidUpRate,
     OLMemberCoverConfiguration,
     OLJointLifeSetup,
     OLMortgageInterestFactor,
@@ -24,6 +26,8 @@ from apps.ol_quotations.models import (
     OLQuotation,
     OLQuotationEvent,
     OLQuotationFinancialSummary,
+    OLQuotationInstallmentConfiguration,
+    OLQuotationInstallmentRateRow,
     OLQuotationMember,
     OLQuotationPlanConfiguration,
     OLQuotationVersion,
@@ -678,6 +682,285 @@ class QuotationService:
             "is_selected": bool(payload.get("is_selected", True)),
             "coverage_rules": dict(payload.get("coverage_rules") or {}),
         }
+
+    @staticmethod
+    def _installment_payment_modes(*, quotation, plan_config=None):
+        product_version = plan_config.product_version if plan_config else quotation.product_version
+        modes = list(getattr(product_version, "payment_frequencies", []) or []) if product_version else []
+        if not modes and quotation.product_id:
+            modes = list(getattr(quotation.product, "premium_frequencies", []) or [])
+        if not modes:
+            modes = [item.get("value") for item in ConfigurationService.get_choice_list("OL_PAYMENT_MODE_CHOICES")]
+        return list(dict.fromkeys(str(value).strip().upper() for value in modes if str(value or "").strip()))
+
+    @staticmethod
+    def _effective_parameter_rows(queryset, as_of):
+        return queryset.filter(is_active=True, effective_from__lte=as_of).filter(
+            Q(effective_to__isnull=True) | Q(effective_to__gte=as_of)
+        )
+
+    @staticmethod
+    def _installment_plan_context(*, quotation, plan_config_id, lock=False):
+        queryset = quotation.plan_configurations.select_related("product_version__product", "plan")
+        if lock:
+            queryset = queryset.select_for_update()
+        try:
+            return queryset.get(pk=plan_config_id, is_selected=True)
+        except OLQuotationPlanConfiguration.DoesNotExist:
+            raise QuotationServiceError({"plan_configuration_id": "Selected plan configuration was not found."})
+
+    @staticmethod
+    def _installment_scope_rows(*, model, product, plan, as_of, term, age=None, frequency=None, policy_year=None):
+        queryset = QuotationService._effective_parameter_rows(model.objects, as_of).filter(product=product)
+        if plan is not None:
+            queryset = queryset.filter(Q(plan=plan) | Q(plan__isnull=True))
+        else:
+            queryset = queryset.filter(plan__isnull=True)
+        if term is not None:
+            queryset = queryset.filter(
+                Q(term_from__isnull=True) | Q(term_from__lte=term),
+                Q(term_to__isnull=True) | Q(term_to__gte=term),
+            )
+        if age is not None and hasattr(model, "age_from"):
+            queryset = queryset.filter(
+                Q(age_from__isnull=True) | Q(age_from__lte=age),
+                Q(age_to__isnull=True) | Q(age_to__gte=age),
+            )
+        if frequency is not None and hasattr(model, "frequency"):
+            queryset = queryset.filter(frequency=str(frequency).strip().upper())
+        if policy_year is not None and hasattr(model, "policy_year_from"):
+            queryset = queryset.filter(
+                Q(policy_year_from__isnull=True) | Q(policy_year_from__lte=policy_year),
+                Q(policy_year_to__isnull=True) | Q(policy_year_to__gte=policy_year),
+            )
+        if plan is not None:
+            plan_priority = models.Case(
+                models.When(plan=plan, then=models.Value(0)),
+                models.When(plan__isnull=True, then=models.Value(1)),
+                default=models.Value(2),
+                output_field=models.IntegerField(),
+            )
+        else:
+            plan_priority = models.Case(
+                models.When(plan__isnull=True, then=models.Value(0)),
+                default=models.Value(1),
+                output_field=models.IntegerField(),
+            )
+        ordering = [plan_priority]
+        if hasattr(model, "policy_year_from"):
+            ordering.append("policy_year_from")
+        if hasattr(model, "row_order"):
+            ordering.append("row_order")
+        ordering.append("code")
+        return queryset.order_by(*ordering)
+
+    @staticmethod
+    def _paid_up_rate_default(*, product, plan, as_of, term, age, policy_year):
+        rows = QuotationService._installment_scope_rows(
+            model=OLPaidUpRate,
+            product=product,
+            plan=plan,
+            as_of=as_of,
+            term=term,
+            age=age,
+            policy_year=policy_year,
+        )
+        exact = rows.filter(plan=plan).first() if plan is not None else None
+        fallback = rows.filter(plan__isnull=True).first()
+        row = exact or fallback
+        return row.rate_factor if row else None
+
+    @staticmethod
+    def installment_state(*, quotation):
+        rows = []
+        selected = quotation.plan_configurations.filter(is_selected=True).select_related("product_version__product", "plan").order_by("section_number", "created_at")
+        for plan_config in selected:
+            configuration = quotation.installment_configurations.filter(plan_configuration=plan_config, is_selected=True).prefetch_related("rate_rows").first()
+            policy_term = plan_config.term_years
+            plan = plan_config.plan
+            rows.append({
+                "plan_configuration_id": str(plan_config.pk),
+                "plan_code": plan.code if plan else plan_config.sub_product_code or "",
+                "plan_name": plan.name if plan else plan_config.sub_product_code or "",
+                "policy_term_years": policy_term,
+                "payment_mode": configuration.frequency if configuration else plan_config.premium_frequency,
+                "total_number_of_installments": configuration.number_of_installments if configuration else 0,
+                "status": "CONFIGURED" if configuration and configuration.rate_rows.exists() else "READY_TO_CONFIGURE",
+                "can_configure": True,
+            })
+        return {
+            "rows": rows,
+            "requires_configuration": any(row["status"] == "READY_TO_CONFIGURE" for row in rows),
+            "wizard_complete": bool(quotation.wizard_step_completion.get("4_installments")),
+        }
+
+    @staticmethod
+    def installment_template(*, quotation, plan_config_id):
+        plan_config = QuotationService._installment_plan_context(quotation=quotation, plan_config_id=plan_config_id)
+        as_of = quotation.quote_date or timezone.localdate()
+        product = plan_config.product_version.product
+        plan = plan_config.plan
+        modes = QuotationService._installment_payment_modes(quotation=quotation, plan_config=plan_config)
+        payment_mode = plan_config.premium_frequency if plan_config.premium_frequency in modes else (modes[0] if modes else "")
+        rows = QuotationService._installment_scope_rows(
+            model=OLAnticipatedEndowmentInstallmentRate,
+            product=product,
+            plan=plan,
+            as_of=as_of,
+            term=plan_config.term_years,
+            age=quotation.age_at_quote,
+            frequency=payment_mode,
+        )
+        exact_rows = rows.filter(plan=plan) if plan is not None else rows.none()
+        template_rows = list(exact_rows) or list(rows.filter(plan__isnull=True))
+        result_rows = []
+        for index, source in enumerate(template_rows, start=1):
+            sequence = int(getattr(source, "policy_year", None) or getattr(source, "policy_year_from", None) or index)
+            paid_up = QuotationService._paid_up_rate_default(
+                product=product,
+                plan=plan,
+                as_of=as_of,
+                term=plan_config.term_years,
+                age=quotation.age_at_quote,
+                policy_year=sequence,
+            )
+            result_rows.append({
+                "sequence": sequence,
+                "description": f"Installment {sequence}",
+                "rate_percent": source.rate_factor,
+                "paid_up_rate": paid_up,
+            })
+        return {
+            "plan_configuration_id": str(plan_config.pk),
+            "has_template": bool(result_rows),
+            "banner": "" if result_rows else "No templates available. You can still configure installments manually...",
+            "policy_term_years": plan_config.term_years,
+            "payment_mode": payment_mode,
+            "available_payment_modes": modes,
+            "rate_rows": result_rows,
+        }
+
+    @staticmethod
+    def _installment_snapshot(configuration):
+        if not configuration:
+            return None
+        return {
+            "id": str(configuration.pk),
+            "plan_configuration_id": str(configuration.plan_configuration_id) if configuration.plan_configuration_id else None,
+            "frequency": configuration.frequency,
+            "annuity_period_years": configuration.annuity_period_years,
+            "number_of_installments": configuration.number_of_installments,
+            "after_maturity_benefits": configuration.after_maturity_benefits,
+            "before_maturity_benefits": configuration.before_maturity_benefits,
+            "rate_rows": [
+                {
+                    "sequence": row.sequence,
+                    "description": row.description,
+                    "rate_percent": str(row.rate_percent),
+                    "paid_up_rate": str(row.paid_up_rate) if row.paid_up_rate is not None else None,
+                }
+                for row in configuration.rate_rows.all().order_by("sequence")
+            ],
+        }
+
+    @staticmethod
+    @transaction.atomic
+    def configure_installments(*, quotation, plan_config_id, actor, validated_data, request=None):
+        locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
+        if locked.status != QuotationStatus.DRAFT:
+            raise QuotationServiceError({"status": "Only draft quotations can configure installments."})
+        plan_config = QuotationService._installment_plan_context(
+            quotation=locked,
+            plan_config_id=plan_config_id,
+            lock=True,
+        )
+        term = plan_config.term_years
+        annuity_period = int(validated_data["annuity_period_years"])
+        if annuity_period > term:
+            raise QuotationServiceError({"annuity_period_years": "Annuity period cannot exceed the inherited policy term."})
+        payment_mode = str(validated_data["payment_mode"]).strip().upper()
+        if payment_mode not in QuotationService._installment_payment_modes(quotation=locked, plan_config=plan_config):
+            raise QuotationServiceError({"payment_mode": "The selected payment mode is not configured for this product."})
+        rate_rows = validated_data["rate_rows"]
+        total_rate = sum((row["rate_percent"] for row in rate_rows), Decimal("0"))
+        if total_rate != Decimal("100"):
+            raise QuotationServiceError({"rate_rows": "Installment rates must sum exactly to 100."})
+        rules = dict(plan_config.coverage_rules or {})
+        product_rules = dict(getattr(plan_config.product_version, "servicing_rules", {}) or {})
+        requires_benefit_toggle = bool(
+            rules.get("requires_installment_benefits")
+            or rules.get("installment_benefits_required")
+            or product_rules.get("requires_installment_benefits")
+            or product_rules.get("installment_benefits_required")
+        )
+        if requires_benefit_toggle and not (validated_data.get("after_maturity_benefits") or validated_data.get("before_maturity_benefits")):
+            raise QuotationServiceError({"benefits": "At least one installment benefit toggle must be selected for this plan."})
+        existing = locked.installment_configurations.filter(plan_configuration=plan_config, is_selected=True).prefetch_related("rate_rows").first()
+        before_state = QuotationService._installment_snapshot(existing)
+        amount = existing.installment_amount if existing else plan_config.estimated_maturity_value
+        if amount is None or Decimal(str(amount)) <= 0:
+            raise QuotationServiceError({"installment_amount": "The selected plan must have a positive estimated maturity value before installments can be configured."})
+        configuration = existing or OLQuotationInstallmentConfiguration(
+            quotation=locked,
+            plan_configuration=plan_config,
+            installment_amount=Decimal(str(amount)),
+            currency=locked.currency or QuotationService.default_currency(),
+            is_selected=True,
+        )
+        configuration.frequency = payment_mode
+        configuration.annuity_period_years = annuity_period
+        configuration.number_of_installments = len(rate_rows)
+        configuration.after_maturity_benefits = bool(validated_data.get("after_maturity_benefits", False))
+        configuration.before_maturity_benefits = bool(validated_data.get("before_maturity_benefits", False))
+        configuration.is_selected = True
+        configuration.save()
+        OLQuotationInstallmentRateRow.objects.filter(installment_configuration=configuration).delete()
+        for row in rate_rows:
+            paid_up = row.get("paid_up_rate")
+            if paid_up is None:
+                paid_up = QuotationService._paid_up_rate_default(
+                    product=plan_config.product_version.product,
+                    plan=plan_config.plan,
+                    as_of=locked.quote_date or timezone.localdate(),
+                    term=term,
+                    age=locked.age_at_quote,
+                    policy_year=row["sequence"],
+                )
+            description = str(row["description"]).strip()
+            OLQuotationInstallmentRateRow.objects.create(
+                installment_configuration=configuration,
+                sequence=row["sequence"],
+                description=description,
+                rate_percent=row["rate_percent"],
+                paid_up_rate=paid_up,
+                period_from=row["sequence"],
+                period_to=row["sequence"],
+                rate=row["rate_percent"],
+                charge=Decimal("0"),
+                notes=description,
+                created_by=QuotationService.actor(actor),
+                updated_by=QuotationService.actor(actor),
+            )
+        locked.wizard_step_completion = QuotationService.wizard_completion(locked)
+        locked.current_version_number = int(locked.current_version_number or 1) + 1
+        locked.save(update_fields=["wizard_step_completion", "current_version_number", "updated_at"])
+        configuration.refresh_from_db()
+        after_state = QuotationService._installment_snapshot(configuration)
+        QuotationService._record_event(
+            locked,
+            "INSTALLMENT_CONFIGURATION_UPDATED",
+            actor=actor,
+            notes="Installment configuration saved.",
+            metadata={
+                "plan_configuration_id": str(plan_config.pk),
+                "total_number_of_installments": configuration.number_of_installments,
+                "annuity_period_years": configuration.annuity_period_years,
+            },
+            before_state=before_state,
+            after_state=after_state,
+            request=request,
+        )
+        return configuration
 
     @staticmethod
     def _plan_config_snapshot(quotation):

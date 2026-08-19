@@ -567,7 +567,10 @@ class OLQuotationInstallmentConfiguration(QuotationBaseModel):
         blank=True,
     )
     frequency = models.CharField(max_length=40)
+    annuity_period_years = models.PositiveSmallIntegerField(default=1)
     number_of_installments = models.PositiveIntegerField(default=1)
+    after_maturity_benefits = models.BooleanField(default=False)
+    before_maturity_benefits = models.BooleanField(default=False)
     installment_amount = models.DecimalField(max_digits=18, decimal_places=2)
     first_due_date = models.DateField(null=True, blank=True)
     currency = models.CharField(max_length=3, default="TZS")
@@ -598,6 +601,8 @@ class OLQuotationInstallmentConfiguration(QuotationBaseModel):
         self.currency = (self.currency or "").strip().upper()
         if not self.frequency:
             errors["frequency"] = "Installment frequency is required."
+        if self.annuity_period_years is None or self.annuity_period_years <= 0:
+            errors["annuity_period_years"] = "Annuity period must be greater than zero."
         if len(self.currency) != 3 or not self.currency.isalpha():
             errors["currency"] = "Currency must be a three-letter code."
         if self.installment_amount is not None and self.installment_amount <= 0:
@@ -609,6 +614,10 @@ class OLQuotationInstallmentConfiguration(QuotationBaseModel):
 class OLQuotationInstallmentRateRow(QuotationBaseModel):
     """Rate/charge rows behind an installment configuration."""
 
+    sequence = models.PositiveIntegerField(default=1)
+    description = models.CharField(max_length=255, blank=True, default="")
+    rate_percent = models.DecimalField(max_digits=7, decimal_places=4, default=Decimal("0"))
+    paid_up_rate = models.DecimalField(max_digits=18, decimal_places=8, null=True, blank=True)
     installment_configuration = models.ForeignKey(
         OLQuotationInstallmentConfiguration,
         on_delete=models.CASCADE,
@@ -642,6 +651,14 @@ class OLQuotationInstallmentRateRow(QuotationBaseModel):
         errors = {}
         if self.period_from <= 0 or self.period_to < self.period_from:
             errors["period_to"] = "Rate period must be positive and end on or after its start."
+        if self.sequence <= 0:
+            errors["sequence"] = "Installment sequence must be positive."
+        if not (self.description or self.notes).strip():
+            errors["description"] = "Installment description is required."
+        if self.rate_percent is None or not 0 <= self.rate_percent <= 100:
+            errors["rate_percent"] = "Rate percent must be between 0 and 100."
+        if self.paid_up_rate is not None and self.paid_up_rate < 0:
+            errors["paid_up_rate"] = "Paid-up rate cannot be negative."
         if self.rate is not None and self.rate < 0:
             errors["rate"] = "Rate cannot be negative."
         candidates = self.__class__.objects.filter(

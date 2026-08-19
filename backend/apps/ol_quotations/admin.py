@@ -133,17 +133,49 @@ class OLQuotationMemberAdmin(QuotationAuditFieldsMixin, admin.ModelAdmin):
 
 @admin.register(OLQuotationInstallmentConfiguration)
 class OLQuotationInstallmentConfigurationAdmin(QuotationAuditFieldsMixin, admin.ModelAdmin):
-    list_display = ["quotation", "plan_configuration", "frequency", "number_of_installments", "installment_amount", "currency", "is_selected"]
-    list_filter = ["frequency", "currency", "is_selected"]
+    list_display = [
+        "quotation",
+        "plan_configuration",
+        "frequency",
+        "annuity_period_years",
+        "number_of_installments",
+        "after_maturity_benefits",
+        "before_maturity_benefits",
+        "installment_amount",
+        "currency",
+        "is_selected",
+    ]
+    list_filter = [
+        "frequency",
+        "currency",
+        "after_maturity_benefits",
+        "before_maturity_benefits",
+        "is_selected",
+    ]
     search_fields = ["quotation__quote_number", "frequency"]
     list_select_related = ["quotation", "plan_configuration"]
 
 
 @admin.register(OLQuotationInstallmentRateRow)
 class OLQuotationInstallmentRateRowAdmin(QuotationAuditFieldsMixin, admin.ModelAdmin):
-    list_display = ["installment_configuration", "period_from", "period_to", "rate", "charge", "notes"]
+    list_display = [
+        "installment_configuration",
+        "sequence",
+        "description",
+        "rate_percent",
+        "paid_up_rate",
+        "period_from",
+        "period_to",
+        "rate",
+        "charge",
+        "notes",
+    ]
     list_filter = ["period_from", "period_to"]
-    search_fields = ["installment_configuration__quotation__quote_number", "notes"]
+    search_fields = [
+        "installment_configuration__quotation__quote_number",
+        "description",
+        "notes",
+    ]
     list_select_related = ["installment_configuration"]
 
 

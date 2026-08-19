@@ -38,6 +38,9 @@ class OLQuotationPermission:
         "member_add": UPDATE,
         "member_update": UPDATE,
         "member_remove": UPDATE,
+        "installments": VIEW,
+        "installment_template": VIEW,
+        "installment_configure": UPDATE,
     }
 
     @classmethod
