@@ -10,6 +10,7 @@ import { AccessProvider } from "./lib/access"
 import { AIProvider } from "./components/ai/AIContext"
 import { ThemeProvider } from "./theme/ThemeProvider"
 import { LanguageProvider } from "./lib/language"
+import { ToastProvider } from "./components/ui/Toast"
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -29,7 +30,9 @@ createRoot(document.getElementById("root")!).render(
             <AuthProvider>
               <AccessProvider>
                 <AIProvider>
-                  <App />
+                  <ToastProvider>
+                    <App />
+                  </ToastProvider>
                 </AIProvider>
               </AccessProvider>
             </AuthProvider>
