@@ -8,6 +8,9 @@ from django.utils.dateparse import parse_date
 from uuid import UUID
 
 from apps.core.pagination import StandardPagination
+from apps.partner_onboarding.models import Location
+from apps.partners.models import Partner
+from apps.system_parameters.services.config_service import ConfigurationService
 
 from .models import (
     OLQuotation,
@@ -47,6 +50,7 @@ from .serializers import (
     OLQuotationBenefitSerializer,
     OLQuotationDocumentSerializer,
     OLQuotationFinancialSummarySerializer,
+    OLQuotationPersonalDetailsSerializer,
 )
 from .services.quotation_service import QuotationService
 
@@ -256,6 +260,106 @@ class OLQuotationViewSet(QuotationScopedViewSet):
                 "expired": counts[QuotationStatus.EXPIRED],
             },
             "Quotation work-queue summary retrieved.",
+        )
+
+    @action(detail=True, methods=["post", "patch"], url_path="personal-details")
+    def personal_details(self, request, pk=None):
+        quotation = self.get_object()
+        payload = request.data.copy()
+        if request.method.upper() == "PATCH":
+            current_values = {
+                "quote_name": quotation.quote_name,
+                "quote_date": quotation.quote_date,
+                "identity_type": quotation.identity_type,
+                "identity_number": quotation.identity_number,
+                "date_of_birth": quotation.date_of_birth,
+                "gender": quotation.gender,
+                "smoker_status": quotation.smoker_status,
+                "location_id": quotation.location_master_id,
+                "agent_id": quotation.agent_partner_id,
+                "address": quotation.address,
+            }
+            for field, value in current_values.items():
+                if field not in payload and value is not None:
+                    payload[field] = str(value) if field in {"location_id", "agent_id"} else value
+
+        serializer = OLQuotationPersonalDetailsSerializer(
+            instance=quotation,
+            data=payload,
+            context={"quotation": quotation, "request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        updated = QuotationService.update_personal_details(
+            quotation=quotation,
+            actor=request.user,
+            validated_data=serializer.validated_data,
+            request=request,
+        )
+        response_data = OLQuotationPersonalDetailsSerializer(updated).data
+        response_data.update({
+            "duplicate_active_quotation_warning": bool(
+                serializer.validated_data.get("_duplicate_active_quotation_warning", False)
+            ),
+            "partner_exists": bool(serializer.validated_data.get("_partner_exists", False)),
+            "partner_id": str(serializer.validated_data["_partner_id"])
+            if serializer.validated_data.get("_partner_id") else None,
+            "compliant": bool(serializer.validated_data.get("_partner_compliant", False)),
+        })
+        return _response(response_data, "Quotation Personal Details saved.")
+
+    @action(detail=False, methods=["get"], url_path="personal-details-options")
+    def personal_details_options(self, request, *args, **kwargs):
+        search = (request.query_params.get("search") or "").strip().lower()
+        identity_types = ConfigurationService.get_choice_list("IDENTIFICATION_TYPE_CHOICES")
+        genders = ConfigurationService.get_choice_list("GENDER_CHOICES")
+        smoker_statuses = ConfigurationService.get_choice_list("SMOKER_STATUS_CHOICES")
+        locations = ConfigurationService.get_choice_list("LOCATIONS")
+        if search:
+            locations = [
+                item for item in locations
+                if search in str(item.get("label", "")).lower()
+                or search in str(item.get("value", "")).lower()
+            ]
+
+        agent_type_code = ConfigurationService.get_str_parameter("OL_AGENT_PARTNER_TYPE_CODE", "").strip()
+        agents = Partner.objects.filter(
+            is_active=True,
+            status="ACTIVE",
+            type_assignments__status="ACTIVE",
+            type_assignments__partner_type__is_active=True,
+        )
+        if agent_type_code:
+            agents = agents.filter(type_assignments__partner_type__code__iexact=agent_type_code)
+        else:
+            agents = agents.none()
+        if search:
+            agents = agents.filter(
+                Q(partner_number__icontains=search)
+                | Q(legal_name__icontains=search)
+                | Q(company_name__icontains=search)
+                | Q(first_name__icontains=search)
+                | Q(surname__icontains=search)
+            )
+        agents = agents.distinct().order_by("partner_number")
+        agent_payload = [
+            {
+                "id": str(agent.pk),
+                "value": str(agent.pk),
+                "label": agent.display_name,
+                "name": agent.display_name,
+                "partner_number": agent.partner_number,
+            }
+            for agent in agents
+        ]
+        return _response(
+            {
+                "identity_types": identity_types,
+                "genders": genders,
+                "smoker_statuses": smoker_statuses,
+                "locations": locations,
+                "agents": agent_payload,
+            },
+            "Quotation Personal Details options retrieved.",
         )
 
     def perform_create(self, serializer):

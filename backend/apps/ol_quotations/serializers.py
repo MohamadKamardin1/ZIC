@@ -1,5 +1,10 @@
-from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.utils import timezone
+
+from apps.partners.models import Partner, PartnerKYCProfile, PartnerTypeAssignment
+from apps.partner_onboarding.models import Location
+from apps.system_parameters.services.config_service import ConfigurationService
 
 from .permissions import OLQuotationPermission, has_quotation_permission
 
@@ -158,6 +163,156 @@ class OLQuotationEventSerializer(serializers.ModelSerializer):
         model = OLQuotationEvent
         fields = "__all__"
         read_only_fields = [field.name for field in OLQuotationEvent._meta.fields]
+
+
+class OLQuotationPersonalDetailsSerializer(serializers.Serializer):
+    quote_name = serializers.CharField(required=True, max_length=255)
+    quote_date = serializers.DateField(required=False, default=timezone.localdate)
+    identity_type = serializers.CharField(required=True, max_length=40)
+    identity_number = serializers.CharField(required=True, max_length=100, trim_whitespace=True)
+    date_of_birth = serializers.DateField(required=True)
+    age_at_quote = serializers.IntegerField(read_only=True)
+    gender = serializers.CharField(required=True, max_length=40)
+    smoker_status = serializers.CharField(required=True, max_length=40)
+    location = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    location_id = serializers.UUIDField(required=False, write_only=True)
+    agent_id = serializers.UUIDField(required=False, write_only=True)
+    address = serializers.CharField(required=True, allow_blank=False)
+    partner_exists = serializers.BooleanField(read_only=True)
+    partner_id = serializers.UUIDField(read_only=True, allow_null=True)
+    compliant = serializers.BooleanField(read_only=True)
+    duplicate_active_quotation_warning = serializers.BooleanField(read_only=True)
+
+    def _choice_codes(self, code):
+        try:
+            return {item["value"] for item in ConfigurationService.get_choice_list(code)}
+        except Exception:
+            return set()
+
+    def validate(self, attrs):
+        quote_date = attrs.get("quote_date") or timezone.localdate()
+        dob = attrs.get("date_of_birth")
+        if dob and dob > quote_date:
+            raise serializers.ValidationError({"date_of_birth": "Date of birth cannot be after the quote date."})
+        if dob and dob > timezone.localdate():
+            raise serializers.ValidationError({"date_of_birth": "Date of birth cannot be in the future."})
+        if dob:
+            age = quote_date.year - dob.year - ((quote_date.month, quote_date.day) < (dob.month, dob.day))
+            maximum_age = ConfigurationService.get_int_parameter("OL_MAX_QUOTATION_AGE", 120)
+            minimum_age = ConfigurationService.get_int_parameter("OL_MIN_QUOTATION_AGE", 0)
+            if age < minimum_age or age > maximum_age:
+                raise serializers.ValidationError({"date_of_birth": f"Computed age must be between {minimum_age} and {maximum_age} years."})
+            attrs["age_at_quote"] = age
+
+        choices = {
+            "identity_type": "IDENTIFICATION_TYPE_CHOICES",
+            "gender": "GENDER_CHOICES",
+            "smoker_status": "SMOKER_STATUS_CHOICES",
+        }
+        for field, choice_code in choices.items():
+            value = attrs.get(field)
+            allowed = self._choice_codes(choice_code)
+            if allowed and value not in allowed:
+                raise serializers.ValidationError({field: "Select a configured active option."})
+            if not allowed:
+                raise serializers.ValidationError({field: f"{choice_code} is not configured."})
+
+        identity_rules = ConfigurationService.get_json_parameter("OL_IDENTITY_FORMAT_RULES", {}) or {}
+        rule = identity_rules.get(attrs.get("identity_type"), {}) if isinstance(identity_rules, dict) else {}
+        if isinstance(rule, dict):
+            pattern = rule.get("regex")
+            if pattern:
+                import re
+                if not re.fullmatch(pattern, attrs["identity_number"]):
+                    raise serializers.ValidationError({"identity_number": "Identity number does not match the configured format."})
+            if rule.get("min_length") is not None and len(attrs["identity_number"]) < int(rule["min_length"]):
+                raise serializers.ValidationError({"identity_number": "Identity number is shorter than the configured minimum length."})
+            if rule.get("max_length") is not None and len(attrs["identity_number"]) > int(rule["max_length"]):
+                raise serializers.ValidationError({"identity_number": "Identity number exceeds the configured maximum length."})
+
+        location_id = attrs.pop("location_id", None)
+        if location_id:
+            try:
+                location = Location.objects.get(pk=location_id, is_active=True)
+            except Location.DoesNotExist:
+                raise serializers.ValidationError({"location_id": "Select an active configured location."})
+            attrs["location_master"] = location
+            attrs["location"] = str(location)
+        elif not attrs.get("location"):
+            raise serializers.ValidationError({"location": "This field is required."})
+
+        agent_id = attrs.pop("agent_id", None)
+        if agent_id:
+            try:
+                agent = Partner.objects.get(pk=agent_id, is_active=True, status="ACTIVE")
+            except Partner.DoesNotExist:
+                raise serializers.ValidationError({"agent_id": "Select an active eligible agent."})
+            eligible = PartnerTypeAssignment.objects.filter(
+                partner=agent,
+                status="ACTIVE",
+                partner_type__is_active=True,
+            ).filter(
+                partner_type__code__iexact=ConfigurationService.get_str_parameter("OL_AGENT_PARTNER_TYPE_CODE", "AGENT")
+            ).exists()
+            if not eligible:
+                raise serializers.ValidationError({"agent_id": "Selected partner is not configured as an active agent."})
+            attrs["agent_partner"] = agent
+        else:
+            raise serializers.ValidationError({"agent_id": "This field is required."})
+
+        from .models import OLQuotation, QuotationStatus
+        quotation = self.context.get("quotation")
+        duplicate_query = OLQuotation.objects.filter(
+            identity_type=attrs.get("identity_type"),
+            identity_number__iexact=attrs.get("identity_number", ""),
+            date_of_birth=attrs.get("date_of_birth"),
+            status__in=[QuotationStatus.DRAFT, QuotationStatus.FINALIZED],
+        )
+        if quotation and quotation.pk:
+            duplicate_query = duplicate_query.exclude(pk=quotation.pk)
+        attrs["_duplicate_active_quotation_warning"] = duplicate_query.exists()
+
+        # Partner type and verified KYC are evaluated through active assignments.
+        partner_query = Partner.objects.filter(
+            identification_type=attrs.get("identity_type"),
+            identification_number__iexact=attrs.get("identity_number", ""),
+            date_of_birth=attrs.get("date_of_birth"),
+            is_active=True,
+            status="ACTIVE",
+            type_assignments__status="ACTIVE",
+            type_assignments__kyc_profiles__kyc_status="VERIFIED",
+        ).distinct()
+        partner = partner_query.first()
+        attrs["_partner_exists"] = bool(partner)
+        attrs["_partner_id"] = partner.pk if partner else None
+        attrs["_partner_compliant"] = bool(partner)
+        return attrs
+
+    def to_representation(self, instance):
+        quotation = instance
+        data = {
+            "quote_name": quotation.quote_name,
+            "quote_date": quotation.quote_date,
+            "identity_type": quotation.identity_type,
+            "identity_number": quotation.identity_number,
+            "date_of_birth": quotation.date_of_birth,
+            "age_at_quote": quotation.age_at_quote,
+            "gender": quotation.gender,
+            "smoker_status": quotation.smoker_status,
+            "location": quotation.location,
+            "location_id": str(quotation.location_master_id) if quotation.location_master_id else None,
+            "agent_id": str(quotation.agent_partner_id) if quotation.agent_partner_id else None,
+            "agent": {
+                "id": str(quotation.agent_partner_id),
+                "name": str(quotation.agent_partner),
+                "partner_number": quotation.agent_partner.partner_number,
+            } if quotation.agent_partner_id else None,
+            "address": quotation.address,
+            "partner_exists": bool(quotation.linked_partner_id or quotation.partner_id),
+            "partner_id": str(quotation.linked_partner_id or quotation.partner_id) if (quotation.linked_partner_id or quotation.partner_id) else None,
+            "compliant": bool(quotation.partner_verified),
+        }
+        return data
 
 
 class OLQuotationListSerializer(serializers.ModelSerializer):

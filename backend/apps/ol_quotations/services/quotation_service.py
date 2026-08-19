@@ -67,7 +67,9 @@ class QuotationService:
             "gender": quotation.gender,
             "smoker_status": quotation.smoker_status,
             "location": quotation.location,
+            "location_master_id": str(quotation.location_master_id) if quotation.location_master_id else None,
             "agent_id": str(quotation.agent_id) if quotation.agent_id else None,
+            "agent_partner_id": str(quotation.agent_partner_id) if quotation.agent_partner_id else None,
             "address": quotation.address,
             "partner_verified": quotation.partner_verified,
             "approval_required": quotation.approval_required,
@@ -100,6 +102,7 @@ class QuotationService:
             or quotation.partner_id
             or quotation.linked_partner_id
             or quotation.agent_id
+            or quotation.agent_partner_id
             or quotation.address
             or quotation.location
         )
@@ -256,6 +259,75 @@ class QuotationService:
             request=request,
         )
         return quotation
+
+    @staticmethod
+    @transaction.atomic
+    def update_personal_details(*, quotation, actor, validated_data, request=None):
+        locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
+        if locked.status != QuotationStatus.DRAFT:
+            raise QuotationServiceError("Only draft quotations can be updated.")
+
+        payload = dict(validated_data)
+        duplicate_warning = bool(payload.pop("_duplicate_active_quotation_warning", False))
+        partner_exists = bool(payload.pop("_partner_exists", False))
+        partner_id = payload.pop("_partner_id", None)
+        partner_compliant = bool(payload.pop("_partner_compliant", False))
+
+        if partner_compliant and partner_id:
+            payload["linked_partner_id"] = partner_id
+            payload["partner_verified"] = True
+
+        allowed_fields = {
+            "quote_name",
+            "quote_date",
+            "identity_type",
+            "identity_number",
+            "date_of_birth",
+            "age_at_quote",
+            "gender",
+            "smoker_status",
+            "location",
+            "location_master",
+            "agent_partner",
+            "address",
+            "linked_partner_id",
+            "partner_verified",
+        }
+        payload = {field: value for field, value in payload.items() if field in allowed_fields}
+        before = QuotationService.snapshot(locked)
+        for field, value in payload.items():
+            setattr(locked, field, value)
+        locked.updated_by = QuotationService.actor(actor)
+        locked.full_clean(exclude=["quote_number"])
+        locked.wizard_step_completion = QuotationService.wizard_completion(locked)
+        locked.current_version_number += 1
+        locked.save(update_fields=[
+            *payload.keys(),
+            "updated_by",
+            "wizard_step_completion",
+            "current_version_number",
+            "updated_at",
+        ])
+        after = QuotationService.snapshot(locked)
+        QuotationService._record_version(locked, actor=actor, reason="Personal Details wizard step updated.")
+        QuotationService._record_event(
+            locked,
+            "PERSONAL_DETAILS_UPDATED",
+            actor=actor,
+            from_status=locked.status,
+            to_status=locked.status,
+            notes="Ordinary Life quotation Personal Details updated.",
+            metadata={
+                "duplicate_active_quotation_warning": duplicate_warning,
+                "partner_exists": partner_exists,
+                "partner_id": str(partner_id) if partner_id else None,
+                "compliant": partner_compliant,
+            },
+            before_state=before,
+            after_state=after,
+            request=request,
+        )
+        return locked
 
     @staticmethod
     @transaction.atomic

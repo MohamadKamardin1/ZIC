@@ -90,8 +90,22 @@ class OLQuotation(QuotationBaseModel):
     gender = models.CharField(max_length=40, blank=True, default="")
     smoker_status = models.CharField(max_length=40, blank=True, default="")
     location = models.CharField(max_length=255, blank=True, default="")
+    location_master = models.ForeignKey(
+        "partner_onboarding.Location",
+        on_delete=models.PROTECT,
+        related_name="ol_quotations",
+        null=True,
+        blank=True,
+    )
     agent = models.ForeignKey(
         "users.User",
+        on_delete=models.PROTECT,
+        related_name="ol_quotation_agent_records",
+        null=True,
+        blank=True,
+    )
+    agent_partner = models.ForeignKey(
+        "partners.Partner",
         on_delete=models.PROTECT,
         related_name="ol_quotation_agent_records",
         null=True,
@@ -117,6 +131,9 @@ class OLQuotation(QuotationBaseModel):
             models.Index(fields=["partner", "status", "created_at"]),
             models.Index(fields=["product", "status", "quote_date"]),
             models.Index(fields=["status", "expiry_date"]),
+            models.Index(fields=["identity_type", "identity_number", "date_of_birth", "status"]),
+            models.Index(fields=["agent_partner", "status", "created_at"]),
+            models.Index(fields=["location_master", "status", "created_at"]),
         ]
         constraints = [
             models.CheckConstraint(

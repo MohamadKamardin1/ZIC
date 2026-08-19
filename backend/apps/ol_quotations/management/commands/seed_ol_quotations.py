@@ -1,7 +1,7 @@
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from apps.system_parameters.models import ParameterGroup, SystemParameter
+from apps.system_parameters.models import ChoiceList, ChoiceOption, ParameterGroup, SystemParameter
 from apps.users.models import PermissionGroup, UserGroup, UserPermission
 
 
@@ -71,6 +71,18 @@ PERMISSIONS = [
         "description": "Convert finalized quotations into future proposal or policy workflows.",
     },
 ]
+
+CHOICE_LIST_SEEDS = {
+    "SMOKER_STATUS_CHOICES": {
+        "name": "Smoker Statuses",
+        "description": "Configured smoker status options for Ordinary Life quotations.",
+        "options": [
+            ("SMOKER", "Smoker"),
+            ("NON_SMOKER", "Non-smoker"),
+        ],
+    },
+}
+
 
 ROLE_SEEDS = [
     {
@@ -178,10 +190,71 @@ class Command(BaseCommand):
             },
         )
 
+        for choice_code, choice_payload in CHOICE_LIST_SEEDS.items():
+            choice_list, _ = ChoiceList.objects.update_or_create(
+                code=choice_code,
+                defaults={
+                    "group": system_group,
+                    "name": choice_payload["name"],
+                    "description": choice_payload["description"],
+                    "is_active": True,
+                },
+            )
+            for sort_order, (option_code, label) in enumerate(choice_payload["options"], start=1):
+                ChoiceOption.objects.update_or_create(
+                    choice_list=choice_list,
+                    code=option_code,
+                    defaults={
+                        "label": label,
+                        "sort_order": sort_order,
+                        "is_active": True,
+                    },
+                )
+
+        personal_detail_parameters = [
+            {
+                "code": "OL_MAX_QUOTATION_AGE",
+                "name": "OL Quotation Maximum Age",
+                "description": "Maximum computed age allowed for an Ordinary Life quotation.",
+                "value_type": "INTEGER",
+                "integer_value": 120,
+                "sort_order": 20,
+            },
+            {
+                "code": "OL_MIN_QUOTATION_AGE",
+                "name": "OL Quotation Minimum Age",
+                "description": "Minimum computed age allowed for an Ordinary Life quotation.",
+                "value_type": "INTEGER",
+                "integer_value": 0,
+                "sort_order": 21,
+            },
+            {
+                "code": "OL_AGENT_PARTNER_TYPE_CODE",
+                "name": "OL Agent Partner Type Code",
+                "description": "Partner type code used to identify eligible active quotation agents.",
+                "value_type": "STRING",
+                "string_value": "AGENT",
+                "sort_order": 22,
+            },
+            {
+                "code": "OL_IDENTITY_FORMAT_RULES",
+                "name": "OL Identity Format Rules",
+                "description": "Optional JSON format rules keyed by configured identity type.",
+                "value_type": "JSON",
+                "json_value": {},
+                "sort_order": 23,
+            },
+        ]
+        for parameter in personal_detail_parameters:
+            SystemParameter.objects.update_or_create(
+                code=parameter["code"],
+                defaults={"group": system_group, "is_active": True, **parameter},
+            )
+
         self.stdout.write(
             self.style.SUCCESS(
                 "OL Quotations seeded: "
                 f"{len(permission_map)} permissions, {created_roles} roles created, "
-                f"{updated_roles} roles updated, numbering prefix configured."
+                f"{updated_roles} roles updated, numbering prefix and Personal Details parameters configured."
             )
         )

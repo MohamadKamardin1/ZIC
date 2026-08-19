@@ -14,7 +14,8 @@ from apps.ol_quotations.models import (
     OLQuotationMember,
     QuotationStatus,
 )
-from apps.partners.models import Partner
+from apps.partner_onboarding.models import Branch, Location
+from apps.partners.models import Partner, PartnerKYCProfile, PartnerType, PartnerTypeAssignment
 from apps.users.models import User, UserGroup
 from apps.ordinary_life.models import OLPlan, OLProduct as LegacyOLProduct, OLProductVersion
 
@@ -53,7 +54,47 @@ class OLQuotationAPITests(TestCase):
             surname="Salim",
             email="amina.olq@example.com",
             mobile_number="255700000001",
+            identification_type="NIN",
+            identification_number="ID-OLQ-0001",
+            date_of_birth=date(1990, 1, 1),
             is_active=True,
+            status="ACTIVE",
+        )
+        cls.branch = Branch.objects.create(code="OLQ-BR", name="OL Quotations Branch")
+        cls.location = Location.objects.create(
+            branch=cls.branch,
+            code="OLQ-LC",
+            name="Quotation Location",
+            is_active=True,
+        )
+        cls.agent_type = PartnerType.objects.create(
+            code="AGENT",
+            name="Ordinary Life Agent",
+            is_active=True,
+        )
+        cls.agent_assignment = PartnerTypeAssignment.objects.create(
+            partner=cls.partner,
+            partner_type=cls.agent_type,
+            status="ACTIVE",
+        )
+        PartnerKYCProfile.objects.create(
+            assignment=cls.agent_assignment,
+            kyc_status="VERIFIED",
+        )
+        cls.inactive_agent = Partner.objects.create(
+            partner_number="PT-OLQ-INACTIVE",
+            partner_type="INDIVIDUAL",
+            party_type="INDIVIDUAL",
+            first_name="Inactive",
+            surname="Agent",
+            email="inactive.agent.olq@example.com",
+            mobile_number="255700000099",
+            is_active=False,
+            status="INACTIVE",
+        )
+        PartnerTypeAssignment.objects.create(
+            partner=cls.inactive_agent,
+            partner_type=cls.agent_type,
             status="ACTIVE",
         )
         cls.plan_type = OLPlanType.objects.create(
@@ -109,6 +150,20 @@ class OLQuotationAPITests(TestCase):
         )
         self.assertEqual(response.status_code, 201, response.data)
         return response.data["data"]
+
+    def personal_details_payload(self, identity_number="ID-OLQ-0001", date_of_birth="1990-01-01"):
+        return {
+            "quote_name": "Amina Personal Details Quote",
+            "quote_date": date.today().isoformat(),
+            "identity_type": "NIN",
+            "identity_number": identity_number,
+            "date_of_birth": date_of_birth,
+            "gender": "FEMALE",
+            "smoker_status": "NON_SMOKER",
+            "location_id": str(self.location.pk),
+            "agent_id": str(self.partner.pk),
+            "address": "Stone Town, Zanzibar",
+        }
 
     def populate_wizard(self, quotation_id):
         headers = {"format": "json"}
@@ -504,3 +559,105 @@ class OLQuotationAPITests(TestCase):
         )
         self.assertTrue({"status", "quote_date", "product", "agent", "location"}.issubset(set(quotation_admin.list_filter)))
         self.assertTrue({"quote_number", "quote_name", "identity_number", "location"}.issubset(set(quotation_admin.search_fields)))
+
+    def test_personal_details_save_valid(self):
+        draft = self.create_draft()
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/personal-details/",
+            self.personal_details_payload(),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        quotation = OLQuotation.objects.get(pk=draft["id"])
+        self.assertEqual(quotation.quote_name, "Amina Personal Details Quote")
+        self.assertEqual(quotation.identity_number, "ID-OLQ-0001")
+        self.assertEqual(quotation.location_master_id, self.location.pk)
+        self.assertEqual(quotation.agent_partner_id, self.partner.pk)
+        self.assertTrue(OLQuotationEvent.objects.filter(
+            quotation=quotation,
+            event_type="PERSONAL_DETAILS_UPDATED",
+        ).exists())
+        self.assertTrue(DomainEvent.objects.filter(
+            event_type="QuotationPersonalDetailsUpdated",
+            aggregate_id=str(quotation.pk),
+        ).exists())
+
+    def test_personal_details_age_computation(self):
+        draft = self.create_draft()
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/personal-details/",
+            self.personal_details_payload(date_of_birth="1990-08-20"),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        expected_age = date.today().year - 1990 - ((date.today().month, date.today().day) < (8, 20))
+        self.assertEqual(response.data["data"]["age_at_quote"], expected_age)
+        self.assertEqual(OLQuotation.objects.get(pk=draft["id"]).age_at_quote, expected_age)
+
+    def test_personal_details_invalid_dob_future(self):
+        draft = self.create_draft()
+        future = (date.today() + timedelta(days=1)).isoformat()
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/personal-details/",
+            self.personal_details_payload(date_of_birth=future),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("date_of_birth", str(response.data))
+
+    def test_personal_details_agent_options_active_only(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.get(
+            "/api/v1/ol-quotations/quotations/personal-details-options/"
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        options = response.data["data"]
+        agent_ids = {item["id"] for item in options["agents"]}
+        self.assertIn(str(self.partner.pk), agent_ids)
+        self.assertNotIn(str(self.inactive_agent.pk), agent_ids)
+        self.assertEqual(
+            {item["value"] for item in options["smoker_statuses"]},
+            {"SMOKER", "NON_SMOKER"},
+        )
+
+    def test_personal_details_partner_exists_hook_true(self):
+        draft = self.create_draft()
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/personal-details/",
+            self.personal_details_payload(),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        data = response.data["data"]
+        self.assertTrue(data["partner_exists"])
+        self.assertEqual(data["partner_id"], str(self.partner.pk))
+        self.assertTrue(data["compliant"])
+        quotation = OLQuotation.objects.get(pk=draft["id"])
+        self.assertEqual(quotation.linked_partner_id, self.partner.pk)
+        self.assertTrue(quotation.partner_verified)
+
+    def test_personal_details_partner_exists_hook_false(self):
+        draft = self.create_draft()
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/personal-details/",
+            self.personal_details_payload(identity_number="NO-MATCH-OLQ"),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        data = response.data["data"]
+        self.assertFalse(data["partner_exists"])
+        self.assertIsNone(data["partner_id"])
+        self.assertFalse(data["compliant"])
+
+    def test_personal_details_step_completion_flag(self):
+        draft = self.create_draft()
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/personal-details/",
+            self.personal_details_payload(),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        quotation = OLQuotation.objects.get(pk=draft["id"])
+        self.assertTrue(quotation.wizard_step_completion["1_personal_details"])
+        self.assertTrue(response.data["data"]["duplicate_active_quotation_warning"] is False)
+        self.assertEqual(response.data["data"]["quote_name"], "Amina Personal Details Quote")

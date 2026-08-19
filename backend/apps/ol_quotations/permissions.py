@@ -27,6 +27,8 @@ class OLQuotationPermission:
         "convert": CONVERT,
         "print": PRINT,
         "configure": CONFIGURE,
+        "personal_details": UPDATE,
+        "personal_details_options": VIEW,
     }
 
     @classmethod
