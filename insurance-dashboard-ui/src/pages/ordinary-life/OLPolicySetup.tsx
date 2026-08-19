@@ -27,6 +27,11 @@ type ScreenKey =
   | "surrenderValueRate"
   | "paidupRate"
   | "commitment"
+  | "healthQuestions"
+  | "questionnaires"
+  | "questionnaireBuilder"
+  | "notificationSchedule"
+  | "reinstatement"
 
 type PolicyRecord = {
   id: string
@@ -88,7 +93,35 @@ type PolicyRecord = {
   smoker_status?: string
   row_order?: number
   applies_to?: string
+  question_text?: string
+  answer_type?: string
+  underwriting_impact?: string
+  requires_medical_followup?: boolean
+  applies_to_scope?: string
+  scheme_code?: string
+  version?: string
+  sum_assured_threshold?: string | number | null
+  age_threshold?: number | null
+  questionnaire?: string
+  health_question?: string
+  sequence?: number
+  mandatory?: boolean
+  trigger_medical_requirement?: boolean
+  score?: string | number | null
+  event_type?: string
+  days_offset?: number
+  notification_channel?: string
+  recipient_type?: string
+  template_code?: string
+  days_after_lapse?: number
+  maximum_reinstatements?: number | null
+  require_medical_underwriting?: boolean
+  require_outstanding_premium_payment?: boolean
+  interest_rate?: string | number | null
+  penalty_rate?: string | number | null
 }
+
+type BuilderItem = PolicyRecord & { localId: string }
 
 type EditorValue = string | number | boolean | string[] | null | undefined
 type EditorState = Record<string, EditorValue>
@@ -220,6 +253,21 @@ const screens: Record<ScreenKey, ScreenConfig> = {
   commitment: {
     key: "commitment", title: "OL Commitment Status", description: "Commitment status catalog with applicability, ordering, terminal-state behavior, and lifecycle badges.", endpoint: `${API_PREFIX}/commitment-statuses/`, columns: [{ key: "code", label: "Code", field: "code", sortable: true }, { key: "name", label: "Name", field: "name", sortable: true }, { key: "applies_to", label: "Applies to", field: "applies_to", sortable: true }, { key: "display_order", label: "Order", field: "display_order", sortable: true, align: "right" }, { key: "is_terminal", label: "Terminal", field: "is_terminal", render: (value) => <StatusBadge value={value ? "Terminal" : "Non-terminal"} tone={value ? "danger" : "neutral"} /> }, { key: "is_active", label: "Status", field: "is_active", render: (value) => <StatusBadge value={value ? "Active" : "Inactive"} tone={value ? "success" : "danger"} /> }], filters: [{ key: "applies_to", label: "Applies to", type: "text", placeholder: "Configured scope" }, { key: "is_terminal", label: "Terminal", type: "text", placeholder: "true or false" }, { key: "is_active", label: "Active status", type: "text", placeholder: "true or false" }],
   },
+  healthQuestions: {
+    key: "healthQuestions", title: "OL Health Questions", description: "Reusable underwriting health-question catalog with answer types and underwriting impact.", endpoint: `${API_PREFIX}/health-questions/`, columns: commonColumns([{ key: "question_text", label: "Question", field: "question_text", sortable: true }, { key: "category", label: "Category", field: "category", sortable: true }, { key: "answer_type", label: "Answer type", field: "answer_type", sortable: true }, { key: "underwriting_impact", label: "Underwriting impact", field: "underwriting_impact", sortable: true, render: (value) => <StatusBadge value={valueLabel(value)} tone={badgeTone(String(value))} /> }, { key: "requires_medical_followup", label: "Medical follow-up", field: "requires_medical_followup", render: (value) => <StatusBadge value={value ? "Required" : "Not required"} tone={value ? "warning" : "neutral"} /> }]), filters: [{ key: "category", label: "Category", type: "text", placeholder: "Question category" }, { key: "answer_type", label: "Answer type", type: "text", placeholder: "Configured answer type" }, { key: "underwriting_impact", label: "Underwriting impact", type: "text", placeholder: "Configured impact" }, { key: "is_active", label: "Active status", type: "text", placeholder: "true or false" }],
+  },
+  questionnaires: {
+    key: "questionnaires", title: "OL Health Questionnaires", description: "Effective-dated, scoped questionnaire versions built from the active health-question catalog.", endpoint: `${API_PREFIX}/health-questionnaires/`, columns: commonColumns([{ key: "version", label: "Version", field: "version", sortable: true }, { key: "applies_to_scope", label: "Scope", field: "applies_to_scope", sortable: true, render: (value) => <StatusBadge value={valueLabel(value)} tone="info" /> }, { key: "product", label: "Product", field: "product", sortable: true, render: (value) => valueLabel(value) }, { key: "plan", label: "Plan", field: "plan", sortable: true, render: (value) => valueLabel(value) }, { key: "sum_assured_threshold", label: "Sum threshold", field: "sum_assured_threshold", sortable: true }, { key: "age_threshold", label: "Age threshold", field: "age_threshold", sortable: true }, { key: "version_state", label: "Version state", render: (_value, row) => <StatusBadge value={row.is_active && (!row.effective_to || row.effective_to >= today()) ? "Current" : "Superseded"} tone={row.is_active && (!row.effective_to || row.effective_to >= today()) ? "success" : "neutral"} /> }]), filters: [{ key: "applies_to_scope", label: "Scope", type: "text", placeholder: "GLOBAL, PRODUCT, PLAN, or SCHEME" }, { key: "version", label: "Version", type: "text", placeholder: "Version" }, { key: "product", label: "Product ID", type: "text", placeholder: "Product identifier" }, { key: "plan", label: "Plan ID", type: "text", placeholder: "Plan identifier" }, { key: "is_active", label: "Active status", type: "text", placeholder: "true or false" }],
+  },
+  questionnaireBuilder: {
+    key: "questionnaireBuilder", title: "OL Health Questionnaire Builder", description: "Compose, order, version, and preview health-questionnaire items from the active catalog.", endpoint: `${API_PREFIX}/health-questionnaires/`, columns: [], filters: [],
+  },
+  notificationSchedule: {
+    key: "notificationSchedule", title: "Grace Period Notification Schedule", description: "Effective-dated grace and lapse notification events, channels, and recipients.", endpoint: `${API_PREFIX}/grace-period-notification-schedules/`, columns: commonColumns([{ key: "event_type", label: "Event", field: "event_type", sortable: true }, { key: "days_offset", label: "Days offset", field: "days_offset", sortable: true, align: "right" }, { key: "notification_channel", label: "Channel", field: "notification_channel", sortable: true }, { key: "recipient_type", label: "Recipient", field: "recipient_type", sortable: true }, { key: "template_code", label: "Template", field: "template_code", sortable: true }]), filters: [{ key: "event_type", label: "Event type", type: "text", placeholder: "Configured event" }, { key: "notification_channel", label: "Channel", type: "text", placeholder: "Configured channel" }, { key: "recipient_type", label: "Recipient", type: "text", placeholder: "Configured recipient" }, { key: "is_active", label: "Active status", type: "text", placeholder: "true or false" }],
+  },
+  reinstatement: {
+    key: "reinstatement", title: "Reinstallment / Reinstatement Window", description: "Lapse reinstatement eligibility, medical underwriting, repayment requirements, and interest or penalty rates.", endpoint: `${API_PREFIX}/reinstatement-windows/`, columns: commonColumns([{ key: "product", label: "Product", field: "product", sortable: true, render: (value) => valueLabel(value) }, { key: "plan", label: "Plan", field: "plan", sortable: true, render: (value) => valueLabel(value) }, { key: "days_after_lapse", label: "Days after lapse", field: "days_after_lapse", sortable: true, align: "right" }, { key: "maximum_reinstatements", label: "Max reinstatements", field: "maximum_reinstatements", sortable: true, align: "right" }, { key: "require_medical_underwriting", label: "Medical U/W", field: "require_medical_underwriting", render: (value) => <StatusBadge value={value ? "Required" : "Not required"} tone={value ? "warning" : "neutral"} /> }, { key: "interest_rate", label: "Interest %", field: "interest_rate", sortable: true, align: "right" }, { key: "penalty_rate", label: "Penalty %", field: "penalty_rate", sortable: true, align: "right" }]), filters: [{ key: "product", label: "Product ID", type: "text", placeholder: "Product identifier" }, { key: "plan", label: "Plan ID", type: "text", placeholder: "Plan identifier" }, { key: "require_medical_underwriting", label: "Medical U/W", type: "text", placeholder: "true or false" }, { key: "is_active", label: "Active status", type: "text", placeholder: "true or false" }],
+  },
 }
 
 const emptyEditor = (screen: ScreenKey): EditorState => ({
@@ -234,6 +282,10 @@ const emptyEditor = (screen: ScreenKey): EditorState => ({
   ...(screen === "paidup" ? { product: "", plan: "", minimum_premiums_paid: 0, minimum_policy_months: 0, paidup_conversion_basis: "PROPORTIONAL", allow_paidup: true, paidup_effective_rule: "NEXT_ANNIVERSARY" } : {}),
   ...(screen === "surrenderValueRate" || screen === "paidupRate" ? { table_code: "", rate_table_version: "", product: "", plan: "", gender: "", smoker_status: "" } : {}),
   ...(screen === "commitment" ? { display_order: 0, applies_to: "COMMITMENT", is_terminal: false } : {}),
+  ...(screen === "healthQuestions" ? { question_text: "", category: "", answer_type: "", underwriting_impact: "", requires_medical_followup: false } : {}),
+  ...(screen === "questionnaires" || screen === "questionnaireBuilder" ? { applies_to_scope: "", product: "", plan: "", scheme_code: "", sum_assured_threshold: "", age_threshold: "", version: "1.0" } : {}),
+  ...(screen === "notificationSchedule" ? { event_type: "", days_offset: 0, notification_channel: "", recipient_type: "", template_code: "" } : {}),
+  ...(screen === "reinstatement" ? { product: "", plan: "", days_after_lapse: 1, maximum_reinstatements: "", require_medical_underwriting: false, require_outstanding_premium_payment: true, interest_rate: "", penalty_rate: "" } : {}),
 })
 
 const emptyRateRow = (): RateEditorRow => ({ age_from: "", age_to: "", term_from: "", term_to: "", policy_year_from: "", policy_year_to: "", rate_factor: "", row_order: "" })
@@ -297,6 +349,9 @@ function PolicyEditor({ screen, value, onChange, rateRows, setRateRows, allowedT
   if (screen === "renewal") return <div className="space-y-4"><CommonEditorFields value={value} onChange={onChange} error={error} /><div className="grid gap-4 sm:grid-cols-2">{numeric("display_order", "Display order")}{text("renewal_action", "Renewal action", true)}</div></div>
   if (screen === "beneficial") return <div className="space-y-4"><CommonEditorFields value={value} onChange={onChange} error={error} /><div className="grid gap-4 sm:grid-cols-2">{text("category", "Category", true)}{text("calculation_basis", "Calculation basis", true)}{numeric("default_ratio", "Default ratio (%)", true)}<Toggle label="Allows multiple" checked={Boolean(value.allows_multiple)} onChange={(checked) => onChange("allows_multiple", checked)} /></div><InfoBanner title="Ratio validation">Default ratio must be between 0 and 100 percent.</InfoBanner></div>
   if (screen === "member") return <div className="space-y-4"><CommonEditorFields value={value} onChange={onChange} error={error} /><div className="grid gap-4 sm:grid-cols-2">{text("product", "Product ID")}{text("plan", "Plan ID")}{text("cover_type", "Cover type", true)}{text("member_relation", "Member relation", true)}{numeric("min_age", "Minimum age")}{numeric("max_age", "Maximum age")}{numeric("waiting_period_days", "Waiting period days")}{numeric("benefit_limit", "Benefit limit", true)}{text("premium_basis", "Premium basis")}{text("coverage_basis", "Coverage basis")}</div><InfoBanner title="Eligibility validation">Maximum age cannot be less than minimum age, and benefit limits cannot be negative.</InfoBanner></div>
+  if (screen === "healthQuestions") return <div className="space-y-4"><CommonEditorFields value={value} onChange={onChange} error={error} /><TextareaInput label="Question text" name="question_text" required value={String(value.question_text ?? "")} error={error("question_text")} onChange={(event) => onChange("question_text", event.target.value)} /><div className="grid gap-4 sm:grid-cols-2">{text("category", "Category")}{text("answer_type", "Answer type", true)}{text("underwriting_impact", "Underwriting impact", true)}</div><Toggle label="Requires medical follow-up" checked={Boolean(value.requires_medical_followup)} onChange={(checked) => onChange("requires_medical_followup", checked)} /></div>
+  if (screen === "notificationSchedule") return <div className="space-y-4"><CommonEditorFields value={value} onChange={onChange} error={error} /><div className="grid gap-4 sm:grid-cols-2">{text("event_type", "Event type", true)}{numeric("days_offset", "Days offset")}{text("notification_channel", "Notification channel", true)}{text("recipient_type", "Recipient type", true)}{text("template_code", "Template code")}</div><InfoBanner title="Schedule validation">Days offset is relative to the configured event and must remain within the server-supported range.</InfoBanner></div>
+  if (screen === "reinstatement") return <div className="space-y-4"><CommonEditorFields value={value} onChange={onChange} error={error} /><div className="grid gap-4 sm:grid-cols-2">{text("product", "Product ID")}{text("plan", "Plan ID")}{numeric("days_after_lapse", "Days after lapse", false)}{numeric("maximum_reinstatements", "Maximum reinstatements")}{numeric("interest_rate", "Interest rate (%)", true)}{numeric("penalty_rate", "Penalty rate (%)", true)}</div><div className="grid gap-4 sm:grid-cols-2"><Toggle label="Require medical underwriting" checked={Boolean(value.require_medical_underwriting)} onChange={(checked) => onChange("require_medical_underwriting", checked)} /><Toggle label="Require outstanding premium payment" checked={Boolean(value.require_outstanding_premium_payment)} onChange={(checked) => onChange("require_outstanding_premium_payment", checked)} /></div><InfoBanner title="Reinstatement validation">Days after lapse must be positive. Interest and penalty rates must remain between 0 and 100 percent.</InfoBanner></div>
   if (screen === "surrender") return <div className="space-y-4"><CommonEditorFields value={value} onChange={onChange} error={error} /><div className="grid gap-4 sm:grid-cols-2">{text("product", "Product ID")}{text("plan", "Plan ID")}{numeric("minimum_premiums_paid", "Minimum premiums paid")}{numeric("minimum_policy_months", "Minimum policy months")}{numeric("minimum_premium_paid_ratio", "Minimum premium ratio (%)", true)}{text("surrender_charge_type", "Surrender charge type")}{numeric("surrender_charge_value", "Surrender charge value", true)}{numeric("surrender_payout_days", "Surrender payout days")}</div><div className="grid gap-4 sm:grid-cols-2"><Toggle label="Partial surrender allowed" checked={Boolean(value.partial_surrender_allowed)} onChange={(checked) => onChange("partial_surrender_allowed", checked)} /><Toggle label="Require approval" checked={Boolean(value.require_approval)} onChange={(checked) => onChange("require_approval", checked)} /></div><InfoBanner title="Overlap warning">Active surrender setups with the same product and plan scope cannot overlap effective dates.</InfoBanner></div>
   if (screen === "paidup") return <div className="space-y-4"><CommonEditorFields value={value} onChange={onChange} error={error} /><div className="grid gap-4 sm:grid-cols-2">{text("product", "Product ID")}{text("plan", "Plan ID")}{numeric("minimum_premiums_paid", "Minimum premiums paid")}{numeric("minimum_policy_months", "Minimum policy months")}{text("paidup_conversion_basis", "Paid-up conversion basis")}{text("paidup_effective_rule", "Paid-up effective rule")}</div><Toggle label="Paid-up conversion allowed" checked={Boolean(value.allow_paidup)} onChange={(checked) => onChange("allow_paidup", checked)} /><InfoBanner title="Eligibility validation">When paid-up conversion is allowed, at least one premium or policy-month threshold is required.</InfoBanner></div>
   return <div className="space-y-4"><CommonEditorFields value={value} onChange={onChange} error={error} /><div className="grid gap-4 sm:grid-cols-2">{text("applies_to", "Applies to", true)}{numeric("display_order", "Display order")}</div><Toggle label="Terminal commitment status" checked={Boolean(value.is_terminal)} onChange={(checked) => onChange("is_terminal", checked)} /></div>
@@ -341,6 +396,62 @@ function parseCsv(text: string): Record<string, string>[] { const lines = text.s
 
 const rateImportFields = ["code", "name", "description", "effective_from", "effective_to", "is_active", "table_code", "rate_table_version", "product", "plan", "gender", "smoker_status", "age_from", "age_to", "term_from", "term_to", "policy_year_from", "policy_year_to", "rate_factor", "row_order"]
 
+type QuestionnaireBuilderProps = {
+  value: EditorState
+  onChange: (key: string, next: EditorValue) => void
+  items: BuilderItem[]
+  catalog: PolicyRecord[]
+  onItemsChange: (items: BuilderItem[]) => void
+  error: (key: string) => string | undefined
+  dirty: boolean
+  saving: boolean
+  isVersionCopy: boolean
+  onCreateVersion: () => void
+  onSave: () => void
+}
+
+function nextQuestionnaireVersion(version: string): string {
+  const match = version.trim().match(/^(.*?)(\\d+(?:\\.\\d+)?)$/)
+  if (!match) return `${version.trim() || "1"}.1`
+  const prefix = match[1]
+  const current = Number(match[2])
+  return `${prefix}${(current + 0.1).toFixed(1)}`
+}
+
+function QuestionnaireBuilderPanel({ value, onChange, items, catalog, onItemsChange, error, dirty, saving, isVersionCopy, onCreateVersion, onSave }: QuestionnaireBuilderProps) {
+  const available = catalog.filter((question) => !items.some((item) => item.health_question === question.id))
+  const addQuestion = (question: PolicyRecord) => onItemsChange([...items, { ...question, localId: `new-${question.id}-${Date.now()}`, health_question: question.id, sequence: items.length + 1, mandatory: false, trigger_medical_requirement: false, score: "" }])
+  const move = (index: number, direction: -1 | 1) => {
+    const target = index + direction
+    if (target < 0 || target >= items.length) return
+    const next = [...items]
+    const [moved] = next.splice(index, 1)
+    next.splice(target, 0, moved)
+    onItemsChange(next.map((item, itemIndex) => ({ ...item, sequence: itemIndex + 1 })))
+  }
+  const remove = (localId: string) => onItemsChange(items.filter((item) => item.localId !== localId).map((item, index) => ({ ...item, sequence: index + 1 })))
+  const updateItem = (localId: string, patch: Partial<BuilderItem>) => onItemsChange(items.map((item) => item.localId === localId ? { ...item, ...patch } : item))
+  return <div className="space-y-5">
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-[10px] border border-[var(--border)] bg-[var(--muted)]/30 p-4">
+      <div><p className="text-sm font-bold">Questionnaire builder</p><p className="text-xs text-[var(--muted-foreground)]">Changes are held locally until you save the questionnaire header and its ordered items.</p></div>
+      <div className="flex items-center gap-2">{dirty && <StatusBadge value="Unsaved changes" tone="warning" />}{isVersionCopy && <StatusBadge value="New version" tone="info" />}{value.is_active ? <StatusBadge value="Current" tone="success" /> : <StatusBadge value="Superseded" tone="neutral" />}</div>
+    </div>
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(300px,0.9fr)]">
+      <div className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2"> <EditorField label="Code" name="questionnaire_code" value={value.code} required error={error("code")} onChange={(event) => onChange("code", event.target.value)} /> <EditorField label="Version" name="questionnaire_version" value={value.version} required error={error("version")} onChange={(event) => onChange("version", event.target.value)} /> </div>
+        <TextareaInput label="Description" name="questionnaire_description" value={String(value.description ?? "")} onChange={(event) => onChange("description", event.target.value)} />
+        <div className="grid gap-4 sm:grid-cols-2"><EditorField label="Scope" name="questionnaire_scope" value={value.applies_to_scope} required error={error("applies_to_scope")} onChange={(event) => onChange("applies_to_scope", event.target.value.toUpperCase())} /><EditorField label="Scheme code" name="questionnaire_scheme" value={value.scheme_code} error={error("scheme_code")} onChange={(event) => onChange("scheme_code", event.target.value)} /><EditorField label="Product ID" name="questionnaire_product" value={value.product} error={error("product")} onChange={(event) => onChange("product", event.target.value)} /><EditorField label="Plan ID" name="questionnaire_plan" value={value.plan} error={error("plan")} onChange={(event) => onChange("plan", event.target.value)} /></div>
+        <div className="grid gap-4 sm:grid-cols-3"><EditorField label="Sum assured threshold" name="sum_assured_threshold" value={value.sum_assured_threshold} decimal error={error("sum_assured_threshold")} onChange={(event) => onChange("sum_assured_threshold", event.target.value)} /><EditorField label="Age threshold" name="age_threshold" value={value.age_threshold} type="number" error={error("age_threshold")} onChange={(event) => onChange("age_threshold", Number(event.target.value))} /><DateInput label="Effective from" name="questionnaire_effective_from" required value={String(value.effective_from ?? "")} error={error("effective_from")} onChange={(event) => onChange("effective_from", event.target.value)} /></div>
+        <div className="grid gap-4 sm:grid-cols-2"><DateInput label="Effective to" name="questionnaire_effective_to" value={String(value.effective_to ?? "")} error={error("effective_to")} onChange={(event) => onChange("effective_to", event.target.value)} /><Toggle label="Current / active version" checked={Boolean(value.is_active)} onChange={(checked) => onChange("is_active", checked)} /></div>
+        <div className="rounded-[10px] border border-[var(--border)] p-4"><div className="mb-3 flex items-center justify-between"><div><p className="text-sm font-bold">Add questions from catalog</p><p className="text-xs text-[var(--muted-foreground)]">Only active, unselected catalog questions are available.</p></div><span className="text-xs text-[var(--muted-foreground)]">{items.length} selected</span></div>{available.length === 0 ? <p className="text-sm text-[var(--muted-foreground)]">All available health questions are already included.</p> : <div className="grid gap-2 sm:grid-cols-2">{available.map((question) => <button key={question.id} type="button" className="rounded-md border border-[var(--border)] p-3 text-left transition hover:border-[var(--foreground)]" onClick={() => addQuestion(question)}><span className="block text-sm font-semibold">{question.code} · {question.question_text}</span><span className="mt-1 block text-xs text-[var(--muted-foreground)]">{valueLabel(question.category)} · {valueLabel(question.answer_type)}</span></button>)}</div>}</div>
+        <div className="space-y-2">{items.length === 0 ? <InfoBanner title="No questions selected">Add at least one active health question to build this questionnaire.</InfoBanner> : items.map((item, index) => <div key={item.localId} className="rounded-[10px] border border-[var(--border)] p-3"><div className="flex flex-wrap items-start gap-3"><div className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--muted)] text-sm font-bold">{index + 1}</div><div className="min-w-0 flex-1"><p className="text-sm font-semibold">{item.code} · {item.question_text}</p><p className="text-xs text-[var(--muted-foreground)]">{valueLabel(item.category)} · {valueLabel(item.answer_type)} · impact {valueLabel(item.underwriting_impact)}</p></div><div className="flex items-center gap-1"><button type="button" className="button-secondary px-2 py-1 text-xs" disabled={index === 0} onClick={() => move(index, -1)} aria-label={`Move ${item.code} up`}>Up</button><button type="button" className="button-secondary px-2 py-1 text-xs" disabled={index === items.length - 1} onClick={() => move(index, 1)} aria-label={`Move ${item.code} down`}>Down</button><button type="button" className="button-secondary px-2 py-1 text-xs" onClick={() => remove(item.localId)} aria-label={`Remove ${item.code}`}>Remove</button></div></div><div className="mt-3 flex flex-wrap gap-4"><Toggle label="Mandatory" checked={Boolean(item.mandatory)} onChange={(checked) => updateItem(item.localId, { mandatory: checked })} /><Toggle label="Trigger medical" checked={Boolean(item.trigger_medical_requirement)} onChange={(checked) => updateItem(item.localId, { trigger_medical_requirement: checked })} /><EditorField label="Score" name={`score-${item.localId}`} value={item.score} decimal onChange={(event) => updateItem(item.localId, { score: event.target.value })} /></div></div>)}</div>
+      </div>
+      <aside className="rounded-[10px] border border-[var(--border)] bg-[var(--muted)]/20 p-4"><div className="mb-4 flex items-center justify-between"><div><p className="text-sm font-bold">Live questionnaire preview</p><p className="text-xs text-[var(--muted-foreground)]">Preview follows the current sequence and flags.</p></div><StatusBadge value={`${items.length} questions`} tone="info" /></div><div className="space-y-3">{items.length === 0 ? <p className="text-sm text-[var(--muted-foreground)]">Your preview will appear here as questions are added.</p> : items.map((item, index) => <div key={`preview-${item.localId}`} className="rounded-md bg-[var(--background)] p-3"><div className="flex gap-3"><span className="text-xs font-bold text-[var(--muted-foreground)]">{index + 1}.</span><div><p className="text-sm font-semibold">{item.question_text}</p><p className="mt-1 text-xs text-[var(--muted-foreground)]">{valueLabel(item.answer_type)}{item.mandatory ? " · Mandatory" : " · Optional"}{item.trigger_medical_requirement ? " · Medical review trigger" : ""}</p></div></div></div>)}</div><div className="mt-5 flex flex-wrap justify-end gap-2"><button type="button" className="button-primary" onClick={onSave} disabled={saving}>Save questionnaire</button>{!isVersionCopy && <button type="button" className="button-secondary" onClick={onCreateVersion} disabled={!value.id}>Create new version</button>}</div></aside>
+    </div>
+    {saving && <InfoBanner title="Saving questionnaire">The questionnaire header and ordered items are being persisted.</InfoBanner>}
+  </div>
+}
+
 export default function OLPolicySetup() {
   const { access, canAccess } = useAccess()
   const { toast } = useToast()
@@ -355,6 +466,11 @@ export default function OLPolicySetup() {
   const [deactivateRow, setDeactivateRow] = useState<PolicyRecord | null>(null)
   const [csvImporting, setCsvImporting] = useState(false)
   const [importErrors, setImportErrors] = useState<CsvImportError[]>([])
+  const [questionCatalog, setQuestionCatalog] = useState<PolicyRecord[]>([])
+  const [questionnaireItems, setQuestionnaireItems] = useState<BuilderItem[]>([])
+  const [questionnaireDirty, setQuestionnaireDirty] = useState(false)
+  const [questionnaireVersionCopy, setQuestionnaireVersionCopy] = useState(false)
+  const [questionnaireLoading, setQuestionnaireLoading] = useState(false)
   const screen = screens[active]
 
   const hasPermission = useCallback((permission: string) => { const [module, action] = permission.split("."); if (!access.permissions.length) return canAccess(module); return access.permissions.some((item) => item.module.toLowerCase() === module.toLowerCase() && item.action.toLowerCase() === action.toLowerCase()) }, [access.permissions, canAccess])
@@ -364,11 +480,75 @@ export default function OLPolicySetup() {
 
   useEffect(() => { if (!editor.open || active !== "status") return; let mounted = true; request<unknown>(`${screens.status.endpoint}?is_active=true&page_size=100&ordering=display_order`).then((payload) => { if (mounted) setTransitionOptions(normalizeTableResponse<PolicyRecord>(payload).results) }).catch(() => { if (mounted) setTransitionOptions([]) }); return () => { mounted = false } }, [active, editor.open, refreshKey])
 
+  useEffect(() => { if (active !== "questionnaireBuilder") return; let mounted = true; request<unknown>(`${screens.healthQuestions.endpoint}?is_active=true&page_size=200&ordering=category,code`).then((payload) => { if (mounted) setQuestionCatalog(normalizeTableResponse<PolicyRecord>(payload).results) }).catch(() => { if (mounted) setQuestionCatalog([]) }); return () => { mounted = false } }, [active, refreshKey])
+
+  useEffect(() => { if (!questionnaireDirty) return; const handleBeforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = "" }; window.addEventListener("beforeunload", handleBeforeUnload); return () => window.removeEventListener("beforeunload", handleBeforeUnload) }, [questionnaireDirty])
+
   const fetcher = useCallback(async (query: { page?: number; pageSize?: number; search?: string; ordering?: string; filters?: Record<string, string | number | boolean | null | undefined> }) => { const params = new URLSearchParams(); if (query.page) params.set("page", String(query.page)); if (query.pageSize) params.set("page_size", String(query.pageSize)); if (query.search) params.set("search", query.search); if (query.ordering) params.set("ordering", query.ordering); Object.entries(query.filters ?? {}).forEach(([key, value]) => { if (value !== undefined && value !== null && value !== "") params.set(key, String(value)) }); return normalizeTableResponse<PolicyRecord>(await request<unknown>(`${screen.endpoint}?${params.toString()}`)) }, [screen.endpoint])
 
-  const openCreate = () => { setEditor({ open: true, value: emptyEditor(active) }); setRateRows([emptyRateRow()]); setAllowedTransitions([]); setImportErrors([]) }
+  const openQuestionnaireBuilder = async (row?: PolicyRecord, clone = false) => {
+    setActive("questionnaireBuilder")
+    setQuestionnaireVersionCopy(clone)
+    setQuestionnaireDirty(false)
+    setQuestionnaireItems([])
+    if (!row) {
+      setEditor({ open: false, value: emptyEditor("questionnaireBuilder") })
+      return
+    }
+    setQuestionnaireLoading(true)
+    try {
+      const [itemsPayload] = await Promise.all([request<unknown>(`${API_PREFIX}/health-questionnaire-items/?questionnaire=${row.id}&is_active=true&page_size=200&ordering=sequence`), request<unknown>(`${screens.healthQuestions.endpoint}?is_active=true&page_size=200&ordering=category,code`).then((payload) => setQuestionCatalog(normalizeTableResponse<PolicyRecord>(payload).results))])
+      const items = normalizeTableResponse<PolicyRecord>(itemsPayload).results.map((item) => ({ ...item, localId: `item-${item.id}` }))
+      const value = toEditor("questionnaireBuilder", row)
+      if (clone) {
+        value.id = undefined
+        value.version = nextQuestionnaireVersion(String(row.version ?? "1.0"))
+        value.effective_from = today()
+        value.effective_to = ""
+        value.is_active = true
+      }
+      setEditor({ open: false, row: clone ? undefined : row, value })
+      setQuestionnaireItems(clone ? items.map((item, index) => ({ ...item, localId: `copy-${item.id ?? index}-${Date.now()}`, sequence: index + 1 })) : items)
+    } catch (error) {
+      toast({ tone: "danger", title: "Questionnaire load failed", message: error instanceof Error ? error.message : "The questionnaire could not be loaded." })
+    } finally {
+      setQuestionnaireLoading(false)
+    }
+  }
+
+  const openCreate = () => {
+    if (active === "questionnaires" || active === "questionnaireBuilder") {
+      void openQuestionnaireBuilder()
+      return
+    }
+    setEditor({ open: true, value: emptyEditor(active) }); setRateRows([emptyRateRow()]); setAllowedTransitions([]); setImportErrors([])
+  }
   const rowToRate = (row: PolicyRecord): RateEditorRow => ({ age_from: row.age_from === null || row.age_from === undefined ? "" : String(row.age_from), age_to: row.age_to === null || row.age_to === undefined ? "" : String(row.age_to), term_from: row.term_from === null || row.term_from === undefined ? "" : String(row.term_from), term_to: row.term_to === null || row.term_to === undefined ? "" : String(row.term_to), policy_year_from: row.policy_year_from === null || row.policy_year_from === undefined ? "" : String(row.policy_year_from), policy_year_to: row.policy_year_to === null || row.policy_year_to === undefined ? "" : String(row.policy_year_to), rate_factor: row.rate_factor === null || row.rate_factor === undefined ? "" : String(row.rate_factor), row_order: row.row_order === null || row.row_order === undefined ? "" : String(row.row_order) })
-  const openEdit = (row: PolicyRecord) => { setEditor({ open: true, row, value: toEditor(active, row) }); setRateRows(isRateScreen(active) ? [rowToRate(row)] : [emptyRateRow()]); setAllowedTransitions(active === "status" ? row.allowed_transitions ?? [] : []); setImportErrors([]) }
+  const openEdit = (row: PolicyRecord) => { if (active === "questionnaires") { void openQuestionnaireBuilder(row); return } setEditor({ open: true, row, value: toEditor(active, row) }); setRateRows(isRateScreen(active) ? [rowToRate(row)] : [emptyRateRow()]); setAllowedTransitions(active === "status" ? row.allowed_transitions ?? [] : []); setImportErrors([]) }
+  const updateQuestionnaireItems = (items: BuilderItem[]) => { setQuestionnaireItems(items); setQuestionnaireDirty(true) }
+  const updateQuestionnaire = (key: string, next: EditorValue) => { setEditor((current) => ({ ...current, value: { ...current.value, [key]: next } })); setQuestionnaireDirty(true) }
+  const saveQuestionnaire = async () => {
+    const validationMessage = validateEditor("questionnaireBuilder", editor.value, [], [])
+    if (validationMessage) { toast({ tone: "danger", title: "Check the questionnaire", message: validationMessage }); return }
+    if (!questionnaireItems.length) { toast({ tone: "danger", title: "Add questions", message: "At least one health question is required." }); return }
+    setQuestionnaireLoading(true)
+    try {
+      const headerPayload = cleanPayload({ code: editor.value.code, name: editor.value.name || editor.value.code, description: editor.value.description, effective_from: editor.value.effective_from, effective_to: editor.value.effective_to, is_active: editor.value.is_active, applies_to_scope: editor.value.applies_to_scope, product: editor.value.product, plan: editor.value.plan, scheme_code: editor.value.scheme_code, sum_assured_threshold: editor.value.sum_assured_threshold, age_threshold: editor.value.age_threshold, version: editor.value.version })
+      const headerPath = editor.row ? `${screens.questionnaires.endpoint}${editor.row.id}/` : screens.questionnaires.endpoint
+      const saved = await request<PolicyRecord>(headerPath, { method: editor.row ? "PATCH" : "POST", body: JSON.stringify(headerPayload) })
+      const questionnaireId = saved.id ?? editor.row?.id
+      if (!questionnaireId) throw new Error("The saved questionnaire did not return an identifier.")
+      for (const [index, item] of questionnaireItems.entries()) {
+        const itemPayload = cleanPayload({ code: item.code || `${editor.value.code}-${index + 1}`, name: item.name || item.question_text || `Question ${index + 1}`, description: item.question_text, questionnaire: questionnaireId, health_question: item.health_question || item.id, sequence: index + 1, mandatory: Boolean(item.mandatory), trigger_medical_requirement: Boolean(item.trigger_medical_requirement), score: item.score })
+        const path = item.id && !questionnaireVersionCopy ? `${API_PREFIX}/health-questionnaire-items/${item.id}/` : `${API_PREFIX}/health-questionnaire-items/`
+        await request(path, { method: item.id && !questionnaireVersionCopy ? "PATCH" : "POST", body: JSON.stringify(itemPayload) })
+      }
+      toast({ tone: "success", title: "Questionnaire saved", message: `${editor.value.code} version ${editor.value.version} is ready.` })
+      setQuestionnaireDirty(false); setQuestionnaireVersionCopy(false); setRefreshKey((current) => current + 1); setActive("questionnaires")
+    } catch (error) {
+      toast({ tone: "danger", title: "Questionnaire save failed", message: error instanceof Error ? error.message : "The questionnaire could not be saved." })
+    } finally { setQuestionnaireLoading(false) }
+  }
   const closeEditor = () => { if (!saving) setEditor({ open: false, value: emptyEditor(active) }) }
   const updateEditor = (key: string, next: string | number | boolean | null) => setEditor((current) => ({ ...current, value: { ...current.value, [key]: next } }))
   const editorError = (key: string) => { const value = editor.value[key]; if (["code", "name", "effective_from"].includes(key) && !String(value ?? "").trim()) return "This field is required."; if (["product", "installment_type", "frequency", "badge_type", "renewal_action", "category", "calculation_basis", "cover_type", "member_relation", "applies_to"].includes(key) && !String(value ?? "").trim()) return "This field is required."; if ((active === "surrenderValueRate" || active === "paidupRate") && key === "table_code" && !String(value ?? "").trim() && !String(editor.value.rate_table_version ?? "").trim()) return "Table code or version is required."; if (key === "effective_to" && value && String(value) < String(editor.value.effective_from)) return "Effective to must be on or after effective from."; if (active === "beneficial" && key === "default_ratio" && (Number(value) < 0 || Number(value) > 100)) return "Enter a value between 0 and 100."; if (active === "surrender" && key === "minimum_premium_paid_ratio" && (Number(value) < 0 || Number(value) > 100)) return "Enter a value between 0 and 100."; if (active === "member" && key === "max_age" && editor.value.min_age !== "" && value !== "" && Number(value) < Number(editor.value.min_age)) return "Maximum age cannot be less than minimum age."; return undefined }
@@ -426,16 +606,26 @@ export default function OLPolicySetup() {
   }
 
   const deactivate = async () => { if (!deactivateRow) return; try { await request(`${screen.endpoint}${deactivateRow.id}/deactivate/`, { method: "POST" }); toast({ tone: "success", title: "Setup deactivated", message: `${deactivateRow.code} is now inactive.` }); setDeactivateRow(null); setRefreshKey((current) => current + 1) } catch (error) { toast({ tone: "danger", title: "Deactivation failed", message: error instanceof Error ? error.message : "The setup could not be deactivated." }) } }
-  const actions = useMemo<RowAction<PolicyRecord>[]>(() => [{ key: "edit", label: "Edit", permission: "ol_parameters.update", onSelect: openEdit }, { key: "deactivate", label: "Deactivate", permission: "ol_parameters.deactivate", tone: "danger", isVisible: (row) => row.is_active, onSelect: setDeactivateRow }], [active])
+  const actions = useMemo<RowAction<PolicyRecord>[]>(() => {
+    const base: RowAction<PolicyRecord>[] = [{ key: "edit", label: "Edit", permission: "ol_parameters.update", onSelect: openEdit }, { key: "deactivate", label: "Deactivate", permission: "ol_parameters.deactivate", tone: "danger", isVisible: (row) => row.is_active, onSelect: setDeactivateRow }]
+    if (active === "questionnaires") base.unshift({ key: "builder", label: "Open builder", permission: "ol_parameters.update", onSelect: openEdit }, { key: "version", label: "Create new version", permission: "ol_parameters.create", isVisible: (row) => Boolean(row.id), onSelect: (row) => void openQuestionnaireBuilder(row, true) })
+    return base
+  }, [active])
+  const changeTab = (id: string) => {
+    if (questionnaireDirty && id !== "questionnaireBuilder" && !window.confirm("You have unsaved questionnaire changes. Leave without saving?")) return
+    setActive(id as ScreenKey); setFilters({}); setImportErrors([]); if (id !== "questionnaireBuilder") { setQuestionnaireDirty(false); setQuestionnaireItems([]) }
+  }
   const stats = [{ label: "Workspace", value: screen.title, helper: "Backend parameter registry" }, { label: "Access", value: canManage ? "Configure" : "Read only", helper: canDeactivate ? "Deactivation available" : "No mutation permission" }]
 
-  return <MasterDetailPage eyebrow="Ordinary Life Parameters / Policy Setup" title={screen.title} description={screen.description} stats={stats} tabs={Object.values(screens).map((item) => ({ id: item.key, label: item.title }))} activeTab={active} onTabChange={(id) => { setActive(id as ScreenKey); setFilters({}); setImportErrors([]) }} actions={canManage ? <button type="button" className="button-primary" onClick={openCreate}><Plus size={16} aria-hidden="true" /> New setup</button> : undefined}>
+  return <MasterDetailPage eyebrow="Ordinary Life Parameters / Policy Setup" title={screen.title} description={screen.description} stats={stats} tabs={Object.values(screens).map((item) => ({ id: item.key, label: item.title }))} activeTab={active} onTabChange={changeTab} actions={canManage && active !== "questionnaireBuilder" ? <button type="button" className="button-primary" onClick={openCreate}><Plus size={16} aria-hidden="true" /> New setup</button> : active === "questionnaireBuilder" && canManage ? <button type="button" className="button-secondary" onClick={() => changeTab("questionnaires")}>Back to questionnaires</button> : undefined}>
     <div className="space-y-4">
       {!hasPermission("ol_parameters.view") && <InfoBanner title="Read access required">Your current IAM access metadata does not include the OL parameter view permission.</InfoBanner>}
-      {csvImporting && <InfoBanner title="CSV import in progress">Rows are being validated and submitted one at a time so rejected rows can be reported precisely.</InfoBanner>}
-      {importErrors.length > 0 && <div className="rounded-[10px] border border-[var(--destructive)]/40 bg-[var(--destructive)]/5 p-4" role="alert"><p className="text-sm font-bold text-[var(--destructive)]">CSV row errors</p><ul className="mt-2 space-y-1 text-sm">{importErrors.map((item) => <li key={`${item.row}-${item.message}`}><span className="font-semibold">Row {item.row}:</span> {item.message}</li>)}</ul></div>}
-      <FilterBar definitions={screen.filters} value={filters} onChange={(key, next) => setFilters((current) => ({ ...current, [key]: next }))} onApply={() => undefined} onReset={() => setFilters({})} />
-      <DataTable<PolicyRecord> key={screen.key} metadata={{ columns: screen.columns, defaultOrdering: active === "commitment" ? "display_order" : "-effective_from", pageSize: 20, totalLabel: "policy setups" }} fetcher={fetcher} filters={filters} refreshKey={refreshKey} actions={hasPermission("ol_parameters.view") && (canManage || canDeactivate) ? actions : []} permissions={permissionKeys} onImportCsv={isVersionRateScreen(active) ? importCsv : undefined} exportFileName={`${screen.key}-policy-setup.csv`} caption={screen.title} />
+      {active === "questionnaireBuilder" ? <QuestionnaireBuilderPanel value={editor.value} onChange={updateQuestionnaire} items={questionnaireItems} catalog={questionCatalog} onItemsChange={updateQuestionnaireItems} error={editorError} dirty={questionnaireDirty} saving={questionnaireLoading} isVersionCopy={questionnaireVersionCopy} onCreateVersion={() => { if (editor.row) void openQuestionnaireBuilder(editor.row, true) }} onSave={() => void saveQuestionnaire()} /> : <>
+        {csvImporting && <InfoBanner title="CSV import in progress">Rows are being validated and submitted one at a time so rejected rows can be reported precisely.</InfoBanner>}
+        {importErrors.length > 0 && <div className="rounded-[10px] border border-[var(--destructive)]/40 bg-[var(--destructive)]/5 p-4" role="alert"><p className="text-sm font-bold text-[var(--destructive)]">CSV row errors</p><ul className="mt-2 space-y-1 text-sm">{importErrors.map((item) => <li key={`${item.row}-${item.message}`}><span className="font-semibold">Row {item.row}:</span> {item.message}</li>)}</ul></div>}
+        <FilterBar definitions={screen.filters} value={filters} onChange={(key, next) => setFilters((current) => ({ ...current, [key]: next }))} onApply={() => undefined} onReset={() => setFilters({})} />
+        <DataTable<PolicyRecord> key={screen.key} metadata={{ columns: screen.columns, defaultOrdering: active === "commitment" ? "display_order" : "-effective_from", pageSize: 20, totalLabel: "policy setups" }} fetcher={fetcher} filters={filters} refreshKey={refreshKey} actions={hasPermission("ol_parameters.view") && (canManage || canDeactivate) ? actions : []} permissions={permissionKeys} onImportCsv={isVersionRateScreen(active) ? importCsv : undefined} exportFileName={`${screen.key}-policy-setup.csv`} caption={screen.title} />
+      </>}
     </div>
     <FormModal open={editor.open} title={`${editor.row ? "Edit" : "Create"} ${screen.title}`} description="Save changes through the OL Parameters API. Effective dates and business validation remain server-authoritative." onClose={closeEditor} onSave={saveEditor} saving={saving} saveLabel={editor.row ? "Save changes" : "Create setup"}><PolicyEditor screen={active} value={editor.value} onChange={updateEditor} rateRows={rateRows} setRateRows={setRateRows} allowedTransitions={allowedTransitions} setAllowedTransitions={setAllowedTransitions} transitionOptions={transitionOptions} error={editorError} /></FormModal>
     <ConfirmModal open={Boolean(deactivateRow)} title="Deactivate policy setup" description={`Deactivate ${deactivateRow?.code ?? "this setup"}? It will remain available for audit history but will no longer be active.`} confirmLabel="Deactivate" onClose={() => setDeactivateRow(null)} onConfirm={deactivate} />

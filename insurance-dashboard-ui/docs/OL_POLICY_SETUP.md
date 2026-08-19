@@ -57,3 +57,18 @@ Effective-date overlap and duplicate-scope checks remain server-authoritative. W
 The frontend treats rate-version records and rate rows as one backend collection because the current API exposes the same collection and row-level actions. When the backend represents one version as multiple rows, editing the first row updates the version metadata and additional grid rows are posted as new rows carrying the same serialized version scope. Product, plan, gender, smoker, frequency, charge, basis, and status choices are supplied by API payloads or existing table metadata; no new business catalogs are hardcoded in the page.
 
 The commitment-status screen is implemented as a catalog editor using the same lifecycle and badge rendering rules as Policy Status. The route remains `/ordinary-life/parameters/policy-setup`, so the existing navigation and access mapping continue to cover both Policy Setup parts without adding a second permission surface.
+
+## Policy Setup part 3: health and lifecycle parameters
+
+The remaining workspace includes four additional API-backed experiences:
+
+| Screen | Collection endpoint | Primary configuration |
+|---|---|---|
+| OL Health Questions | `/api/v1/ol-parameters/health-questions/` | Catalog code, question text, category, answer type, underwriting impact, and medical follow-up |
+| OL Health Questionnaires | `/api/v1/ol-parameters/health-questionnaires/` | Version, scope, product/plan/scheme applicability, sum-assured and age thresholds, and effective dates |
+| Grace Period Notification Schedule | `/api/v1/ol-parameters/grace-period-notification-schedules/` | Event type, signed day offset, channel, recipient, template, and effective dates |
+| Reinstallment / Reinstatement Window | `/api/v1/ol-parameters/reinstatement-windows/` | Lapse window, maximum reinstatements, medical underwriting, outstanding premium requirement, interest, and penalty rates |
+
+The questionnaire builder loads active catalog questions from `/api/v1/ol-parameters/health-questions/`, then persists the questionnaire header and ordered item rows through `/api/v1/ol-parameters/health-questionnaires/` and `/api/v1/ol-parameters/health-questionnaire-items/`. The builder supports add, remove, up/down reorder, sequence renumbering, mandatory and trigger-medical flags, score, threshold fields, effective dates, and a live preview. Existing questionnaires can be copied into a new version; current and superseded badges are derived from active state and effective dates.
+
+Builder changes are held locally until save, shown with an **Unsaved changes** badge, and protected by browser unload handling and an in-workspace confirmation before leaving the builder. Lifecycle forms use the existing inline validation and backend-authoritative error flow. No answer type, scope, channel, recipient, event, or reinstatement option catalog is hardcoded in the frontend.

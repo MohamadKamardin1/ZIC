@@ -60,10 +60,14 @@ const rows = [{
 
 function mockApi() {
   requestMock.mockImplementation(async (path, options) => {
-    if (options?.method === "POST" || options?.method === "PATCH") return {} as never
+    if (options?.method === "POST" || options?.method === "PATCH" || options?.method === "DELETE") return {} as never
     if (String(path).includes("policy-statuses")) {
       return { results: [{ ...rows[0], code: "POLICY_LAPSED", name: "Lapsed" }], count: 1, page: 1, page_size: 20 } as never
     }
+    if (String(path).includes("health-questions")) {
+      return { results: [{ ...rows[0], id: "question-1", code: "HEALTH_Q1", question_text: "Have you been hospitalized?", category: "MEDICAL", answer_type: "YES_NO", underwriting_impact: "HIGH", requires_medical_followup: true }, { ...rows[0], id: "question-2", code: "HEALTH_Q2", question_text: "Do you smoke?", category: "LIFESTYLE", answer_type: "YES_NO", underwriting_impact: "MEDIUM", requires_medical_followup: false }], count: 2, page: 1, page_size: 20 } as never
+    }
+    if (String(path).includes("health-questionnaire-items")) return { results: [], count: 0, page: 1, page_size: 20 } as never
     return { results: rows, count: rows.length, page: 1, page_size: 20 } as never
   })
 }
@@ -131,6 +135,48 @@ describe("OLPolicySetup", () => {
     expect(await screen.findByText("POLICY_ACTIVE")).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "New setup" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Actions for row 1" })).not.toBeInTheDocument()
+  })
+
+  it("supports questionnaire builder add, reorder, and mandatory behavior with live preview", async () => {
+    render(<OLPolicySetup />)
+    fireEvent.click(await screen.findByRole("button", { name: "OL Health Questionnaires" }))
+    fireEvent.click(await screen.findByRole("button", { name: "New setup" }))
+
+    expect(await screen.findByText("Live questionnaire preview")).toBeInTheDocument()
+    fireEvent.click(await screen.findByRole("button", { name: /HEALTH_Q1/ }))
+    fireEvent.click(await screen.findByRole("button", { name: /HEALTH_Q2/ }))
+    expect(screen.getByText("Have you been hospitalized?")).toBeInTheDocument()
+    expect(screen.getByText("Do you smoke?")).toBeInTheDocument()
+
+    const mandatory = screen.getAllByRole("switch", { name: "Mandatory" })[0]
+    fireEvent.click(mandatory)
+    expect(mandatory).toHaveAttribute("aria-checked", "true")
+    fireEvent.click(screen.getByRole("button", { name: "Move HEALTH_Q2 up" }))
+    expect(screen.getAllByText(/HEALTH_Q2 · Do you smoke\?/)[0]).toBeInTheDocument()
+  })
+
+  it("creates a new questionnaire version from an existing version", async () => {
+    render(<OLPolicySetup />)
+    fireEvent.click(await screen.findByRole("button", { name: "OL Health Questionnaires" }))
+    expect(await screen.findByText("POLICY_ACTIVE")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Actions for row 1" }))
+    fireEvent.click(screen.getByRole("button", { name: "Create new version" }))
+    expect(await screen.findByText("New version")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Save questionnaire" })).toBeInTheDocument()
+  })
+
+  it("validates lifecycle schedule and reinstatement modal fields inline", async () => {
+    render(<OLPolicySetup />)
+    fireEvent.click(await screen.findByRole("button", { name: "Grace Period Notification Schedule" }))
+    fireEvent.click(await screen.findByRole("button", { name: "New setup" }))
+    fireEvent.click(screen.getByRole("button", { name: "Create setup" }))
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: "Check the form" }))
+
+    fireEvent.click(screen.getByRole("button", { name: "Reinstallment / Reinstatement Window" }))
+    fireEvent.click(await screen.findByRole("button", { name: "New setup" }))
+    fireEvent.change(screen.getByRole("spinbutton", { name: /Days after lapse/ }), { target: { value: "0" } })
+    fireEvent.click(screen.getByRole("button", { name: "Create setup" }))
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: "Check the form" }))
   })
 
   it("renders the Part 2 policy setup tabs and rate version dimensions from APIs", async () => {
