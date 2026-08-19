@@ -3,7 +3,7 @@ from rest_framework import filters, status, viewsets
 from rest_framework.views import APIView
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.exceptions import ValidationError as DRFValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError as DRFValidationError
 from django.db.models import Count, Q
 from django.utils.dateparse import parse_date
 from uuid import UUID
@@ -41,6 +41,8 @@ from .serializers import (
     OLQuotationInstallmentConfigurationSerializer,
     OLQuotationInstallmentRateRowSerializer,
     OLQuotationMemberSerializer,
+    OLQuotationMemberStepSerializer,
+    OLQuotationMemberStepResponseSerializer,
     OLQuotationPaymentDetailSerializer,
     OLQuotationPlanConfigurationSerializer,
     OLQuotationProductSerializer,
@@ -393,6 +395,115 @@ class OLQuotationViewSet(QuotationScopedViewSet):
                 "agents": agent_payload,
             },
             "Quotation Personal Details options retrieved.",
+        )
+
+    @staticmethod
+    def _member_coverage_payload(quotation, principal, additional, requirements):
+        member_rows = []
+        if principal is not None:
+            member_rows.append(QuotationService._member_state(principal, is_principal=True))
+        member_rows.extend(QuotationService._member_state(member) for member in additional)
+        configurations = [
+            {
+                "relation": relation,
+                "code": str(configuration.code),
+                "name": configuration.name,
+                "cover_type": configuration.cover_type,
+                "min_age": configuration.min_age,
+                "max_age": configuration.max_age,
+                "waiting_period_days": configuration.waiting_period_days,
+                "benefit_limit": configuration.benefit_limit,
+                "coverage_basis": configuration.coverage_basis,
+                "premium_basis": configuration.premium_basis,
+            }
+            for relation, configuration in sorted(requirements["additional_by_relation"].items())
+        ]
+        return {
+            "quotation_id": str(quotation.pk),
+            "principal_member": member_rows[0] if principal is not None else None,
+            "members": member_rows,
+            "additional_members": member_rows[1:] if principal is not None else member_rows,
+            "requires_additional_coverage": requirements["requires_additional_coverage"],
+            "info_banner": (
+                "Selected plans do not require additional member coverage configuration. Principal member is configured automatically."
+                if not requirements["requires_additional_coverage"] else None
+            ),
+            "allowed_configurations": configurations,
+            "wizard_step_complete": bool((quotation.wizard_step_completion or {}).get("3_member_coverage")),
+        }
+
+    @action(detail=True, methods=["get", "post"], url_path="members")
+    def member_coverage(self, request, pk=None):
+        quotation = self.get_object()
+        if request.method.upper() == "POST":
+            if not has_quotation_permission(request.user, "member_add"):
+                raise PermissionDenied("You do not have permission to add quotation members.")
+            serializer = OLQuotationMemberStepSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            updated, member, _requirements = QuotationService.add_member(
+                quotation=quotation,
+                actor=request.user,
+                payload=serializer.validated_data,
+                request=request,
+            )
+            locked, principal, additional, requirements = QuotationService.member_coverage_state(
+                quotation=updated,
+                actor=request.user,
+                request=request,
+            )
+            return _response(
+                self._member_coverage_payload(locked, principal, additional, requirements),
+                "Additional quotation member added.",
+                status.HTTP_201_CREATED,
+            )
+
+        locked, principal, additional, requirements = QuotationService.member_coverage_state(
+            quotation=quotation,
+            actor=request.user,
+            request=request,
+        )
+        return _response(
+            self._member_coverage_payload(locked, principal, additional, requirements),
+            "Quotation Member Coverage retrieved.",
+        )
+
+    @action(detail=True, methods=["patch", "delete"], url_path=r"members/(?P<member_id>[^/.]+)")
+    def member_detail(self, request, pk=None, member_id=None):
+        quotation = self.get_object()
+        permission_action = "member_update" if request.method.upper() == "PATCH" else "member_remove"
+        if not has_quotation_permission(request.user, permission_action):
+            raise PermissionDenied("You do not have permission to modify quotation members.")
+        if request.method.upper() == "PATCH":
+            serializer = OLQuotationMemberStepSerializer(data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            updated, member, _requirements = QuotationService.update_member(
+                quotation=quotation,
+                member_id=member_id,
+                actor=request.user,
+                payload=serializer.validated_data,
+                request=request,
+            )
+            message = "Additional quotation member updated."
+            response_status = status.HTTP_200_OK
+        else:
+            updated, _requirements = QuotationService.remove_member(
+                quotation=quotation,
+                member_id=member_id,
+                actor=request.user,
+                request=request,
+            )
+            member = None
+            message = "Additional quotation member removed."
+            response_status = status.HTTP_200_OK
+        locked, principal, additional, requirements = QuotationService.member_coverage_state(
+            quotation=updated,
+            actor=request.user,
+            request=request,
+        )
+        return _response(
+            self._member_coverage_payload(locked, principal, additional, requirements),
+            message,
+            response_status,
         )
 
     @action(detail=True, methods=["get"], url_path="plan-options")

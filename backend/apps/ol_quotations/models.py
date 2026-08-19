@@ -502,6 +502,8 @@ class OLQuotationMember(QuotationBaseModel):
     member_sum_assured = models.DecimalField(
         max_digits=18, decimal_places=2, null=True, blank=True
     )
+    coverage_basis = models.CharField(max_length=50, blank=True, default="")
+    waiting_period_days = models.PositiveIntegerField(default=0)
     metadata = models.JSONField(default=dict, blank=True)
 
     class Meta:
@@ -510,6 +512,7 @@ class OLQuotationMember(QuotationBaseModel):
         indexes = [
             models.Index(fields=["quotation", "member_type"]),
             models.Index(fields=["identity_number"]),
+            models.Index(fields=["quotation", "relationship", "date_of_birth"]),
         ]
         constraints = [
             models.CheckConstraint(
@@ -523,12 +526,18 @@ class OLQuotationMember(QuotationBaseModel):
         self.member_type = (self.member_type or "").strip().upper()
         self.gender = (self.gender or "").strip().upper()
         self.smoker_status = (self.smoker_status or "").strip().upper()
+        self.relationship = (self.relationship or "").strip().upper()
+        self.coverage_basis = (self.coverage_basis or "").strip().upper()
         if not self.member_type:
             errors["member_type"] = "Member type is required."
         if self.date_of_birth and self.date_of_birth > date.today():
             errors["date_of_birth"] = "Date of birth cannot be in the future."
         if self.age_at_quote is not None and self.age_at_quote > 150:
             errors["age_at_quote"] = "Age cannot exceed 150 years."
+        if self.member_sum_assured is not None and self.member_sum_assured < 0:
+            errors["member_sum_assured"] = "Member sum assured cannot be negative."
+        if self.waiting_period_days < 0:
+            errors["waiting_period_days"] = "Waiting period cannot be negative."
         if errors:
             raise ValidationError(errors)
 

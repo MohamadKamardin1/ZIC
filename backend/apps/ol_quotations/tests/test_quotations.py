@@ -11,6 +11,7 @@ from apps.ol_parameters.models import (
     OLBonusRate,
     OLJointLifeAgeBasis,
     OLJointLifeSetup,
+    OLMemberCoverConfiguration,
     OLJointLifeType,
     OLPlanType,
     OLProduct,
@@ -897,3 +898,201 @@ class OLQuotationAPITests(TestCase):
                 action="PLAN_CONFIGURATION_UPDATED",
             ).exists()
         )
+
+    def create_member_cover_configuration(self, **overrides):
+        values = {
+            "code": "OLQ-CHILD-COVER",
+            "name": "Child Member Cover",
+            "description": "Configured child dependent cover for quotation tests.",
+            "product": self.legacy_product,
+            "plan": self.plan,
+            "cover_type": "DEPENDENT",
+            "member_relation": "CHILD",
+            "min_age": 1,
+            "max_age": 17,
+            "waiting_period_days": 30,
+            "benefit_limit": Decimal("5000.00"),
+            "premium_basis": "MEMBER_PREMIUM",
+            "coverage_basis": "SUM_ASSURED",
+            "effective_from": date.today(),
+            "is_active": True,
+        }
+        values.update(overrides)
+        return OLMemberCoverConfiguration.objects.create(**values)
+
+    def prepare_member_coverage_quotation(self, *, with_configuration=False):
+        if with_configuration:
+            self.create_member_cover_configuration()
+        draft = self.create_draft()
+        personal_response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/personal-details/",
+            self.personal_details_payload(),
+            format="json",
+        )
+        self.assertEqual(personal_response.status_code, 200, personal_response.data)
+        plan_response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/plans/",
+            self.plan_selection_payload(),
+            format="json",
+        )
+        self.assertEqual(plan_response.status_code, 200, plan_response.data)
+        return draft
+
+    def test_member_coverage_principal_is_automatic_and_no_extra_banner_is_returned(self):
+        draft = self.prepare_member_coverage_quotation()
+        response = self.client.get(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/members/"
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        data = response.data["data"]
+        self.assertFalse(data["requires_additional_coverage"])
+        self.assertEqual(
+            data["info_banner"],
+            "Selected plans do not require additional member coverage configuration. Principal member is configured automatically.",
+        )
+        self.assertIsNotNone(data["principal_member"])
+        self.assertEqual(data["principal_member"]["relation"], "POLICYHOLDER")
+        self.assertEqual(data["principal_member"]["date_of_birth"], "1990-01-01")
+        self.assertEqual(data["principal_member"]["gender"], "FEMALE")
+        self.assertEqual(len(data["additional_members"]), 0)
+        self.assertTrue(
+            OLQuotationMember.objects.filter(
+                quotation_id=draft["id"],
+                metadata__is_principal=True,
+            ).exists()
+        )
+
+    def test_member_coverage_required_configuration_allows_additional_member(self):
+        draft = self.prepare_member_coverage_quotation(with_configuration=True)
+        state = self.client.get(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/members/"
+        )
+        self.assertEqual(state.status_code, 200, state.data)
+        state_data = state.data["data"]
+        self.assertTrue(state_data["requires_additional_coverage"])
+        self.assertEqual(state_data["allowed_configurations"][0]["relation"], "CHILD")
+        self.assertEqual(state_data["allowed_configurations"][0]["waiting_period_days"], 30)
+
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/members/",
+            {
+                "full_name": "Asha Salim",
+                "relation": "CHILD",
+                "date_of_birth": "2015-01-01",
+                "gender": "FEMALE",
+                "sum_assured": "4000.00",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        data = response.data["data"]
+        self.assertEqual(len(data["additional_members"]), 1)
+        member = data["additional_members"][0]
+        self.assertEqual(member["full_name"], "Asha Salim")
+        self.assertEqual(member["relation"], "CHILD")
+        self.assertEqual(member["waiting_period_days"], 30)
+        self.assertEqual(member["coverage_basis"], "SUM_ASSURED")
+        self.assertEqual(member["sum_assured"], "4000.00")
+        self.assertTrue(data["wizard_step_complete"])
+        self.assertTrue(
+            AuditEvent.objects.filter(
+                object_id=draft["id"],
+                action="MEMBER_COVERAGE_UPDATED",
+            ).exists()
+        )
+        self.assertTrue(
+            DomainEvent.objects.filter(
+                event_type="QuotationMemberCoverageUpdated",
+                aggregate_id=draft["id"],
+            ).exists()
+        )
+
+    def test_member_coverage_rejects_relation_age_and_benefit_limit_violations(self):
+        draft = self.prepare_member_coverage_quotation(with_configuration=True)
+        endpoint = f"/api/v1/ol-quotations/quotations/{draft['id']}/members/"
+        base_payload = {
+            "full_name": "Asha Salim",
+            "relation": "CHILD",
+            "date_of_birth": "2015-01-01",
+            "gender": "FEMALE",
+            "sum_assured": "4000.00",
+        }
+
+        relation_response = self.client.post(
+            endpoint,
+            {**base_payload, "relation": "SPOUSE"},
+            format="json",
+        )
+        self.assertEqual(relation_response.status_code, 400, relation_response.data)
+        self.assertIn("relation", str(relation_response.data))
+
+        age_response = self.client.post(
+            endpoint,
+            {**base_payload, "full_name": "Older Salim", "date_of_birth": "1990-01-01"},
+            format="json",
+        )
+        self.assertEqual(age_response.status_code, 400, age_response.data)
+        self.assertIn("date_of_birth", str(age_response.data))
+
+        limit_response = self.client.post(
+            endpoint,
+            {**base_payload, "full_name": "Limit Salim", "sum_assured": "5000.01"},
+            format="json",
+        )
+        self.assertEqual(limit_response.status_code, 400, limit_response.data)
+        self.assertIn("sum_assured", str(limit_response.data))
+
+    def test_member_coverage_rejects_duplicates_and_principal_mutation(self):
+        draft = self.prepare_member_coverage_quotation(with_configuration=True)
+        endpoint = f"/api/v1/ol-quotations/quotations/{draft['id']}/members/"
+        payload = {
+            "full_name": "Asha Salim",
+            "relation": "CHILD",
+            "date_of_birth": "2015-01-01",
+            "gender": "FEMALE",
+            "sum_assured": "4000.00",
+        }
+        first = self.client.post(endpoint, payload, format="json")
+        self.assertEqual(first.status_code, 201, first.data)
+        duplicate = self.client.post(endpoint, payload, format="json")
+        self.assertEqual(duplicate.status_code, 400, duplicate.data)
+        self.assertIn("member", str(duplicate.data))
+
+        principal_id = first.data["data"]["principal_member"]["id"]
+        principal_patch = self.client.patch(
+            f"{endpoint}{principal_id}/",
+            {"full_name": "Cannot Change"},
+            format="json",
+        )
+        self.assertEqual(principal_patch.status_code, 400, principal_patch.data)
+        self.assertIn("principal", str(principal_patch.data).lower())
+
+    def test_member_coverage_update_and_remove_only_affect_additional_member(self):
+        draft = self.prepare_member_coverage_quotation(with_configuration=True)
+        endpoint = f"/api/v1/ol-quotations/quotations/{draft['id']}/members/"
+        response = self.client.post(
+            endpoint,
+            {
+                "full_name": "Asha Salim",
+                "relation": "CHILD",
+                "date_of_birth": "2015-01-01",
+                "gender": "FEMALE",
+                "sum_assured": "4000.00",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        member_id = response.data["data"]["additional_members"][0]["id"]
+        update = self.client.patch(
+            f"{endpoint}{member_id}/",
+            {"full_name": "Asha Updated", "sum_assured": "4500.00"},
+            format="json",
+        )
+        self.assertEqual(update.status_code, 200, update.data)
+        self.assertEqual(update.data["data"]["additional_members"][0]["full_name"], "Asha Updated")
+        self.assertEqual(update.data["data"]["additional_members"][0]["sum_assured"], "4500.00")
+
+        remove = self.client.delete(f"{endpoint}{member_id}/")
+        self.assertEqual(remove.status_code, 200, remove.data)
+        self.assertEqual(len(remove.data["data"]["additional_members"]), 0)
+        self.assertIsNotNone(remove.data["data"]["principal_member"])

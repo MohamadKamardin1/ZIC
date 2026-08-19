@@ -115,6 +115,39 @@ class OLQuotationMemberSerializer(QuotationNestedReadMixin, QuotationValidatedMo
         return attrs
 
 
+class OLQuotationMemberStepSerializer(serializers.Serializer):
+    """Request contract for additional Member Coverage rows."""
+
+    full_name = serializers.CharField(required=True, max_length=301, trim_whitespace=True)
+    relation = serializers.CharField(required=True, max_length=80, trim_whitespace=True)
+    date_of_birth = serializers.DateField(required=True)
+    gender = serializers.CharField(required=True, max_length=40, trim_whitespace=True)
+    sum_assured = serializers.DecimalField(
+        required=False,
+        allow_null=True,
+        max_digits=18,
+        decimal_places=2,
+        min_value=0,
+    )
+    coverage_basis = serializers.CharField(required=False, allow_blank=True, max_length=50)
+
+
+class OLQuotationMemberStepResponseSerializer(serializers.Serializer):
+    id = serializers.UUIDField(allow_null=True)
+    member_type = serializers.CharField()
+    full_name = serializers.CharField()
+    first_name = serializers.CharField()
+    last_name = serializers.CharField()
+    relation = serializers.CharField()
+    date_of_birth = serializers.DateField()
+    age_at_quote = serializers.IntegerField(allow_null=True)
+    gender = serializers.CharField()
+    sum_assured = serializers.DecimalField(max_digits=18, decimal_places=2, allow_null=True)
+    coverage_basis = serializers.CharField(allow_blank=True)
+    waiting_period_days = serializers.IntegerField()
+    is_principal = serializers.BooleanField()
+
+
 class OLQuotationInstallmentRateRowSerializer(QuotationNestedReadMixin, QuotationValidatedModelSerializer):
     class Meta:
         model = OLQuotationInstallmentRateRow

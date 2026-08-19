@@ -33,6 +33,11 @@ class OLQuotationPermission:
         "plan_options": VIEW,
         "plans": UPDATE,
         "plan_configuration": UPDATE,
+        "member_coverage": VIEW,
+        "member_detail": UPDATE,
+        "member_add": UPDATE,
+        "member_update": UPDATE,
+        "member_remove": UPDATE,
     }
 
     @classmethod

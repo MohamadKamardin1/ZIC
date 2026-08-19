@@ -13,6 +13,7 @@ from apps.system_parameters.services.numbering_service import NumberingEngine
 
 from apps.ol_parameters.models import (
     OLBonusRate,
+    OLMemberCoverConfiguration,
     OLJointLifeSetup,
     OLMortgageInterestFactor,
     OLRiderSetup,
@@ -23,6 +24,7 @@ from apps.ol_quotations.models import (
     OLQuotation,
     OLQuotationEvent,
     OLQuotationFinancialSummary,
+    OLQuotationMember,
     OLQuotationPlanConfiguration,
     OLQuotationVersion,
     QuotationStatus,
@@ -318,6 +320,7 @@ class QuotationService:
             "current_version_number",
             "updated_at",
         ])
+        QuotationService._sync_principal_member(quotation=locked, actor=actor, request=request)
         after = QuotationService.snapshot(locked)
         QuotationService._record_version(locked, actor=actor, reason="Personal Details wizard step updated.")
         QuotationService._record_event(
@@ -873,6 +876,367 @@ class QuotationService:
             request=request,
         )
         return locked, configuration
+
+    @staticmethod
+    def _split_member_name(full_name):
+        parts = [part for part in str(full_name or "").strip().split() if part]
+        if not parts:
+            raise QuotationServiceError({"full_name": "Full name is required."})
+        if len(parts) == 1:
+            return parts[0], ""
+        return parts[0], " ".join(parts[1:])
+
+    @staticmethod
+    def _member_cover_rows(*, quotation):
+        """Return the highest-priority effective cover row for each configured relation."""
+        as_of = quotation.quote_date or timezone.localdate()
+        selected = list(
+            quotation.plan_configurations.filter(is_selected=True)
+            .select_related("product_version__product", "plan")
+            .order_by("section_number", "created_at")
+        )
+        rows_by_relation = {}
+        for selected_config in selected:
+            product = selected_config.product_version.product
+            plan = selected_config.plan
+            scope = Q(product=product, plan=plan)
+            scope |= Q(product=product, plan__isnull=True)
+            scope |= Q(product__isnull=True, plan__isnull=True)
+            rows = QuotationService._effective_queryset(
+                OLMemberCoverConfiguration.objects.filter(scope),
+                as_of,
+            ).order_by(
+                models.Case(
+                    models.When(plan=plan, then=0),
+                    models.When(product=product, plan__isnull=True, then=1),
+                    default=2,
+                    output_field=models.IntegerField(),
+                ),
+                "member_relation",
+                "min_age",
+                "code",
+            )
+            for row in rows:
+                relation = (row.member_relation or "").strip().upper()
+                if relation and relation not in rows_by_relation:
+                    rows_by_relation[relation] = row
+        return rows_by_relation
+
+    @staticmethod
+    def _member_requirements(*, quotation):
+        rows_by_relation = QuotationService._member_cover_rows(quotation=quotation)
+        principal_relations = {"POLICYHOLDER", "PRINCIPAL", "LIFE_ASSURED", "SELF"}
+        additional = {
+            relation: row
+            for relation, row in rows_by_relation.items()
+            if relation not in principal_relations
+        }
+        return {
+            "rows_by_relation": rows_by_relation,
+            "additional_by_relation": additional,
+            "requires_additional_coverage": bool(additional),
+        }
+
+    @staticmethod
+    def _member_state(member, *, is_principal=False, configuration=None):
+        return {
+            "id": str(member.pk) if member and member.pk else None,
+            "member_type": member.member_type if member else "LIFE_ASSURED",
+            "full_name": (
+                " ".join(part for part in [member.first_name, member.last_name] if part).strip()
+                if member else ""
+            ),
+            "first_name": member.first_name if member else "",
+            "last_name": member.last_name if member else "",
+            "relation": member.relationship if member else "POLICYHOLDER",
+            "date_of_birth": member.date_of_birth.isoformat() if member and member.date_of_birth else None,
+            "age_at_quote": member.age_at_quote if member else None,
+            "gender": member.gender if member else "",
+            "sum_assured": str(member.member_sum_assured) if member and member.member_sum_assured is not None else None,
+            "coverage_basis": (
+                member.coverage_basis
+                if member and member.coverage_basis
+                else (configuration.coverage_basis if configuration else "")
+            ),
+            "waiting_period_days": (
+                member.waiting_period_days
+                if member
+                else (configuration.waiting_period_days if configuration else 0)
+            ),
+            "is_principal": bool(is_principal),
+        }
+
+    @staticmethod
+    def _sync_principal_member(*, quotation, actor=None, request=None):
+        if not quotation.quote_name or not quotation.date_of_birth:
+            return None
+        first_name, last_name = QuotationService._split_member_name(quotation.quote_name)
+        principal = quotation.members.filter(
+            metadata__is_principal=True,
+        ).order_by("created_at").first()
+        if principal is None:
+            principal = quotation.members.filter(
+                member_type="LIFE_ASSURED",
+                relationship__in=["POLICYHOLDER", "PRINCIPAL", "SELF"],
+            ).order_by("created_at").first()
+        values = {
+            "member_type": "LIFE_ASSURED",
+            "first_name": first_name,
+            "last_name": last_name,
+            "identity_number": quotation.identity_number or "",
+            "date_of_birth": quotation.date_of_birth,
+            "age_at_quote": quotation.age_at_quote,
+            "gender": (quotation.gender or "").strip().upper(),
+            "smoker_status": (quotation.smoker_status or "").strip().upper(),
+            "relationship": "POLICYHOLDER",
+            "partner": quotation.linked_partner or quotation.partner,
+            "coverage_basis": "PRINCIPAL",
+            "waiting_period_days": 0,
+            "metadata": {"is_principal": True, "source": "personal_details"},
+        }
+        if principal is None:
+            principal = OLQuotationMember(
+                quotation=quotation,
+                created_by=QuotationService.actor(actor),
+                updated_by=QuotationService.actor(actor),
+                **values,
+            )
+            principal.full_clean()
+            principal.save()
+            AuditService.log_create(
+                principal,
+                actor=actor,
+                request=request,
+                reason="Principal quotation member automatically configured from Personal Details.",
+            )
+            return principal
+
+        before = AuditService.snapshot(principal)
+        changed = False
+        for field, value in values.items():
+            if getattr(principal, field) != value:
+                setattr(principal, field, value)
+                changed = True
+        if changed:
+            principal.updated_by = QuotationService.actor(actor)
+            principal.full_clean()
+            principal.save()
+            AuditService.log_update(
+                principal,
+                before_state=before,
+                actor=actor,
+                request=request,
+                reason="Principal quotation member synchronized from Personal Details.",
+            )
+        return principal
+
+    @staticmethod
+    def _validate_additional_member(*, quotation, payload, existing=None):
+        requirements = QuotationService._member_requirements(quotation=quotation)
+        if not requirements["requires_additional_coverage"]:
+            raise QuotationServiceError({
+                "members": "Selected plans do not require additional member coverage configuration."
+            })
+        relation = str(payload.get("relation") or (existing.relationship if existing else "")).strip().upper()
+        if relation not in requirements["additional_by_relation"]:
+            allowed = sorted(requirements["additional_by_relation"])
+            raise QuotationServiceError({"relation": f"Relation is not allowed by the selected plans. Allowed relations: {', '.join(allowed)}."})
+        configuration = requirements["additional_by_relation"][relation]
+        date_of_birth = payload.get("date_of_birth") or (existing.date_of_birth if existing else None)
+        if not date_of_birth:
+            raise QuotationServiceError({"date_of_birth": "Date of birth is required."})
+        quote_date = quotation.quote_date or timezone.localdate()
+        if date_of_birth > quote_date:
+            raise QuotationServiceError({"date_of_birth": "Date of birth cannot be after the quote date."})
+        age = quote_date.year - date_of_birth.year - ((quote_date.month, quote_date.day) < (date_of_birth.month, date_of_birth.day))
+        if configuration.min_age is not None and age < configuration.min_age:
+            raise QuotationServiceError({"date_of_birth": f"Member age must be at least {configuration.min_age} years."})
+        if configuration.max_age is not None and age > configuration.max_age:
+            raise QuotationServiceError({"date_of_birth": f"Member age cannot exceed {configuration.max_age} years."})
+
+        full_name = str(payload.get("full_name") or "").strip()
+        if not full_name and existing:
+            full_name = " ".join(part for part in [existing.first_name, existing.last_name] if part).strip()
+        first_name, last_name = QuotationService._split_member_name(full_name)
+        gender = str(payload.get("gender") or (existing.gender if existing else "")).strip().upper()
+        if not gender:
+            raise QuotationServiceError({"gender": "Gender is required."})
+        sum_assured = payload.get("sum_assured", existing.member_sum_assured if existing else None)
+        if sum_assured is not None:
+            sum_assured = Decimal(str(sum_assured))
+        configured_basis = (configuration.coverage_basis or "").strip().upper()
+        if configured_basis in {"SUM_ASSURED", "SUM_ASSURED_BAND"} and sum_assured is None:
+            raise QuotationServiceError({"sum_assured": "Sum assured is required for this coverage basis."})
+        if configuration.benefit_limit is not None and sum_assured is not None and sum_assured > configuration.benefit_limit:
+            raise QuotationServiceError({"sum_assured": f"Sum assured cannot exceed the configured benefit limit of {configuration.benefit_limit}."})
+
+        duplicate_query = quotation.members.filter(
+            member_type="DEPENDENT",
+            first_name__iexact=first_name,
+            last_name__iexact=last_name,
+            relationship=relation,
+            date_of_birth=date_of_birth,
+        )
+        if existing:
+            duplicate_query = duplicate_query.exclude(pk=existing.pk)
+        if duplicate_query.exists():
+            raise QuotationServiceError({"member": "An additional member with the same name, relation, and date of birth already exists."})
+        return {
+            "first_name": first_name,
+            "last_name": last_name,
+            "date_of_birth": date_of_birth,
+            "age_at_quote": age,
+            "gender": gender,
+            "relationship": relation,
+            "member_sum_assured": sum_assured,
+            "coverage_basis": configured_basis,
+            "waiting_period_days": configuration.waiting_period_days,
+            "configuration": configuration,
+        }
+
+    @staticmethod
+    @transaction.atomic
+    def member_coverage_state(*, quotation, actor=None, request=None):
+        locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
+        principal = QuotationService._sync_principal_member(quotation=locked, actor=actor, request=request)
+        completion = QuotationService.wizard_completion(locked)
+        if locked.wizard_step_completion != completion:
+            locked.wizard_step_completion = completion
+            locked.save(update_fields=["wizard_step_completion", "updated_at"])
+        requirements = QuotationService._member_requirements(quotation=locked)
+        additional = locked.members.exclude(pk=principal.pk if principal else None).order_by("created_at")
+        return locked, principal, list(additional), requirements
+
+    @staticmethod
+    @transaction.atomic
+    def add_member(*, quotation, actor, payload, request=None):
+        locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
+        if locked.status != QuotationStatus.DRAFT:
+            raise QuotationServiceError("Only draft quotations can be updated.")
+        principal = QuotationService._sync_principal_member(quotation=locked, actor=actor, request=request)
+        validated = QuotationService._validate_additional_member(quotation=locked, payload=payload)
+        member = OLQuotationMember(
+            quotation=locked,
+            member_type="DEPENDENT",
+            created_by=QuotationService.actor(actor),
+            updated_by=QuotationService.actor(actor),
+            first_name=validated["first_name"],
+            last_name=validated["last_name"],
+            date_of_birth=validated["date_of_birth"],
+            age_at_quote=validated["age_at_quote"],
+            gender=validated["gender"],
+            relationship=validated["relationship"],
+            member_sum_assured=validated["member_sum_assured"],
+            coverage_basis=validated["coverage_basis"],
+            waiting_period_days=validated["waiting_period_days"],
+            metadata={"cover_configuration_id": str(validated["configuration"].pk), "cover_type": validated["configuration"].cover_type},
+        )
+        member.full_clean()
+        member.save()
+        AuditService.log_create(member, actor=actor, request=request, reason="Additional quotation member added.")
+        locked.updated_by = QuotationService.actor(actor)
+        locked.wizard_step_completion = QuotationService.wizard_completion(locked)
+        locked.current_version_number += 1
+        locked.save(update_fields=["wizard_step_completion", "current_version_number", "updated_by", "updated_at"])
+        after_members = [QuotationService._member_state(row, is_principal=row.pk == getattr(principal, "pk", None)) for row in locked.members.order_by("created_at")]
+        QuotationService._record_version(locked, actor=actor, reason="Member Coverage wizard step updated.")
+        QuotationService._record_event(
+            locked,
+            "MEMBER_COVERAGE_UPDATED",
+            actor=actor,
+            from_status=locked.status,
+            to_status=locked.status,
+            notes="Additional quotation member added.",
+            metadata={"operation": "ADD", "member_id": str(member.pk), "members": after_members},
+            request=request,
+        )
+        return locked, member, QuotationService._member_requirements(quotation=locked)
+
+    @staticmethod
+    @transaction.atomic
+    def update_member(*, quotation, member_id, actor, payload, request=None):
+        locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
+        if locked.status != QuotationStatus.DRAFT:
+            raise QuotationServiceError("Only draft quotations can be updated.")
+        try:
+            member = locked.members.select_for_update().get(pk=member_id)
+        except (OLQuotationMember.DoesNotExist, ValueError, TypeError):
+            raise QuotationServiceError({"member_id": "Member does not exist for this quotation."})
+        if member.metadata.get("is_principal") or member.relationship in {"POLICYHOLDER", "PRINCIPAL", "LIFE_ASSURED", "SELF"}:
+            raise QuotationServiceError({"member": "The principal member is immutable here; update Personal Details instead."})
+        values = {
+            "full_name": payload.get("full_name", " ".join(part for part in [member.first_name, member.last_name] if part).strip()),
+            "relation": payload.get("relation", member.relationship),
+            "date_of_birth": payload.get("date_of_birth", member.date_of_birth),
+            "gender": payload.get("gender", member.gender),
+            "sum_assured": payload.get("sum_assured", member.member_sum_assured),
+        }
+        validated = QuotationService._validate_additional_member(quotation=locked, payload=values, existing=member)
+        before = AuditService.snapshot(member)
+        for field, value in {
+            "first_name": validated["first_name"],
+            "last_name": validated["last_name"],
+            "date_of_birth": validated["date_of_birth"],
+            "age_at_quote": validated["age_at_quote"],
+            "gender": validated["gender"],
+            "relationship": validated["relationship"],
+            "member_sum_assured": validated["member_sum_assured"],
+            "coverage_basis": validated["coverage_basis"],
+            "waiting_period_days": validated["waiting_period_days"],
+        }.items():
+            setattr(member, field, value)
+        member.updated_by = QuotationService.actor(actor)
+        member.full_clean()
+        member.save()
+        AuditService.log_update(member, before_state=before, actor=actor, request=request, reason="Additional quotation member updated.")
+        locked.updated_by = QuotationService.actor(actor)
+        locked.wizard_step_completion = QuotationService.wizard_completion(locked)
+        locked.current_version_number += 1
+        locked.save(update_fields=["wizard_step_completion", "current_version_number", "updated_by", "updated_at"])
+        QuotationService._record_version(locked, actor=actor, reason="Member Coverage wizard step updated.")
+        QuotationService._record_event(
+            locked,
+            "MEMBER_COVERAGE_UPDATED",
+            actor=actor,
+            from_status=locked.status,
+            to_status=locked.status,
+            notes="Additional quotation member updated.",
+            metadata={"operation": "UPDATE", "member_id": str(member.pk), "member": QuotationService._member_state(member)},
+            request=request,
+        )
+        return locked, member, QuotationService._member_requirements(quotation=locked)
+
+    @staticmethod
+    @transaction.atomic
+    def remove_member(*, quotation, member_id, actor, request=None):
+        locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
+        if locked.status != QuotationStatus.DRAFT:
+            raise QuotationServiceError("Only draft quotations can be updated.")
+        try:
+            member = locked.members.select_for_update().get(pk=member_id)
+        except (OLQuotationMember.DoesNotExist, ValueError, TypeError):
+            raise QuotationServiceError({"member_id": "Member does not exist for this quotation."})
+        if member.metadata.get("is_principal") or member.relationship in {"POLICYHOLDER", "PRINCIPAL", "LIFE_ASSURED", "SELF"}:
+            raise QuotationServiceError({"member": "The principal member cannot be removed; update Personal Details instead."})
+        member_state = QuotationService._member_state(member)
+        AuditService.log_delete(member, actor=actor, request=request, reason="Additional quotation member removed.")
+        member.delete()
+        locked.updated_by = QuotationService.actor(actor)
+        locked.wizard_step_completion = QuotationService.wizard_completion(locked)
+        locked.current_version_number += 1
+        locked.save(update_fields=["wizard_step_completion", "current_version_number", "updated_by", "updated_at"])
+        QuotationService._record_version(locked, actor=actor, reason="Member Coverage wizard step updated.")
+        QuotationService._record_event(
+            locked,
+            "MEMBER_COVERAGE_UPDATED",
+            actor=actor,
+            from_status=locked.status,
+            to_status=locked.status,
+            notes="Additional quotation member removed.",
+            metadata={"operation": "REMOVE", "member": member_state},
+            request=request,
+        )
+        return locked, QuotationService._member_requirements(quotation=locked)
 
     @staticmethod
     @transaction.atomic
