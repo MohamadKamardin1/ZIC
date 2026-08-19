@@ -7,6 +7,7 @@ import { DataTable, normalizeTableResponse } from "../../components/ui/DataTable
 import { FilterBar, type FilterValues } from "../../components/ui/FilterBar"
 import { ConfirmModal, InfoBanner } from "../../components/ui/Overlays"
 import { MasterDetailPage } from "../../components/ui/Patterns"
+import OLQuotationDetailPage from "./OLQuotationDetail"
 import { StatusBadge, type StatusTone } from "../../components/ui/StatusBadge"
 import { useToast } from "../../components/ui/Toast"
 import type { RowAction, TableColumn, TableMetadata } from "../../components/ui/types"
@@ -243,10 +244,7 @@ export default function OLQuotations() {
 }
 
 export function OLQuotationDetail() {
-  const { id } = useParams()
-  return <MasterDetailPage eyebrow="Ordinary Life / Quotations" title={`Quotation ${id ?? ""}`} description="Quotation detail workspace. Wizard tabs will be added in the next quotation module increment." status={{ value: "Detail", tone: "neutral" }} tabs={[{ id: "overview", label: "Overview" }, { id: "personal", label: "Personal Details" }, { id: "plans", label: "Plans" }, { id: "financial", label: "Financial Details" }, { id: "documents", label: "Documents" }]} activeTab="overview">
-    <InfoBanner title="Quotation detail placeholder">This master-detail route is ready for the quotation wizard and detail tabs. The list page preserves the quotation ID and navigates here from the View row action.</InfoBanner>
-  </MasterDetailPage>
+  return <OLQuotationDetailPage />
 }
 
 export { default as OLQuotationWizard } from "./OLQuotationWizard"

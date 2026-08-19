@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from "react-router-dom"
+import { lazy, Suspense, type ReactNode } from "react"
 import { useAuth } from "./lib/auth"
 import Login from "./pages/Login"
 import Dashboard from "./pages/Dashboard"
@@ -52,7 +53,9 @@ import OLDocuments from "./pages/ordinary-life/OLDocuments"
 import OLNotes from "./pages/ordinary-life/OLNotes"
 import OLApprovals from "./pages/ordinary-life/OLApprovals"
 import OLAuditHistory from "./pages/ordinary-life/OLAuditHistory"
-import OLQuotations, { OLQuotationDetail, OLQuotationWizard } from "./pages/ordinary-life/OLQuotations"
+const OLQuotations = lazy(() => import("./pages/ordinary-life/OLQuotations"))
+const OLQuotationDetail = lazy(() => import("./pages/ordinary-life/OLQuotationDetail"))
+const OLQuotationWizard = lazy(() => import("./pages/ordinary-life/OLQuotationWizard"))
 import OLCommitments from "./pages/ordinary-life/OLCommitments"
 import OLProposals from "./pages/ordinary-life/OLProposals"
 import OLPolicies from "./pages/ordinary-life/OLPolicies"
@@ -80,7 +83,6 @@ import FOPayments from "./pages/front-office/FOPayments"
 import FOParameters from "./pages/front-office/FOParameters"
 import WorkspacePage from "./pages/dashboard/WorkspacePage"
 import UiKitSandbox from "./pages/UiKitSandbox"
-import type { ReactNode } from "react"
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { accessToken } = useAuth()
@@ -90,7 +92,8 @@ function RequireAuth({ children }: { children: ReactNode }) {
 export default function App() {
   const { accessToken } = useAuth()
   return (
-    <Routes>
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-[var(--background)] p-6 text-sm font-semibold text-[var(--muted-foreground)]" role="status" aria-live="polite">Loading workspace…</div>}>
+      <Routes>
       <Route path="/login" element={accessToken ? <Navigate to="/" replace /> : <Login />} />
       <Route
         path="/"
@@ -193,7 +196,8 @@ export default function App() {
         <Route path="front-office/payments" element={<FOPayments />} />
         <Route path="front-office/parameters" element={<FOParameters />} />
       </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Suspense>
   )
 }
