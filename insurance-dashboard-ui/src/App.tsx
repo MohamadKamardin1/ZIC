@@ -39,6 +39,7 @@ import Users from "./pages/user-management/Users"
 import GLSetup from "./pages/group-life/GLSetup"
 import OLSetup from "./pages/ordinary-life/OLSetup"
 import OLDefaultSetup from "./pages/ordinary-life/OLDefaultSetup"
+import OLPolicySetup from "./pages/ordinary-life/OLPolicySetup"
 import OLParameterPlaceholder from "./pages/ordinary-life/OLParameterPlaceholder"
 import OLApplications from "./pages/ordinary-life/OLApplications"
 import OLDocuments from "./pages/ordinary-life/OLDocuments"
@@ -143,7 +144,7 @@ export default function App() {
         <Route path="ordinary-life/parameters" element={<OLDefaultSetup />} />
         <Route path="ordinary-life/parameters/default-setup" element={<OLDefaultSetup />} />
         <Route path="ordinary-life/parameters/:screen" element={<OLDefaultSetup />} />
-        <Route path="ordinary-life/parameters/policy-setup" element={<OLParameterPlaceholder title="Policy Setup" />} />
+        <Route path="ordinary-life/parameters/policy-setup" element={<OLPolicySetup />} />
         <Route path="ordinary-life/parameters/product-setup" element={<OLParameterPlaceholder title="Product Setup" />} />
         <Route path="ordinary-life/parameters/product-rating" element={<OLParameterPlaceholder title="Product Rating" />} />
         <Route path="ordinary-life/parameters/rider-setup" element={<OLParameterPlaceholder title="Rider Setup" />} />
