@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
-import { FilePlus2, RotateCcw } from "lucide-react"
+import { FilePlus2 } from "lucide-react"
 import { buildTableQuery, request, type TableQuery } from "../../lib/apiClient"
 import { useAccess } from "../../lib/access"
 import { DataTable, normalizeTableResponse } from "../../components/ui/DataTable"
@@ -249,9 +249,4 @@ export function OLQuotationDetail() {
   </MasterDetailPage>
 }
 
-export function OLQuotationWizard() {
-  const navigate = useNavigate()
-  return <MasterDetailPage eyebrow="Ordinary Life / Quotations" title="Create New Quote" description="Quotation wizard workspace. The step-by-step quotation flow will be implemented in the next increment." status={{ value: "Draft", tone: "neutral" }} tabs={[{ id: "personal", label: "Personal Details" }, { id: "plans", label: "Plans" }, { id: "members", label: "Members" }, { id: "financial", label: "Financial Details" }]} activeTab="personal" actions={<button type="button" className="button-secondary" onClick={() => navigate("/ordinary-life/quotations")}><RotateCcw size={16} aria-hidden="true" />Back to Quotations</button>}>
-    <InfoBanner title="Wizard placeholder">The quotation list is connected to the future wizard route. No quotation is created until the wizard step implementation is delivered.</InfoBanner>
-  </MasterDetailPage>
-}
+export { default as OLQuotationWizard } from "./OLQuotationWizard"
