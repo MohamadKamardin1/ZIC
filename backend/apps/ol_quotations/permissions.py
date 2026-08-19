@@ -47,6 +47,8 @@ class OLQuotationPermission:
         "riders_and_benefits": VIEW,
         "rider_options": VIEW,
         "rider_configure": UPDATE,
+        "financial_view": VIEW,
+        "financial_calculate": UPDATE,
     }
 
     @classmethod

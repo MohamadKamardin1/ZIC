@@ -394,11 +394,68 @@ class OLQuotationVersionSerializer(serializers.ModelSerializer):
         read_only_fields = [field.name for field in OLQuotationVersion._meta.fields]
 
 
+class OLQuotationProjectionRowSerializer(serializers.Serializer):
+    plan_configuration_id = serializers.CharField(required=False, allow_null=True)
+    policy_year = serializers.IntegerField()
+    premiums_paid = serializers.DecimalField(max_digits=18, decimal_places=2)
+    estimated_bonus = serializers.DecimalField(max_digits=18, decimal_places=2)
+    surrender_value = serializers.DecimalField(max_digits=18, decimal_places=2)
+    paid_up_value = serializers.DecimalField(max_digits=18, decimal_places=2)
+    estimated_maturity_value = serializers.DecimalField(max_digits=18, decimal_places=2)
+
+
+class OLQuotationInstallmentPayoutSerializer(serializers.Serializer):
+    plan_configuration_id = serializers.CharField(required=False, allow_null=True)
+    installment_configuration_id = serializers.CharField(required=False, allow_null=True)
+    sequence = serializers.IntegerField()
+    description = serializers.CharField(allow_blank=True, required=False)
+    payout_amount = serializers.DecimalField(max_digits=18, decimal_places=2)
+    payout_date = serializers.DateField()
+    rate_percent = serializers.DecimalField(max_digits=9, decimal_places=4)
+    paid_up_rate = serializers.DecimalField(max_digits=18, decimal_places=8, required=False)
+
+
 class OLQuotationFinancialSummarySerializer(serializers.ModelSerializer):
+    quotation_id = serializers.UUIDField(read_only=True)
+
     class Meta:
         model = OLQuotationFinancialSummary
         fields = "__all__"
         read_only_fields = [field.name for field in OLQuotationFinancialSummary._meta.fields]
+
+
+class OLQuotationFinancialDetailsSerializer(serializers.ModelSerializer):
+    quotation_id = serializers.UUIDField(read_only=True)
+    projections = OLQuotationProjectionRowSerializer(many=True, read_only=True)
+    installment_payouts = OLQuotationInstallmentPayoutSerializer(many=True, read_only=True)
+    plan_breakdowns = serializers.SerializerMethodField()
+    rider_breakdowns = serializers.SerializerMethodField()
+    tax_breakdown = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OLQuotationFinancialSummary
+        fields = "__all__"
+        read_only_fields = [field.name for field in OLQuotationFinancialSummary._meta.fields] + [
+            "plan_breakdowns", "rider_breakdowns", "tax_breakdown",
+        ]
+
+    def _snapshot_section(self, obj, key):
+        return (obj.calculation_snapshot or {}).get(key, [])
+
+    def get_plan_breakdowns(self, obj):
+        return self._snapshot_section(obj, "plan_breakdowns")
+
+    def get_rider_breakdowns(self, obj):
+        return self._snapshot_section(obj, "rider_breakdowns")
+
+    def get_tax_breakdown(self, obj):
+        return self._snapshot_section(obj, "tax_breakdown")
+
+
+class OLQuotationCalculateSerializer(serializers.Serializer):
+    """Calculation is derived entirely from the persisted quotation wizard state."""
+
+    pass
 
 
 class OLQuotationPaymentDetailSerializer(QuotationNestedReadMixin, QuotationValidatedModelSerializer):

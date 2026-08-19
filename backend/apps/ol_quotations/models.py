@@ -360,6 +360,18 @@ class OLQuotationFinancialSummary(QuotationBaseModel):
     total_premium = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0"))
     total_rider_premium = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0"))
     total_benefit_premium = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0"))
+    base_premium = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0"))
+    total_loading = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0"))
+    total_discount = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0"))
+    total_tax = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0"))
+    installment_charge = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0"))
+    estimated_maturity_value = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0"))
+    quotation_version_number = models.PositiveIntegerField(default=1)
+    recalculation_required = models.BooleanField(default=True)
+    calculated_at = models.DateTimeField(null=True, blank=True)
+    projections = models.JSONField(default=list, blank=True)
+    installment_payouts = models.JSONField(default=list, blank=True)
+    input_fingerprint = models.CharField(max_length=64, blank=True, default="")
     currency = models.CharField(max_length=3, default="TZS")
     calculation_snapshot = models.JSONField(default=dict, blank=True)
 
@@ -371,7 +383,7 @@ class OLQuotationFinancialSummary(QuotationBaseModel):
         self.currency = (self.currency or "").strip().upper()
         if len(self.currency) != 3 or not self.currency.isalpha():
             errors["currency"] = "Currency must be a three-letter code."
-        for field in ("total_sum_assured", "total_premium", "total_rider_premium", "total_benefit_premium"):
+        for field in ("total_sum_assured", "total_premium", "total_rider_premium", "total_benefit_premium", "base_premium", "total_loading", "total_discount", "total_tax", "installment_charge", "estimated_maturity_value"):
             if getattr(self, field) is not None and getattr(self, field) < 0:
                 errors[field] = "Financial values cannot be negative."
         if errors:

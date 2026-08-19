@@ -21,6 +21,9 @@ from apps.ol_parameters.models import (
     OLPlanType,
     OLProduct,
     OLPaidUpRate,
+    OLPremiumRateTable,
+    OLPremiumRateRow,
+    OLPlanTaxConfiguration,
 )
 from apps.ol_quotations.models import (
     OLQuotation,
@@ -1824,6 +1827,191 @@ class OLQuotationAPITests(TestCase):
         self.assertTrue(DomainEvent.objects.filter(event_type="QuotationRidersAndBenefitsUpdated").exists())
         self.assertTrue(AuditEvent.objects.filter(action__icontains="CREATE").exists())
 
+
+    def create_financial_rate(self, rate="10.00"):
+        table = OLPremiumRateTable.objects.create(
+            table_code="OLQ-FD-PREMIUM",
+            name="OL Quotations Financial Details Premium Rates",
+            product=self.product,
+            plan=self.plan,
+            rating_basis="AGE_TERM",
+            currency="TZS",
+            version="1.0",
+            effective_from=date.today(),
+            is_active=True,
+        )
+        return OLPremiumRateRow.objects.create(
+            table=table,
+            code="OLQ-FD-PREMIUM-ROW",
+            name="Female non-smoker annual rate",
+            gender="FEMALE",
+            smoker_status="NON_SMOKER",
+            age_from=18,
+            age_to=65,
+            term_from=1,
+            term_to=40,
+            frequency="ANNUAL",
+            rate=Decimal(rate),
+            rate_unit="PER_THOUSAND_SUM_ASSURED",
+            effective_from=date.today(),
+            is_active=True,
+        )
+
+    def prepare_financial_details_quotation(self, with_rate=True):
+        draft = self.create_draft()
+        personal_response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/personal-details/",
+            self.personal_details_payload(),
+            format="json",
+        )
+        self.assertEqual(personal_response.status_code, 200, personal_response.data)
+        plan_response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/plans/",
+            self.plan_selection_payload(),
+            format="json",
+        )
+        self.assertEqual(plan_response.status_code, 200, plan_response.data)
+        draft["plan_config_id"] = plan_response.data["data"]["configurations"][0]["id"]
+        if with_rate:
+            self.create_financial_rate()
+        return draft
+
+    def calculate_financial_details(self, draft):
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/calculate/",
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        return response
+
+    def test_calculate_returns_financial_summary(self):
+        draft = self.prepare_financial_details_quotation()
+        response = self.calculate_financial_details(draft)
+        data = response.data["data"]
+        self.assertGreater(Decimal(data["total_premium"]), Decimal("0"))
+        self.assertEqual(data["recalculation_required"], False)
+        self.assertEqual(data["quotation_id"], draft["id"])
+
+    def test_calculate_without_rate_rows_returns_blocking_400(self):
+        draft = self.prepare_financial_details_quotation(with_rate=False)
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/calculate/",
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("No premium rate found", str(response.data))
+
+    def test_financial_details_returns_projections_after_calculation(self):
+        draft = self.prepare_financial_details_quotation()
+        self.calculate_financial_details(draft)
+        response = self.client.get(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/financial-details/"
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        data = response.data["data"]
+        self.assertFalse(data["recalculation_required"])
+        self.assertTrue(data["projections"])
+        self.assertEqual(data["projections"][0]["policy_year"], 1)
+
+    def test_financial_details_returns_installment_payouts(self):
+        draft = self.prepare_installment_quotation()
+        self.create_financial_rate()
+        configure_response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/installments/{draft['plan_config_id']}/configure/",
+            {
+                "annuity_period_years": 5,
+                "payment_mode": "ANNUAL",
+                "after_maturity_benefits": True,
+                "before_maturity_benefits": False,
+                "rate_rows": [
+                    {"sequence": 1, "description": "First payout", "rate_percent": "40.0000"},
+                    {"sequence": 2, "description": "Second payout", "rate_percent": "60.0000"},
+                ],
+            },
+            format="json",
+        )
+        self.assertEqual(configure_response.status_code, 200, configure_response.data)
+        self.calculate_financial_details(draft)
+        response = self.client.get(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/financial-details/"
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        payouts = response.data["data"]["installment_payouts"]
+        self.assertEqual(len(payouts), 2)
+        self.assertEqual(payouts[0]["payout_amount"], "400.00")
+
+    def test_recalculation_required_after_plan_change(self):
+        draft = self.prepare_financial_details_quotation()
+        self.calculate_financial_details(draft)
+        response = self.client.patch(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/plans/{draft['plan_config_id']}/",
+            {"base_sum_assured": "1500.00"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        details = self.client.get(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/financial-details/"
+        )
+        self.assertEqual(details.status_code, 200, details.data)
+        self.assertTrue(details.data["data"]["recalculation_required"])
+
+    def test_joint_life_factor_changes_calculated_premium(self):
+        draft = self.prepare_financial_details_quotation()
+        normal = self.calculate_financial_details(draft)
+        normal_total = Decimal(normal.data["data"]["total_premium"])
+        OLJointLifeSetup.objects.create(
+            code="OLQ-FD-JOINT-01",
+            name="Joint life factor",
+            product=self.product,
+            plan=self.plan,
+            joint_life_type="FIRST_DEATH",
+            age_basis="YOUNGER_LIFE",
+            survivor_benefit_rule="FULL_BENEFIT",
+            premium_adjustment_factor=Decimal("1.20"),
+            underwriting_rule="JOINT_UNDERWRITING",
+            effective_from=date.today(),
+            is_active=True,
+        )
+        patch = self.client.patch(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/plans/{draft['plan_config_id']}/",
+            {"joint_life": True},
+            format="json",
+        )
+        self.assertEqual(patch.status_code, 200, patch.data)
+        joint = self.calculate_financial_details(draft)
+        self.assertGreater(Decimal(joint.data["data"]["total_premium"]), normal_total)
+
+    def test_calculate_applies_taxes_in_sequence(self):
+        draft = self.prepare_financial_details_quotation()
+        OLPlanTaxConfiguration.objects.create(
+            code="OLQ-FD-TAX-01",
+            name="Premium tax",
+            product=self.product,
+            plan=self.plan,
+            tax_type="PREMIUM_TAX",
+            tax_basis="PREMIUM",
+            rate_type="PERCENTAGE",
+            rate_value=Decimal("10.00"),
+            apply_on="TOTAL_PREMIUM",
+            sequence=1,
+            effective_from=date.today(),
+            is_active=True,
+        )
+        response = self.calculate_financial_details(draft)
+        self.assertGreater(Decimal(response.data["data"]["total_tax"]), Decimal("0"))
+        self.assertGreater(Decimal(response.data["data"]["total_premium"]), Decimal(response.data["data"]["base_premium"]))
+
+    def test_calculate_emits_premium_calculated_domain_event(self):
+        draft = self.prepare_financial_details_quotation()
+        self.calculate_financial_details(draft)
+        self.assertTrue(
+            DomainEvent.objects.filter(
+                event_type="QuotationPremiumCalculated",
+                aggregate_id=draft["id"],
+            ).exists()
+        )
 
 if __name__ == "__main__":
     pass

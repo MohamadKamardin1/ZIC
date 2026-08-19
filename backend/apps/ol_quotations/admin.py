@@ -255,10 +255,15 @@ class OLQuotationVersionAdmin(QuotationAuditFieldsMixin, admin.ModelAdmin):
 
 @admin.register(OLQuotationFinancialSummary)
 class OLQuotationFinancialSummaryAdmin(QuotationAuditFieldsMixin, admin.ModelAdmin):
-    list_display = ["quotation", "currency", "total_sum_assured", "total_premium", "total_rider_premium", "total_benefit_premium", "updated_at"]
-    list_filter = ["currency", "updated_at"]
-    search_fields = ["quotation__quote_number"]
+    list_display = [
+        "quotation", "currency", "base_premium", "total_loading", "total_discount",
+        "total_tax", "installment_charge", "total_rider_premium", "total_premium",
+        "quotation_version_number", "recalculation_required", "calculated_at", "updated_at",
+    ]
+    list_filter = ["currency", "recalculation_required", "calculated_at", "updated_at"]
+    search_fields = ["quotation__quote_number", "input_fingerprint"]
     list_select_related = ["quotation"]
+    readonly_fields = [field.name for field in OLQuotationFinancialSummary._meta.fields]
 
 
 @admin.register(OLQuotationEvent)

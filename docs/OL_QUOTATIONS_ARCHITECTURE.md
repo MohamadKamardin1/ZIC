@@ -40,6 +40,49 @@ The Riders and Benefits step is exposed through `GET /quotations/{id}/riders/`, 
 
 A rider selection stores plan ownership, rider sum assured, optional rider term, parameter benefit type, benefit basis, value, loading, discount, maximum cap, and optional nested benefit configurations. `FIXED` benefits require a non-negative value, `RATIO` values must be greater than zero and no greater than 100 percent, `CAPPED` benefits require a maximum cap that is not below the value, and loading/discount percentages are bounded from 0 to 100. Rider age, term, sum-assured, active/effective-date, duplicate, and standalone rules are enforced against the selected `OLRiderSetup`. The Plan & Sub-Products PA and WP toggles are synchronized to matching parameter riders (`PERSONAL_ACCIDENT` and `PREMIUM_WAIVER`) during save, while explicitly submitted rider selections remain parameter-validated. Successful saves replace the selected rider/benefit set transactionally, mark wizard completion under `6_riders_and_benefits`, increment the quotation version, and emit central audit and `QuotationRidersAndBenefitsUpdated` outbox records.
 
+## Financial Details and premium calculation engine
+
+Financial Details is the quotation’s reproducible rating boundary. The calculation service reads only the persisted quotation wizard state and effective-dated OL Product Rating / OL Parameters data; it never embeds actuarial rates or feature factors in quotation code. A successful calculation stores one current `OLQuotationFinancialSummary` for the quotation, increments the quotation version, marks `7_financial_details` complete, emits `QuotationPremiumCalculated`, and writes a central audit update describing the calculation.
+
+The endpoint contract is:
+
+| Method | Endpoint | Behavior |
+|---|---|---|
+| `POST` | `/api/v1/ol-quotations/quotations/{id}/calculate/` | Resolve all rating inputs, calculate and persist the latest summary, projections, and installment payouts. |
+| `GET` | `/api/v1/ol-quotations/quotations/{id}/financial-details/` | Return the latest summary, component breakdowns, projections, payouts, and recalculation state. |
+
+The engine applies the following calculation order. Every intermediate monetary value is rounded to two decimal places using `ROUND_HALF_UP`; rate and factor values retain their configured Decimal precision until applied.
+
+| Sequence | Component | Parameter source and rule |
+|---|---|---|
+| 1 | Base premium | Effective `OLPremiumRateTable` / `OLPremiumRateRow`, matched by product version, plan, gender, smoker status, entry age, term, frequency, and optional sum-assured band. A `PER_MILLE` row uses `(sum assured / 1000) × rate`; a percentage row uses `sum assured × rate / 100`. |
+| 2 | Joint-life factor | Effective `OLJointLifeSetup.premium_adjustment_factor` at plan or product scope when the selected plan has `joint_life=true`. |
+| 3 | Mortgage factor | Effective `OLMortgageInterestFactor.factor` at product scope when the selected plan has `mortgage=true`. |
+| 4 | Loadings and discounts | Effective `OLReserveLoading` rows at plan or product scope. Loading rows increase the premium and discount rows reduce it, with each rate applied to the current calculation base. |
+| 5 | Rider premiums | Effective `OLRiderRateTable` / `OLRiderRateRow` rows matched by rider, product/plan, gender, smoker status, age, term, frequency, and optional sum-assured band. Rider benefit loadings and discounts are applied to the rider premium. |
+| 6 | Installment charge | Effective `OLInstallmentChargeRate` matched by product/plan and payment frequency when the quotation contains an installment configuration. |
+| 7 | Taxes | Effective `OLPlanTaxConfiguration` rows in ascending configured `sequence`. Percentage taxes apply to their configured base; fixed taxes add their configured fixed amount. |
+| 8 | Total | Pre-tax subtotal plus sequenced taxes, rounded to two decimals. |
+
+A missing base premium rate is a blocking validation error with the message `No premium rate found for the selected plan configuration. Please configure rating parameters.` Missing optional factor, loading, rider, installment, or tax rows do not introduce hardcoded fallback rates; the corresponding component is zero or one only when the parameter semantics define it as optional.
+
+The persisted summary includes total sum assured, base premium, total loading, total discount, total tax, installment charge, total premium, estimated maturity value, quotation version number, calculation timestamp, and the SHA-256 `input_fingerprint`. The `calculation_snapshot` contains plan, rider, and tax component breakdowns, preserving the inputs used to explain the result.
+
+Projections are generated for each policy year up to the longest selected term:
+
+| Field | Meaning |
+|---|---|
+| `policy_year` | One-based policy year. |
+| `premiums_paid` | Base calculated premium multiplied by the applicable years-paid count. |
+| `estimated_bonus` | Estimated bonus rate per mille multiplied by sum assured and policy year, divided by 1000. |
+| `surrender_value` | Sum assured multiplied by the effective `OLCashSurrenderValue.surrender_value_factor` for that policy year and scope. |
+| `paid_up_value` | Sum assured multiplied by the effective `OLPaidUpRate.rate_factor` for that policy year and scope. |
+| `estimated_maturity_value` | The plan’s configured maturity value, carried into the projection output. |
+
+Installment payouts are derived from saved `OLQuotationInstallmentRateRow` records. Each row preserves its sequence, description, percentage, and paid-up rate. The payout amount is `rate_percent / 100 × maturity base`; the payout date starts at the saved first due date and advances by the configured payment-frequency interval for each subsequent sequence. No installment schedule is invented when no installment rows are configured.
+
+Recalculation detection hashes sorted JSON containing the quotation’s product/plan configuration, sum assured, term, frequency, age, gender, smoker status, and rider selections. The GET endpoint returns `recalculation_required=true` when no summary exists or the current fingerprint differs from the stored fingerprint, allowing the frontend to require a new calculation after a rating input changes.
+
 ## Domain model and invariants
 
 `OLQuotation` is the aggregate header. It stores the canonical quote number, partner, parameter-backed product, optional legacy product version, currency, expiry date, status, totals, calculation snapshot, and metadata. The quote number is generated by the existing numbering engine using `OL_QUOTATION`; currency defaults through the existing `DEFAULT_CURRENCY` system parameter and is normalized to an ISO-like three-letter code.
@@ -87,7 +130,8 @@ The API is mounted under `/api/v1/ol-quotations/`.
 | Configure Investment Funds | `POST /quotations/{id}/investment-funds/` |
 | Riders and Benefits state | `GET /quotations/{id}/riders/` |
 | Rider and benefit options | `GET /quotations/{id}/riders/options/?plan_config_id={id}` |
-| Configure Riders and Benefits | `POST /quotations/{id}/riders/` |
+| Financial Details calculation | `POST /quotations/{id}/calculate/` |
+| Financial Details summary | `GET /quotations/{id}/financial-details/` |
 | Add dependent member | `POST /quotations/{id}/members/` |
 | Update dependent member | `PATCH /quotations/{id}/members/{member_id}/` |
 | Remove dependent member | `DELETE /quotations/{id}/members/{member_id}/` |

@@ -1,5 +1,7 @@
-from datetime import date
-from decimal import Decimal
+from datetime import date, timedelta
+from decimal import Decimal, ROUND_HALF_UP
+import hashlib
+import json
 
 from django.db import models, transaction
 from django.db.models import Q
@@ -22,6 +24,15 @@ from apps.ol_parameters.models import (
     OLRiderSetup,
     OLBeneficialType,
     OLProduct as ParameterProduct,
+    OLPremiumRateTable,
+    OLPremiumRateRow,
+    OLRiderRateTable,
+    OLRiderRateRow,
+    OLPlanTaxConfiguration,
+    OLInstallmentChargeRate,
+    OLCashSurrenderValue,
+    OLReserveLoading,
+    OLComputationApproach,
 )
 from apps.ordinary_life.models import OLPlan, OLProductVersion
 from apps.ol_quotations.models import (
@@ -2277,3 +2288,532 @@ class QuotationService:
             and quotation.expiry_date
             and quotation.expiry_date < date.today()
         )
+
+    @staticmethod
+    def _effective_queryset(queryset, quote_date):
+        """Restrict an effective-dated parameter queryset to the quotation date."""
+        quote_date = quote_date or date.today()
+        return queryset.filter(
+            is_active=True,
+        ).filter(
+            Q(effective_from__isnull=True) | Q(effective_from__lte=quote_date)
+        ).filter(
+            Q(effective_to__isnull=True) | Q(effective_to__gte=quote_date)
+        )
+
+    @staticmethod
+    def _parameter_product_for(quotation, plan_config=None):
+        product = getattr(quotation, "product", None)
+        if product is not None:
+            return product
+        version = getattr(plan_config, "product_version", None) or getattr(quotation, "product_version", None)
+        legacy_product = getattr(version, "product", None)
+        code = getattr(legacy_product, "code", None)
+        if code:
+            return ParameterProduct.objects.filter(code=code).first()
+        return None
+
+    @staticmethod
+    def _scope_candidates(queryset, *, product=None, plan=None):
+        """Return plan-specific candidates first, then product-level candidates."""
+        scoped = queryset.filter(Q(plan=plan) | Q(plan__isnull=True))
+        if product is not None:
+            scoped = scoped.filter(Q(product=product) | Q(product__isnull=True))
+        else:
+            scoped = scoped.filter(product__isnull=True)
+        return scoped
+
+    @staticmethod
+    def _rate_value(rate_row, amount):
+        unit = (getattr(rate_row, "rate_unit", "") or "").upper()
+        rate = Decimal(rate_row.rate)
+        amount = Decimal(amount)
+        if unit in {"PER_THOUSAND_SUM_ASSURED", "PER_MILLE"}:
+            return amount / Decimal("1000") * rate
+        if unit == "PERCENTAGE":
+            return amount * rate / Decimal("100")
+        if unit == "FACTOR":
+            return amount * rate
+        return rate
+
+    @staticmethod
+    def _compute_input_fingerprint(quotation):
+        plans = []
+        for item in quotation.plan_configurations.filter(is_selected=True).order_by("pk"):
+            plans.append({
+                "id": str(item.pk),
+                "product_version_id": str(item.product_version_id),
+                "plan_id": str(item.plan_id) if item.plan_id else None,
+                "sum_assured": str(item.base_sum_assured),
+                "term": item.term_years,
+                "payment_period": item.payment_period_years,
+                "frequency": item.premium_frequency,
+                "quote_basis": item.quote_basis,
+                "premium_factor": item.premium_factor,
+                "joint_life": item.joint_life,
+                "mortgage": item.mortgage,
+                "personal_accident": item.personal_accident,
+                "premium_waiver": item.premium_waiver,
+                "bonus_rate": str(item.estimated_bonus_rate),
+            })
+        riders = []
+        for item in quotation.rider_selections.filter(is_selected=True).order_by("pk"):
+            riders.append({
+                "id": str(item.pk),
+                "rider_id": str(item.rider_id),
+                "plan_configuration_id": str(item.plan_configuration_id) if item.plan_configuration_id else None,
+                "sum_assured": str(item.rider_sum_assured),
+                "term": item.rider_term_years,
+                "benefit_basis": item.benefit_basis,
+                "benefit_value": str(item.benefit_value) if item.benefit_value is not None else None,
+                "loading": str(item.loading),
+                "discount": str(item.discount),
+                "maximum_cap": str(item.maximum_cap) if item.maximum_cap is not None else None,
+            })
+        payload = {
+            "quotation_id": str(quotation.pk),
+            "quote_date": quotation.quote_date.isoformat() if quotation.quote_date else None,
+            "age": quotation.age_at_quote,
+            "gender": quotation.gender,
+            "smoker_status": quotation.smoker_status,
+            "currency": quotation.currency,
+            "plans": plans,
+            "riders": riders,
+            "installments": [
+                {
+                    "id": str(row.pk),
+                    "frequency": row.frequency,
+                    "annuity_period_years": row.annuity_period_years,
+                    "number_of_installments": row.number_of_installments,
+                    "after_maturity_benefits": row.after_maturity_benefits,
+                    "before_maturity_benefits": row.before_maturity_benefits,
+                    "amount": str(row.installment_amount),
+                    "first_due_date": row.first_due_date.isoformat() if row.first_due_date else None,
+                }
+                for row in quotation.installment_configurations.filter(is_selected=True).order_by("pk")
+            ],
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    @staticmethod
+    def _resolve_premium_rate(product_version, plan, gender, smoker_status, age, term, frequency, quote_date, *, product=None, sum_assured=None):
+        tables = OLPremiumRateTable.objects.all()
+        tables = QuotationService._effective_queryset(tables, quote_date)
+        tables = tables.filter(plan=plan) if plan is not None else tables.filter(plan__isnull=True)
+        if product is not None:
+            tables = tables.filter(product=product)
+        rows = OLPremiumRateRow.objects.filter(
+            table__in=tables,
+            gender=(gender or "").strip().upper(),
+            smoker_status=(smoker_status or "").strip().upper(),
+            age_from__lte=age,
+            age_to__gte=age,
+            term_from__lte=term,
+            term_to__gte=term,
+            is_active=True,
+        ).filter(Q(frequency=(frequency or "").strip().upper()))
+        rows = QuotationService._effective_queryset(rows, quote_date)
+        if sum_assured is not None:
+            rows = rows.filter(
+                Q(sum_assured_band_from__isnull=True) | Q(sum_assured_band_from__lte=sum_assured),
+                Q(sum_assured_band_to__isnull=True) | Q(sum_assured_band_to__gte=sum_assured),
+            )
+        row = rows.select_related("table").order_by("table__plan", "table__effective_from", "table__version", "age_from", "term_from").first()
+        if row is None:
+            raise ValidationError("No premium rate found for the selected plan configuration. Please configure rating parameters.")
+        return row
+
+    @staticmethod
+    def _apply_joint_life_factor(base_premium, plan_config, quote_date, *, product=None):
+        if not plan_config.joint_life:
+            return Decimal(base_premium), Decimal("1")
+        qs = QuotationService._effective_queryset(OLJointLifeSetup.objects.all(), quote_date)
+        qs = qs.filter(Q(plan=plan_config.plan) | Q(plan__isnull=True))
+        if product is not None:
+            qs = qs.filter(Q(product=product) | Q(product__isnull=True))
+        setup = qs.order_by("-plan_id", "-product_id", "-effective_from").first()
+        if setup is None:
+            raise ValidationError("Joint-life is selected but no active joint-life setup is configured.")
+        factor = Decimal(setup.premium_adjustment_factor)
+        return (Decimal(base_premium) * factor).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), factor
+
+    @staticmethod
+    def _apply_mortgage_factor(base_premium, plan_config, quote_date, *, product=None):
+        if not plan_config.mortgage:
+            return Decimal(base_premium), Decimal("1")
+        qs = QuotationService._effective_queryset(OLMortgageInterestFactor.objects.all(), quote_date)
+        qs = qs.filter(Q(plan=plan_config.plan) | Q(plan__isnull=True))
+        if product is not None:
+            qs = qs.filter(product=product)
+        setup = qs.order_by("-plan_id", "-effective_from").first()
+        if setup is None:
+            raise ValidationError("Mortgage is selected but no active mortgage interest factor is configured.")
+        factor = Decimal(setup.factor)
+        return (Decimal(base_premium) * factor).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), factor
+
+    @staticmethod
+    def _calculate_rider_premiums(quotation, plan_configs, quote_date):
+        total = Decimal("0")
+        breakdown = []
+        for selection in quotation.rider_selections.filter(is_selected=True).select_related("rider", "plan_configuration"):
+            config = selection.plan_configuration or (plan_configs[0] if plan_configs else None)
+            if config is None or config.plan is None:
+                raise ValidationError("Each selected rider must be attached to a selected plan.")
+            product = QuotationService._parameter_product_for(quotation, config)
+            tables = QuotationService._effective_queryset(OLRiderRateTable.objects.all(), quote_date).filter(rider=selection.rider)
+            tables = tables.filter(Q(plan=config.plan) | Q(plan__isnull=True))
+            if product is not None:
+                tables = tables.filter(Q(product=product) | Q(product__isnull=True))
+            term = selection.rider_term_years or config.term_years
+            rows = OLRiderRateRow.objects.filter(
+                table__in=tables,
+                gender=(quotation.gender or "").strip().upper(),
+                smoker_status=(quotation.smoker_status or "").strip().upper(),
+                age_from__lte=quotation.age_at_quote,
+                age_to__gte=quotation.age_at_quote,
+                term_from__lte=term,
+                term_to__gte=term,
+                is_active=True,
+            ).filter(Q(frequency="") | Q(frequency=config.premium_frequency.upper()))
+            rows = QuotationService._effective_queryset(rows, quote_date)
+            rows = rows.filter(
+                Q(sum_assured_band_from__isnull=True) | Q(sum_assured_band_from__lte=selection.rider_sum_assured),
+                Q(sum_assured_band_to__isnull=True) | Q(sum_assured_band_to__gte=selection.rider_sum_assured),
+            )
+            rate_row = rows.order_by("table__plan", "table__effective_from", "table__version", "age_from", "term_from").first()
+            if rate_row is None:
+                raise ValidationError(f"No rider rate found for {selection.rider.code}. Please configure rider rating parameters.")
+            rider_premium = QuotationService._rate_value(rate_row, selection.rider_sum_assured)
+            rider_premium *= Decimal("1") + (Decimal(selection.loading or 0) / Decimal("100"))
+            rider_premium *= Decimal("1") - (Decimal(selection.discount or 0) / Decimal("100"))
+            if selection.maximum_cap is not None:
+                rider_premium = min(rider_premium, Decimal(selection.maximum_cap))
+            rider_premium = rider_premium.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            selection.premium_amount = rider_premium
+            breakdown.append({
+                "selection_id": str(selection.pk),
+                "rider_id": str(selection.rider_id),
+                "rider_code": selection.rider.code,
+                "premium": rider_premium,
+                "rate": Decimal(rate_row.rate),
+                "rate_unit": rate_row.rate_unit,
+            })
+            total += rider_premium
+        return total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), breakdown
+
+    @staticmethod
+    def _apply_installment_charge(premium, plan_config, quote_date, *, product=None):
+        configs = plan_config.installment_configurations.filter(is_selected=True)
+        charge_total = Decimal("0")
+        for config in configs:
+            frequency = (config.frequency or "").upper()
+            qs = QuotationService._effective_queryset(OLInstallmentChargeRate.objects.all(), quote_date)
+            qs = qs.filter(frequency=frequency).filter(Q(plan=plan_config.plan) | Q(plan__isnull=True))
+            if product is not None:
+                qs = qs.filter(Q(product=product) | Q(product__isnull=True))
+            row = qs.order_by("-plan_id", "-product_id", "-effective_from").first()
+            if row is None:
+                continue
+            value = Decimal(row.rate_value)
+            if row.charge_type == "PERCENTAGE":
+                charge = Decimal(premium) * value / Decimal("100")
+            elif row.charge_type == "FACTOR":
+                charge = Decimal(premium) * value
+            else:
+                charge = value
+            charge_total += charge
+        return charge_total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    @staticmethod
+    def _apply_loadings_discounts(premium, product_version, plan, quote_date, *, product=None, sum_assured=None):
+        base = Decimal(premium)
+        loading = Decimal("0")
+        discount = Decimal("0")
+        qs = QuotationService._effective_queryset(OLReserveLoading.objects.all(), quote_date)
+        qs = qs.filter(Q(plan=plan) | Q(plan__isnull=True))
+        if product is not None:
+            qs = qs.filter(Q(product=product) | Q(product__isnull=True))
+        for row in qs.order_by("sequence" if hasattr(OLReserveLoading, "sequence") else "code"):
+            value = base * Decimal(row.rate_value) / Decimal("100")
+            if row.loading_type in {"PROFIT", "CAPITAL"}:
+                discount += value
+            else:
+                loading += value
+        return loading.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), discount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    @staticmethod
+    def _apply_taxes(premium, product_version, plan, quote_date, *, product=None):
+        running = Decimal(premium)
+        total_tax = Decimal("0")
+        breakdown = []
+        qs = QuotationService._effective_queryset(OLPlanTaxConfiguration.objects.all(), quote_date)
+        qs = qs.filter(Q(plan=plan) | Q(plan__isnull=True))
+        if product is not None:
+            qs = qs.filter(Q(product=product) | Q(product__isnull=True))
+        for row in qs.order_by("sequence", "code"):
+            value = Decimal(row.rate_value)
+            if row.rate_type == "PERCENTAGE":
+                tax = running * value / Decimal("100")
+            elif row.rate_type == "FACTOR":
+                tax = running * value
+            else:
+                tax = value
+            tax = tax.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            running += tax
+            total_tax += tax
+            breakdown.append({"code": row.code, "tax_type": row.tax_type, "sequence": row.sequence, "amount": tax})
+        return total_tax.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), running.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), breakdown
+
+    @staticmethod
+    def _build_projections(quotation, plan_configs, base_premium, quote_date):
+        projections = []
+        for config in plan_configs:
+            product = QuotationService._parameter_product_for(quotation, config)
+            for year in range(1, config.term_years + 1):
+                maturity_base = Decimal(config.estimated_maturity_value or config.base_sum_assured)
+                bonus_rate = Decimal(config.estimated_bonus_rate or 0)
+                if bonus_rate == 0:
+                    bonus_row = QuotationService._effective_queryset(OLBonusRate.objects.all(), quote_date).filter(
+                        Q(plan=config.plan) | Q(plan__isnull=True),
+                    )
+                    if product is not None:
+                        bonus_row = bonus_row.filter(Q(product=product) | Q(product__isnull=True))
+                    bonus = bonus_row.filter(valuation_year__isnull=True).order_by("-plan_id", "-product_id", "-effective_from").first()
+                    if bonus is not None:
+                        bonus_rate = Decimal(bonus.rate)
+                estimated_bonus = (bonus_rate * config.base_sum_assured / Decimal("1000") * year).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                surrender_qs = QuotationService._effective_queryset(OLCashSurrenderValue.objects.all(), quote_date)
+                if product is not None:
+                    surrender_qs = surrender_qs.filter(product=product)
+                surrender_qs = surrender_qs.filter(
+                    Q(plan=config.plan) | Q(plan__isnull=True),
+                    policy_year_from__lte=year,
+                    policy_year_to__gte=year,
+                )
+                surrender_qs = surrender_qs.filter(
+                    Q(age_from__isnull=True) | Q(age_from__lte=quotation.age_at_quote),
+                    Q(age_to__isnull=True) | Q(age_to__gte=quotation.age_at_quote),
+                    Q(term_from__isnull=True) | Q(term_from__lte=config.term_years),
+                    Q(term_to__isnull=True) | Q(term_to__gte=config.term_years),
+                ).filter(Q(gender="") | Q(gender=(quotation.gender or "").upper())).filter(Q(smoker_status="") | Q(smoker_status=(quotation.smoker_status or "").upper()))
+                surrender = surrender_qs.order_by("-plan_id", "-effective_from").first()
+                surrender_value = Decimal("0")
+                if surrender is not None:
+                    if surrender.surrender_value_factor is not None:
+                        surrender_value = Decimal(surrender.surrender_value_factor) * config.base_sum_assured
+                    else:
+                        surrender_value = Decimal(surrender.rate) * config.base_sum_assured / Decimal("100")
+                paid_up_qs = QuotationService._effective_queryset(OLPaidUpRate.objects.all(), quote_date)
+                legacy_product = getattr(getattr(config, "product_version", None), "product", None)
+                if legacy_product is not None:
+                    paid_up_qs = paid_up_qs.filter(product=legacy_product)
+                else:
+                    paid_up_qs = OLPaidUpRate.objects.none()
+                paid_up_qs = paid_up_qs.filter(Q(plan=config.plan) | Q(plan__isnull=True))
+                paid_up_qs = paid_up_qs.filter(
+                    Q(policy_year_from__isnull=True) | Q(policy_year_from__lte=year),
+                    Q(policy_year_to__isnull=True) | Q(policy_year_to__gte=year),
+                    Q(age_from__isnull=True) | Q(age_from__lte=quotation.age_at_quote),
+                    Q(age_to__isnull=True) | Q(age_to__gte=quotation.age_at_quote),
+                    Q(term_from__isnull=True) | Q(term_from__lte=config.term_years),
+                    Q(term_to__isnull=True) | Q(term_to__gte=config.term_years),
+                )
+                paid_up = paid_up_qs.order_by("-plan_id", "-effective_from").first()
+                paid_up_value = Decimal("0")
+                if paid_up is not None:
+                    paid_up_value = Decimal(paid_up.rate_factor) * config.base_sum_assured
+                projections.append({
+                    "plan_configuration_id": str(config.pk),
+                    "policy_year": year,
+                    "premiums_paid": (Decimal(config.premium_amount or 0) * year).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+                    "estimated_bonus": estimated_bonus,
+                    "surrender_value": surrender_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+                    "paid_up_value": paid_up_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+                    "estimated_maturity_value": maturity_base if year == config.term_years else Decimal("0"),
+                })
+        return projections
+
+    @staticmethod
+    def _build_installment_payouts(quotation, plan_configs):
+        payouts = []
+        frequency_months = {"MONTHLY": 1, "QUARTERLY": 3, "HALF_YEARLY": 6, "ANNUAL": 12, "SINGLE": 0}
+        for config in quotation.installment_configurations.filter(is_selected=True).select_related("plan_configuration"):
+            plan_config = config.plan_configuration or (plan_configs[0] if plan_configs else None)
+            if plan_config is None:
+                continue
+            maturity_base = Decimal(plan_config.estimated_maturity_value or plan_config.base_sum_assured)
+            first_due = config.first_due_date or date.today()
+            rows = list(config.rate_rows.order_by("sequence", "period_from"))
+            for row in rows:
+                rate_percent = Decimal(row.rate_percent or 0)
+                amount = (maturity_base * rate_percent / Decimal("100")) + Decimal(row.charge or 0)
+                months = frequency_months.get((config.frequency or "ANNUAL").upper(), 12)
+                payout_date = first_due + timedelta(days=30 * months * max(row.sequence - 1, 0))
+                payouts.append({
+                    "plan_configuration_id": str(plan_config.pk),
+                    "installment_configuration_id": str(config.pk),
+                    "sequence": row.sequence,
+                    "description": row.description,
+                    "payout_amount": amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+                    "payout_date": payout_date.isoformat(),
+                    "rate_percent": rate_percent,
+                    "paid_up_rate": Decimal(row.paid_up_rate or 0),
+                })
+        return payouts
+
+    @staticmethod
+    @transaction.atomic
+    def calculate_premium(*, quotation, actor, request=None):
+        locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
+        quote_date = locked.quote_date or date.today()
+        plan_configs = list(locked.plan_configurations.filter(is_selected=True).select_related("product_version", "plan"))
+        if not plan_configs:
+            raise ValidationError("At least one selected plan is required before premium calculation.")
+        before = QuotationService.snapshot(locked)
+        plan_breakdowns = []
+        total_sum_assured = Decimal("0")
+        base_premium_total = Decimal("0")
+        loading_total = Decimal("0")
+        discount_total = Decimal("0")
+        installment_total = Decimal("0")
+        total_maturity = Decimal("0")
+        for config in plan_configs:
+            product = QuotationService._parameter_product_for(locked, config)
+            rate_row = QuotationService._resolve_premium_rate(
+                config.product_version,
+                config.plan,
+                locked.gender,
+                locked.smoker_status,
+                locked.age_at_quote,
+                config.term_years,
+                config.premium_frequency,
+                quote_date,
+                product=product,
+                sum_assured=config.base_sum_assured,
+            )
+            raw_base = QuotationService._rate_value(rate_row, config.base_sum_assured)
+            adjusted, joint_factor = QuotationService._apply_joint_life_factor(raw_base, config, quote_date, product=product)
+            adjusted, mortgage_factor = QuotationService._apply_mortgage_factor(adjusted, config, quote_date, product=product)
+            loading, discount = QuotationService._apply_loadings_discounts(adjusted, config.product_version, config.plan, quote_date, product=product, sum_assured=config.base_sum_assured)
+            installment_charge = QuotationService._apply_installment_charge(adjusted + loading - discount, config, quote_date, product=product)
+            plan_premium = (adjusted + loading - discount + installment_charge).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            config.premium_amount = plan_premium
+            config.save(update_fields=["premium_amount", "updated_at"])
+            total_sum_assured += Decimal(config.base_sum_assured)
+            base_premium_total += adjusted
+            loading_total += loading
+            discount_total += discount
+            installment_total += installment_charge
+            total_maturity += Decimal(config.estimated_maturity_value or 0)
+            plan_breakdowns.append({
+                "plan_configuration_id": str(config.pk),
+                "plan_id": str(config.plan_id) if config.plan_id else None,
+                "plan_code": config.plan.code if config.plan_id else None,
+                "sum_assured": Decimal(config.base_sum_assured),
+                "raw_base_premium": QuotationService._rate_value(rate_row, config.base_sum_assured).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+                "base_premium": adjusted.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+                "joint_life_factor": joint_factor,
+                "mortgage_factor": mortgage_factor,
+                "loading": loading,
+                "discount": discount,
+                "installment_charge": installment_charge,
+                "premium": plan_premium,
+            })
+        rider_total, rider_breakdown = QuotationService._calculate_rider_premiums(locked, plan_configs, quote_date)
+        for selection in locked.rider_selections.filter(is_selected=True):
+            selection.save(update_fields=["premium_amount", "updated_at"])
+        subtotal = base_premium_total + loading_total - discount_total + rider_total + installment_total
+        tax_total = Decimal("0")
+        tax_breakdown = []
+        for config in plan_configs:
+            product = QuotationService._parameter_product_for(locked, config)
+            tax, _, rows = QuotationService._apply_taxes(subtotal, config.product_version, config.plan, quote_date, product=product)
+            tax_total += tax
+            tax_breakdown.extend(rows)
+        total_premium = (subtotal + tax_total).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        projections = QuotationService._build_projections(locked, plan_configs, base_premium_total, quote_date)
+        installment_payouts = QuotationService._build_installment_payouts(locked, plan_configs)
+        projections_json = json.loads(json.dumps(projections, default=str))
+        installment_payouts_json = json.loads(json.dumps(installment_payouts, default=str))
+        fingerprint = QuotationService._compute_input_fingerprint(locked)
+        calculation_version = int(locked.current_version_number or 1) + 1
+        calculation_snapshot = json.loads(json.dumps({
+            "plan_breakdowns": plan_breakdowns,
+            "rider_breakdowns": rider_breakdown,
+            "tax_breakdown": tax_breakdown,
+            "computation_order": ["base", "joint_life", "mortgage", "loadings", "discounts", "riders", "installment_charge", "taxes"],
+        }, default=str))
+        summary, _ = OLQuotationFinancialSummary.objects.update_or_create(
+            quotation=locked,
+            defaults={
+                "total_sum_assured": total_sum_assured.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+                "total_premium": total_premium,
+                "total_rider_premium": rider_total,
+                "total_benefit_premium": Decimal("0"),
+                "base_premium": base_premium_total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+                "total_loading": loading_total,
+                "total_discount": discount_total,
+                "total_tax": tax_total,
+                "installment_charge": installment_total,
+                "estimated_maturity_value": total_maturity.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+                "quotation_version_number": calculation_version,
+                "recalculation_required": False,
+                "calculated_at": timezone.now(),
+                "projections": projections_json,
+                "installment_payouts": installment_payouts_json,
+                "input_fingerprint": fingerprint,
+                "currency": locked.currency,
+                "calculation_snapshot": calculation_snapshot,
+                "updated_by": QuotationService.actor(actor),
+            },
+        )
+        locked.total_sum_assured = total_sum_assured.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        locked.total_premium = total_premium
+        locked.current_version_number = calculation_version
+        locked.calculation_snapshot = summary.calculation_snapshot
+        locked.wizard_step_completion = QuotationService.wizard_completion(locked)
+        locked.updated_by = QuotationService.actor(actor)
+        locked.save(update_fields=["total_sum_assured", "total_premium", "current_version_number", "calculation_snapshot", "wizard_step_completion", "updated_by", "updated_at"])
+        after = QuotationService.snapshot(locked)
+        AuditService.log_update(locked, before_state=before, actor=actor, request=request, reason="Quotation premium calculated.")
+        QuotationService._record_version(locked, actor=actor, reason="Quotation financial details calculated.")
+        QuotationService._record_event(
+            locked,
+            "PREMIUM_CALCULATED",
+            actor=actor,
+            from_status=locked.status,
+            to_status=locked.status,
+            notes="Quotation premium and financial details calculated.",
+            metadata={"summary_id": str(summary.pk), "input_fingerprint": fingerprint},
+            before_state=before,
+            after_state=after,
+            request=request,
+        )
+        DomainEvent.objects.create(
+            event_type="QuotationPremiumCalculated",
+            aggregate_type="OLQuotation",
+            aggregate_id=str(locked.pk),
+            payload={
+                "quotation_id": str(locked.pk),
+                "quote_number": locked.quote_number,
+                "total_premium": str(total_premium),
+                "currency": locked.currency,
+                "quotation_version_number": locked.current_version_number,
+                "input_fingerprint": fingerprint,
+            },
+        )
+        return summary
+
+    @staticmethod
+    def financial_summary_state(quotation):
+        summary = getattr(quotation, "financial_summary", None)
+        if summary is None:
+            return {"exists": False, "recalculation_required": True, "summary": None}
+        current_fingerprint = QuotationService._compute_input_fingerprint(quotation)
+        recalculation_required = summary.recalculation_required or summary.input_fingerprint != current_fingerprint
+        return {
+            "exists": True,
+            "recalculation_required": recalculation_required,
+            "summary": summary,
+        }

@@ -5,6 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied, ValidationError as DRFValidationError
 from django.db.models import Count, Q
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils.dateparse import parse_date
 from uuid import UUID
 
@@ -64,6 +65,8 @@ from .serializers import (
     OLQuotationBenefitSerializer,
     OLQuotationDocumentSerializer,
     OLQuotationFinancialSummarySerializer,
+    OLQuotationFinancialDetailsSerializer,
+    OLQuotationCalculateSerializer,
     OLQuotationPersonalDetailsSerializer,
     OLQuotationPlanSelectionSerializer,
     OLQuotationPlanConfigurationPatchSerializer,
@@ -815,6 +818,51 @@ class OLQuotationViewSet(QuotationScopedViewSet):
                 "status": quotation.status,
             },
             "Quotation wizard summary retrieved.",
+        )
+
+    @action(detail=True, methods=["post"], url_path="calculate")
+    def calculate(self, request, pk=None):
+        quotation = self.get_object()
+        if not has_quotation_permission(request.user, "financial_calculate"):
+            raise PermissionDenied("You do not have permission to calculate quotation financial details.")
+        serializer = OLQuotationCalculateSerializer(data=request.data or {})
+        serializer.is_valid(raise_exception=True)
+        try:
+            summary = QuotationService.calculate_premium(
+                quotation=quotation,
+                actor=request.user,
+                request=request,
+            )
+        except DjangoValidationError as exc:
+            detail = getattr(exc, "message_dict", None) or getattr(exc, "messages", [str(exc)])
+            raise DRFValidationError(detail)
+        return _response(
+            OLQuotationFinancialDetailsSerializer(summary).data,
+            "Quotation premium and financial details calculated.",
+            status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["get"], url_path="financial-details")
+    def financial_details(self, request, pk=None):
+        quotation = self.get_object()
+        if not has_quotation_permission(request.user, "financial_view"):
+            raise PermissionDenied("You do not have permission to view quotation financial details.")
+        state = QuotationService.financial_summary_state(quotation)
+        if not state["exists"]:
+            return _response(
+                {
+                    "quotation_id": quotation.pk,
+                    "recalculation_required": True,
+                    "summary": None,
+                },
+                "Quotation financial details have not been calculated.",
+            )
+        return _response(
+            {
+                **OLQuotationFinancialDetailsSerializer(state["summary"]).data,
+                "recalculation_required": state["recalculation_required"],
+            },
+            "Quotation financial details retrieved.",
         )
 
 
