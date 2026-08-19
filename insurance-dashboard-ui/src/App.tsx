@@ -42,6 +42,9 @@ import OLDefaultSetup from "./pages/ordinary-life/OLDefaultSetup"
 import OLPolicySetup from "./pages/ordinary-life/OLPolicySetup"
 import OLProductSetup from "./pages/ordinary-life/OLProductSetup"
 import OLProductRating from "./pages/ordinary-life/OLProductRating"
+import OLRiderSetup from "./pages/ordinary-life/OLRiderSetup"
+import OLAgentManagement from "./pages/ordinary-life/OLAgentManagement"
+import OLLoanSetup from "./pages/ordinary-life/OLLoanSetup"
 import OLParameterPlaceholder from "./pages/ordinary-life/OLParameterPlaceholder"
 import OLApplications from "./pages/ordinary-life/OLApplications"
 import OLDocuments from "./pages/ordinary-life/OLDocuments"
@@ -149,9 +152,9 @@ export default function App() {
         <Route path="ordinary-life/parameters/policy-setup" element={<OLPolicySetup />} />
         <Route path="ordinary-life/parameters/product-setup" element={<OLProductSetup />} />
         <Route path="ordinary-life/parameters/product-rating" element={<OLProductRating />} />
-        <Route path="ordinary-life/parameters/rider-setup" element={<OLParameterPlaceholder title="Rider Setup" />} />
-        <Route path="ordinary-life/parameters/agent-management" element={<OLParameterPlaceholder title="Agent Management" />} />
-        <Route path="ordinary-life/parameters/loan-setup" element={<OLParameterPlaceholder title="Loan Setup" />} />
+        <Route path="ordinary-life/parameters/rider-setup" element={<OLRiderSetup />} />
+        <Route path="ordinary-life/parameters/agent-management" element={<OLAgentManagement />} />
+        <Route path="ordinary-life/parameters/loan-setup" element={<OLLoanSetup />} />
         <Route path="ordinary-life/parameters/medical-uw" element={<OLParameterPlaceholder title="Medical Underwriting" />} />
         <Route path="ordinary-life/parameters/claim-setup" element={<OLParameterPlaceholder title="Claim Setup" />} />
         <Route path="ordinary-life/applications" element={<OLApplications />} />
