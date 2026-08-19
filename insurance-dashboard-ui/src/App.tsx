@@ -46,6 +46,7 @@ import OLRiderSetup from "./pages/ordinary-life/OLRiderSetup"
 import OLAgentManagement from "./pages/ordinary-life/OLAgentManagement"
 import OLLoanSetup from "./pages/ordinary-life/OLLoanSetup"
 import OLParameterPlaceholder from "./pages/ordinary-life/OLParameterPlaceholder"
+import OLMOrbClaimSetup from "./pages/ordinary-life/OLMedicalClaimSetup"
 import OLApplications from "./pages/ordinary-life/OLApplications"
 import OLDocuments from "./pages/ordinary-life/OLDocuments"
 import OLNotes from "./pages/ordinary-life/OLNotes"
@@ -155,8 +156,8 @@ export default function App() {
         <Route path="ordinary-life/parameters/rider-setup" element={<OLRiderSetup />} />
         <Route path="ordinary-life/parameters/agent-management" element={<OLAgentManagement />} />
         <Route path="ordinary-life/parameters/loan-setup" element={<OLLoanSetup />} />
-        <Route path="ordinary-life/parameters/medical-uw" element={<OLParameterPlaceholder title="Medical Underwriting" />} />
-        <Route path="ordinary-life/parameters/claim-setup" element={<OLParameterPlaceholder title="Claim Setup" />} />
+        <Route path="ordinary-life/parameters/medical-uw" element={<OLMOrbClaimSetup section="medical" />} />
+        <Route path="ordinary-life/parameters/claim-setup" element={<OLMOrbClaimSetup section="claims" />} />
         <Route path="ordinary-life/applications" element={<OLApplications />} />
         <Route path="ordinary-life/quotations" element={<OLQuotations />} />
         <Route path="ordinary-life/commitments" element={<OLCommitments />} />
