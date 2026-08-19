@@ -14,6 +14,8 @@ from apps.ol_parameters.models import (
     OLJointLifeSetup,
     OLMemberCoverConfiguration,
     OLJointLifeType,
+    OLInvestmentFund,
+    OLInvestmentFundType,
     OLPlanType,
     OLProduct,
     OLPaidUpRate,
@@ -1334,3 +1336,207 @@ class OLQuotationAPITests(TestCase):
         self.assertEqual(row["payment_mode"], "MONTHLY")
         self.assertEqual(row["total_number_of_installments"], 1)
         self.assertTrue(state_response.data["data"]["wizard_complete"])
+
+    def create_investment_funds(self, *, inactive=False):
+        fund_type = OLInvestmentFundType.objects.create(
+            code=f"FUND-TYPE-{self._testMethodName.upper()[:12]}",
+            name="Balanced Fund Type",
+            risk_profile="BALANCED",
+            is_active=True,
+        )
+        first = OLInvestmentFund.objects.create(
+            code=f"FUND-A-{self._testMethodName.upper()[:12]}",
+            name="Balanced Fund A",
+            description="Primary investment fund.",
+            fund_type=fund_type,
+            currency="TZS",
+            valuation_frequency="DAILY",
+            unit_price=Decimal("100.000000"),
+            effective_from=date.today(),
+            is_active=True,
+        )
+        second = OLInvestmentFund.objects.create(
+            code=f"FUND-B-{self._testMethodName.upper()[:12]}",
+            name="Balanced Fund B",
+            description="Secondary investment fund.",
+            fund_type=fund_type,
+            currency="TZS",
+            valuation_frequency="MONTHLY",
+            unit_price=Decimal("105.000000"),
+            effective_from=date.today(),
+            is_active=not inactive,
+        )
+        return first, second
+
+    def prepare_investment_fund_quotation(self):
+        self.product.investment_linked = True
+        self.product.save(update_fields=["investment_linked", "updated_at"])
+        return self.prepare_installment_quotation()
+
+    def test_investment_funds_non_investment_plan_returns_not_applicable(self):
+        draft = self.prepare_installment_quotation()
+        state_response = self.client.get(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/investment-funds/"
+        )
+        self.assertEqual(state_response.status_code, 200, state_response.data)
+        state = state_response.data["data"]
+        self.assertTrue(state["not_applicable"])
+        self.assertTrue(state["wizard_complete"])
+        self.assertEqual(state["plan_rows"][0]["status"], "NOT_APPLICABLE")
+
+        options_response = self.client.get(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/investment-funds/options/",
+            {"plan_config_id": draft["plan_config_id"]},
+        )
+        self.assertEqual(options_response.status_code, 200, options_response.data)
+        self.assertTrue(options_response.data["data"]["not_applicable"])
+        self.assertEqual(options_response.data["data"]["funds"], [])
+
+    def test_investment_funds_reject_allocation_sum_not_100(self):
+        first, second = self.create_investment_funds()
+        draft = self.prepare_investment_fund_quotation()
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/investment-funds/",
+            {
+                "allocations": [
+                    {
+                        "plan_config_id": draft["plan_config_id"],
+                        "fund_id": str(first.pk),
+                        "allocation_percent": "60.0000",
+                    },
+                    {
+                        "plan_config_id": draft["plan_config_id"],
+                        "fund_id": str(second.pk),
+                        "allocation_percent": "30.0000",
+                    },
+                ]
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("100", str(response.data))
+
+    def test_investment_funds_reject_inactive_fund(self):
+        _, inactive = self.create_investment_funds(inactive=True)
+        draft = self.prepare_investment_fund_quotation()
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/investment-funds/",
+            {
+                "allocations": [
+                    {
+                        "plan_config_id": draft["plan_config_id"],
+                        "fund_id": str(inactive.pk),
+                        "allocation_percent": "100.0000",
+                    }
+                ]
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("inactive", str(response.data).lower())
+
+    def test_investment_funds_save_retrieve_and_options_are_parameter_driven(self):
+        first, second = self.create_investment_funds()
+        draft = self.prepare_investment_fund_quotation()
+        options_response = self.client.get(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/investment-funds/options/",
+            {"plan_config_id": draft["plan_config_id"]},
+        )
+        self.assertEqual(options_response.status_code, 200, options_response.data)
+        options = options_response.data["data"]
+        self.assertFalse(options["not_applicable"])
+        self.assertEqual(options["quotation_currency"], "TZS")
+        self.assertEqual({row["code"] for row in options["funds"]}, {first.code, second.code})
+        self.assertEqual(options["funds"][0]["fund_type_name"], "Balanced Fund Type")
+        self.assertIn("risk_profile", options["funds"][0])
+        self.assertIn("valuation_frequency", options["funds"][0])
+
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/investment-funds/",
+            {
+                "allocations": [
+                    {
+                        "plan_config_id": draft["plan_config_id"],
+                        "fund_id": str(first.pk),
+                        "allocation_percent": "40.0000",
+                        "allocated_amount": "400.00",
+                    },
+                    {
+                        "plan_config_id": draft["plan_config_id"],
+                        "fund_id": str(second.pk),
+                        "allocation_percent": "60.0000",
+                        "allocated_amount": "600.00",
+                    },
+                ]
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        data = response.data["data"]
+        self.assertFalse(data["not_applicable"])
+        self.assertTrue(data["wizard_step_complete"])
+        row = data["state"]["plan_rows"][0]
+        self.assertEqual(row["status"], "CONFIGURED")
+        self.assertEqual(row["allocation_total"], "100.0000")
+        self.assertEqual(len(row["allocations"]), 2)
+        self.assertTrue(
+            DomainEvent.objects.filter(
+                event_type="QuotationInvestmentFundAllocationsUpdated",
+                aggregate_id=draft["id"],
+            ).exists()
+        )
+        self.assertTrue(
+            AuditEvent.objects.filter(
+                action="INVESTMENT_FUND_ALLOCATIONS_UPDATED",
+                object_id=str(draft["id"]),
+            ).exists()
+        )
+
+        state_response = self.client.get(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/investment-funds/"
+        )
+        self.assertEqual(state_response.status_code, 200, state_response.data)
+        state_row = state_response.data["data"]["plan_rows"][0]
+        self.assertEqual(state_row["status"], "CONFIGURED")
+        self.assertEqual(
+            {allocation["fund_code"] for allocation in state_row["allocations"]},
+            {first.code, second.code},
+        )
+        self.assertTrue(state_response.data["data"]["wizard_complete"])
+        quotation = OLQuotation.objects.get(pk=draft["id"])
+        self.assertTrue(quotation.wizard_step_completion["5_investment_funds"])
+        self.assertEqual(quotation.fund_allocations.count(), 2)
+
+    def test_investment_fund_currency_incompatibility_is_rejected(self):
+        fund_type = OLInvestmentFundType.objects.create(
+            code=f"FUND-TYPE-{self._testMethodName.upper()[:12]}",
+            name="Foreign Currency Fund Type",
+            risk_profile="CONSERVATIVE",
+            is_active=True,
+        )
+        fund = OLInvestmentFund.objects.create(
+            code=f"FUND-USD-{self._testMethodName.upper()[:12]}",
+            name="USD Fund",
+            fund_type=fund_type,
+            currency="USD",
+            valuation_frequency="DAILY",
+            unit_price=Decimal("1.000000"),
+            effective_from=date.today(),
+            is_active=True,
+        )
+        draft = self.prepare_investment_fund_quotation()
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/investment-funds/",
+            {
+                "allocations": [
+                    {
+                        "plan_config_id": draft["plan_config_id"],
+                        "fund_id": str(fund.pk),
+                        "allocation_percent": "100.0000",
+                    }
+                ]
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("compatible", str(response.data).lower())

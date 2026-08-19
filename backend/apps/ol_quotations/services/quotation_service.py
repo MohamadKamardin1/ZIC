@@ -18,6 +18,7 @@ from apps.ol_parameters.models import (
     OLMemberCoverConfiguration,
     OLJointLifeSetup,
     OLMortgageInterestFactor,
+    OLInvestmentFund,
     OLRiderSetup,
     OLProduct as ParameterProduct,
 )
@@ -29,6 +30,7 @@ from apps.ol_quotations.models import (
     OLQuotationInstallmentConfiguration,
     OLQuotationInstallmentRateRow,
     OLQuotationMember,
+    OLQuotationFundAllocation,
     OLQuotationPlanConfiguration,
     OLQuotationVersion,
     QuotationStatus,
@@ -96,6 +98,25 @@ class QuotationService:
         }
 
     @staticmethod
+    def _plan_requires_investment_funds(plan_config, quotation=None):
+        rules = dict(plan_config.coverage_rules or {})
+        for key in ("investment_linked", "investment_linked_plan", "requires_investment_funds"):
+            if key in rules:
+                return bool(rules[key])
+        product_rules = dict(getattr(plan_config.product_version, "servicing_rules", {}) or {})
+        for key in ("investment_linked", "investment_linked_plan", "requires_investment_funds"):
+            if key in product_rules:
+                return bool(product_rules[key])
+        if quotation is not None:
+            if getattr(getattr(quotation, "product", None), "investment_linked", False):
+                return True
+            return quotation.products.filter(
+                is_selected=True,
+                product__investment_linked=True,
+            ).exists()
+        return False
+
+    @staticmethod
     def wizard_completion(quotation):
         selected_plan = (
             quotation.plan_configurations.filter(is_selected=True).exists()
@@ -103,8 +124,18 @@ class QuotationService:
         )
         members = quotation.members.exists()
         selected_installments = quotation.installment_configurations.filter(is_selected=True).exists()
+        applicable_plan_configs = [
+            config
+            for config in quotation.plan_configurations.filter(is_selected=True).select_related("product_version__product")
+            if QuotationService._plan_requires_investment_funds(config, quotation)
+        ]
         funds = quotation.fund_allocations.filter(is_selected=True)
-        fund_complete = not funds.exists() or funds.aggregate(total=models.Sum("allocation_percentage"))["total"] == Decimal("100")
+        fund_complete = True
+        if applicable_plan_configs:
+            fund_complete = all(
+                funds.filter(plan_configuration=config).aggregate(total=models.Sum("allocation_percentage"))["total"] == Decimal("100")
+                for config in applicable_plan_configs
+            )
         riders_or_benefits = not quotation.rider_selections.filter(is_selected=True).exists() and not quotation.benefits.filter(is_selected=True).exists()
         if quotation.rider_selections.filter(is_selected=True).exists() or quotation.benefits.filter(is_selected=True).exists():
             riders_or_benefits = True
@@ -769,6 +800,214 @@ class QuotationService:
         fallback = rows.filter(plan__isnull=True).first()
         row = exact or fallback
         return row.rate_factor if row else None
+
+    @staticmethod
+    def _investment_fund_effective_queryset(as_of):
+        return OLInvestmentFund.objects.select_related("fund_type").filter(
+            is_active=True,
+            fund_type__is_active=True,
+            effective_from__lte=as_of,
+        ).filter(
+            Q(effective_to__isnull=True) | Q(effective_to__gte=as_of)
+        )
+
+    @staticmethod
+    def _fund_currency_compatible(*, fund, quotation_currency):
+        quotation_currency = str(quotation_currency or "").strip().upper()
+        fund_currency = str(fund.currency or "").strip().upper()
+        if fund_currency == quotation_currency:
+            return True, False
+        rules = dict(fund.allocation_rules or {})
+        allowed = rules.get("allowed_quotation_currencies") or rules.get("supported_quotation_currencies") or []
+        allowed = {str(value).strip().upper() for value in allowed if value}
+        conversion_allowed = bool(rules.get("allow_currency_conversion"))
+        return quotation_currency in allowed or conversion_allowed, conversion_allowed
+
+    @staticmethod
+    def _investment_fund_snapshot(allocation):
+        fund = allocation.fund
+        return {
+            "id": str(allocation.pk),
+            "plan_configuration_id": str(allocation.plan_configuration_id) if allocation.plan_configuration_id else None,
+            "fund_id": str(fund.pk),
+            "fund_code": fund.code,
+            "fund_name": fund.name,
+            "fund_type_id": str(fund.fund_type_id),
+            "fund_type_code": fund.fund_type.code,
+            "fund_type_name": fund.fund_type.name,
+            "risk_profile": fund.fund_type.risk_profile,
+            "currency": fund.currency,
+            "valuation_frequency": fund.valuation_frequency,
+            "allocation_percent": str(allocation.allocation_percentage),
+            "allocated_amount": str(allocation.allocation_amount) if allocation.allocation_amount is not None else None,
+            "is_selected": allocation.is_selected,
+        }
+
+    @staticmethod
+    def investment_fund_options(*, quotation, plan_config_id=None):
+        as_of = quotation.quote_date or timezone.localdate()
+        if plan_config_id:
+            try:
+                plan_config = quotation.plan_configurations.select_related("product_version__product", "plan").get(
+                    pk=plan_config_id,
+                    is_selected=True,
+                )
+            except OLQuotationPlanConfiguration.DoesNotExist:
+                raise QuotationServiceError({"plan_configuration_id": "Selected plan configuration was not found."})
+            if not QuotationService._plan_requires_investment_funds(plan_config, quotation):
+                return {
+                    "plan_configuration_id": str(plan_config.pk),
+                    "not_applicable": True,
+                    "quotation_currency": quotation.currency,
+                    "funds": [],
+                }
+        funds = QuotationService._investment_fund_effective_queryset(as_of).order_by("name", "code")
+        result = []
+        for fund in funds:
+            compatible, conversion_allowed = QuotationService._fund_currency_compatible(
+                fund=fund,
+                quotation_currency=quotation.currency,
+            )
+            result.append({
+                "id": str(fund.pk),
+                "code": fund.code,
+                "name": fund.name,
+                "description": fund.description,
+                "fund_type_id": str(fund.fund_type_id),
+                "fund_type_code": fund.fund_type.code,
+                "fund_type_name": fund.fund_type.name,
+                "risk_profile": fund.fund_type.risk_profile,
+                "currency": fund.currency,
+                "valuation_frequency": fund.valuation_frequency,
+                "unit_price": fund.unit_price,
+                "currency_compatible": compatible,
+                "currency_conversion_allowed": conversion_allowed,
+                "selectable": compatible,
+            })
+        return {
+            "plan_configuration_id": str(plan_config_id) if plan_config_id else None,
+            "not_applicable": False,
+            "quotation_currency": quotation.currency,
+            "funds": result,
+        }
+
+    @staticmethod
+    def investment_fund_state(*, quotation):
+        selected = quotation.plan_configurations.filter(is_selected=True).select_related(
+            "product_version__product", "plan"
+        ).prefetch_related("fund_allocations__fund__fund_type").order_by("section_number", "created_at")
+        plan_rows = []
+        applicable_rows = []
+        for plan_config in selected:
+            applicable = QuotationService._plan_requires_investment_funds(plan_config, quotation)
+            allocations = list(plan_config.fund_allocations.filter(is_selected=True).order_by("fund__code"))
+            total = sum((allocation.allocation_percentage for allocation in allocations), Decimal("0"))
+            status = "NOT_APPLICABLE" if not applicable else ("CONFIGURED" if total == Decimal("100") and allocations else "READY_TO_CONFIGURE")
+            row = {
+                "plan_configuration_id": str(plan_config.pk),
+                "plan_code": plan_config.plan.code if plan_config.plan else plan_config.sub_product_code or "",
+                "plan_name": plan_config.plan.name if plan_config.plan else plan_config.sub_product_code or "",
+                "investment_linked": applicable,
+                "status": status,
+                "allocation_total": str(total),
+                "allocations": [QuotationService._investment_fund_snapshot(allocation) for allocation in allocations],
+                "can_configure": applicable,
+            }
+            plan_rows.append(row)
+            if applicable:
+                applicable_rows.append(row)
+        return {
+            "plan_rows": plan_rows,
+            "requires_allocation": any(row["status"] == "READY_TO_CONFIGURE" for row in applicable_rows),
+            "not_applicable": not applicable_rows,
+            "wizard_complete": bool((quotation.wizard_step_completion or {}).get("5_investment_funds")) if applicable_rows else True,
+        }
+
+    @staticmethod
+    @transaction.atomic
+    def configure_investment_funds(*, quotation, actor, validated_data, request=None):
+        locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
+        if locked.status != QuotationStatus.DRAFT:
+            raise QuotationServiceError({"status": "Only draft quotations can configure investment funds."})
+        selected = list(locked.plan_configurations.filter(is_selected=True).select_related("product_version__product", "plan").select_for_update())
+        applicable = [config for config in selected if QuotationService._plan_requires_investment_funds(config, locked)]
+        before_state = [
+            QuotationService._investment_fund_snapshot(allocation)
+            for allocation in locked.fund_allocations.filter(is_selected=True).select_related("fund__fund_type")
+        ]
+        if not applicable:
+            locked.wizard_step_completion = QuotationService.wizard_completion(locked)
+            locked.save(update_fields=["wizard_step_completion", "updated_at"])
+            return {"not_applicable": True, "state": QuotationService.investment_fund_state(quotation=locked)}
+
+        rows = validated_data["allocations"]
+        config_by_id = {str(config.pk): config for config in applicable}
+        grouped = {}
+        seen = set()
+        for row in rows:
+            config_id = str(row["plan_config_id"])
+            if config_id not in config_by_id:
+                raise QuotationServiceError({"allocations": "Every allocation must reference an applicable selected plan configuration."})
+            fund_id = str(row["fund_id"])
+            key = (config_id, fund_id)
+            if key in seen:
+                raise QuotationServiceError({"allocations": "A fund may only appear once per plan configuration."})
+            seen.add(key)
+            percentage = row["allocation_percent"]
+            if percentage < Decimal("0") or percentage > Decimal("100"):
+                raise QuotationServiceError({"allocation_percent": "Allocation percentage must be between 0 and 100."})
+            grouped.setdefault(config_id, []).append(row)
+        missing = [str(config.pk) for config in applicable if str(config.pk) not in grouped]
+        if missing:
+            raise QuotationServiceError({"allocations": "Every investment-linked selected plan must have fund allocations."})
+        for config_id, config_rows in grouped.items():
+            total = sum((row["allocation_percent"] for row in config_rows), Decimal("0"))
+            if total != Decimal("100"):
+                raise QuotationServiceError({"allocations": f"Allocations for plan configuration {config_id} must sum exactly to 100."})
+
+        effective_funds = QuotationService._investment_fund_effective_queryset(locked.quote_date or timezone.localdate())
+        created = []
+        for row in rows:
+            try:
+                fund = effective_funds.get(pk=row["fund_id"])
+            except OLInvestmentFund.DoesNotExist:
+                raise QuotationServiceError({"fund_id": "The selected investment fund is inactive, expired, not yet effective, or has an inactive fund type."})
+            compatible, _ = QuotationService._fund_currency_compatible(fund=fund, quotation_currency=locked.currency)
+            if not compatible:
+                raise QuotationServiceError({"fund_id": f"Fund {fund.code} is not compatible with quotation currency {locked.currency}."})
+            created.append((config_by_id[str(row["plan_config_id"])], fund, row))
+
+        locked.fund_allocations.all().delete()
+        for config, fund, row in created:
+            OLQuotationFundAllocation.objects.create(
+                quotation=locked,
+                plan_configuration=config,
+                fund=fund,
+                allocation_percentage=row["allocation_percent"],
+                allocation_amount=row.get("allocated_amount"),
+                is_selected=True,
+                created_by=QuotationService.actor(actor),
+                updated_by=QuotationService.actor(actor),
+            )
+        locked.wizard_step_completion = QuotationService.wizard_completion(locked)
+        locked.current_version_number = int(locked.current_version_number or 1) + 1
+        locked.save(update_fields=["wizard_step_completion", "current_version_number", "updated_at"])
+        locked.refresh_from_db()
+        after_state = [
+            QuotationService._investment_fund_snapshot(allocation)
+            for allocation in locked.fund_allocations.filter(is_selected=True).select_related("fund__fund_type")
+        ]
+        QuotationService._record_event(
+            locked,
+            "INVESTMENT_FUND_ALLOCATIONS_UPDATED",
+            actor=actor,
+            notes="Investment fund allocations saved.",
+            metadata={"allocation_count": len(after_state)},
+            before_state={"allocations": before_state},
+            after_state={"allocations": after_state},
+            request=request,
+        )
+        return {"not_applicable": False, "state": QuotationService.investment_fund_state(quotation=locked)}
 
     @staticmethod
     def installment_state(*, quotation):

@@ -678,6 +678,13 @@ class OLQuotationFundAllocation(QuotationBaseModel):
     quotation = models.ForeignKey(
         OLQuotation, on_delete=models.CASCADE, related_name="fund_allocations"
     )
+    plan_configuration = models.ForeignKey(
+        OLQuotationPlanConfiguration,
+        on_delete=models.CASCADE,
+        related_name="fund_allocations",
+        null=True,
+        blank=True,
+    )
     fund = models.ForeignKey(
         "ol_parameters.OLInvestmentFund",
         on_delete=models.PROTECT,
@@ -695,7 +702,8 @@ class OLQuotationFundAllocation(QuotationBaseModel):
         ordering = ["quotation", "fund__code"]
         constraints = [
             models.UniqueConstraint(
-                fields=["quotation", "fund"], name="ol_quotation_fund_unique"
+                fields=["quotation", "plan_configuration", "fund"],
+                name="ol_quotation_fund_scope_unique",
             ),
             models.CheckConstraint(
                 check=Q(allocation_percentage__gte=0) & Q(allocation_percentage__lte=100),
@@ -709,6 +717,8 @@ class OLQuotationFundAllocation(QuotationBaseModel):
 
     def clean(self):
         errors = {}
+        if self.plan_configuration_id and self.plan_configuration.quotation_id != self.quotation_id:
+            errors["plan_configuration"] = "Plan configuration must belong to the same quotation."
         if self.allocation_percentage is None or not 0 <= self.allocation_percentage <= 100:
             errors["allocation_percentage"] = "Allocation percentage must be between 0 and 100."
         if errors:

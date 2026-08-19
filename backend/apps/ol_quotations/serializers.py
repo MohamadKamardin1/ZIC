@@ -224,6 +224,59 @@ class OLQuotationFundAllocationSerializer(QuotationNestedReadMixin, QuotationVal
         read_only_fields = ["id", "created_at", "updated_at", "created_by", "updated_by"]
 
 
+class OLQuotationInvestmentFundOptionSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    code = serializers.CharField()
+    name = serializers.CharField()
+    description = serializers.CharField(allow_blank=True)
+    fund_type_id = serializers.UUIDField()
+    fund_type_code = serializers.CharField()
+    fund_type_name = serializers.CharField()
+    risk_profile = serializers.CharField()
+    currency = serializers.CharField()
+    valuation_frequency = serializers.CharField()
+    unit_price = serializers.DecimalField(max_digits=18, decimal_places=6, allow_null=True)
+    currency_compatible = serializers.BooleanField()
+    currency_conversion_allowed = serializers.BooleanField()
+    selectable = serializers.BooleanField()
+
+
+class OLQuotationInvestmentFundAllocationInputSerializer(serializers.Serializer):
+    plan_config_id = serializers.UUIDField()
+    fund_id = serializers.UUIDField()
+    allocation_percent = serializers.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        min_value=Decimal("0"),
+        max_value=Decimal("100"),
+    )
+    allocated_amount = serializers.DecimalField(
+        max_digits=18,
+        decimal_places=2,
+        min_value=Decimal("0"),
+        required=False,
+        allow_null=True,
+    )
+
+
+class OLQuotationInvestmentFundConfigureSerializer(serializers.Serializer):
+    allocations = OLQuotationInvestmentFundAllocationInputSerializer(many=True, allow_empty=False)
+
+
+class OLQuotationInvestmentFundStateSerializer(serializers.Serializer):
+    plan_rows = serializers.ListField(child=serializers.DictField())
+    requires_allocation = serializers.BooleanField()
+    not_applicable = serializers.BooleanField()
+    wizard_complete = serializers.BooleanField()
+
+
+class OLQuotationInvestmentFundOptionsSerializer(serializers.Serializer):
+    plan_configuration_id = serializers.UUIDField(allow_null=True)
+    not_applicable = serializers.BooleanField()
+    quotation_currency = serializers.CharField()
+    funds = OLQuotationInvestmentFundOptionSerializer(many=True)
+
+
 class OLQuotationRiderSelectionSerializer(QuotationNestedReadMixin, QuotationValidatedModelSerializer):
     class Meta:
         model = OLQuotationRiderSelection

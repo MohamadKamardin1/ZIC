@@ -181,10 +181,10 @@ class OLQuotationInstallmentRateRowAdmin(QuotationAuditFieldsMixin, admin.ModelA
 
 @admin.register(OLQuotationFundAllocation)
 class OLQuotationFundAllocationAdmin(QuotationAuditFieldsMixin, admin.ModelAdmin):
-    list_display = ["quotation", "fund", "allocation_percentage", "allocation_amount", "is_selected"]
-    list_filter = ["is_selected", "fund"]
-    search_fields = ["quotation__quote_number", "fund__code", "fund__name"]
-    list_select_related = ["quotation", "fund"]
+    list_display = ["quotation", "plan_configuration", "fund", "allocation_percentage", "allocation_amount", "is_selected"]
+    list_filter = ["is_selected", "fund", "plan_configuration"]
+    search_fields = ["quotation__quote_number", "fund__code", "fund__name", "plan_configuration__sub_product_code"]
+    list_select_related = ["quotation", "plan_configuration", "fund"]
 
 
 @admin.register(OLQuotationRiderSelection)

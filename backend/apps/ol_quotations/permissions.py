@@ -41,6 +41,9 @@ class OLQuotationPermission:
         "installments": VIEW,
         "installment_template": VIEW,
         "installment_configure": UPDATE,
+        "investment_funds": VIEW,
+        "investment_fund_options": VIEW,
+        "investment_fund_configure": UPDATE,
     }
 
     @classmethod

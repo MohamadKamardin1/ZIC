@@ -16,7 +16,7 @@ A quotation is a draft aggregate completed through seven independently saveable 
 | 2 | `OLQuotationPlanConfiguration` | At least one selected product/plan configuration with valid term, payment period, frequency, quote basis, and positive maturity/base amounts |
 | 3 | `OLQuotationMember` | At least one member and at least one `LIFE_ASSURED` |
 | 4 | `OLQuotationInstallmentConfiguration` | At least one selected installment configuration |
-| 5 | `OLQuotationFundAllocation` | Optional; selected allocations, when present, must total 100% |
+| 5 | `OLQuotationFundAllocation` | Not applicable when no selected plan is investment-linked; otherwise every applicable plan must have allocations totaling 100% |
 | 6 | `OLQuotationRiderSelection` | Optional rider selections driven by OL Rider Setup |
 | 7 | `OLQuotationPaymentDetail` and `OLQuotationUnderwriting` | One payment detail record and one underwriting answer record |
 
@@ -31,6 +31,10 @@ The Member Coverage step is resolved from effective `OLMemberCoverConfiguration`
 The Installments step is exposed through `GET /quotations/{id}/installments/`, `GET /quotations/{id}/installments/{plan_configuration_id}/template/`, and `POST /quotations/{id}/installments/{plan_configuration_id}/configure/`. The state endpoint returns one table row per selected plan configuration, including inherited policy term, payment mode, total installment count, `READY_TO_CONFIGURE` or `CONFIGURED` status, and whether configuration is still required. Template loading resolves effective `OLAnticipatedEndowmentInstallmentRate` rows for the selected legacy product/plan, term, age, frequency, and quote date; if no applicable rows exist, it returns `has_template=false` and the manual-configuration banner. Paid-up values are resolved from effective `OLPaidUpRate` rows using the same product/plan and term/age/policy-year scope, with plan-specific rows taking precedence over product-level fallback rows.
 
 Configuration stores the annuity period, parameter-backed payment mode, maturity-benefit toggles, and ordered rate rows. The documented computation assumption is `total_number_of_installments = len(rate_rows)`; the persisted configuration therefore reports the number of saved allocation rows rather than deriving a payment count from frequency alone. Rate percentages must sum exactly to `100`, each sequence must be unique, the annuity period must be positive and no greater than the inherited policy term, and the selected payment mode must be present in the product-version payment frequencies. If the selected plan or product rules require installment benefits, at least one maturity toggle must be selected. The inherited policy term and installment amount are server-controlled; a positive estimated maturity value must exist before a new configuration can be saved. Successful saves mark wizard completion under the key `4_installments`, increment the quotation version, write an audit/outbox event, and transition the plan row from `READY_TO_CONFIGURE` to `CONFIGURED`.
+
+The Investment Funds step is exposed through `GET /quotations/{id}/investment-funds/`, `GET /quotations/{id}/investment-funds/options/`, and `POST /quotations/{id}/investment-funds/`. Applicability is resolved from the selected plan/product capability configuration: non-investment-linked plans return `not_applicable=true` and do not require allocation rows, while every selected investment-linked plan must be configured independently. The options endpoint returns only active, effective `OLInvestmentFund` rows whose active `OLInvestmentFundType` includes the fund type, risk profile, currency, and valuation frequency metadata. No fund catalog is hardcoded in the quotation module.
+
+Allocation requests carry `plan_config_id`, `fund_id`, `allocation_percent`, and an optional `allocated_amount`. Percentages are validated per plan configuration and must sum exactly to `100`; duplicate funds within a plan, inactive or expired funds, inactive fund types, and incompatible currencies are rejected. A fund with a different currency is selectable only when its parameter `allocation_rules` explicitly allows the quotation currency or enables currency conversion. Successful saves replace the selected allocation set transactionally, mark wizard completion under `5_investment_funds`, increment the quotation version, and emit central audit and `QuotationInvestmentFundAllocationsUpdated` outbox records. State responses expose one row per selected plan with `NOT_APPLICABLE`, `READY_TO_CONFIGURE`, or `CONFIGURED` status and the persisted allocation snapshot.
 
 ## Domain model and invariants
 
@@ -74,6 +78,9 @@ The API is mounted under `/api/v1/ol-quotations/`.
 | Installments state | `GET /quotations/{id}/installments/` |
 | Installment template | `GET /quotations/{id}/installments/{plan_configuration_id}/template/` |
 | Configure installments | `POST /quotations/{id}/installments/{plan_configuration_id}/configure/` |
+| Investment Funds state | `GET /quotations/{id}/investment-funds/` |
+| Investment Fund options | `GET /quotations/{id}/investment-funds/options/?plan_config_id={id}` |
+| Configure Investment Funds | `POST /quotations/{id}/investment-funds/` |
 | Add dependent member | `POST /quotations/{id}/members/` |
 | Update dependent member | `PATCH /quotations/{id}/members/{member_id}/` |
 | Remove dependent member | `DELETE /quotations/{id}/members/{member_id}/` |
@@ -87,7 +94,7 @@ Responses follow the platform API envelope and standard pagination contract. Val
 
 ## Permission and row-level scope
 
-The module uses the `ol_quotations` permission namespace with `VIEW`, `CREATE`, `UPDATE`, `DELETE`, `CONFIGURE`, `PRINT`, and `CONVERT` actions. The Personal Details mutation maps to `UPDATE`, its options endpoint maps to `VIEW`, plan search and plan options map to `VIEW`, plan selection and section configuration map to `UPDATE`, Member Coverage reads map to `VIEW`, dependent add/update/remove actions map to `UPDATE`, and Installments state/template/configuration map to `VIEW`/`VIEW`/`UPDATE` respectively. The seed command creates the following groups:
+The module uses the `ol_quotations` permission namespace with `VIEW`, `CREATE`, `UPDATE`, `DELETE`, `CONFIGURE`, `PRINT`, and `CONVERT` actions. The Personal Details mutation maps to `UPDATE`, its options endpoint maps to `VIEW`, plan search and plan options map to `VIEW`, plan selection and section configuration map to `UPDATE`, Member Coverage reads map to `VIEW`, dependent add/update/remove actions map to `UPDATE`, Installments state/template/configuration map to `VIEW`/`VIEW`/`UPDATE`, and Investment Funds state/options/configuration map to `VIEW`/`VIEW`/`UPDATE` respectively. The seed command creates the following groups:
 
 | Group | Intended access |
 |---|---|
@@ -121,4 +128,4 @@ The quotation aggregate is intentionally prepared for future policy conversion. 
 
 ## Assumptions
 
-The quotation partner is an existing `partners.Partner` record and quotation product configuration is an existing `ol_parameters.OLProduct` record. The optional `ordinary_life.OLProductVersion` and `OLPlan` references preserve compatibility with the earlier Ordinary Life product model while parameter migration remains in progress. Fund and rider selections are optional for the first quotation release, but any selected funds must be internally consistent and any selected riders must reference active parameter configuration.
+The quotation partner is an existing `partners.Partner` record and quotation product configuration is an existing `ol_parameters.OLProduct` record. The optional `ordinary_life.OLProductVersion` and `OLPlan` references preserve compatibility with the earlier Ordinary Life product model while parameter migration remains in progress. Investment Fund allocation is conditional rather than globally optional: non-investment-linked plans are explicitly not applicable, whereas every selected investment-linked plan must have a complete 100% allocation across active, currency-compatible funds. Rider selections remain optional for the first quotation release, but any selected riders must reference active parameter configuration.

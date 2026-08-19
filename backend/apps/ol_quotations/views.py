@@ -44,6 +44,9 @@ from .serializers import (
     OLQuotationInstallmentPlanRowSerializer,
     OLQuotationInstallmentStateSerializer,
     OLQuotationInstallmentTemplateSerializer,
+    OLQuotationInvestmentFundConfigureSerializer,
+    OLQuotationInvestmentFundOptionsSerializer,
+    OLQuotationInvestmentFundStateSerializer,
     OLQuotationMemberSerializer,
     OLQuotationMemberStepSerializer,
     OLQuotationMemberStepResponseSerializer,
@@ -590,6 +593,52 @@ class OLQuotationViewSet(QuotationScopedViewSet):
             actor=self.request.user,
             validated_data=serializer.validated_data,
             request=self.request,
+        )
+
+    @action(detail=True, methods=["get", "post"], url_path="investment-funds")
+    def investment_funds(self, request, pk=None):
+        quotation = self.get_object()
+        if request.method.lower() == "get":
+            if not has_quotation_permission(request.user, "investment_funds"):
+                raise PermissionDenied("You do not have permission to view investment fund allocations.")
+            payload = QuotationService.investment_fund_state(quotation=quotation)
+            return _response(
+                OLQuotationInvestmentFundStateSerializer(payload).data,
+                "Quotation investment fund allocations retrieved.",
+            )
+        if not has_quotation_permission(request.user, "investment_fund_configure"):
+            raise PermissionDenied("You do not have permission to configure investment fund allocations.")
+        serializer = OLQuotationInvestmentFundConfigureSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payload = QuotationService.configure_investment_funds(
+            quotation=quotation,
+            actor=request.user,
+            validated_data=serializer.validated_data,
+            request=request,
+        )
+        locked = OLQuotation.objects.get(pk=quotation.pk)
+        return _response(
+            {
+                "quotation_id": str(locked.pk),
+                "not_applicable": payload["not_applicable"],
+                "state": OLQuotationInvestmentFundStateSerializer(payload["state"]).data,
+                "wizard_step_complete": bool((locked.wizard_step_completion or {}).get("5_investment_funds")),
+            },
+            "Quotation investment fund allocations saved.",
+        )
+
+    @action(detail=True, methods=["get"], url_path="investment-funds/options")
+    def investment_fund_options(self, request, pk=None):
+        quotation = self.get_object()
+        if not has_quotation_permission(request.user, "investment_fund_options"):
+            raise PermissionDenied("You do not have permission to view investment fund options.")
+        payload = QuotationService.investment_fund_options(
+            quotation=quotation,
+            plan_config_id=request.query_params.get("plan_config_id"),
+        )
+        return _response(
+            OLQuotationInvestmentFundOptionsSerializer(payload).data,
+            "Investment fund options retrieved.",
         )
 
     @action(detail=True, methods=["get"], url_path="installments")
