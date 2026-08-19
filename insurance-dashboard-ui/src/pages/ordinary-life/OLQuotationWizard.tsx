@@ -256,6 +256,139 @@ type InvestmentFundOptions = {
   funds: FundOption[]
 }
 
+type RiderOption = {
+  id: string
+  code: string
+  name: string
+  rider_category: string
+  benefit_type: string
+  calculation_basis: string
+  min_age: number
+  max_age: number
+  min_term: number
+  max_term: number
+  min_sum_assured: string | number | null
+  max_sum_assured: string | number | null
+  waiting_period_days: number
+  allows_standalone: boolean
+  requires_underwriting: boolean
+  product_id: string | null
+  plan_id: string | null
+  selectable: boolean
+  synchronized_option: string
+}
+
+type RiderBenefit = {
+  id?: string
+  beneficial_type_id?: string | null
+  benefit_type?: string
+  basis: string
+  value?: string | number | null
+  loading?: string | number
+  discount?: string | number
+  maximum_cap?: string | number | null
+  code?: string
+  name?: string
+}
+
+type RiderSelection = {
+  id?: string
+  rider_id: string
+  rider_code?: string
+  rider_name?: string
+  rider_category?: string
+  benefit_type?: string
+  plan_config_id?: string | null
+  rider_sum_assured: string | number
+  rider_term_years?: number | null
+  waiting_period_days?: number
+  requires_underwriting?: boolean
+  synchronized_option?: string
+  benefit_basis?: string
+  benefit_value?: string | number | null
+  loading?: string | number
+  discount?: string | number
+  maximum_cap?: string | number | null
+  benefits?: RiderBenefit[]
+}
+
+type RiderPlanRow = {
+  plan_configuration_id: string
+  plan_code: string
+  plan_name: string
+  personal_accident?: boolean
+  premium_waiver?: boolean
+  riders: RiderSelection[]
+  available_riders?: RiderOption[]
+  benefits?: RiderBenefit[]
+  status?: string
+  can_configure?: boolean
+}
+
+type RiderState = {
+  plan_rows: RiderPlanRow[]
+  available_benefit_types: Choice[] | Array<Record<string, unknown>>
+  requires_configuration: boolean
+  wizard_complete: boolean
+}
+
+type RiderOptions = {
+  plan_configuration_id: string | null
+  quotation_age: number | null
+  quotation_currency: string
+  riders: RiderOption[]
+  benefit_types: Array<Record<string, unknown>>
+}
+
+type FinancialProjection = {
+  plan_configuration_id?: string | null
+  policy_year: number
+  premiums_paid: string | number
+  estimated_bonus: string | number
+  surrender_value: string | number
+  paid_up_value: string | number
+  estimated_maturity_value: string | number
+}
+
+type InstallmentPayout = {
+  plan_configuration_id?: string | null
+  installment_configuration_id?: string | null
+  sequence: number
+  description?: string
+  payout_amount: string | number
+  payout_date: string
+  rate_percent: string | number
+  paid_up_rate?: string | number
+}
+
+type FinancialDetails = {
+  quotation_id?: string
+  total_sum_assured: string | number
+  total_premium: string | number
+  total_rider_premium: string | number
+  total_benefit_premium: string | number
+  base_premium: string | number
+  total_loading: string | number
+  total_discount: string | number
+  total_tax: string | number
+  installment_charge: string | number
+  estimated_maturity_value: string | number
+  quotation_version_number?: number
+  recalculation_required?: boolean
+  calculated_at?: string | null
+  currency?: string
+  projections: FinancialProjection[]
+  installment_payouts: InstallmentPayout[]
+  plan_breakdowns?: Array<Record<string, unknown>>
+  rider_breakdowns?: Array<Record<string, unknown>>
+  tax_breakdown?: Array<Record<string, unknown>>
+}
+
+type FinalizeState = {
+  detail?: string
+  errors?: Record<string, unknown>
+}
+
 type ApiPayload = {
   quotation?: Quotation
   configurations?: PlanConfiguration[]
@@ -288,11 +421,38 @@ type ApiPayload = {
   available_payment_modes?: string[]
   rate_rows?: InstallmentRateRow[]
   plan_configuration_id?: string | null
-  plan_rows?: InvestmentFundState["plan_rows"]
   not_applicable?: boolean
-  quotation_currency?: string
   funds?: FundOption[]
-  state?: MemberCoverageState | InstallmentState | InvestmentFundState
+  plan_rows?: RiderPlanRow[]
+  available_benefit_types?: Choice[] | Array<Record<string, unknown>>
+  wizard_complete?: boolean
+  quotation_age?: number | null
+  quotation_currency?: string
+  riders?: RiderOption[]
+  benefit_types?: Array<Record<string, unknown>>
+  summary?: FinancialDetails | null
+  total_sum_assured?: string | number
+  total_premium?: string | number
+  total_rider_premium?: string | number
+  total_benefit_premium?: string | number
+  base_premium?: string | number
+  total_loading?: string | number
+  total_discount?: string | number
+  total_tax?: string | number
+  installment_charge?: string | number
+  estimated_maturity_value?: string | number
+  quotation_version_number?: number
+  recalculation_required?: boolean
+  calculated_at?: string | null
+  currency?: string
+  projections?: FinancialProjection[]
+  installment_payouts?: InstallmentPayout[]
+  plan_breakdowns?: Array<Record<string, unknown>>
+  rider_breakdowns?: Array<Record<string, unknown>>
+  tax_breakdown?: Array<Record<string, unknown>>
+  errors?: Record<string, unknown>
+  detail?: string
+  state?: MemberCoverageState | InstallmentState | InvestmentFundState | RiderState
 }
 
 function asChoices(value: unknown): Choice[] {
@@ -491,6 +651,39 @@ function InvestmentFundsStep({ quotation, state, optionsByPlan, allocations, err
   return <div className="surface-card overflow-hidden"><StepHeader eyebrow="Step 5 of 7" title="Investment Funds" description="Allocate investment-linked quotation amounts across active, currency-compatible funds." /><div className="space-y-5 p-5">{state?.not_applicable && <InfoBanner title="Not applicable">The selected plans are not investment-linked, so investment fund allocation is not required.</InfoBanner>}{state?.requires_allocation === false && !state?.not_applicable && <InfoBanner title="Investment funds configured">All applicable investment-linked plans have valid 100% allocations.</InfoBanner>}{applicableRows.map((plan) => { const options = optionsByPlan[plan.plan_configuration_id]?.funds ?? []; const rows = allocations[plan.plan_configuration_id] ?? []; const total = rows.reduce((sum, row) => sum + (Number(row.allocation_percent) || 0), 0); return <section key={plan.plan_configuration_id} className="rounded-[12px] border"><div className="flex flex-wrap items-center justify-between gap-3 border-b bg-[var(--muted)]/35 px-4 py-3"><div><p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">{plan.plan_code}</p><h3 className="mt-1 font-bold">{plan.plan_name}</h3></div><span className={`rounded-full border px-3 py-1 text-xs font-bold ${plan.status === "CONFIGURED" ? "border-[var(--success)]/40 text-[var(--success)]" : "border-[var(--warning)]/50 text-[var(--warning)]"}`}>{plan.status === "CONFIGURED" ? "Configured" : "Ready to Configure"}</span></div><div className="space-y-4 p-4"><div className="flex items-center justify-between text-sm"><span className="font-semibold">Allocation total</span><span className={Math.abs(total - 100) < 0.0001 ? "font-bold text-[var(--success)]" : "font-bold text-[var(--destructive)]"}>{total.toFixed(2)} / 100.00%</span></div><div className="overflow-x-auto rounded-[10px] border"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-[var(--muted)]/30 text-xs uppercase tracking-[0.08em] text-[var(--muted-foreground)]"><tr><th className="px-3 py-3">Investment Fund</th><th className="px-3 py-3">Risk Profile</th><th className="px-3 py-3">Currency</th><th className="px-3 py-3">Allocation (%)</th><th className="px-3 py-3">Allocated Amount</th><th className="px-3 py-3"><span className="sr-only">Remove</span></th></tr></thead><tbody className="divide-y divide-[var(--border)]">{rows.map((row, index) => { const option = options.find((item) => item.id === row.fund_id); return <tr key={`${row.fund_id}-${index}`}><td className="px-3 py-2"><SelectInput label="" name={`fund_${plan.plan_configuration_id}_${index}`} value={row.fund_id} onChange={(event) => onChange(plan.plan_configuration_id, rows.map((item, rowIndex) => rowIndex === index ? { ...item, fund_id: event.target.value, fund_name: option?.name, fund_code: option?.code } : item))}><option value="">Select fund</option>{options.map((fund) => <option key={fund.id} value={fund.id} disabled={!fund.selectable}>{fund.code} — {fund.name}{fund.selectable ? "" : " (Not compatible)"}</option>)}</SelectInput></td><td className="px-3 py-2">{option?.risk_profile ?? "—"}</td><td className="px-3 py-2">{option?.currency ?? quotation.currency ?? "—"}</td><td className="px-3 py-2"><input aria-label={`Allocation percentage ${index + 1}`} type="number" step="0.0001" min="0" max="100" value={String(row.allocation_percent)} onChange={(event) => onChange(plan.plan_configuration_id, rows.map((item, rowIndex) => rowIndex === index ? { ...item, allocation_percent: event.target.value } : item))} className="h-10 w-full rounded-[10px] border bg-[var(--card)] px-3 text-sm outline-none focus:border-[var(--ring)]" /></td><td className="px-3 py-2"><input aria-label={`Allocated amount ${index + 1}`} type="number" step="0.01" min="0" value={row.allocated_amount == null ? "" : String(row.allocated_amount)} onChange={(event) => onChange(plan.plan_configuration_id, rows.map((item, rowIndex) => rowIndex === index ? { ...item, allocated_amount: event.target.value } : item))} className="h-10 w-full rounded-[10px] border bg-[var(--card)] px-3 text-sm outline-none focus:border-[var(--ring)]" /></td><td className="px-3 py-2"><button type="button" className="rounded-md p-2 text-[var(--destructive)]" aria-label={`Remove fund allocation ${index + 1}`} onClick={() => onChange(plan.plan_configuration_id, rows.filter((_, rowIndex) => rowIndex !== index))}><Trash2 size={15} aria-hidden="true" /></button></td></tr>})}</tbody></table></div>{fieldError(errors, "allocations") && <p className="text-sm font-semibold text-[var(--destructive)]" role="alert">{fieldError(errors, "allocations")}</p>}<button type="button" className="button-secondary" onClick={() => onChange(plan.plan_configuration_id, [...rows, { plan_config_id: plan.plan_configuration_id, fund_id: "", allocation_percent: "", allocated_amount: null }])}><Plus size={15} aria-hidden="true" />Add fund</button></div></section>})}{!state?.not_applicable && applicableRows.length > 0 && <div className="flex justify-end"><button type="button" className="button-primary" onClick={() => void onSave()}>Save fund allocations</button></div>}</div></div>
 }
 
+function formatMoney(value: string | number | null | undefined, currency = "TZS") {
+  const amount = Number(value ?? 0)
+  return `${currency} ${Number.isFinite(amount) ? amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00"}`
+}
+
+function RiderPlanEditor({ row, options, benefitTypes, errors, onSave }: { row: RiderPlanRow; options: RiderOptions | null; benefitTypes: Array<Record<string, unknown>>; errors: ApiFieldErrors; onSave: (planConfigId: string, selections: RiderSelection[]) => Promise<boolean> }) {
+  const [selections, setSelections] = useState<RiderSelection[]>(row.riders ?? [])
+  useEffect(() => setSelections(row.riders ?? []), [row.riders])
+  const available = options?.riders ?? row.available_riders ?? []
+  const selectedIds = new Set(selections.map((selection) => selection.rider_id))
+  const addRider = (option: RiderOption) => setSelections((current) => [...current, { rider_id: option.id, plan_config_id: row.plan_configuration_id, rider_code: option.code, rider_name: option.name, rider_category: option.rider_category, benefit_type: option.benefit_type, rider_sum_assured: "", rider_term_years: null, waiting_period_days: option.waiting_period_days, requires_underwriting: option.requires_underwriting, synchronized_option: option.synchronized_option, benefit_basis: "FIXED", benefit_value: "", loading: 0, discount: 0, maximum_cap: "", benefits: [] }])
+  const update = (index: number, patch: Partial<RiderSelection>) => setSelections((current) => current.map((selection, selectionIndex) => selectionIndex === index ? { ...selection, ...patch } : selection))
+  const updateBenefit = (index: number, patch: Partial<RiderBenefit>) => setSelections((current) => current.map((selection, selectionIndex) => selectionIndex === index ? { ...selection, benefits: [{ ...(selection.benefits?.[0] ?? { basis: selection.benefit_basis ?? "FIXED" }), ...patch }] } : selection))
+  return <section className="rounded-[12px] border bg-[var(--card)]"><div className="flex flex-wrap items-center justify-between gap-3 border-b bg-[var(--muted)]/35 px-4 py-3"><div><p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">{row.plan_code}</p><h3 className="mt-1 font-bold">{row.plan_name}</h3></div><div className="flex flex-wrap gap-2">{row.personal_accident && <span className="rounded-full border px-2.5 py-1 text-xs font-semibold">PA synchronized</span>}{row.premium_waiver && <span className="rounded-full border px-2.5 py-1 text-xs font-semibold">WP synchronized</span>}</div></div><div className="space-y-5 p-4"><div><div className="mb-3 flex items-center justify-between"><div><h4 className="font-bold">Applicable Riders</h4><p className="text-xs text-[var(--muted-foreground)]">Riders are filtered by the selected plan, age, term, and underwriting rules.</p></div></div><div className="grid gap-2 md:grid-cols-2">{available.map((option) => { const selected = selectedIds.has(option.id); return <button key={option.id} type="button" aria-pressed={selected} disabled={!option.selectable || selected} onClick={() => addRider(option)} className={`rounded-[10px] border p-3 text-left ${selected ? "border-[var(--success)] bg-[var(--muted)]/35" : option.selectable ? "hover:border-[var(--ring)]" : "cursor-not-allowed opacity-50"}`}><div className="flex items-start justify-between gap-3"><div><div className="flex flex-wrap gap-2"><span className="rounded-md bg-[var(--muted)] px-2 py-0.5 text-[10px] font-bold">{option.code}</span><span className="rounded-md border px-2 py-0.5 text-[10px] font-semibold">{option.rider_category}</span><span className="rounded-md border px-2 py-0.5 text-[10px] font-semibold">{option.benefit_type}</span></div><p className="mt-2 text-sm font-bold">{option.name}</p><p className="mt-1 text-xs text-[var(--muted-foreground)]">Waiting period: {option.waiting_period_days} days · Ages {option.min_age}–{option.max_age}</p></div>{selected && <Check size={18} className="text-[var(--success)]" aria-label="Attached" />}</div></button>})}</div></div>{selections.length ? <div className="space-y-3"><h4 className="font-bold">Attached Riders & Benefits</h4>{selections.map((selection, index) => { const option = available.find((item) => item.id === selection.rider_id); const benefit = selection.benefits?.[0] ?? { basis: selection.benefit_basis ?? "FIXED", value: selection.benefit_value ?? "", maximum_cap: selection.maximum_cap ?? null }; return <div key={`${selection.rider_id}-${index}`} className="rounded-[10px] border p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap gap-2"><span className="rounded-md bg-[var(--muted)] px-2 py-0.5 text-[10px] font-bold">{selection.rider_code ?? option?.code}</span><span className="rounded-md border px-2 py-0.5 text-[10px] font-semibold">{selection.rider_category ?? option?.rider_category}</span>{selection.synchronized_option && <span className="rounded-md border px-2 py-0.5 text-[10px] font-semibold">{selection.synchronized_option} synchronized</span>}</div><h5 className="mt-2 font-bold">{selection.rider_name ?? option?.name}</h5><p className="mt-1 text-xs text-[var(--muted-foreground)]">Waiting period: {selection.waiting_period_days ?? option?.waiting_period_days ?? 0} days{selection.requires_underwriting ? " · Underwriting required" : ""}</p></div><button type="button" className="rounded-md p-2 text-[var(--destructive)] hover:bg-[var(--destructive)]/10" aria-label={`Detach ${selection.rider_name ?? option?.name ?? "rider"}`} onClick={() => setSelections((current) => current.filter((_, selectionIndex) => selectionIndex !== index))}><Trash2 size={16} aria-hidden="true" /></button></div><div className="mt-4 grid gap-4 md:grid-cols-2"><DecimalInput label="Rider Sum Assured / Amount" name={`rider_sum_assured_${index}`} required value={String(selection.rider_sum_assured ?? "")} error={fieldError(errors, "rider_sum_assured")} onChange={(event) => update(index, { rider_sum_assured: event.target.value })} /><TextInput label="Rider Term (Years)" name={`rider_term_${index}`} type="number" min={1} value={selection.rider_term_years == null ? "" : String(selection.rider_term_years)} error={fieldError(errors, "rider_term_years")} onChange={(event) => update(index, { rider_term_years: event.target.value === "" ? null : Number(event.target.value) })} /></div><div className="mt-4 rounded-[10px] border bg-[var(--muted)]/20 p-3"><div className="mb-3 flex items-center justify-between"><h6 className="text-sm font-bold">Benefits</h6><span className="text-xs text-[var(--muted-foreground)]">Backend rating applies the configured basis.</span></div><div className="grid gap-4 md:grid-cols-3"><ChoiceSelect label="Benefit Type" name={`benefit_type_${index}`} value={String(benefit.beneficial_type_id ?? benefit.benefit_type ?? "")} options={benefitTypes.map((item) => ({ value: String(item.id ?? item.value ?? item.code ?? ""), label: String(item.name ?? item.label ?? item.code ?? item.value ?? "Benefit") }))} onChange={(value) => updateBenefit(index, { beneficial_type_id: value })} /><ChoiceSelect label="Basis" name={`benefit_basis_${index}`} required value={String(benefit.basis ?? "FIXED")} options={["FIXED", "RATIO", "LOADED", "DISCOUNTED", "CAPPED"].map((value) => ({ value, label: value }))} error={fieldError(errors, "benefit_basis")} onChange={(value) => update(index, { benefit_basis: value, benefits: [{ ...benefit, basis: value }] })} /><DecimalInput label="Value" name={`benefit_value_${index}`} value={benefit.value == null ? "" : String(benefit.value)} error={fieldError(errors, "benefit_value")} onChange={(event) => update(index, { benefit_value: event.target.value, benefits: [{ ...benefit, value: event.target.value }] })} /><DecimalInput label="Maximum Cap" name={`benefit_cap_${index}`} value={benefit.maximum_cap == null ? "" : String(benefit.maximum_cap)} error={fieldError(errors, "maximum_cap")} onChange={(event) => update(index, { maximum_cap: event.target.value, benefits: [{ ...benefit, maximum_cap: event.target.value }] })} /></div></div></div>})}</div> : <div className="rounded-[10px] border border-dashed p-6 text-center text-sm text-[var(--muted-foreground)]">No riders attached to this plan.</div>}<div className="flex justify-end"><button type="button" className="button-primary" onClick={() => void onSave(row.plan_configuration_id, selections)}><Save size={15} aria-hidden="true" />Save rider configuration</button></div></div></section>
+}
+
+function RidersBenefitsStep({ state, optionsByPlan, errors, onSave }: { state: RiderState | null; optionsByPlan: Record<string, RiderOptions>; errors: ApiFieldErrors; onSave: (planConfigId: string, selections: RiderSelection[]) => Promise<boolean> }) {
+  return <div className="surface-card overflow-hidden"><StepHeader eyebrow="Step 6 of 7" title="Riders & Benefits" description="Attach applicable riders and configure benefits. Premium previews are produced by the backend rating engine." /><div className="space-y-5 p-5">{state?.requires_configuration === false && <InfoBanner title="No rider configuration required">The selected plans do not require additional rider configuration.</InfoBanner>}{(state?.plan_rows ?? []).map((row) => <RiderPlanEditor key={row.plan_configuration_id} row={row} options={optionsByPlan[row.plan_configuration_id] ?? null} benefitTypes={(optionsByPlan[row.plan_configuration_id]?.benefit_types ?? state?.available_benefit_types ?? []) as Array<Record<string, unknown>>} errors={errors} onSave={onSave} />)}</div></div>
+}
+
+function FinancialDetailsStep({ summary, loading, calculating, onCalculate }: { summary: FinancialDetails | null; loading: boolean; calculating: boolean; onCalculate: () => Promise<boolean> }) {
+  const currency = summary?.currency ?? "TZS"
+  const cards = [{ label: "Base Premium", value: summary?.base_premium }, { label: "Rider Premiums", value: summary?.total_rider_premium }, { label: "Loadings", value: summary?.total_loading }, { label: "Discounts", value: summary?.total_discount }, { label: "Taxes", value: summary?.total_tax }, { label: "Total Premium", value: summary?.total_premium }]
+  return <div className="space-y-4"><div className="surface-card overflow-hidden"><StepHeader eyebrow="Step 7 of 7" title="Financial Details" description="Review premiums, projections, and installment payouts returned by the OL rating engine." /><div className="space-y-5 p-5">{summary?.recalculation_required && <InfoBanner title="Recalculation required">Quotation inputs changed after the last calculation. Recalculate before finalizing.</InfoBanner>}<div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-semibold">{summary?.calculated_at ? `Calculated ${new Date(summary.calculated_at).toLocaleString()}` : "No current calculation"}</p><p className="text-xs text-[var(--muted-foreground)]">Premiums and projections are display-only outputs from the backend rating engine.</p></div><button type="button" className="button-primary" onClick={() => void onCalculate()} disabled={loading || calculating}>{calculating ? <><LoaderCircle size={15} className="animate-spin" aria-hidden="true" />Calculating…</> : <><RotateCcw size={15} aria-hidden="true" />{summary ? "Recalculate" : "Calculate"}</>}</button></div>{loading ? <div className="py-10 text-center text-sm text-[var(--muted-foreground)]"><LoaderCircle className="mx-auto mb-2 animate-spin" size={22} aria-hidden="true" />Loading financial summary…</div> : summary ? <><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{cards.map((card) => <div key={card.label} className="rounded-[10px] border bg-[var(--muted)]/20 p-4"><p className="text-xs font-semibold text-[var(--muted-foreground)]">{card.label}</p><p className={`mt-2 text-lg font-extrabold ${card.label === "Total Premium" ? "text-[var(--primary)]" : ""}`}>{formatMoney(card.value, currency)}</p><p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--muted-foreground)]">{summary.currency ?? "TZS"} · quotation frequency applied by engine</p></div>)}</div><div className="rounded-[12px] border border-[var(--primary)]/40 bg-[var(--primary)]/5 p-4"><p className="text-xs font-bold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">Estimated Maturity Value</p><p className="mt-1 text-2xl font-extrabold">{formatMoney(summary.estimated_maturity_value, currency)}</p></div><div><h3 className="mb-3 font-bold">Policy-Year Projections</h3><div className="overflow-x-auto rounded-[10px] border"><table className="w-full min-w-[800px] text-left text-sm"><thead className="bg-[var(--muted)]/35 text-xs uppercase tracking-[0.08em] text-[var(--muted-foreground)]"><tr><th className="px-3 py-3">Policy Year</th><th className="px-3 py-3">Premiums Paid</th><th className="px-3 py-3">Bonuses</th><th className="px-3 py-3">Surrender Value</th><th className="px-3 py-3">Paid-Up Value</th></tr></thead><tbody className="divide-y divide-[var(--border)]">{(summary.projections ?? []).map((row) => <tr key={`${row.plan_configuration_id ?? "all"}-${row.policy_year}`}><td className="px-3 py-3 font-semibold">{row.policy_year}</td><td className="px-3 py-3">{formatMoney(row.premiums_paid, currency)}</td><td className="px-3 py-3">{formatMoney(row.estimated_bonus, currency)}</td><td className="px-3 py-3">{formatMoney(row.surrender_value, currency)}</td><td className="px-3 py-3">{formatMoney(row.paid_up_value, currency)}</td></tr>)}</tbody></table></div></div><div><h3 className="mb-3 font-bold">Installment Payout Schedule</h3><div className="overflow-x-auto rounded-[10px] border"><table className="w-full min-w-[800px] text-left text-sm"><thead className="bg-[var(--muted)]/35 text-xs uppercase tracking-[0.08em] text-[var(--muted-foreground)]"><tr><th className="px-3 py-3">Installment #</th><th className="px-3 py-3">Date</th><th className="px-3 py-3">Description</th><th className="px-3 py-3">Rate %</th><th className="px-3 py-3">Payout Amount</th></tr></thead><tbody className="divide-y divide-[var(--border)]">{(summary.installment_payouts ?? []).map((row) => <tr key={`${row.installment_configuration_id ?? "payout"}-${row.sequence}`}><td className="px-3 py-3 font-semibold">{row.sequence}</td><td className="px-3 py-3">{row.payout_date}</td><td className="px-3 py-3">{row.description ?? "—"}</td><td className="px-3 py-3">{row.rate_percent}</td><td className="px-3 py-3">{formatMoney(row.payout_amount, currency)}</td></tr>)}</tbody></table></div></div></> : <div className="rounded-[10px] border border-dashed p-8 text-center text-sm text-[var(--muted-foreground)]">Calculate the quotation to view financial details.</div>}</div></div></div>
+}
+
+function ReviewFinalize({ completedSteps, invalidSteps, errors, onJump, onFinalize, disabled }: { completedSteps: Set<number>; invalidSteps: Set<number>; errors: Record<string, unknown>; onJump: (step: number) => void; onFinalize: () => Promise<boolean>; disabled: boolean }) {
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const checklist = steps.map((step, index) => ({ ...step, index, complete: completedSteps.has(index) }))
+  const errorEntries = Object.entries(errors)
+  return <div className="surface-card overflow-hidden"><div className="border-b bg-[var(--muted)]/35 px-5 py-4"><h3 className="text-lg font-bold">Review & Finalize</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Confirm that every required wizard step is complete before finalizing this quotation.</p></div><div className="space-y-5 p-5"><div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">{checklist.map((item) => <button type="button" key={item.id} className={`flex items-center gap-3 rounded-[10px] border p-3 text-left ${item.complete ? "border-[var(--success)]/50" : "border-[var(--border)]"}`} onClick={() => onJump(item.index)}><span className={item.complete ? "text-[var(--success)]" : "text-[var(--muted-foreground)]"}>{item.complete ? <Check size={17} aria-hidden="true" /> : <CircleAlert size={17} aria-hidden="true" />}</span><span className="text-sm font-semibold">{item.label}</span></button>)}</div>{invalidSteps.size > 0 && <div className="rounded-[10px] border border-[var(--destructive)]/40 bg-[var(--destructive)]/5 p-4"><p className="font-bold text-[var(--destructive)]">Please resolve the following steps:</p><ul className="mt-2 space-y-1 text-sm">{Array.from(invalidSteps).map((step) => <li key={step}><button type="button" className="underline" onClick={() => onJump(step)}>Go to {steps[step]?.label ?? "step"}</button></li>)}</ul></div>}{errorEntries.length > 0 && <div className="rounded-[10px] border border-[var(--destructive)]/40 p-4" role="alert"><p className="font-bold text-[var(--destructive)]">Finalize validation errors</p><ul className="mt-2 space-y-1 text-sm">{errorEntries.map(([key, value]) => <li key={key}><button type="button" className="mr-2 underline" onClick={() => onJump(key === "financial_details" ? 6 : Number(key) || 0)}>Review</button>{Array.isArray(value) ? value.join(", ") : String(value)}</li>)}</ul></div>}<div className="flex justify-end"><button type="button" className="button-primary" disabled={disabled} onClick={() => setConfirmOpen(true)}><Check size={15} aria-hidden="true" />Finalize quotation</button></div></div><Modal open={confirmOpen} title="Finalize quotation" description="Finalizing locks the current quotation version for downstream printing and conversion." onClose={() => setConfirmOpen(false)} footer={<><button type="button" className="button-secondary" onClick={() => setConfirmOpen(false)}>Cancel</button><button type="button" className="button-primary" onClick={() => void onFinalize().then((ok) => { if (ok) setConfirmOpen(false) })}>Confirm finalize</button></>}><p className="text-sm text-[var(--muted-foreground)]">Are you sure you want to finalize this quotation?</p></Modal></div>
+}
+
 function FutureStep({ step, index }: { step: string; index: number }) {
   return <div className="surface-card overflow-hidden"><StepHeader eyebrow={`Step ${index + 1} of 7`} title={step} description="This wizard step is reserved for the next quotation module increment." /><div className="p-5"><div className="rounded-[10px] border border-dashed p-8 text-center text-sm text-[var(--muted-foreground)]">Complete the Personal Details and Plan & Sub-Products steps first. Your draft will remain available to resume later.</div></div></div>
 }
@@ -526,6 +719,14 @@ export default function OLQuotationWizard() {
   const [fundOptions, setFundOptions] = useState<Record<string, InvestmentFundOptions>>({})
   const [fundAllocations, setFundAllocations] = useState<Record<string, FundAllocation[]>>({})
   const [fundErrors, setFundErrors] = useState<ApiFieldErrors>({})
+  const [riderState, setRiderState] = useState<RiderState | null>(null)
+  const [riderOptions, setRiderOptions] = useState<Record<string, RiderOptions>>({})
+  const [riderSelections, setRiderSelections] = useState<Record<string, RiderSelection[]>>({})
+  const [riderErrors, setRiderErrors] = useState<ApiFieldErrors>({})
+  const [financialSummary, setFinancialSummary] = useState<FinancialDetails | null>(null)
+  const [financialLoading, setFinancialLoading] = useState(false)
+  const [calculating, setCalculating] = useState(false)
+  const [finalizeErrors, setFinalizeErrors] = useState<Record<string, unknown>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [detailsOpen, setDetailsOpen] = useState(false)
@@ -540,7 +741,8 @@ export default function OLQuotationWizard() {
     setConfigurations(configs)
     setSelectedPlanIds(configs.filter((config) => config.is_selected !== false).map((config) => configurationPlanId(config)).filter((value): value is string => Boolean(value)))
     const completion = payload.wizard_step_completion ?? {}
-    setCompletedSteps(new Set([completion["1_personal_details"] ? 0 : -1, completion["2_plan_and_sub_products"] ? 1 : -1].filter((value) => value >= 0)))
+    const completionKeys = ["1_personal_details", "2_plan_and_sub_products", "3_member_coverage", "4_installments", "5_investment_funds", "6_riders_and_benefits", "7_financial_details"]
+    setCompletedSteps(new Set(completionKeys.map((key, index) => completion[key] ? index : -1).filter((value) => value >= 0)))
   }, [])
 
   const createQuotation = useCallback(async () => {
@@ -690,6 +892,101 @@ export default function OLQuotationWizard() {
     }
   }, [quotationId, toast])
 
+  const loadRiders = useCallback(async () => {
+    if (!quotationId) return
+    try {
+      const payload = await request<ApiPayload>(`${QUOTATION_PREFIX}${quotationId}/riders/`)
+      const state = (payload.state as RiderState | undefined) ?? { plan_rows: payload.plan_rows ?? [], available_benefit_types: payload.available_benefit_types ?? [], requires_configuration: payload.requires_configuration ?? false, wizard_complete: payload.wizard_complete ?? false }
+      setRiderState(state)
+      const nextSelections: Record<string, RiderSelection[]> = {}
+      for (const row of state.plan_rows ?? []) nextSelections[row.plan_configuration_id] = row.riders ?? []
+      setRiderSelections(nextSelections)
+      await Promise.all((state.plan_rows ?? []).map(async (row) => {
+        try {
+          const options = await request<RiderOptions>(`${QUOTATION_PREFIX}${quotationId}/riders/options/?plan_config_id=${encodeURIComponent(row.plan_configuration_id)}`)
+          setRiderOptions((current) => ({ ...current, [row.plan_configuration_id]: options }))
+        } catch (error) {
+          toast({ tone: "danger", title: "Unable to load rider options", message: parseApiError(error).message })
+        }
+      }))
+    } catch (error) {
+      toast({ tone: "danger", title: "Unable to load riders", message: parseApiError(error).message })
+    }
+  }, [quotationId, toast])
+
+  const saveRiders = useCallback(async (planConfigId: string, selections: RiderSelection[]) => {
+    if (!quotationId) return false
+    const nextSelections = { ...riderSelections, [planConfigId]: selections.map((selection) => ({ ...selection, plan_config_id: planConfigId })) }
+    const payloadSelections = Object.values(nextSelections).flat().map((selection) => ({ rider_id: selection.rider_id, plan_config_id: selection.plan_config_id, rider_sum_assured: selection.rider_sum_assured, rider_term_years: selection.rider_term_years, beneficial_type_id: selection.benefits?.[0]?.beneficial_type_id ?? null, benefit_basis: selection.benefit_basis ?? "FIXED", benefit_value: selection.benefit_value, loading: selection.loading ?? 0, discount: selection.discount ?? 0, maximum_cap: selection.maximum_cap, benefits: selection.benefits ?? [] }))
+    setSaving(true)
+    setRiderErrors({})
+    try {
+      await request(`${QUOTATION_PREFIX}${quotationId}/riders/`, { method: "POST", body: JSON.stringify({ selections: payloadSelections }) })
+      setRiderSelections(nextSelections)
+      await loadRiders()
+      setCompletedSteps((current) => new Set(current).add(5))
+      toast({ tone: "success", title: "Rider configuration saved" })
+      return true
+    } catch (error) {
+      const parsed = parseApiError(error)
+      setRiderErrors(parsed.fieldErrors)
+      setInvalidSteps((current) => new Set(current).add(5))
+      toast({ tone: "danger", title: "Rider configuration needs attention", message: parsed.message })
+      return false
+    } finally { setSaving(false) }
+  }, [loadRiders, quotationId, riderSelections, toast])
+
+  const loadFinancialSummary = useCallback(async () => {
+    if (!quotationId) return
+    setFinancialLoading(true)
+    try {
+      const payload = await request<ApiPayload>(`${QUOTATION_PREFIX}${quotationId}/financial-details/`)
+      setFinancialSummary(payload.summary ?? (payload.total_premium != null ? payload as unknown as FinancialDetails : null))
+    } catch (error) {
+      toast({ tone: "danger", title: "Unable to load financial details", message: parseApiError(error).message })
+    } finally { setFinancialLoading(false) }
+  }, [quotationId, toast])
+
+  const calculateFinancials = useCallback(async () => {
+    if (!quotationId) return false
+    setCalculating(true)
+    try {
+      const payload = await request<FinancialDetails>(`${QUOTATION_PREFIX}${quotationId}/calculate/`, { method: "POST", body: JSON.stringify({}) })
+      setFinancialSummary(payload)
+      setCompletedSteps((current) => new Set(current).add(6))
+      setInvalidSteps((current) => { const next = new Set(current); next.delete(6); return next })
+      toast({ tone: "success", title: "Quotation calculated" })
+      return true
+    } catch (error) {
+      const parsed = parseApiError(error)
+      setFinalizeErrors(parsed.fieldErrors)
+      setInvalidSteps((current) => new Set(current).add(6))
+      toast({ tone: "danger", title: "Calculation failed", message: parsed.message })
+      return false
+    } finally { setCalculating(false) }
+  }, [quotationId, toast])
+
+  const finalizeQuotation = useCallback(async () => {
+    if (!quotationId) return false
+    setSaving(true)
+    setFinalizeErrors({})
+    try {
+      await request(`${QUOTATION_PREFIX}${quotationId}/finalize/`, { method: "POST", body: JSON.stringify({}) })
+      setQuotation((current) => current ? { ...current, status: "FINALIZED" } : current)
+      toast({ tone: "success", title: "Quotation finalized" })
+      return true
+    } catch (error) {
+      const parsed = parseApiError(error)
+      setFinalizeErrors(parsed.fieldErrors)
+      for (const key of Object.keys(parsed.fieldErrors)) {
+        const step = key.includes("personal") ? 0 : key.includes("plan") ? 1 : key.includes("member") ? 2 : key.includes("install") ? 3 : key.includes("fund") ? 4 : key.includes("rider") ? 5 : 6
+        setInvalidSteps((current) => new Set(current).add(step))
+      }
+      toast({ tone: "danger", title: "Quotation cannot be finalized", message: parsed.message })
+      return false
+    } finally { setSaving(false) }
+  }, [quotationId, toast])
+
   const saveFunds = useCallback(async () => {
     if (!quotationId || !fundState || fundState.not_applicable) return true
     const applicable = fundState.plan_rows.filter((row) => row.investment_linked)
@@ -723,7 +1020,9 @@ export default function OLQuotationWizard() {
     if (activeStep === 2) void loadMemberCoverage()
     if (activeStep === 3) void loadInstallments()
     if (activeStep === 4) void loadInvestmentFunds()
-  }, [activeStep, loadInstallments, loadInvestmentFunds, loadMemberCoverage, quotationId])
+    if (activeStep === 5) void loadRiders()
+    if (activeStep === 6) void loadFinancialSummary()
+  }, [activeStep, loadFinancialSummary, loadInstallments, loadInvestmentFunds, loadMemberCoverage, loadRiders, quotationId])
 
   const saveMember = useCallback(async (member: MemberForm, memberId?: string) => {
     if (!quotationId) return false
@@ -846,8 +1145,12 @@ export default function OLQuotationWizard() {
 
   const validateAndNavigate = async (target: number) => {
     if (target > activeStep) {
-      const valid = activeStep === 0 ? await savePersonal() : activeStep === 1 ? await savePlans() : activeStep === 4 ? await saveFunds() : true
-      if (!valid) return
+      const valid = activeStep === 0 ? await savePersonal() : activeStep === 1 ? await savePlans() : activeStep === 4 ? await saveFunds() : activeStep === 5 ? (riderState?.requires_configuration === false || completedSteps.has(5)) : activeStep === 6 ? Boolean(financialSummary && !financialSummary.recalculation_required) : true
+      if (!valid) {
+        setInvalidSteps((current) => new Set(current).add(activeStep))
+        return
+      }
+      setCompletedSteps((current) => new Set(current).add(activeStep))
     }
     setActiveStep(Math.min(Math.max(target, 0), steps.length - 1))
   }
@@ -877,8 +1180,9 @@ export default function OLQuotationWizard() {
       {currentStep === "members" && <MemberCoverageStep quotation={quotation} state={memberState} genderOptions={personalOptions.genders} errors={memberErrors} onSaveMember={saveMember} onRemoveMember={removeMember} />}
       {currentStep === "installments" && <InstallmentsStep rows={installmentState?.rows ?? []} loading={!installmentState} selectedPlan={selectedInstallmentPlan} template={installmentTemplate} templateLoading={installmentTemplateLoading} saving={saving} errors={installmentErrors} onConfigure={(plan) => void loadInstallmentTemplate(plan)} onCloseModal={() => { setInstallmentModalOpen(false); setSelectedInstallmentPlan(null) }} onSave={saveInstallment} modalOpen={installmentModalOpen} />}
       {currentStep === "funds" && <InvestmentFundsStep quotation={quotation} state={fundState} optionsByPlan={fundOptions} allocations={fundAllocations} errors={fundErrors} onChange={(planConfigId, rows) => setFundAllocations((current) => ({ ...current, [planConfigId]: rows }))} onSave={saveFunds} />}
-      {(currentStep === "riders" || currentStep === "financial") && <FutureStep step={steps[activeStep].label} index={activeStep} />}
+      {currentStep === "riders" && <RidersBenefitsStep state={riderState} optionsByPlan={riderOptions} errors={riderErrors} onSave={saveRiders} />}
+      {currentStep === "financial" && <div className="space-y-4"><FinancialDetailsStep summary={financialSummary} loading={financialLoading} calculating={calculating} onCalculate={calculateFinancials} /><ReviewFinalize completedSteps={completedSteps} invalidSteps={invalidSteps} errors={finalizeErrors} onJump={(step) => setActiveStep(step)} onFinalize={finalizeQuotation} disabled={completedSteps.size < steps.length || !financialSummary || Boolean(financialSummary.recalculation_required) || quotation.status === "FINALIZED"} /></div>}
     </main></div>
-    <footer className="surface-card flex flex-wrap items-center justify-between gap-3 px-5 py-4"><button type="button" className="button-secondary" onClick={() => navigate("/ordinary-life/quotations")}><X size={15} aria-hidden="true" />Cancel</button><div className="flex gap-2"><button type="button" className="button-secondary" disabled={activeStep === 0 || saving} onClick={() => setActiveStep((current) => Math.max(0, current - 1))}><ChevronLeft size={15} aria-hidden="true" />Previous</button><button type="button" className="button-primary" disabled={saving} onClick={() => void validateAndNavigate(activeStep + 1)}>{saving ? <LoaderCircle className="animate-spin" size={15} aria-hidden="true" /> : null}{activeStep === steps.length - 1 ? "Complete" : "Next"}<ChevronRight size={15} aria-hidden="true" /></button></div></footer>
+    <footer className="surface-card flex flex-wrap items-center justify-between gap-3 px-5 py-4"><button type="button" className="button-secondary" onClick={() => navigate("/ordinary-life/quotations")}><X size={15} aria-hidden="true" />Cancel</button><div className="flex gap-2"><button type="button" className="button-secondary" disabled={activeStep === 0 || saving} onClick={() => setActiveStep((current) => Math.max(0, current - 1))}><ChevronLeft size={15} aria-hidden="true" />Previous</button><button type="button" className="button-primary" disabled={saving} onClick={() => void validateAndNavigate(activeStep + 1)}>{saving ? <LoaderCircle className="animate-spin" size={15} aria-hidden="true" /> : null}{activeStep === steps.length - 1 ? "Review & Finalize" : "Next"}<ChevronRight size={15} aria-hidden="true" /></button></div></footer>
   </div>
 }

@@ -65,6 +65,9 @@ const plans = [
 
 let templateRows: Array<{ sequence: number; description: string; rate_percent: string; paid_up_rate: string | null }> = []
 let investmentFundScenario = false
+let riderScenario = false
+let financialScenario = false
+let finalizeBlocked = false
 
 const configuration = {
   id: "config-1",
@@ -92,9 +95,13 @@ beforeEach(() => {
   toastMock.mockReset()
   templateRows = []
   investmentFundScenario = false
+  riderScenario = false
+  financialScenario = false
+  finalizeBlocked = false
   requestMock.mockImplementation(async (path: string, options?: RequestInit) => {
-    if (path === "/api/v1/ol-quotations/quotations/" && options?.method === "POST") return quotation
-    if (path === "/api/v1/ol-quotations/quotations/quote-1/") return quotation
+    const draftResponse = financialScenario && finalizeBlocked ? { ...quotation, wizard_step_completion: { "1_personal_details": true, "2_plan_and_sub_products": true, "3_member_coverage": true, "4_installments": true, "5_investment_funds": true, "6_riders_and_benefits": true, "7_financial_details": true } } : quotation
+    if (path === "/api/v1/ol-quotations/quotations/" && options?.method === "POST") return draftResponse
+    if (path === "/api/v1/ol-quotations/quotations/quote-1/") return draftResponse
     if (path.includes("/personal-details-options/")) return {
       identity_types: [{ value: "NIN", label: "National Identification Number" }],
       genders: [{ value: "MALE", label: "Male" }],
@@ -144,6 +151,12 @@ beforeEach(() => {
       wizard_complete: true,
     }
     if (path.includes("/investment-funds/options/")) return investmentFundScenario ? { plan_configuration_id: "config-1", not_applicable: false, quotation_currency: "TZS", funds: [{ id: "fund-1", code: "FUND-1", name: "Balanced Growth", fund_type_name: "Balanced", risk_profile: "Moderate", currency: "TZS", valuation_frequency: "DAILY", currency_compatible: true, currency_conversion_allowed: false, selectable: true }] } : { plan_configuration_id: "config-1", not_applicable: true, quotation_currency: "TZS", funds: [] }
+    if (path.includes("/riders/options/")) return riderScenario ? { plan_configuration_id: "config-1", quotation_age: 36, quotation_currency: "TZS", riders: [{ id: "rider-1", code: "PA-01", name: "Personal Accident", rider_category: "ACCIDENT", benefit_type: "LUMP_SUM", calculation_basis: "FIXED", min_age: 18, max_age: 65, min_term: 1, max_term: 20, min_sum_assured: "1000", max_sum_assured: "1000000", waiting_period_days: 30, allows_standalone: true, requires_underwriting: false, product_id: "product-1", plan_id: "plan-1", selectable: true, synchronized_option: "PA" }], benefit_types: [{ value: "DEATH", label: "Death Benefit" }] } : { plan_configuration_id: "config-1", quotation_age: 36, quotation_currency: "TZS", riders: [], benefit_types: [] }
+    if (path.endsWith("/riders/") && !options?.method) return riderScenario ? { state: { plan_rows: [{ plan_configuration_id: "config-1", plan_code: "TERM-20", plan_name: "Twenty Year Term", personal_accident: true, premium_waiver: false, riders: [], benefits: [], can_configure: true }], available_benefit_types: [{ value: "DEATH", label: "Death Benefit" }], requires_configuration: true, wizard_complete: false } } : { state: { plan_rows: [], available_benefit_types: [], requires_configuration: false, wizard_complete: true } }
+    if (path.endsWith("/riders/") && options?.method === "POST") return { quotation_id: "quote-1", state: { plan_rows: [{ plan_configuration_id: "config-1", plan_code: "TERM-20", plan_name: "Twenty Year Term", personal_accident: true, premium_waiver: false, riders: [{ rider_id: "rider-1", rider_code: "PA-01", rider_name: "Personal Accident", rider_sum_assured: "100000", rider_term_years: 20, waiting_period_days: 30, benefit_basis: "FIXED", benefit_value: "100000", benefits: [] }] }], available_benefit_types: [], requires_configuration: true, wizard_complete: true }, wizard_step_complete: true }
+    if (path.includes("/financial-details/")) return financialScenario ? { quotation_id: "quote-1", recalculation_required: false, summary: { quotation_id: "quote-1", total_sum_assured: "100000", total_premium: "12000", total_rider_premium: "1500", total_benefit_premium: "0", base_premium: "10000", total_loading: "500", total_discount: "0", total_tax: "0", installment_charge: "0", estimated_maturity_value: "250000", currency: "TZS", calculated_at: "2026-08-19T10:00:00Z", projections: [{ policy_year: 1, premiums_paid: "12000", estimated_bonus: "500", surrender_value: "2000", paid_up_value: "4000", estimated_maturity_value: "250000" }], installment_payouts: [{ sequence: 1, payout_date: "2046-08-19", description: "Maturity payout", rate_percent: "100", payout_amount: "250000" }] } } : { quotation_id: "quote-1", recalculation_required: true, summary: null }
+    if (path.endsWith("/calculate/") && options?.method === "POST") return { quotation_id: "quote-1", total_sum_assured: "100000", total_premium: riderScenario ? "13500" : "12000", total_rider_premium: riderScenario ? "3000" : "1500", total_benefit_premium: "0", base_premium: "10000", total_loading: "500", total_discount: "0", total_tax: "0", installment_charge: "0", estimated_maturity_value: "250000", currency: "TZS", calculated_at: "2026-08-19T10:00:00Z", recalculation_required: false, projections: [{ policy_year: 1, premiums_paid: "13500", estimated_bonus: "500", surrender_value: "2000", paid_up_value: "4000", estimated_maturity_value: "250000" }], installment_payouts: [{ sequence: 1, payout_date: "2046-08-19", description: "Maturity payout", rate_percent: "100", payout_amount: "250000" }] }
+    if (path.endsWith("/finalize/") && options?.method === "POST") { if (finalizeBlocked) throw new MockApiClientError("Complete all required steps before finalizing.", { riders: ["Riders & Benefits is incomplete."], financial_details: ["Calculate financial details before finalizing."] }); return { quotation: { ...quotation, status: "FINALIZED" }, status: "FINALIZED" } }
     if (path.includes("/personal-details/") && options?.method === "POST") return { ...quotation, quote_name: "Asha quote" }
     if (path.endsWith("/plans/") && options?.method === "POST") return { quotation, configurations: [configuration], selected_plan_count: 1, wizard_step_complete: true }
     if (path.includes("/plans/config-1/") && options?.method === "PATCH") throw new MockApiClientError("Term is outside the configured range.", { term_years: ["Policy term must be between 5 and 20 years."] })
@@ -245,6 +258,60 @@ describe("OL quotation wizard", () => {
     expect(await screen.findByText("Investment-linked Plan")).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: /Next/ }))
     expect(await screen.findByText("Each investment-linked plan must have fund allocations totaling exactly 100%."))
+  })
+
+  it("attaches a rider and displays the updated backend premium after recalculation", async () => {
+    riderScenario = true
+    financialScenario = true
+    await reachMemberCoverageStep()
+    fireEvent.click(screen.getByRole("button", { name: "Riders & Benefits" }))
+    expect(await screen.findByText("Applicable Riders")).toBeInTheDocument()
+    fireEvent.click(await screen.findByRole("button", { name: /PA-01/ }))
+    fireEvent.change(screen.getByLabelText(/Rider Sum Assured \/ Amount/), { target: { value: "100000" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save rider configuration" }))
+    await waitFor(() => expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: "Rider configuration saved" })))
+    fireEvent.click(screen.getByRole("button", { name: "Financial Details" }))
+    expect((await screen.findAllByText("TZS 12,000.00")).length).toBeGreaterThan(0)
+    fireEvent.click(screen.getByRole("button", { name: "Recalculate" }))
+    await waitFor(() => expect(screen.getAllByText("TZS 13,500.00").length).toBeGreaterThan(0))
+    expect(requestMock.mock.calls.some(([path, options]) => String(path).endsWith("/calculate/") && options?.method === "POST")).toBe(true)
+  })
+
+  it("renders backend financial projections and installment payout tables", async () => {
+    financialScenario = true
+    await reachMemberCoverageStep()
+    fireEvent.click(screen.getByRole("button", { name: "Financial Details" }))
+    expect(await screen.findByText("Policy-Year Projections")).toBeInTheDocument()
+    expect(screen.getByText("Maturity payout")).toBeInTheDocument()
+    expect(screen.getByText("Estimated Maturity Value")).toBeInTheDocument()
+    expect(screen.getAllByText("TZS 250,000.00").length).toBeGreaterThan(0)
+  })
+
+  it("blocks finalize when steps are incomplete and exposes jump links", async () => {
+    finalizeBlocked = true
+    await reachMemberCoverageStep()
+    fireEvent.click(screen.getByRole("button", { name: "Financial Details" }))
+    expect(await screen.findByRole("heading", { name: "Review & Finalize" })).toBeInTheDocument()
+    const finalizeButton = screen.getByRole("button", { name: "Finalize quotation" })
+    expect(finalizeButton).toBeDisabled()
+    fireEvent.click(screen.getByRole("button", { name: /Review & Finalize/ }))
+    expect(await screen.findByText("Go to Financial Details")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Go to Financial Details" }))
+    expect(screen.getAllByRole("button", { name: "Financial Details" }).some((button) => button.getAttribute("aria-current") === "step")).toBe(true)
+  })
+
+  it("shows backend finalize errors with jump-to-step links", async () => {
+    finalizeBlocked = true
+    financialScenario = true
+    await reachMemberCoverageStep()
+    fireEvent.click(screen.getByRole("button", { name: "Financial Details" }))
+    await screen.findByRole("heading", { name: "Review & Finalize" })
+    fireEvent.click(screen.getByRole("button", { name: /Calculate|Recalculate/ }))
+    await waitFor(() => expect(screen.getByRole("button", { name: "Finalize quotation" })).not.toBeDisabled())
+    fireEvent.click(screen.getByRole("button", { name: "Finalize quotation" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm finalize" }))
+    expect(await screen.findByText("Riders & Benefits is incomplete.")).toBeInTheDocument()
+    expect(screen.getAllByRole("button", { name: "Review" }).length).toBeGreaterThan(0)
   })
 
   it("shows backend plan configuration errors inline", async () => {
