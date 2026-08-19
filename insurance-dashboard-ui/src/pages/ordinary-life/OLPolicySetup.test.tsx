@@ -132,4 +132,47 @@ describe("OLPolicySetup", () => {
     expect(screen.queryByRole("button", { name: "New setup" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Actions for row 1" })).not.toBeInTheDocument()
   })
+
+  it("renders the Part 2 policy setup tabs and rate version dimensions from APIs", async () => {
+    render(<OLPolicySetup />)
+    expect(await screen.findByRole("columnheader", { name: "Rate factor" })).toBeInTheDocument()
+
+    const tabs = [
+      ["OL Surrender Setup", "Min premiums"],
+      ["OL Paid-Up Setup", "Conversion basis"],
+      ["OL Surrender Value Rate", "Version"],
+      ["OL Paid-Up Rate", "Version"],
+      ["OL Commitment Status", "Applies to"],
+    ] as const
+
+    for (const [label, column] of tabs) {
+      fireEvent.click(screen.getByRole("button", { name: label }))
+      expect(await screen.findByRole("columnheader", { name: column })).toBeInTheDocument()
+    }
+  })
+
+  it("supports rate row add, edit, and remove operations", async () => {
+    render(<OLPolicySetup />)
+    fireEvent.click(await screen.findByRole("button", { name: "OL Surrender Value Rate" }))
+    fireEvent.click(await screen.findByRole("button", { name: "New setup" }))
+
+    expect(screen.getAllByRole("button", { name: /Remove row/ })).toHaveLength(1)
+    fireEvent.click(screen.getByRole("button", { name: "Add row" }))
+    expect(screen.getAllByRole("button", { name: /Remove row/ })).toHaveLength(2)
+    fireEvent.change(screen.getAllByRole("spinbutton", { name: /Rate factor/ })[0], { target: { value: "0.75" } })
+    expect(screen.getAllByRole("spinbutton", { name: /Rate factor/ })[0]).toHaveValue(0.75)
+    fireEvent.click(screen.getByRole("button", { name: "Remove row 2" }))
+    expect(screen.getAllByRole("button", { name: /Remove row/ })).toHaveLength(1)
+  })
+
+  it("renders a row-level CSV import error for malformed input", async () => {
+    const { container } = render(<OLPolicySetup />)
+    fireEvent.click(await screen.findByRole("button", { name: "OL Paid-Up Rate" }))
+    const fileInput = container.querySelector('input[type="file"]')
+    expect(fileInput).toBeTruthy()
+    fireEvent.change(fileInput as HTMLInputElement, { target: { files: [new File(["not-a-header"], "rates.csv", { type: "text/csv" })] } })
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Row 1")
+    expect(screen.getByText(/header row and at least one data row/)).toBeInTheDocument()
+  })
 })

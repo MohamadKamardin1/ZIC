@@ -32,3 +32,28 @@ The page uses the existing `ol_parameters` access metadata. View permission cont
 ## Routing and navigation
 
 `App.tsx` maps `/ordinary-life/parameters/policy-setup` to `OLPolicySetup`. The existing access-aware Ordinary Life Parameters submenu already exposes Policy Setup alongside the remaining parameter groups, and the existing `/ordinary-life/parameters` route prefix maps to `ol_parameters` access metadata.
+
+
+## Policy Setup part 2
+
+The second Policy Setup set extends the same workspace with five additional API-backed tabs:
+
+| Screen | Collection endpoint | Primary configuration |
+|---|---|---|
+| OL Surrender Setup | `/api/v1/ol-parameters/surrender-setups/` | Minimum premiums, paid-premium ratio, charge type/value, partial surrender, and approval requirement |
+| OL Paid-Up Setup | `/api/v1/ol-parameters/paid-up-setups/` | Eligibility years, minimum premium ratio, conversion basis, and approval requirement |
+| OL Surrender Value Rate | `/api/v1/ol-parameters/surrender-value-rates/` | Version scope plus product/plan, gender, smoker, age, term, policy-year, and rate-factor dimensions |
+| OL Paid-Up Rate | `/api/v1/ol-parameters/paid-up-rates/` | Version scope plus product/plan, gender, smoker, age, term, policy-year, and rate-factor dimensions |
+| OL Commitment Status | `/api/v1/ol-parameters/commitment-statuses/` | Display order, configured badge type, terminal flag, and applicability scope |
+
+Surrender-value and paid-up rate screens use `EditableGrid` for multi-dimensional rate rows. Version metadata is shown in the table with version number, effective dates, active/scheduled/expired state, and configured status badge. Dimension values are entered as decimal-safe fields where appropriate, and row-level validation reports invalid ranges, negative factors, and incomplete dimensions inline. The grid provides add, edit, remove, and total-row behavior without introducing a second table implementation.
+
+The rate tables expose the shared `DataTable` CSV export action. CSV import is available for versioned rate screens through the table import control. The client maps supported CSV columns to the backend payload, normalizes blank numeric dimensions to null, submits each row independently, and retains errors by source row number. Malformed files and backend overlap/validation responses are displayed in an inline error banner so accepted rows remain visible while rejected rows can be corrected and retried.
+
+Effective-date overlap and duplicate-scope checks remain server-authoritative. When the backend rejects a version or rate row because its effective scope overlaps an existing configuration, the shared toast and import error surfaces preserve the backend message rather than replacing it with a generic client-side error. All create, update, import, export, and deactivate actions remain governed by the existing `ol_parameters` permissions.
+
+## Part 2 assumptions
+
+The frontend treats rate-version records and rate rows as one backend collection because the current API exposes the same collection and row-level actions. When the backend represents one version as multiple rows, editing the first row updates the version metadata and additional grid rows are posted as new rows carrying the same serialized version scope. Product, plan, gender, smoker, frequency, charge, basis, and status choices are supplied by API payloads or existing table metadata; no new business catalogs are hardcoded in the page.
+
+The commitment-status screen is implemented as a catalog editor using the same lifecycle and badge rendering rules as Policy Status. The route remains `/ordinary-life/parameters/policy-setup`, so the existing navigation and access mapping continue to cover both Policy Setup parts without adding a second permission surface.
