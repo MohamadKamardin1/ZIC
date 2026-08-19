@@ -73,6 +73,22 @@ PERMISSIONS = [
 ]
 
 CHOICE_LIST_SEEDS = {
+    "OL_QUOTE_BASIS_CHOICES": {
+        "name": "OL Quote Bases",
+        "description": "Configured bases used to calculate Ordinary Life quotation values.",
+        "options": [
+            ("SUM_ASSURED", "Sum Assured"),
+            ("PREMIUM", "Premium"),
+        ],
+    },
+    "OL_PREMIUM_FACTOR_CHOICES": {
+        "name": "OL Premium Factors",
+        "description": "Configured premium factors available in Ordinary Life plan quotations.",
+        "options": [
+            ("NONE", "None"),
+            ("STANDARD", "Standard"),
+        ],
+    },
     "SMOKER_STATUS_CHOICES": {
         "name": "Smoker Statuses",
         "description": "Configured smoker status options for Ordinary Life quotations.",

@@ -62,6 +62,42 @@ class OLQuotationPlanConfigurationSerializer(QuotationNestedReadMixin, Quotation
         read_only_fields = ["id", "created_at", "updated_at", "created_by", "updated_by"]
 
 
+class OLQuotationPlanSelectionSerializer(serializers.Serializer):
+    plans = serializers.ListField(
+        child=serializers.DictField(),
+        allow_empty=False,
+        required=True,
+    )
+
+    def validate_plans(self, value):
+        if not value:
+            raise serializers.ValidationError("At least one plan must be selected.")
+        for index, item in enumerate(value):
+            if not isinstance(item, dict):
+                raise serializers.ValidationError({index: "Each selection must be an object."})
+            if not item.get("plan_id"):
+                raise serializers.ValidationError({index: "plan_id is required for every selected plan."})
+        return value
+
+
+class OLQuotationPlanConfigurationPatchSerializer(serializers.Serializer):
+    term_years = serializers.IntegerField(required=False, min_value=1)
+    payment_period_years = serializers.IntegerField(required=False, min_value=1, allow_null=True)
+    premium_frequency = serializers.CharField(required=False, allow_blank=False)
+    quote_basis = serializers.CharField(required=False, allow_blank=False)
+    estimated_maturity_value = serializers.DecimalField(required=False, max_digits=18, decimal_places=2, min_value=0, allow_null=True)
+    premium_factor = serializers.CharField(required=False, allow_blank=False)
+    joint_life = serializers.BooleanField(required=False)
+    mortgage = serializers.BooleanField(required=False)
+    personal_accident = serializers.BooleanField(required=False)
+    premium_waiver = serializers.BooleanField(required=False)
+    estimated_bonus_rate = serializers.DecimalField(required=False, max_digits=12, decimal_places=6, min_value=0)
+    base_sum_assured = serializers.DecimalField(required=False, max_digits=18, decimal_places=2, min_value=0)
+    is_selected = serializers.BooleanField(required=False)
+    sub_product_code = serializers.CharField(required=False, allow_blank=True)
+    coverage_rules = serializers.DictField(required=False)
+
+
 class OLQuotationMemberSerializer(QuotationNestedReadMixin, QuotationValidatedModelSerializer):
     class Meta:
         model = OLQuotationMember

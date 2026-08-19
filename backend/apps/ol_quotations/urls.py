@@ -1,3 +1,4 @@
+from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
@@ -17,6 +18,7 @@ from .views import (
     OLQuotationUnderwritingViewSet,
     OLQuotationVersionViewSet,
     OLQuotationViewSet,
+    OLPlanSearchView,
 )
 
 router = DefaultRouter()
@@ -37,4 +39,7 @@ router.register("versions", OLQuotationVersionViewSet, basename="ol-quotation-ve
 router.register("financial-summaries", OLQuotationFinancialSummaryViewSet, basename="ol-quotation-financial-summary")
 router.register("events", OLQuotationEventViewSet, basename="ol-quotation-event")
 
-urlpatterns = router.urls
+urlpatterns = [
+    path("plans/search/", OLPlanSearchView.as_view(), name="ol-plan-search"),
+    *router.urls,
+]

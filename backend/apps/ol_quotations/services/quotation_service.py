@@ -2,6 +2,7 @@ from datetime import date
 from decimal import Decimal
 
 from django.db import models, transaction
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
@@ -10,10 +11,19 @@ from apps.governance.services.audit_service import AuditService
 from apps.system_parameters.services.config_service import ConfigurationService
 from apps.system_parameters.services.numbering_service import NumberingEngine
 
+from apps.ol_parameters.models import (
+    OLBonusRate,
+    OLJointLifeSetup,
+    OLMortgageInterestFactor,
+    OLRiderSetup,
+    OLProduct as ParameterProduct,
+)
+from apps.ordinary_life.models import OLPlan, OLProductVersion
 from apps.ol_quotations.models import (
     OLQuotation,
     OLQuotationEvent,
     OLQuotationFinancialSummary,
+    OLQuotationPlanConfiguration,
     OLQuotationVersion,
     QuotationStatus,
 )
@@ -328,6 +338,541 @@ class QuotationService:
             request=request,
         )
         return locked
+
+    @staticmethod
+    def _effective_queryset(queryset, as_of):
+        return queryset.filter(is_active=True).filter(
+            Q(effective_from__isnull=True) | Q(effective_from__lte=as_of)
+        ).filter(
+            Q(effective_to__isnull=True) | Q(effective_to__gte=as_of)
+        )
+
+    @staticmethod
+    def _parameter_product_for_legacy_product(legacy_product):
+        if not legacy_product:
+            return None
+        return ParameterProduct.objects.filter(
+            code__iexact=legacy_product.code,
+            is_active=True,
+        ).first()
+
+    @staticmethod
+    def _plan_scope(legacy_product, plan, as_of):
+        parameter_product = QuotationService._parameter_product_for_legacy_product(legacy_product)
+        return parameter_product, as_of
+
+    @staticmethod
+    def _plan_feature_availability(*, legacy_product, plan, age=None, term=None, as_of=None):
+        as_of = as_of or timezone.localdate()
+        parameter_product = QuotationService._parameter_product_for_legacy_product(legacy_product)
+        product_filter = Q(product=parameter_product) if parameter_product else Q(product__isnull=True)
+        scoped_product_filter = product_filter | Q(product__isnull=True)
+
+        joint_life_qs = QuotationService._effective_queryset(
+            OLJointLifeSetup.objects.filter(
+                Q(plan=plan) | (Q(plan__isnull=True) & scoped_product_filter)
+            ),
+            as_of,
+        )
+        mortgage_qs = QuotationService._effective_queryset(
+            OLMortgageInterestFactor.objects.filter(
+                Q(plan=plan) | (Q(plan__isnull=True) & scoped_product_filter)
+            ),
+            as_of,
+        )
+        rider_qs = QuotationService._effective_queryset(
+            OLRiderSetup.objects.filter(
+                Q(plan=plan) | (Q(plan__isnull=True) & scoped_product_filter)
+            ),
+            as_of,
+        )
+        if age is not None:
+            rider_qs = rider_qs.filter(min_age__lte=age, max_age__gte=age)
+        if term is not None:
+            rider_qs = rider_qs.filter(min_term__lte=term, max_term__gte=term)
+
+        return {
+            "with_profit": bool(
+                getattr(legacy_product, "allow_bonus", False)
+                or QuotationService._effective_queryset(
+                    OLBonusRate.objects.filter(
+                        Q(plan=plan) | (Q(plan__isnull=True) & scoped_product_filter)
+                    ),
+                    as_of,
+                ).exists()
+            ),
+            "joint_life": joint_life_qs.exists(),
+            "mortgage": bool(getattr(legacy_product, "allow_loans", False) or mortgage_qs.exists()),
+            "personal_accident": rider_qs.filter(
+                Q(rider_category="ACCIDENT") | Q(benefit_type="ACCIDENTAL_DEATH")
+            ).exists(),
+            "premium_waiver": rider_qs.filter(
+                Q(rider_category="WAIVER") | Q(benefit_type="WAIVER_PREMIUM")
+            ).exists(),
+        }
+
+    @staticmethod
+    def _bonus_default(*, legacy_product, plan, as_of):
+        parameter_product = QuotationService._parameter_product_for_legacy_product(legacy_product)
+        scope = Q(plan=plan)
+        if parameter_product:
+            scope |= Q(plan__isnull=True, product=parameter_product)
+        rows = QuotationService._effective_queryset(OLBonusRate.objects.filter(scope), as_of)
+        row = rows.order_by("-plan_id", "-effective_from", "code").first()
+        return row.rate if row else Decimal("0")
+
+    @staticmethod
+    def _default_maturity_value(*, legacy_product, plan, parameter_product=None):
+        if plan and plan.minimum_sum_assured:
+            return plan.minimum_sum_assured
+        if parameter_product and parameter_product.min_sum_assured:
+            return parameter_product.min_sum_assured
+        return None
+
+    @staticmethod
+    def _plan_card(*, product_version, plan, quotation=None, as_of=None):
+        as_of = as_of or (quotation.quote_date if quotation else timezone.localdate())
+        legacy_product = product_version.product
+        parameter_product = (
+            quotation.product if quotation and quotation.product_id
+            else QuotationService._parameter_product_for_legacy_product(legacy_product)
+        )
+        flags = QuotationService._plan_feature_availability(
+            legacy_product=legacy_product,
+            plan=plan,
+            age=quotation.age_at_quote if quotation else None,
+            term=None,
+            as_of=as_of,
+        )
+        badges = []
+        if flags["with_profit"]:
+            badges.append("WITH_PROFIT")
+        if flags["joint_life"]:
+            badges.append("JOINT_LIFE")
+        return {
+            "id": str(plan.pk),
+            "plan_id": str(plan.pk),
+            "product_version_id": str(product_version.pk),
+            "product_code": legacy_product.code,
+            "product_name": legacy_product.name,
+            "product_version": product_version.version_number,
+            "code": plan.code,
+            "name": plan.name,
+            "description": plan.description,
+            "badges": badges,
+            "plan_type_badges": badges,
+            "with_profit": flags["with_profit"],
+            "joint_life": flags["joint_life"],
+            "mortgage": flags["mortgage"],
+            "personal_accident": flags["personal_accident"],
+            "premium_waiver": flags["premium_waiver"],
+            "minimum_sum_assured": str(plan.minimum_sum_assured) if plan.minimum_sum_assured is not None else None,
+            "maximum_sum_assured": str(plan.maximum_sum_assured) if plan.maximum_sum_assured is not None else None,
+            "currency": product_version.currency,
+            "payment_frequencies": list(product_version.payment_frequencies or []),
+            "min_entry_age": product_version.min_entry_age,
+            "max_entry_age": product_version.max_entry_age,
+            "min_term_years": product_version.min_term_years,
+            "max_term_years": product_version.max_term_years,
+            "allow_bonus": bool(getattr(parameter_product, "allow_bonus", False) or flags["with_profit"]),
+        }
+
+    @staticmethod
+    def search_plans(*, search="", product_version_id=None, product_code=None, quotation=None, limit=50):
+        queryset = OLProductVersion.objects.select_related("product").prefetch_related("plans")
+        queryset = queryset.filter(is_active=True, product__is_active=True)
+        as_of = quotation.quote_date if quotation else timezone.localdate()
+        queryset = queryset.filter(effective_from__lte=as_of).filter(
+            Q(effective_to__isnull=True) | Q(effective_to__gte=as_of)
+        )
+        if product_version_id:
+            queryset = queryset.filter(pk=product_version_id)
+        if product_code:
+            queryset = queryset.filter(product__code__iexact=product_code)
+        if search:
+            search_filter = (
+                Q(product__code__icontains=search)
+                | Q(product__name__icontains=search)
+                | Q(product__description__icontains=search)
+                | Q(plans__code__icontains=search)
+                | Q(plans__name__icontains=search)
+                | Q(plans__description__icontains=search)
+            )
+            queryset = queryset.filter(search_filter)
+        cards = []
+        for version in queryset.order_by("product__name", "-version_number").distinct():
+            for plan in version.plans.filter(is_active=True).order_by("name", "code"):
+                if search and not any(
+                    search.lower() in str(value or "").lower()
+                    for value in (version.product.code, version.product.name, plan.code, plan.name, plan.description)
+                ):
+                    continue
+                cards.append(QuotationService._plan_card(
+                    product_version=version,
+                    plan=plan,
+                    quotation=quotation,
+                    as_of=as_of,
+                ))
+                if len(cards) >= limit:
+                    return cards
+        return cards
+
+    @staticmethod
+    def plan_options(*, quotation, plan_id=None):
+        as_of = quotation.quote_date or timezone.localdate()
+        product_version = quotation.product_version
+        selected_plan = None
+        if product_version and plan_id:
+            selected_plan = product_version.plans.filter(pk=plan_id, is_active=True).first()
+            if selected_plan is None:
+                raise QuotationServiceError({"plan_id": "The selected plan does not belong to this quotation product version."})
+        frequencies = list(product_version.payment_frequencies or []) if product_version else []
+        if not frequencies and quotation.product_id:
+            frequencies = list(getattr(quotation.product, "premium_frequencies", []) or [])
+        legacy_product = product_version.product if product_version else None
+        features = QuotationService._plan_feature_availability(
+            legacy_product=legacy_product,
+            plan=selected_plan,
+            age=quotation.age_at_quote,
+            term=None,
+            as_of=as_of,
+        ) if legacy_product else {
+            "joint_life": False,
+            "mortgage": False,
+            "personal_accident": False,
+            "premium_waiver": False,
+        }
+        quote_bases = ConfigurationService.get_choice_list("OL_QUOTE_BASIS_CHOICES")
+        premium_factors = ConfigurationService.get_choice_list("OL_PREMIUM_FACTOR_CHOICES")
+        return {
+            "payment_frequencies": [{"value": value, "label": value.replace("_", " ").title()} for value in frequencies],
+            "quote_bases": quote_bases,
+            "premium_factors": premium_factors,
+            "plan_features": features,
+            "selected_plan_id": str(selected_plan.pk) if selected_plan else None,
+            "as_of": as_of.isoformat(),
+        }
+
+    @staticmethod
+    def _choice_values(code):
+        return {str(item.get("value", "")).strip().upper() for item in ConfigurationService.get_choice_list(code)}
+
+    @staticmethod
+    def _validate_plan_selection(*, quotation, product_version, plan, payload, existing=None):
+        as_of = quotation.quote_date or timezone.localdate()
+        if not product_version.is_active or not product_version.product.is_active:
+            raise QuotationServiceError({"product_version": "The selected product version is not active."})
+        if product_version.effective_from > as_of or (
+            product_version.effective_to and product_version.effective_to < as_of
+        ):
+            raise QuotationServiceError({"product_version": "The selected product version is not effective on the quote date."})
+        if plan is not None and (not plan.is_active or plan.product_version_id != product_version.pk):
+            raise QuotationServiceError({"plan": "The selected plan is not active or does not belong to the product version."})
+
+        age = quotation.age_at_quote
+        min_age = product_version.min_entry_age
+        max_age = product_version.max_entry_age
+        if quotation.product_id:
+            min_age = max(min_age, quotation.product.min_entry_age)
+            max_age = min(max_age, quotation.product.max_entry_age)
+        if age is not None and not (min_age <= age <= max_age):
+            raise QuotationServiceError({"age_at_quote": f"Age must be between {min_age} and {max_age} for the selected product."})
+
+        term = payload.get("term_years")
+        if term is None:
+            term = product_version.min_term_years
+            if quotation.product_id:
+                term = max(term, quotation.product.min_term)
+        term = int(term)
+        min_term = product_version.min_term_years
+        max_term = product_version.max_term_years
+        if quotation.product_id:
+            min_term = max(min_term, quotation.product.min_term)
+            max_term = min(max_term, quotation.product.max_term)
+        if not min_term <= term <= max_term:
+            raise QuotationServiceError({"term_years": f"Policy term must be between {min_term} and {max_term} years."})
+
+        payment_period = payload.get("payment_period_years")
+        if payment_period is None:
+            payment_period = term
+        payment_period = int(payment_period)
+        if payment_period <= 0 or payment_period > term:
+            raise QuotationServiceError({"payment_period_years": "Payment period must be positive and cannot exceed policy term."})
+
+        frequency = str(payload.get("premium_frequency") or "").strip().upper()
+        allowed_frequencies = {str(item).strip().upper() for item in (product_version.payment_frequencies or [])}
+        if not allowed_frequencies and quotation.product_id:
+            allowed_frequencies = {str(item).strip().upper() for item in (quotation.product.premium_frequencies or [])}
+        if not frequency and allowed_frequencies:
+            frequency = sorted(allowed_frequencies)[0]
+        if frequency not in allowed_frequencies:
+            raise QuotationServiceError({"premium_frequency": "The selected payment frequency is not allowed for this product version."})
+
+        quote_basis_values = QuotationService._choice_values("OL_QUOTE_BASIS_CHOICES")
+        premium_factor_values = QuotationService._choice_values("OL_PREMIUM_FACTOR_CHOICES")
+        quote_basis = str(payload.get("quote_basis") or (sorted(quote_basis_values)[0] if quote_basis_values else "")).strip().upper()
+        premium_factor = str(payload.get("premium_factor") or (sorted(premium_factor_values)[0] if premium_factor_values else "")).strip().upper()
+        if quote_basis not in quote_basis_values:
+            raise QuotationServiceError({"quote_basis": "The selected quote basis is not configured."})
+        if premium_factor not in premium_factor_values:
+            raise QuotationServiceError({"premium_factor": "The selected premium factor is not configured."})
+
+        parameter_product = quotation.product or QuotationService._parameter_product_for_legacy_product(product_version.product)
+        features = QuotationService._plan_feature_availability(
+            legacy_product=product_version.product,
+            plan=plan,
+            age=age,
+            term=term,
+            as_of=as_of,
+        )
+        for field in ("joint_life", "mortgage", "personal_accident", "premium_waiver"):
+            if payload.get(field) and not features[field]:
+                raise QuotationServiceError({field: f"{field.replace('_', ' ').title()} is not available for the selected plan."})
+
+        estimated_maturity_value = payload.get("estimated_maturity_value")
+        if estimated_maturity_value is None:
+            estimated_maturity_value = QuotationService._default_maturity_value(
+                legacy_product=product_version.product,
+                plan=plan,
+                parameter_product=parameter_product,
+            )
+        if estimated_maturity_value is None or Decimal(str(estimated_maturity_value)) <= 0:
+            raise QuotationServiceError({"estimated_maturity_value": "Estimated maturity value must be greater than zero."})
+        base_sum_assured = payload.get("base_sum_assured") or estimated_maturity_value
+        if Decimal(str(base_sum_assured)) <= 0:
+            raise QuotationServiceError({"base_sum_assured": "Base sum assured must be greater than zero."})
+        if plan and plan.minimum_sum_assured and Decimal(str(base_sum_assured)) < plan.minimum_sum_assured:
+            raise QuotationServiceError({"base_sum_assured": "Base sum assured is below the selected plan minimum."})
+        if plan and plan.maximum_sum_assured and Decimal(str(base_sum_assured)) > plan.maximum_sum_assured:
+            raise QuotationServiceError({"base_sum_assured": "Base sum assured exceeds the selected plan maximum."})
+
+        bonus = payload.get("estimated_bonus_rate")
+        if bonus is None:
+            bonus = QuotationService._bonus_default(
+                legacy_product=product_version.product,
+                plan=plan,
+                as_of=as_of,
+            )
+        if Decimal(str(bonus)) < 0:
+            raise QuotationServiceError({"estimated_bonus_rate": "Estimated bonus rate cannot be negative."})
+
+        return {
+            "product_version": product_version,
+            "plan": plan,
+            "term_years": term,
+            "payment_period_years": payment_period,
+            "premium_frequency": frequency,
+            "quote_basis": quote_basis,
+            "estimated_maturity_value": Decimal(str(estimated_maturity_value)),
+            "premium_factor": premium_factor,
+            "joint_life": bool(payload.get("joint_life", False)),
+            "mortgage": bool(payload.get("mortgage", False)),
+            "personal_accident": bool(payload.get("personal_accident", False)),
+            "premium_waiver": bool(payload.get("premium_waiver", False)),
+            "estimated_bonus_rate": Decimal(str(bonus)),
+            "base_sum_assured": Decimal(str(base_sum_assured)),
+            "sub_product_code": str(payload.get("sub_product_code") or "").strip(),
+            "is_selected": bool(payload.get("is_selected", True)),
+            "coverage_rules": dict(payload.get("coverage_rules") or {}),
+        }
+
+    @staticmethod
+    def _plan_config_snapshot(quotation):
+        return [
+            {
+                "id": str(row.pk),
+                "section_number": row.section_number,
+                "product_version_id": str(row.product_version_id),
+                "plan_id": str(row.plan_id) if row.plan_id else None,
+                "sub_product_code": row.sub_product_code,
+                "is_selected": row.is_selected,
+                "base_sum_assured": str(row.base_sum_assured),
+                "term_years": row.term_years,
+                "payment_period_years": row.payment_period_years,
+                "premium_frequency": row.premium_frequency,
+                "quote_basis": row.quote_basis,
+                "estimated_maturity_value": str(row.estimated_maturity_value) if row.estimated_maturity_value is not None else None,
+                "premium_factor": row.premium_factor,
+                "joint_life": row.joint_life,
+                "mortgage": row.mortgage,
+                "personal_accident": row.personal_accident,
+                "premium_waiver": row.premium_waiver,
+                "estimated_bonus_rate": str(row.estimated_bonus_rate),
+            }
+            for row in quotation.plan_configurations.order_by("section_number", "created_at")
+        ]
+
+    @staticmethod
+    @transaction.atomic
+    def select_plans(*, quotation, actor, selections, request=None):
+        locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
+        if locked.status != QuotationStatus.DRAFT:
+            raise QuotationServiceError("Only draft quotations can be updated.")
+        if not selections:
+            raise QuotationServiceError({"plans": "At least one plan must be selected."})
+
+        normalized = []
+        seen = set()
+        for item in selections:
+            item = dict(item or {})
+            product_version_id = item.get("product_version_id") or locked.product_version_id
+            plan_id = item.get("plan_id")
+            key = (str(product_version_id), str(plan_id or ""), str(item.get("sub_product_code") or "").strip().upper())
+            if key in seen:
+                raise QuotationServiceError({"plans": "The same plan cannot be selected more than once."})
+            seen.add(key)
+            try:
+                product_version = OLProductVersion.objects.select_related("product").get(pk=product_version_id)
+            except (OLProductVersion.DoesNotExist, ValueError, TypeError):
+                raise QuotationServiceError({"product_version_id": "Selected product version does not exist."})
+            plan = None
+            if plan_id:
+                try:
+                    plan = OLPlan.objects.get(pk=plan_id)
+                except (OLPlan.DoesNotExist, ValueError, TypeError):
+                    raise QuotationServiceError({"plan_id": "Selected plan does not exist."})
+            validated = QuotationService._validate_plan_selection(
+                quotation=locked,
+                product_version=product_version,
+                plan=plan,
+                payload=item,
+            )
+            normalized.append(validated)
+
+        before = QuotationService.snapshot(locked)
+        before_configs = QuotationService._plan_config_snapshot(locked)
+        incoming_keys = {
+            (str(row["product_version"].pk), str(row["plan"].pk) if row["plan"] else "", row["sub_product_code"].upper())
+            for row in normalized
+        }
+        existing_rows = list(locked.plan_configurations.select_for_update().all())
+        for row in existing_rows:
+            row.is_selected = False
+            row.section_number = None
+            row.updated_by = QuotationService.actor(actor)
+            row.save(update_fields=["is_selected", "section_number", "updated_by", "updated_at"])
+
+        configurations = []
+        for section_number, row in enumerate(normalized, start=1):
+            key = (str(row["product_version"].pk), str(row["plan"].pk) if row["plan"] else "", row["sub_product_code"].upper())
+            existing = next(
+                (
+                    candidate for candidate in existing_rows
+                    if (
+                        str(candidate.product_version_id),
+                        str(candidate.plan_id) if candidate.plan_id else "",
+                        (candidate.sub_product_code or "").upper(),
+                    ) == key
+                ),
+                None,
+            )
+            values = {key: value for key, value in row.items() if key not in {"product_version", "plan"}}
+            values.update({"product_version": row["product_version"], "plan": row["plan"], "section_number": section_number, "is_selected": True})
+            if existing:
+                for field, value in values.items():
+                    setattr(existing, field, value)
+                existing.updated_by = QuotationService.actor(actor)
+                existing.full_clean()
+                existing.save()
+                config = existing
+            else:
+                config = OLQuotationPlanConfiguration.objects.create(
+                    quotation=locked,
+                    created_by=QuotationService.actor(actor),
+                    updated_by=QuotationService.actor(actor),
+                    **values,
+                )
+            configurations.append(config)
+
+        update_fields = ["wizard_step_completion", "current_version_number", "updated_by", "updated_at"]
+        if not locked.product_version_id:
+            locked.product_version = normalized[0]["product_version"]
+            update_fields.append("product_version")
+        locked.updated_by = QuotationService.actor(actor)
+        locked.wizard_step_completion = QuotationService.wizard_completion(locked)
+        locked.current_version_number += 1
+        locked.save(update_fields=update_fields)
+        after = QuotationService.snapshot(locked)
+        after_configs = QuotationService._plan_config_snapshot(locked)
+        QuotationService._record_version(locked, actor=actor, reason="Plan Selection wizard step updated.")
+        QuotationService._record_event(
+            locked,
+            "PLAN_SELECTION_UPDATED",
+            actor=actor,
+            from_status=locked.status,
+            to_status=locked.status,
+            notes="Ordinary Life quotation plan selection updated.",
+            metadata={"before_plan_configurations": before_configs, "after_plan_configurations": after_configs},
+            before_state=before,
+            after_state=after,
+            request=request,
+        )
+        return locked, configurations
+
+    @staticmethod
+    @transaction.atomic
+    def update_plan_configuration(*, quotation, configuration_id, actor, payload, request=None):
+        locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
+        if locked.status != QuotationStatus.DRAFT:
+            raise QuotationServiceError("Only draft quotations can be updated.")
+        try:
+            configuration = locked.plan_configurations.select_for_update().select_related("product_version__product", "plan").get(pk=configuration_id)
+        except (OLQuotationPlanConfiguration.DoesNotExist, ValueError, TypeError):
+            raise QuotationServiceError({"configuration_id": "Plan configuration does not exist for this quotation."})
+        values = {
+            "term_years": configuration.term_years,
+            "payment_period_years": configuration.payment_period_years,
+            "premium_frequency": configuration.premium_frequency,
+            "quote_basis": configuration.quote_basis,
+            "estimated_maturity_value": configuration.estimated_maturity_value,
+            "premium_factor": configuration.premium_factor,
+            "joint_life": configuration.joint_life,
+            "mortgage": configuration.mortgage,
+            "personal_accident": configuration.personal_accident,
+            "premium_waiver": configuration.premium_waiver,
+            "estimated_bonus_rate": configuration.estimated_bonus_rate,
+            "base_sum_assured": configuration.base_sum_assured,
+            "sub_product_code": configuration.sub_product_code,
+            "is_selected": configuration.is_selected,
+            "coverage_rules": configuration.coverage_rules,
+        }
+        values.update({key: value for key, value in payload.items() if key in values})
+        validated = QuotationService._validate_plan_selection(
+            quotation=locked,
+            product_version=configuration.product_version,
+            plan=configuration.plan,
+            payload=values,
+            existing=configuration,
+        )
+        before = QuotationService.snapshot(locked)
+        before_configs = QuotationService._plan_config_snapshot(locked)
+        for field, value in validated.items():
+            if field in {"product_version", "plan"}:
+                continue
+            setattr(configuration, field, value)
+        configuration.updated_by = QuotationService.actor(actor)
+        configuration.full_clean()
+        configuration.save()
+        locked.updated_by = QuotationService.actor(actor)
+        locked.wizard_step_completion = QuotationService.wizard_completion(locked)
+        locked.current_version_number += 1
+        locked.save(update_fields=["wizard_step_completion", "current_version_number", "updated_by", "updated_at"])
+        after = QuotationService.snapshot(locked)
+        after_configs = QuotationService._plan_config_snapshot(locked)
+        QuotationService._record_version(locked, actor=actor, reason="Plan configuration wizard section updated.")
+        QuotationService._record_event(
+            locked,
+            "PLAN_CONFIGURATION_UPDATED",
+            actor=actor,
+            from_status=locked.status,
+            to_status=locked.status,
+            notes="Ordinary Life quotation plan configuration updated.",
+            metadata={"configuration_id": str(configuration.pk), "before_plan_configurations": before_configs, "after_plan_configurations": after_configs},
+            before_state=before,
+            after_state=after,
+            request=request,
+        )
+        return locked, configuration
 
     @staticmethod
     @transaction.atomic

@@ -368,10 +368,24 @@ class OLQuotationPlanConfiguration(QuotationBaseModel):
         blank=True,
     )
     sub_product_code = models.CharField(max_length=80, blank=True)
+    section_number = models.PositiveSmallIntegerField(null=True, blank=True)
     is_selected = models.BooleanField(default=True)
     base_sum_assured = models.DecimalField(max_digits=18, decimal_places=2)
     term_years = models.PositiveSmallIntegerField()
+    payment_period_years = models.PositiveSmallIntegerField(null=True, blank=True)
     premium_frequency = models.CharField(max_length=40)
+    quote_basis = models.CharField(max_length=80, default="SUM_ASSURED")
+    estimated_maturity_value = models.DecimalField(
+        max_digits=18, decimal_places=2, null=True, blank=True
+    )
+    premium_factor = models.CharField(max_length=80, default="NONE")
+    joint_life = models.BooleanField(default=False)
+    mortgage = models.BooleanField(default=False)
+    personal_accident = models.BooleanField(default=False)
+    premium_waiver = models.BooleanField(default=False)
+    estimated_bonus_rate = models.DecimalField(
+        max_digits=12, decimal_places=6, default=Decimal("0")
+    )
     premium_amount = models.DecimalField(
         max_digits=18, decimal_places=2, null=True, blank=True
     )
@@ -397,10 +411,28 @@ class OLQuotationPlanConfiguration(QuotationBaseModel):
                 check=Q(premium_amount__isnull=True) | Q(premium_amount__gte=0),
                 name="ol_quotation_plan_config_premium_nonnegative",
             ),
+            models.CheckConstraint(
+                check=Q(section_number__isnull=True) | Q(section_number__gt=0),
+                name="ol_quotation_plan_config_section_positive",
+            ),
+            models.CheckConstraint(
+                check=Q(estimated_maturity_value__isnull=True) | Q(estimated_maturity_value__gt=0),
+                name="ol_quotation_plan_config_maturity_positive",
+            ),
+            models.CheckConstraint(
+                check=Q(estimated_bonus_rate__gte=0),
+                name="ol_quotation_plan_config_bonus_nonnegative",
+            ),
+            models.UniqueConstraint(
+                fields=["quotation", "section_number"],
+                condition=Q(section_number__isnull=False),
+                name="ol_quotation_plan_config_section_unique",
+            ),
         ]
         indexes = [
             models.Index(fields=["quotation", "is_selected"]),
             models.Index(fields=["product_version", "plan"]),
+            models.Index(fields=["quotation", "section_number"]),
         ]
 
     def clean(self):
@@ -412,6 +444,22 @@ class OLQuotationPlanConfiguration(QuotationBaseModel):
             errors["base_sum_assured"] = "Base sum assured must be greater than zero."
         if self.term_years is not None and self.term_years <= 0:
             errors["term_years"] = "Term must be greater than zero."
+        if self.payment_period_years is not None and self.payment_period_years <= 0:
+            errors["payment_period_years"] = "Payment period must be greater than zero."
+        if self.payment_period_years and self.term_years and self.payment_period_years > self.term_years:
+            errors["payment_period_years"] = "Payment period cannot exceed policy term."
+        self.quote_basis = (self.quote_basis or "").strip().upper()
+        self.premium_factor = (self.premium_factor or "NONE").strip().upper()
+        if not self.quote_basis:
+            errors["quote_basis"] = "Quote basis is required."
+        if not self.premium_factor:
+            errors["premium_factor"] = "Premium factor is required."
+        if self.estimated_maturity_value is not None and self.estimated_maturity_value <= 0:
+            errors["estimated_maturity_value"] = "Estimated maturity value must be greater than zero."
+        if self.estimated_bonus_rate is not None and self.estimated_bonus_rate < 0:
+            errors["estimated_bonus_rate"] = "Estimated bonus rate cannot be negative."
+        if self.section_number is not None and self.section_number <= 0:
+            errors["section_number"] = "Section number must be greater than zero."
         if self.product_version_id and self.quotation_id:
             quotation = self.quotation
             if quotation.product_version_id and quotation.product_version_id != self.product_version_id:

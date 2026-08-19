@@ -1,5 +1,6 @@
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, status, viewsets
+from rest_framework.views import APIView
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError as DRFValidationError
@@ -11,6 +12,7 @@ from apps.core.pagination import StandardPagination
 from apps.partner_onboarding.models import Location
 from apps.partners.models import Partner
 from apps.system_parameters.services.config_service import ConfigurationService
+from apps.ordinary_life.models import OLProductVersion
 
 from .models import (
     OLQuotation,
@@ -51,6 +53,8 @@ from .serializers import (
     OLQuotationDocumentSerializer,
     OLQuotationFinancialSummarySerializer,
     OLQuotationPersonalDetailsSerializer,
+    OLQuotationPlanSelectionSerializer,
+    OLQuotationPlanConfigurationPatchSerializer,
 )
 from .services.quotation_service import QuotationService
 
@@ -130,6 +134,35 @@ class QuotationScopedViewSet(viewsets.ModelViewSet):
     def partial_update(self, request, *args, **kwargs):
         kwargs["partial"] = True
         return self.update(request, *args, **kwargs)
+
+
+class OLPlanSearchView(APIView):
+    permission_classes = [HasOLQuotationPermission]
+    action = "plan_search"
+
+    def get(self, request, *args, **kwargs):
+        quotation = None
+        quotation_id = request.query_params.get("quotation_id")
+        if quotation_id:
+            try:
+                quotation = OLQuotation.objects.select_related("product", "product_version").get(pk=quotation_id)
+            except (OLQuotation.DoesNotExist, ValueError, TypeError):
+                raise DRFValidationError({"quotation_id": "Quotation does not exist."})
+        try:
+            limit = min(max(int(request.query_params.get("limit", 50)), 1), 200)
+        except (TypeError, ValueError):
+            raise DRFValidationError({"limit": "Limit must be a positive integer."})
+        plans = QuotationService.search_plans(
+            search=(request.query_params.get("search") or "").strip(),
+            product_version_id=request.query_params.get("product_version_id"),
+            product_code=(request.query_params.get("product_code") or "").strip() or None,
+            quotation=quotation,
+            limit=limit,
+        )
+        return _response(
+            {"plans": plans, "count": len(plans)},
+            "Ordinary Life plans retrieved.",
+        )
 
 
 class OLQuotationViewSet(QuotationScopedViewSet):
@@ -360,6 +393,72 @@ class OLQuotationViewSet(QuotationScopedViewSet):
                 "agents": agent_payload,
             },
             "Quotation Personal Details options retrieved.",
+        )
+
+    @action(detail=True, methods=["get"], url_path="plan-options")
+    def plan_options(self, request, pk=None):
+        quotation = self.get_object()
+        options = QuotationService.plan_options(
+            quotation=quotation,
+            plan_id=request.query_params.get("plan_id") or None,
+        )
+        if quotation.product_version_id:
+            options["plans"] = QuotationService.search_plans(
+                quotation=quotation,
+                product_version_id=str(quotation.product_version_id),
+                limit=200,
+            )
+        else:
+            options["plans"] = []
+        return _response(options, "Quotation Plan & Sub-Products options retrieved.")
+
+    @action(detail=True, methods=["post"], url_path="plans")
+    def plans(self, request, pk=None):
+        quotation = self.get_object()
+        payload = request.data.copy()
+        if "plans" not in payload and "plan_ids" in payload:
+            payload["plans"] = [
+                {"plan_id": plan_id}
+                for plan_id in payload.get("plan_ids", [])
+            ]
+        serializer = OLQuotationPlanSelectionSerializer(data=payload)
+        serializer.is_valid(raise_exception=True)
+        updated, configurations = QuotationService.select_plans(
+            quotation=quotation,
+            actor=request.user,
+            selections=serializer.validated_data["plans"],
+            request=request,
+        )
+        return _response(
+            {
+                "quotation": OLQuotationSerializer(updated).data,
+                "configurations": OLQuotationPlanConfigurationSerializer(configurations, many=True).data,
+                "selected_plan_count": len(configurations),
+                "wizard_step_complete": bool((updated.wizard_step_completion or {}).get("2_plan_and_sub_products")),
+            },
+            "Quotation plans selected and configured.",
+        )
+
+    @action(detail=True, methods=["patch"], url_path=r"plans/(?P<configuration_id>[^/.]+)")
+    def plan_configuration(self, request, pk=None, configuration_id=None):
+        quotation = self.get_object()
+        serializer = OLQuotationPlanConfigurationPatchSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        updated, configuration = QuotationService.update_plan_configuration(
+            quotation=quotation,
+            configuration_id=configuration_id,
+            actor=request.user,
+            payload=serializer.validated_data,
+            request=request,
+        )
+        return _response(
+            {
+                "quotation_id": str(updated.pk),
+                "configuration": OLQuotationPlanConfigurationSerializer(configuration).data,
+                "selected_plan_count": updated.plan_configurations.filter(is_selected=True).count(),
+                "wizard_step_complete": bool((updated.wizard_step_completion or {}).get("2_plan_and_sub_products")),
+            },
+            "Quotation plan configuration updated.",
         )
 
     def perform_create(self, serializer):

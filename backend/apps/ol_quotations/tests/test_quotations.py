@@ -7,7 +7,14 @@ from rest_framework.test import APIClient
 
 from apps.common.models import DomainEvent
 from apps.governance.models import AuditEvent
-from apps.ol_parameters.models import OLPlanType, OLProduct
+from apps.ol_parameters.models import (
+    OLBonusRate,
+    OLJointLifeAgeBasis,
+    OLJointLifeSetup,
+    OLJointLifeType,
+    OLPlanType,
+    OLProduct,
+)
 from apps.ol_quotations.models import (
     OLQuotation,
     OLQuotationEvent,
@@ -103,13 +110,15 @@ class OLQuotationAPITests(TestCase):
             plan_category="INDIVIDUAL",
         )
         cls.product = OLProduct.objects.create(
-            code="OLQ-TERM",
+            code="LEGACY-OLQ",
             name="OLQ Term Product",
             plan_type=cls.plan_type,
             effective_from=date.today(),
             currency="TZS",
             premium_frequencies=["ANNUAL", "MONTHLY"],
             allow_riders=True,
+            allow_bonus=True,
+            allow_loans=True,
         )
         cls.legacy_product = LegacyOLProduct.objects.create(
             code="LEGACY-OLQ",
@@ -122,6 +131,10 @@ class OLQuotationAPITests(TestCase):
             effective_from=date.today(),
             currency="TZS",
             payment_frequencies=["ANNUAL", "MONTHLY"],
+            min_entry_age=18,
+            max_entry_age=65,
+            min_term_years=5,
+            max_term_years=20,
         )
         cls.plan = OLPlan.objects.create(
             product_version=cls.product_version,
@@ -129,6 +142,28 @@ class OLQuotationAPITests(TestCase):
             name="Twenty Year Term",
             minimum_sum_assured=Decimal("1000.00"),
             maximum_sum_assured=Decimal("10000000.00"),
+        )
+        OLBonusRate.objects.create(
+            code="OLQ-BONUS-TEST",
+            name="OLQ Test Bonus",
+            product=cls.product,
+            bonus_type="REVERSIONARY",
+            rate=Decimal("2.50000000"),
+            declaration_frequency="ANNUAL",
+            effective_from=date.today(),
+            is_active=True,
+        )
+        OLJointLifeSetup.objects.create(
+            code="OLQ-JOINT-TEST",
+            name="OLQ Test Joint Life",
+            product=cls.product,
+            joint_life_type=OLJointLifeType.FIRST_DEATH,
+            age_basis=OLJointLifeAgeBasis.YOUNGER_LIFE,
+            survivor_benefit_rule="FULL_BENEFIT",
+            premium_adjustment_factor=Decimal("1.100000"),
+            underwriting_rule="STANDARD",
+            effective_from=date.today(),
+            is_active=True,
         )
 
     def setUp(self):
@@ -661,3 +696,204 @@ class OLQuotationAPITests(TestCase):
         self.assertTrue(quotation.wizard_step_completion["1_personal_details"])
         self.assertTrue(response.data["data"]["duplicate_active_quotation_warning"] is False)
         self.assertEqual(response.data["data"]["quote_name"], "Amina Personal Details Quote")
+
+
+    def plan_selection_payload(self, **overrides):
+        payload = {
+            "plans": [
+                {
+                    "product_version_id": str(self.product_version.pk),
+                    "plan_id": str(self.plan.pk),
+                    "term_years": 20,
+                    "payment_period_years": 20,
+                    "premium_frequency": "ANNUAL",
+                    "quote_basis": "SUM_ASSURED",
+                    "premium_factor": "NONE",
+                    "estimated_maturity_value": "1000.00",
+                    "base_sum_assured": "1000.00",
+                }
+            ]
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_plan_search_returns_active_plan_card_and_parameter_badges(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.get("/api/v1/ol/plans/search/?search=TERM-20")
+        self.assertEqual(response.status_code, 200, response.data)
+        plans = response.data["data"]["plans"]
+        self.assertEqual(len(plans), 1)
+        card = plans[0]
+        self.assertEqual(card["code"], "TERM-20")
+        self.assertIn("WITH_PROFIT", card["badges"])
+        self.assertIn("JOINT_LIFE", card["badges"])
+        self.assertEqual(card["payment_frequencies"], ["ANNUAL", "MONTHLY"])
+
+    def test_plan_selection_creates_multiple_configurations_in_selection_order(self):
+        second_plan = OLPlan.objects.create(
+            product_version=self.product_version,
+            code="TERM-10",
+            name="Ten Year Term",
+            description="Shorter configured term.",
+            minimum_sum_assured=Decimal("2000.00"),
+            maximum_sum_assured=Decimal("10000000.00"),
+        )
+        draft = self.create_draft()
+        payload = {
+            "plans": [
+                {
+                    "product_version_id": str(self.product_version.pk),
+                    "plan_id": str(self.plan.pk),
+                    "term_years": 20,
+                    "payment_period_years": 20,
+                    "premium_frequency": "ANNUAL",
+                    "quote_basis": "SUM_ASSURED",
+                    "premium_factor": "NONE",
+                    "estimated_maturity_value": "1000.00",
+                    "base_sum_assured": "1000.00",
+                },
+                {
+                    "product_version_id": str(self.product_version.pk),
+                    "plan_id": str(second_plan.pk),
+                    "term_years": 10,
+                    "payment_period_years": 10,
+                    "premium_frequency": "MONTHLY",
+                    "quote_basis": "SUM_ASSURED",
+                    "premium_factor": "NONE",
+                    "estimated_maturity_value": "2000.00",
+                    "base_sum_assured": "2000.00",
+                },
+            ]
+        }
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/plans/",
+            payload,
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        configurations = response.data["data"]["configurations"]
+        self.assertEqual([row["section_number"] for row in configurations], [1, 2])
+        self.assertEqual([str(row["plan"]) for row in configurations], [str(self.plan.pk), str(second_plan.pk)])
+        self.assertTrue(response.data["data"]["wizard_step_complete"])
+        self.assertTrue(
+            DomainEvent.objects.filter(
+                event_type="QuotationPlanSelectionUpdated",
+                aggregate_id=draft["id"],
+            ).exists()
+        )
+
+    def test_plan_selection_defaults_bonus_rate_from_ol_bonus_parameter(self):
+        draft = self.create_draft()
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/plans/",
+            self.plan_selection_payload(),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        configuration = response.data["data"]["configurations"][0]
+        self.assertEqual(Decimal(configuration["estimated_bonus_rate"]), Decimal("2.500000"))
+
+    def test_plan_options_are_sourced_from_product_and_parameter_catalogs(self):
+        draft = self.create_draft()
+        response = self.client.get(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/plan-options/",
+            {"plan_id": str(self.plan.pk)},
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        options = response.data["data"]
+        self.assertEqual(
+            options["payment_frequencies"],
+            [
+                {"value": "ANNUAL", "label": "Annual"},
+                {"value": "MONTHLY", "label": "Monthly"},
+            ],
+        )
+        self.assertEqual(
+            {item["value"] for item in options["quote_bases"]},
+            {"SUM_ASSURED", "PREMIUM"},
+        )
+        self.assertEqual(
+            {item["value"] for item in options["premium_factors"]},
+            {"NONE", "STANDARD"},
+        )
+        self.assertTrue(options["plan_features"]["joint_life"])
+        self.assertEqual(options["selected_plan_id"], str(self.plan.pk))
+
+    def test_plan_selection_rejects_term_outside_product_setup(self):
+        draft = self.create_draft()
+        payload = self.plan_selection_payload(
+            plans=[{
+                **self.plan_selection_payload()["plans"][0],
+                "term_years": 25,
+            }]
+        )
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/plans/",
+            payload,
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("term_years", str(response.data))
+
+    def test_plan_selection_rejects_entry_age_outside_product_setup(self):
+        draft = self.create_draft()
+        personal = self.personal_details_payload(identity_number="AGE-TOO-OLD", date_of_birth="1940-01-01")
+        personal_response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/personal-details/",
+            personal,
+            format="json",
+        )
+        self.assertEqual(personal_response.status_code, 200, personal_response.data)
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/plans/",
+            self.plan_selection_payload(),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("age_at_quote", str(response.data))
+
+    def test_plan_selection_rejects_frequency_not_allowed_by_product_setup(self):
+        draft = self.create_draft()
+        payload = self.plan_selection_payload(
+            plans=[{
+                **self.plan_selection_payload()["plans"][0],
+                "premium_frequency": "WEEKLY",
+            }]
+        )
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/plans/",
+            payload,
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("premium_frequency", str(response.data))
+
+    def test_plan_configuration_patch_updates_section_and_preserves_order(self):
+        draft = self.create_draft()
+        selection = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/plans/",
+            self.plan_selection_payload(),
+            format="json",
+        )
+        self.assertEqual(selection.status_code, 200, selection.data)
+        configuration_id = selection.data["data"]["configurations"][0]["id"]
+        response = self.client.patch(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/plans/{configuration_id}/",
+            {
+                "payment_period_years": 10,
+                "estimated_maturity_value": "1500.00",
+                "base_sum_assured": "1500.00",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        configuration = response.data["data"]["configuration"]
+        self.assertEqual(configuration["payment_period_years"], 10)
+        self.assertEqual(configuration["section_number"], 1)
+        self.assertTrue(response.data["data"]["wizard_step_complete"])
+        self.assertTrue(
+            AuditEvent.objects.filter(
+                object_id=draft["id"],
+                action="PLAN_CONFIGURATION_UPDATED",
+            ).exists()
+        )

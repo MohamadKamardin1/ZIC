@@ -13,7 +13,7 @@ A quotation is a draft aggregate completed through seven independently saveable 
 | Step | Resource | Completion rule |
 |---|---|---|
 | 1 | `OLQuotation` Personal Details | Quote identity, date of birth, age, gender, smoker status, location, agent, and address pass validation |
-| 2 | `OLQuotationPlanConfiguration` | At least one selected product/plan configuration |
+| 2 | `OLQuotationPlanConfiguration` | At least one selected product/plan configuration with valid term, payment period, frequency, quote basis, and positive maturity/base amounts |
 | 3 | `OLQuotationMember` | At least one member and at least one `LIFE_ASSURED` |
 | 4 | `OLQuotationInstallmentConfiguration` | At least one selected installment configuration |
 | 5 | `OLQuotationFundAllocation` | Optional; selected allocations, when present, must total 100% |
@@ -23,6 +23,8 @@ A quotation is a draft aggregate completed through seven independently saveable 
 The `wizard-summary` endpoint exposes the completion state without requiring the frontend to duplicate domain rules. Child resources are independently listable, filterable, paginated, and editable while the quotation remains in `DRAFT` status.
 
 The Personal Details step is saved through `POST` or `PATCH /quotations/{id}/personal-details/`. It computes `age_at_quote` from `date_of_birth` and `quote_date`, rejects future or out-of-range dates, validates all select values against active system choice lists, validates active configured locations and agent partner assignments, and returns a warning when another active quotation uses the same identity and date-of-birth combination. A matching active partner with an active assignment and verified KYC is reported through `partner_exists`, `partner_id`, and `compliant`; the step links that partner but never creates a new partner record.
+
+The Plan Selection step is driven by active `ordinary_life.OLProductVersion` and `OLPlan` records. The plan search endpoint returns product/plan cards with codes, descriptions, payment frequencies, entry-age and term limits, and capability badges derived from OL Product Setup and effective-dated OL Parameters. A selection request preserves the submitted order as `section_number` values, upserts selected plan configurations, deselects prior rows not in the new selection, and marks `2_plan_and_sub_products` complete. Each section can subsequently be patched for policy term, payment period, frequency, quote basis, maturity value, premium factor, optional feature toggles, bonus rate, and base sum assured. Every mutation is restricted to draft quotations and records an audit event plus a transactional outbox event.
 
 ## Domain model and invariants
 
@@ -58,17 +60,21 @@ The API is mounted under `/api/v1/ol-quotations/`.
 | Underwriting | `/underwriting/` |
 | Beneficiaries | `/beneficiaries/` |
 | Immutable quotation events | `/events/` |
+| Plan search | `GET /api/v1/ol/plans/search/` |
+| Plan configurations | `POST /quotations/{id}/plans/` |
+| Plan options | `GET /quotations/{id}/plan-options/` |
+| Plan section configuration | `PATCH /quotations/{id}/plans/{configuration_id}/` |
 | Personal Details options | `GET /quotations/personal-details-options/` |
 
 Quotation list endpoints support filtering, search, ordering, pagination, and partner row-level scoping. Lifecycle actions are exposed as `POST /quotations/{id}/finalize/`, `/expire/`, and `/convert/`; the wizard state is available at `GET /quotations/{id}/wizard-summary/`.
 
-`personal-details-options` returns identity types, genders, smoker statuses, active locations, and active partners assigned to the configured `OL_AGENT_PARTNER_TYPE_CODE`. It accepts an optional `search` parameter for location and agent lookup. No select option is hardcoded in the quotation view; the smoker list and the age, agent-type, and identity-format rules are seeded as system configuration and remain editable through the platform configuration workflow.
+`personal-details-options` returns identity types, genders, smoker statuses, active locations, and active partners assigned to the configured `OL_AGENT_PARTNER_TYPE_CODE`. It accepts an optional `search` parameter for location and agent lookup. `plans/search` searches active, effective product versions and plans. `plan-options` returns payment frequencies from the selected product version, quote-basis and premium-factor choice lists from system parameters, and feature availability derived from product/plan flags and effective OL Joint Life, Mortgage Interest Factor, and Rider Setup rows. Bonus-rate defaults are resolved from the effective OL Bonus Rate scope for the selected product/plan. No select option is hardcoded in the quotation view; these catalogs remain editable through the platform configuration workflow.
 
 Responses follow the platform API envelope and standard pagination contract. Validation failures are returned through the central error envelope with field-level details.
 
 ## Permission and row-level scope
 
-The module uses the `ol_quotations` permission namespace with `VIEW`, `CREATE`, `UPDATE`, `DELETE`, `CONFIGURE`, `PRINT`, and `CONVERT` actions. The Personal Details mutation maps to `UPDATE`, while the options endpoint maps to `VIEW`. The seed command creates the following groups:
+The module uses the `ol_quotations` permission namespace with `VIEW`, `CREATE`, `UPDATE`, `DELETE`, `CONFIGURE`, `PRINT`, and `CONVERT` actions. The Personal Details mutation maps to `UPDATE`, its options endpoint maps to `VIEW`, plan search and plan options map to `VIEW`, and plan selection and section configuration map to `UPDATE`. The seed command creates the following groups:
 
 | Group | Intended access |
 |---|---|
@@ -94,7 +100,7 @@ python manage.py migrate
 python manage.py seed_ol_quotations
 ```
 
-The command creates module permissions, role groups, the `OL_QUOTATION` numbering configuration, the `SMOKER_STATUS_CHOICES` choice list, and the Personal Details parameters `OL_MAX_QUOTATION_AGE`, `OL_MIN_QUOTATION_AGE`, `OL_AGENT_PARTNER_TYPE_CODE`, and `OL_IDENTITY_FORMAT_RULES` without duplicating existing rows. Production deployments should run the command after migrations and before enabling quotation menus.
+The command creates module permissions, role groups, the `OL_QUOTATION` numbering configuration, the `SMOKER_STATUS_CHOICES`, `OL_QUOTE_BASIS_CHOICES`, and `OL_PREMIUM_FACTOR_CHOICES` choice lists, and the Personal Details parameters `OL_MAX_QUOTATION_AGE`, `OL_MIN_QUOTATION_AGE`, `OL_AGENT_PARTNER_TYPE_CODE`, and `OL_IDENTITY_FORMAT_RULES` without duplicating existing rows. Production deployments should run the command after migrations and before enabling quotation menus.
 
 ## Future integration points
 

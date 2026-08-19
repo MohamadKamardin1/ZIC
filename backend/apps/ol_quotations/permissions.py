@@ -29,6 +29,10 @@ class OLQuotationPermission:
         "configure": CONFIGURE,
         "personal_details": UPDATE,
         "personal_details_options": VIEW,
+        "plan_search": VIEW,
+        "plan_options": VIEW,
+        "plans": UPDATE,
+        "plan_configuration": UPDATE,
     }
 
     @classmethod

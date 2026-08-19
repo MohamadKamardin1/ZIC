@@ -10,6 +10,7 @@ from drf_spectacular.views import (
 )
 
 from apps.core.views import health_check, liveness_check, readiness_check
+from apps.ol_quotations.views import OLPlanSearchView
 
 api_v1_patterns = [
     path('health/', health_check, name='health-check'),
@@ -26,6 +27,7 @@ api_v1_patterns = [
     path('group-life/', include('apps.group_life.urls')),
     path('ordinary-life/', include('apps.ordinary_life.urls')),
     path('ol-parameters/', include('apps.ol_parameters.urls')),
+    path('ol/plans/search/', OLPlanSearchView.as_view(), name='ol-plan-search-root'),
     path('ol-quotations/', include('apps.ol_quotations.urls')),
     path('ol/quotations/', include('apps.ol_quotations.urls')),
     path('group-credit/', include('apps.group_credit.urls')),
