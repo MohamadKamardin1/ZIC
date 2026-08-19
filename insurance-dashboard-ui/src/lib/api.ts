@@ -1367,6 +1367,7 @@ export async function updatePartnerType(
     location: string | null
     region: string
     share_data_externally: boolean
+    kyc_status: string
   }>,
 ): Promise<ApplicationPartnerType> {
   const res = await apiFetchAuth(`${ONBOARDING}/applications/${applicationId}/partner-types/${id}/`, {

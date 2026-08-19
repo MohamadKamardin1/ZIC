@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import {
-  ArrowLeft, Plus, Trash2, Loader2, X, Search, Eye, RefreshCw, Save,
+  ArrowLeft, Plus, Trash2, Loader2, X, Search, Eye, RefreshCw, Save, Check,
   User, Building2, Landmark, Phone, Mail, MapPin, Send, CheckCircle2,
-  XCircle, AlertTriangle, Shield, FileCheck, Pencil,
+  XCircle, AlertTriangle, Shield, FileCheck, Pencil, Clock, Upload,
 } from "lucide-react"
 import {
   getApplication,
@@ -54,74 +54,15 @@ import type {
 import { useStatusLabel, useStatusColor } from "../../config/ConfigurationHooks"
 import { fetchPartnerOnboardingConfiguration, getConfiguredParameterValue, usePartnerOnboardingConfiguration } from "../../config/ConfigurationAPI"
 import { useLitProps } from "../../lib/useLitProps"
-import FlowBanner from "../../components/shared/FlowBanner"
 import ConfirmDialog from "../../components/shared/ConfirmDialog"
 
-const LIFECYCLE: Record<string, { label: string; status: "completed" | "active" | "pending" | "rejected" }[]> = {
-  ACTIVE: [
-    { label: "Draft", status: "active" },
-    { label: "Submitted", status: "pending" },
-    { label: "Review", status: "pending" },
-    { label: "Compliance", status: "pending" },
-    { label: "Decision", status: "pending" },
-  ],
-  SUBMITTED: [
-    { label: "Draft", status: "completed" },
-    { label: "Submitted", status: "active" },
-    { label: "Review", status: "pending" },
-    { label: "Compliance", status: "pending" },
-    { label: "Decision", status: "pending" },
-  ],
-  UNDER_REVIEW: [
-    { label: "Draft", status: "completed" },
-    { label: "Submitted", status: "completed" },
-    { label: "Review", status: "active" },
-    { label: "Compliance", status: "pending" },
-    { label: "Decision", status: "pending" },
-  ],
-  PENDING_DOCUMENTS: [
-    { label: "Draft", status: "completed" },
-    { label: "Submitted", status: "completed" },
-    { label: "Review", status: "active" },
-    { label: "Compliance", status: "pending" },
-    { label: "Decision", status: "pending" },
-  ],
-  COMPLIANCE_CHECK: [
-    { label: "Draft", status: "completed" },
-    { label: "Submitted", status: "completed" },
-    { label: "Review", status: "completed" },
-    { label: "Compliance", status: "active" },
-    { label: "Decision", status: "pending" },
-  ],
-  APPROVED: [
-    { label: "Draft", status: "completed" },
-    { label: "Submitted", status: "completed" },
-    { label: "Review", status: "completed" },
-    { label: "Compliance", status: "completed" },
-    { label: "Approved", status: "active" },
-  ],
-  REJECTED: [
-    { label: "Draft", status: "completed" },
-    { label: "Submitted", status: "completed" },
-    { label: "Review", status: "completed" },
-    { label: "Compliance", status: "completed" },
-    { label: "Rejected", status: "rejected" },
-  ],
-  SUSPENDED: [
-    { label: "Draft", status: "completed" },
-    { label: "Submitted", status: "completed" },
-    { label: "Review", status: "completed" },
-    { label: "Suspended", status: "rejected" },
-    { label: "Decision", status: "pending" },
-  ],
-  CONVERTED: [
-    { label: "Draft", status: "completed" },
-    { label: "Submitted", status: "completed" },
-    { label: "Review", status: "completed" },
-    { label: "Compliance", status: "completed" },
-    { label: "Converted", status: "active" },
-  ],
-}
+const KYC_STATUS_OPTIONS = [
+  { value: "NOT_SET", label: "Not Set" },
+  { value: "PENDING_REVIEW", label: "Pending Review" },
+  { value: "VERIFIED", label: "Verified" },
+  { value: "REJECTED", label: "Rejected" },
+  { value: "EXPIRED", label: "Expired" },
+]
 
 export default function ApplicationDetail() {
   const { id } = useParams<{ id: string }>()
@@ -250,8 +191,6 @@ export default function ApplicationDetail() {
   }, [id, load])
 
   /* ── Hooks that must be called before early returns ── */
-  const statusLabel = useStatusLabel(app?.status ?? "DRAFT")
-  const lifecycleSteps = LIFECYCLE[app?.status ?? "DRAFT"] ?? LIFECYCLE.ACTIVE
 
   async function handleDeletePartnerType(ptId: string) {
     if (!id) return
@@ -302,117 +241,10 @@ export default function ApplicationDetail() {
     )
   }
 
-  /* ---- Action Buttons Config ---- */
-  function getNextAction() {
-    const s = app!.status
-    if (s === "ACTIVE" || s === "DRAFT") {
-      return {
-        label: "Submit Application",
-        onClick: () => confirmThen(
-          () => submitApplication(id!),
-          "Submit Application",
-          "Are you sure you want to submit this application for review? You won't be able to edit it after submission.",
-        ),
-      }
-    }
-    if (s === "SUBMITTED") {
-      return {
-        label: "Start Review",
-        onClick: () => confirmThen(
-          () => startReview(id!),
-          "Start Review",
-          "Begin reviewing this application?",
-        ),
-      }
-    }
-    if (s === "UNDER_REVIEW" || s === "PENDING_DOCUMENTS") {
-      return {
-        label: "Send to Compliance",
-        onClick: () => confirmThen(
-          () => sendToCompliance(id!),
-          "Send to Compliance",
-          "Send this application for compliance check?",
-        ),
-      }
-    }
-    if (s === "COMPLIANCE_CHECK") {
-      return {
-        label: "Approve Application",
-        onClick: () => confirmThen(
-          () => approveApplication(id!),
-          "Approve Application",
-          "Are you sure you want to approve this application?",
-        ),
-      }
-    }
-    if (s === "APPROVED") {
-      return {
-        label: "Convert to Partner",
-        onClick: () => confirmThen(
-          () => convertApplication(id!),
-          "Convert to Partner",
-          "This will create a partner record from this application. Continue?",
-        ),
-      }
-    }
-    if (s === "SUSPENDED") {
-      return {
-        label: "Resume Application",
-        onClick: () => confirmThen(
-          () => resumeApplication(id!),
-          "Resume Application",
-          "Resume this application back to compliance check?",
-        ),
-      }
-    }
-    return null
-  }
-
-  function getSecondaryActions() {
-    const s = app!.status
-    const actions: { label: string; icon: React.ReactNode; onClick: () => void; variant: "danger" | "warning" }[] = []
-
-    if (s === "COMPLIANCE_CHECK") {
-      actions.push({
-        label: "Reject",
-        icon: <XCircle className="h-3.5 w-3.5" />,
-        onClick: () => confirmThen(
-          () => rejectApplication(id!, "Rejected during compliance"),
-          "Reject Application",
-          "Are you sure you want to reject this application?",
-        ),
-        variant: "danger",
-      })
-      actions.push({
-        label: "Suspend",
-        icon: <AlertTriangle className="h-3.5 w-3.5" />,
-        onClick: () => confirmThen(
-          () => suspendApplication(id!),
-          "Suspend Application",
-          "Are you sure you want to suspend this application?",
-        ),
-        variant: "warning",
-      })
-    }
-
-    if (s === "UNDER_REVIEW" || s === "PENDING_DOCUMENTS") {
-      actions.push({
-        label: "Reject",
-        icon: <XCircle className="h-3.5 w-3.5" />,
-        onClick: () => confirmThen(
-          () => rejectApplication(id!, "Rejected during review"),
-          "Reject Application",
-          "Are you sure you want to reject this application?",
-        ),
-        variant: "danger",
-      })
-    }
-
-    return actions
-  }
-
-  const nextAction = getNextAction()
-  const secondaryActions = getSecondaryActions()
+  const hasWorkflowActions = [
+    "DRAFT", "SUBMITTED", "UNDER_REVIEW", "PENDING_DOCUMENTS",
+    "COMPLIANCE_CHECK", "APPROVED", "SUSPENDED",
+  ].includes(app?.status ?? "")
 
   return (
     <div className="flex flex-col gap-5">
@@ -433,16 +265,11 @@ export default function ApplicationDetail() {
 
       <onboarding-status-timeline ref={timelineRef} />
 
-      {/* Flow Banner */}
-      <FlowBanner
-        title={`Application ${app.applicationNumber} — ${statusLabel}`}
-        steps={lifecycleSteps}
-        nextAction={undefined}
-      />
-
-      <div className="rounded-xl border border-border bg-card px-4 py-3">
-        <onboarding-workflow-actions ref={workflowRef} />
-      </div>
+      {hasWorkflowActions && (
+        <div className="rounded-xl border border-border bg-card px-4 py-3">
+          <onboarding-workflow-actions ref={workflowRef} />
+        </div>
+      )}
 
       {/* ===== TABLE 1: User Info ===== */}
       <div className="rounded-xl border border-border bg-card">
@@ -636,42 +463,59 @@ function PartnerTypeTab({
       {partnerTypes.length === 0 ? (
         <p className="py-6 text-center text-sm text-muted-foreground">No partner types assigned yet.</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border">
-          <table className="w-full border-collapse text-sm">
-            <thead className="bg-secondary/40">
-              <tr className="border-b border-border text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                <th className="border-r border-border px-3 py-3">Partner Type</th>
-                <th className="border-r border-border px-3 py-3">Branch</th>
-                <th className="border-r border-border px-3 py-3">Region</th>
-                <th className="border-r border-border px-3 py-3">Location</th>
-                <th className="border-r border-border px-3 py-3">Share Data</th>
-                <th className="w-28 px-3 py-3 text-right">Actions</th>
+        <div className="overflow-hidden rounded-xl border border-border">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/50 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <th className="px-4 py-3">Partner Type</th>
+                <th className="px-4 py-3">Branch</th>
+                <th className="px-4 py-3">Region</th>
+                <th className="px-4 py-3">Location</th>
+                <th className="px-4 py-3">Share Data</th>
+                <th className="w-24 px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {partnerTypes.map((pt) => (
-                <tr key={pt.id} className="transition-colors hover:bg-secondary/30">
-                  <td className="border-r border-border px-3 py-3 font-medium text-foreground">{pt.partnerTypeName}</td>
-                  <td className="border-r border-border px-3 py-3 text-muted-foreground">{pt.branchName || "—"}</td>
-                  <td className="border-r border-border px-3 py-3 text-muted-foreground">{pt.region || "—"}</td>
-                  <td className="border-r border-border px-3 py-3 text-muted-foreground">{pt.locationName || "—"}</td>
-                  <td className="border-r border-border px-3 py-3 text-muted-foreground">{pt.shareDataExternally ? "Yes" : "No"}</td>
-                  <td className="px-3 py-3 text-right">
-                    <div className="flex items-center justify-end gap-1.5">
+                <tr key={pt.id} className="transition-colors hover:bg-muted/30">
+                  <td className="px-4 py-3">
+                    <span className="font-semibold text-foreground">{pt.partnerTypeName}</span>
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">{pt.branchName || <span className="text-muted-foreground/50">—</span>}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{pt.region || <span className="text-muted-foreground/50">—</span>}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{pt.locationName || <span className="text-muted-foreground/50">—</span>}</td>
+                  <td className="px-4 py-3">
+                    {pt.shareDataExternally ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-success/10 px-2.5 py-0.5 text-xs font-medium text-success">
+                        <Check className="h-3 w-3" /> Yes
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                        <X className="h-3 w-3" /> No
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-1">
                       <button
                         onClick={() => setEditing(pt)}
-                        className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1.5 text-xs font-medium text-foreground transition hover:bg-secondary"
-                        title="View and update setup"
+                        className="group relative rounded-lg p-2 text-muted-foreground transition hover:bg-primary/10 hover:text-primary"
+                        aria-label="View and update setup"
                       >
-                        <Eye className="h-3.5 w-3.5" />
-                        View / Edit
+                        <Eye className="h-4 w-4" />
+                        <span className="pointer-events-none absolute right-1/2 top-1/2 z-50 translate-x-1/2 translate-y-[calc(-50%-2.4rem)] whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-[11px] font-medium text-background opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100">
+                          View / Edit Setup
+                        </span>
                       </button>
                       <button
                         onClick={() => onDelete(pt.id)}
-                        className="rounded-md border border-border p-1.5 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
-                        title="Remove"
+                        className="group relative rounded-lg p-2 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
+                        aria-label="Remove"
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <Trash2 className="h-4 w-4" />
+                        <span className="pointer-events-none absolute right-1/2 top-1/2 z-50 translate-x-1/2 translate-y-[calc(-50%-2.4rem)] whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-[11px] font-medium text-background opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100">
+                          Remove
+                        </span>
                       </button>
                     </div>
                   </td>
@@ -751,6 +595,7 @@ function PartnerTypeSetupModal({
   const [region, setRegion] = useState(assignment.region ?? "")
   const [location, setLocation] = useState(assignment.location ?? "")
   const [shareData, setShareData] = useState(assignment.shareDataExternally)
+  const [kycStatus, setKycStatus] = useState(assignment.kycStatus || "NOT_SET")
   const [activeSection, setActiveSection] = useState<SetupSection>("documents")
   const [saving, setSaving] = useState(false)
   const [setupLoading, setSetupLoading] = useState(true)
@@ -1135,6 +980,7 @@ function PartnerTypeSetupModal({
         region,
         location: location || null,
         share_data_externally: shareData,
+        kyc_status: kycStatus,
       })
       await onSaved()
       setNotice("Assignment settings saved and synchronized.")
@@ -1160,18 +1006,18 @@ function PartnerTypeSetupModal({
     const options = fieldOptions(config)
     const rules = config.validationRules ?? {}
     const common = {
-      className: "w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none transition focus:border-foreground focus:ring-2 focus:ring-foreground/15",
+      className: "w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/25",
       required: config.isRequired,
     }
     if (config.fieldType === "BOOLEAN") {
-      return <label className="flex min-h-11 items-center gap-3 rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal"><input type="checkbox" checked={Boolean(value)} onChange={(event) => setFieldValues((prev) => ({ ...prev, [config.id]: event.target.checked }))} className="h-4 w-4 accent-black" /> Yes</label>
+      return <label className="flex min-h-11 items-center gap-3 rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal"><input type="checkbox" checked={Boolean(value)} onChange={(event) => setFieldValues((prev) => ({ ...prev, [config.id]: event.target.checked }))} className="h-4 w-4 accent-primary" /> Yes</label>
     }
     if (config.fieldType === "DROPDOWN") {
       return <select {...common} value={String(value)} onChange={(event) => setFieldValues((prev) => ({ ...prev, [config.id]: event.target.value }))}><option value="">Select {config.fieldName}</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
     }
     if (config.fieldType === "MULTI_SELECT" && options.length > 0) {
       const selected = Array.isArray(value) ? value.map(String) : []
-      return <div className="grid gap-2 rounded-lg border border-input bg-background p-3 sm:grid-cols-2">{options.map((option) => <label key={option.value} className="flex items-center gap-2 text-sm font-normal"><input type="checkbox" checked={selected.includes(option.value)} onChange={(event) => setFieldValues((prev) => ({ ...prev, [config.id]: event.target.checked ? [...selected, option.value] : selected.filter((item) => item !== option.value) }))} className="h-4 w-4 accent-black" />{option.label}</label>)}</div>
+      return <div className="grid gap-2 rounded-lg border border-input bg-background p-3 sm:grid-cols-2">{options.map((option) => <label key={option.value} className="flex items-center gap-2 text-sm font-normal"><input type="checkbox" checked={selected.includes(option.value)} onChange={(event) => setFieldValues((prev) => ({ ...prev, [config.id]: event.target.checked ? [...selected, option.value] : selected.filter((item) => item !== option.value) }))} className="h-4 w-4 accent-primary" />{option.label}</label>)}</div>
     }
     if (config.fieldType === "MULTI_SELECT") {
       return <input {...common} value={Array.isArray(value) ? value.join(", ") : String(value)} onChange={(event) => setFieldValues((prev) => ({ ...prev, [config.id]: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) }))} placeholder="Enter values separated by commas" />
@@ -1184,7 +1030,7 @@ function PartnerTypeSetupModal({
   }
 
   return (
-    <div className="partner-type-setup fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-0 sm:p-4" role="dialog" aria-modal="true" aria-label="Partner type setup">
+    <div className="partner-type-setup fixed inset-0 z-[60] flex items-center justify-center p-0 sm:p-4" role="dialog" aria-modal="true" aria-label="Partner type setup" style={{ backgroundColor: "var(--color-bg-overlay, rgba(0,0,0,0.4))" }}>
       <style>{`\n        .partner-type-setup input:not([type="checkbox"]):not([type="radio"]),\n        .partner-type-setup select,\n        .partner-type-setup button,\n        .partner-type-setup a {\n          min-height: 40px;\n        }\n        .partner-type-setup input:not([type="checkbox"]):not([type="radio"]),\n        .partner-type-setup select {\n          height: 40px;\n        }\n        .partner-type-setup input[type="file"] {\n          height: 40px;\n          padding-top: 8px;\n          padding-bottom: 8px;\n        }\n        .partner-type-setup textarea {\n          min-height: 88px;\n        }\n        .partner-type-setup button,\n        .partner-type-setup a {\n          line-height: 1.15;\n        }\n      `}</style>
       <div className="flex h-full max-h-[100vh] w-full flex-col overflow-hidden border border-border bg-card shadow-2xl sm:h-auto sm:max-h-[calc(100vh-2rem)] sm:rounded-2xl 2xl:max-w-[1800px]">
         <div className="flex flex-col gap-4 border-b border-border px-4 py-4 sm:px-6 sm:py-5 lg:flex-row lg:items-center lg:justify-between">
@@ -1194,8 +1040,21 @@ function PartnerTypeSetupModal({
             <p className="mt-1 text-sm text-muted-foreground">Complete the parameterized setup steps for this assigned partner type.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs font-semibold text-muted-foreground"><Shield className="h-3.5 w-3.5" /> KYC: Not Set</span>
-            <button type="button" onClick={onClose} className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground transition hover:bg-secondary"><ArrowLeft className="h-4 w-4" /> Back to Partner View</button>
+            <label className="inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-background px-3 text-sm font-semibold text-muted-foreground">
+              <Shield className="h-3.5 w-3.5" />
+              <span>KYC</span>
+              <select
+                value={kycStatus}
+                onChange={(event) => setKycStatus(event.target.value)}
+                className="cursor-pointer appearance-none bg-transparent pr-1 text-sm font-semibold text-foreground outline-none"
+                aria-label="KYC status"
+              >
+                {KYC_STATUS_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <button type="button" onClick={onClose} className="inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-background px-3 text-sm font-semibold text-foreground transition hover:bg-secondary"><ArrowLeft className="h-4 w-4" /> Back to Partner View</button>
           </div>
         </div>
 
@@ -1203,7 +1062,7 @@ function PartnerTypeSetupModal({
           <div className="flex gap-2 overflow-x-auto" role="tablist" aria-label="Partner type setup steps">
             {steps.map((step, index) => {
               const count = step.key === "documents" ? `${completedDocuments}/${documentRequirements.length}` : step.key === "attributes" ? `${completedFields}/${fieldConfigurations.length}` : step.key === "contacts" ? `${completedContacts}/${contactRequirements.length}` : `${completedBanks}/${bankRequirements.length}`
-              return <button key={step.key} type="button" onClick={() => { clearFeedback(); setActiveSection(step.key) }} className={`flex min-w-max items-center gap-2 rounded-lg border px-3 py-2.5 text-left transition sm:px-4 ${activeSection === step.key ? "border-foreground bg-foreground text-background" : "border-border bg-background text-muted-foreground hover:bg-secondary hover:text-foreground"}`} role="tab" aria-selected={activeSection === step.key}><span className="flex h-6 w-6 items-center justify-center rounded-full border border-current text-xs font-bold">{index + 1}</span><span><span className="block text-xs font-semibold sm:text-sm">{step.label}</span><span className="block text-[10px] font-normal uppercase tracking-wide opacity-70">{count} configured</span></span>{step.icon}</button>
+              return <button key={step.key} type="button" onClick={() => { clearFeedback(); setActiveSection(step.key) }} className={`flex min-w-max items-center gap-2 rounded-lg border px-3 py-2.5 text-left transition sm:px-4 ${activeSection === step.key ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground hover:bg-secondary hover:text-foreground"}`} role="tab" aria-selected={activeSection === step.key}><span className="flex h-6 w-6 items-center justify-center rounded-full border border-current text-xs font-bold">{index + 1}</span><span><span className="block text-xs font-semibold sm:text-sm">{step.label}</span><span className="block text-[10px] font-normal uppercase tracking-wide opacity-70">{count} configured</span></span>{step.icon}</button>
             })}
           </div>
         </div>
@@ -1214,49 +1073,223 @@ function PartnerTypeSetupModal({
               <section className="rounded-xl border border-border bg-card p-4 sm:p-5">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                   <div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Assignment context</p><p className="mt-1 text-sm text-muted-foreground">These values are also controlled by the partner and branch parameter configuration.</p></div>
-                  <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground"><span className="h-2 w-2 rounded-full bg-foreground" /> Assignment active</div>
+                  <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground"><span className="h-2 w-2 rounded-full bg-primary" /> Assignment active</div>
                 </div>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  <label className="space-y-1.5 text-sm font-medium text-foreground">Branch<select value={branch} onChange={(event) => { setBranch(event.target.value); setLocation("") }} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-foreground/15"><option value="">No branch</option>{(choices?.branches ?? []).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
-                  <label className="space-y-1.5 text-sm font-medium text-foreground">Region<select value={region} onChange={(event) => setRegion(event.target.value)} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-foreground/15"><option value="">No region</option>{(choices?.regions ?? []).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
-                  <label className="space-y-1.5 text-sm font-medium text-foreground">Location<select value={location} onChange={(event) => setLocation(event.target.value)} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-foreground/15"><option value="">No location</option>{locations.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
-                  <label className="flex items-center gap-3 rounded-lg border border-input bg-background px-3 py-2.5 text-sm"><input type="checkbox" checked={shareData} onChange={(event) => setShareData(event.target.checked)} className="h-4 w-4 accent-black" /><span><span className="block font-medium text-foreground">Share data externally</span><span className="block text-[11px] font-normal text-muted-foreground">Approved downstream use</span></span></label>
+                  <label className="space-y-1.5 text-sm font-medium text-foreground">Branch
+                    <select value={branch} onChange={(event) => { setBranch(event.target.value); setLocation("") }} className="h-[42px] w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary/25"><option value="">No branch</option>{(choices?.branches ?? []).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
+                  </label>
+                  <label className="space-y-1.5 text-sm font-medium text-foreground">Region
+                    <select value={region} onChange={(event) => setRegion(event.target.value)} className="h-[42px] w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary/25"><option value="">No region</option>{(choices?.regions ?? []).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
+                  </label>
+                  <label className="space-y-1.5 text-sm font-medium text-foreground">Location
+                    <select value={location} onChange={(event) => setLocation(event.target.value)} className="h-[42px] w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary/25"><option value="">No location</option>{locations.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
+                  </label>
+                  <label className="space-y-1.5 text-sm font-medium text-foreground">Share data externally
+                    <select value={shareData ? "yes" : "no"} onChange={(event) => setShareData(event.target.value === "yes")} className="h-[42px] w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary/25">
+                      <option value="no">No</option>
+                      <option value="yes">Yes</option>
+                    </select>
+                  </label>
                 </div>
               </section>
 
               {setupLoading && <div className="flex items-center gap-3 rounded-xl border border-dashed border-border bg-card px-4 py-5 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading requirements from parameter settings...</div>}
 
               {!setupLoading && activeSection === "documents" && <section className="rounded-xl border border-border bg-card">
-                <div className="flex flex-col gap-3 border-b border-border px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-5"><div><h3 className="text-base font-semibold text-foreground">Partner Type Documents</h3><p className="mt-1 text-sm text-muted-foreground">Every row below comes from the document requirements configured for this partner type.</p></div><span className="rounded-full border border-border px-3 py-1 text-xs font-semibold text-foreground">{completedDocuments}/{documentRequirements.length} uploaded</span></div>
-                <div className="border-b border-border bg-secondary/20 p-4 sm:p-5"><div className="grid gap-3 lg:grid-cols-[minmax(220px,.8fr)_minmax(260px,1fr)_auto]"><label className="space-y-1.5 text-sm font-medium text-foreground">Configured document<select value={documentType} onChange={(event) => setDocumentType(event.target.value)} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-foreground/15"><option value="">Select document requirement</option>{documentRequirements.map((item) => <option key={item.id} value={item.code}>{item.code} · {item.description || "Document"}{item.isRequired || item.isMandatory ? " · Required" : ""}</option>)}</select></label><label className="space-y-1.5 text-sm font-medium text-foreground">Evidence file<input id={`partner-document-file-${assignment.id}`} type="file" onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground file:mr-3 file:border-0 file:bg-transparent file:font-medium" /></label><button onClick={uploadAssignmentDocument} disabled={uploading || !selectedFile || !documentType} className="inline-flex items-end justify-center gap-2 rounded-lg bg-foreground px-4 py-2.5 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-50"><Plus className="h-4 w-4" />{uploading ? "Uploading..." : "Upload"}</button></div></div>
-                <div className="overflow-x-auto"><table className="w-full min-w-[980px] border-collapse text-sm"><thead className="bg-secondary/30"><tr className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"><th className="border-r border-border px-3 py-3">No.</th><th className="border-r border-border px-3 py-3">Code</th><th className="border-r border-border px-3 py-3">Description</th><th className="border-r border-border px-3 py-3">Required</th><th className="border-r border-border px-3 py-3">Mandatory</th><th className="border-r border-border px-3 py-3">Uploaded by</th><th className="border-r border-border px-3 py-3">Uploaded</th><th className="px-3 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-border">{documentRequirements.length === 0 ? <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-muted-foreground">No active document requirements are configured for this partner type.</td></tr> : documentRequirements.map((requirement, index) => { const matches = assignmentDocuments.filter((document) => document.documentType === requirement.code || document.documentName === requirement.code); const latest = matches[0]; return <tr key={requirement.id} className="transition hover:bg-secondary/20"><td className="border-r border-border px-3 py-3 text-muted-foreground">{index + 1}</td><td className="border-r border-border px-3 py-3 font-semibold text-foreground">{requirement.code}</td><td className="border-r border-border px-3 py-3 text-foreground">{requirement.description || "—"}</td><td className="border-r border-border px-3 py-3">{requirement.isRequired ? <span className="font-semibold text-foreground">Yes</span> : "No"}</td><td className="border-r border-border px-3 py-3">{requirement.isMandatory ? <span className="font-semibold text-foreground">Yes</span> : "No"}</td><td className="border-r border-border px-3 py-3 text-muted-foreground">{latest?.uploadedBy || "—"}</td><td className="border-r border-border px-3 py-3">{latest ? <span className="font-semibold text-foreground">Yes</span> : <span className="font-semibold text-muted-foreground">No</span>}</td><td className="px-3 py-3 text-right">{latest ? <div className="flex justify-end gap-2"><button type="button" onClick={() => void viewAssignmentDocument(latest)} className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1.5 text-xs font-semibold hover:bg-secondary"><Eye className="h-3.5 w-3.5" />View</button><button onClick={() => removeAssignmentDocument(latest.id, latest.documentName)} disabled={uploading} className="rounded-md border border-border px-2 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50">Remove</button></div> : <button onClick={() => { setDocumentType(requirement.code); document.getElementById(`partner-document-file-${assignment.id}`)?.focus() }} className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1.5 text-xs font-semibold hover:bg-secondary"><Plus className="h-3.5 w-3.5" />Upload</button>}</td></tr> })}</tbody></table></div>
+                <div className="flex flex-col gap-3 border-b border-border px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                  <div>
+                    <h3 className="text-base font-semibold text-foreground">Partner Type Documents</h3>
+                    <p className="mt-1 text-sm text-muted-foreground">Required evidence configured for this partner type.</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="h-2 w-28 overflow-hidden rounded-full bg-muted">
+                      <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${documentRequirements.length ? (completedDocuments / documentRequirements.length) * 100 : 0}%` }} />
+                    </div>
+                    <span className="whitespace-nowrap text-xs font-semibold text-muted-foreground">{completedDocuments}/{documentRequirements.length} uploaded</span>
+                  </div>
+                </div>
+                <div className="border-b border-border bg-secondary/20 p-4 sm:p-5">
+                  <div className="grid gap-4">
+                    <div className="space-y-1.5">
+                      <span className="block text-sm font-medium text-foreground">Evidence file</span>
+                      {selectedFile ? (
+                        <div className="flex h-[42px] items-center gap-3 rounded-lg border border-border bg-background px-3">
+                          <FileCheck className="h-5 w-5 flex-none text-success" />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-foreground">{selectedFile.name}</p>
+                            <p className="text-xs text-muted-foreground">{(selectedFile.size / 1024).toFixed(1)} KB</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedFile(null)}
+                            className="rounded-md p-1.5 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
+                            aria-label="Clear file"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <label
+                          htmlFor={`partner-document-file-${assignment.id}`}
+                          className="flex h-[42px] cursor-pointer items-center justify-center gap-3 whitespace-nowrap rounded-lg border-2 border-dashed border-border bg-background px-4 text-sm text-muted-foreground transition hover:border-primary/50 hover:bg-primary/5 hover:text-foreground"
+                        >
+                          <Upload className="h-5 w-5 flex-none text-muted-foreground" />
+                          <span><span className="font-semibold text-primary">Choose a file</span> or drag it here</span>
+                          <span className="text-xs">PDF, image or office document</span>
+                        </label>
+                      )}
+                      <input
+                        id={`partner-document-file-${assignment.id}`}
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                        className="hidden"
+                        onChange={(event) => { setSelectedFile(event.target.files?.[0] ?? null); event.target.value = "" }}
+                      />
+                    </div>
+                    <div className="grid gap-4 lg:grid-cols-[minmax(260px,1fr)_auto] lg:items-end">
+                      <label className="space-y-1.5 text-sm font-medium text-foreground">Configured document
+                        <select value={documentType} onChange={(event) => setDocumentType(event.target.value)} className="h-[42px] w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary/25">
+                          <option value="">Select document requirement</option>
+                          {documentRequirements.map((item) => <option key={item.id} value={item.code}>{item.code} · {item.description || "Document"}{item.isRequired || item.isMandatory ? " · Required" : ""}</option>)}
+                        </select>
+                      </label>
+                      <button onClick={uploadAssignmentDocument} disabled={uploading || !selectedFile || !documentType} className="inline-flex h-[42px] items-center justify-center gap-2 rounded-lg bg-primary px-6 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50">
+                        {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}{uploading ? "Uploading..." : "Upload"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border bg-muted/50 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        <th className="px-4 py-3">#</th>
+                        <th className="px-4 py-3">Code</th>
+                        <th className="px-4 py-3">Description</th>
+                        <th className="px-4 py-3">Requirement</th>
+                        <th className="px-4 py-3">Status</th>
+                        <th className="px-4 py-3">Uploaded by</th>
+                        <th className="px-4 py-3">File</th>
+                        <th className="w-24 px-4 py-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {documentRequirements.length === 0 ? (
+                        <tr><td colSpan={8} className="px-4 py-10 text-center text-sm text-muted-foreground">No active document requirements are configured for this partner type.</td></tr>
+                      ) : documentRequirements.map((requirement, index) => {
+                        const matches = assignmentDocuments.filter((document) => document.documentType === requirement.code || document.documentName === requirement.code)
+                        const latest = matches[0]
+                        return (
+                          <tr key={requirement.id} className="transition-colors hover:bg-muted/30">
+                            <td className="px-4 py-3 text-muted-foreground">{String(index + 1).padStart(2, "0")}</td>
+                            <td className="px-4 py-3">
+                              <span className="rounded-md bg-primary/10 px-2 py-1 font-mono text-[11px] font-semibold text-primary">{requirement.code}</span>
+                            </td>
+                            <td className="px-4 py-3 text-foreground">{requirement.description || "—"}</td>
+                            <td className="px-4 py-3">
+                              <div className="flex gap-1.5">
+                                {requirement.isRequired && <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-semibold text-destructive">Required</span>}
+                                {requirement.isMandatory && <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[10px] font-semibold text-warning">Mandatory</span>}
+                                {!requirement.isRequired && !requirement.isMandatory && <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">Optional</span>}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              {latest ? (
+                                <span className="inline-flex items-center gap-1.5 rounded-full bg-success/10 px-2.5 py-0.5 text-xs font-semibold text-success">
+                                  <Check className="h-3 w-3" /> Uploaded
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-muted-foreground">
+                                  <Clock className="h-3 w-3" /> Pending
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-muted-foreground">{latest?.uploadedByName || latest?.uploadedBy || "—"}</td>
+                            <td className="px-4 py-3">
+                              {latest ? (
+                                <span className="flex max-w-[200px] items-center gap-1.5 text-muted-foreground">
+                                  <FileCheck className="h-3.5 w-3.5 flex-none text-success" />
+                                  <span className="truncate text-xs">{latest.documentName}</span>
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground/50">—</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center justify-end gap-1">
+                                {latest ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => void viewAssignmentDocument(latest)}
+                                      className="group relative rounded-lg p-2 text-muted-foreground transition hover:bg-primary/10 hover:text-primary"
+                                      aria-label="View document"
+                                    >
+                                      <Eye className="h-4 w-4" />
+                                      <span className="pointer-events-none absolute right-1/2 top-1/2 z-50 translate-x-1/2 translate-y-[calc(-50%-2.4rem)] whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-[11px] font-medium text-background opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100">
+                                        View document
+                                      </span>
+                                    </button>
+                                    <button
+                                      onClick={() => removeAssignmentDocument(latest.id, latest.documentName)}
+                                      disabled={uploading}
+                                      className="group relative rounded-lg p-2 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                                      aria-label="Remove document"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                      <span className="pointer-events-none absolute right-1/2 top-1/2 z-50 translate-x-1/2 translate-y-[calc(-50%-2.4rem)] whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-[11px] font-medium text-background opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100">
+                                        Remove document
+                                      </span>
+                                    </button>
+                                  </>
+                                ) : (
+                                  <button
+                                    onClick={() => { setDocumentType(requirement.code); document.getElementById(`partner-document-file-${assignment.id}`)?.click() }}
+                                    className="group relative rounded-lg p-2 text-muted-foreground transition hover:bg-primary/10 hover:text-primary"
+                                    aria-label="Upload document"
+                                  >
+                                    <Upload className="h-4 w-4" />
+                                    <span className="pointer-events-none absolute right-1/2 top-1/2 z-50 translate-x-1/2 translate-y-[calc(-50%-2.4rem)] whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-[11px] font-medium text-background opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100">
+                                      Upload document
+                                    </span>
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </section>}
 
               {!setupLoading && activeSection === "attributes" && <section className="rounded-xl border border-border bg-card">
-                <div className="flex flex-col gap-3 border-b border-border px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-5"><div><h3 className="text-base font-semibold text-foreground">Partner Type Attributes Form</h3><p className="mt-1 text-sm text-muted-foreground">All fields are rendered from the active field configurations under system parameters.</p></div><button type="button" onClick={() => void saveConfiguredFields()} disabled={fieldConfigurations.length === 0} className="inline-flex items-center justify-center gap-2 rounded-lg bg-foreground px-3 py-2 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-50"><Save className="h-4 w-4" />Save attributes</button></div>
+                <div className="flex flex-col gap-3 border-b border-border px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-5"><div><h3 className="text-base font-semibold text-foreground">Partner Type Attributes Form</h3><p className="mt-1 text-sm text-muted-foreground">All fields are rendered from the active field configurations under system parameters.</p></div><button type="button" onClick={() => void saveConfiguredFields()} disabled={fieldConfigurations.length === 0} className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"><Save className="h-4 w-4" />Save attributes</button></div>
                 <div className="p-4 sm:p-5">{fieldConfigurations.length === 0 ? <p className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">No active attribute fields are configured for this partner type.</p> : <div className="grid gap-5 md:grid-cols-2">{fieldConfigurations.map((config) => <label key={config.id} className="space-y-2 text-sm font-medium text-foreground"><span className="flex items-center justify-between gap-3"><span>{config.fieldName}{config.isRequired ? <span className="ml-1 text-foreground">*</span> : null}</span><span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{config.fieldCode} · {config.fieldType}</span></span>{renderDynamicField(config)}{config.visibilityRules && Object.keys(config.visibilityRules).length > 0 ? <span className="block text-[11px] font-normal text-muted-foreground">Visibility is controlled by the configured parameter rules.</span> : null}</label>)}</div>}</div>
               </section>}
 
               {!setupLoading && activeSection === "contacts" && <section className="rounded-xl border border-border bg-card">
                 <div className="flex flex-col gap-3 border-b border-border px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-5"><div><h3 className="text-base font-semibold text-foreground">Partner Type Contacts</h3><p className="mt-1 text-sm text-muted-foreground">Contact roles, requiredness, ordering, and multiplicity come from parameter settings.</p></div><span className="rounded-full border border-border px-3 py-1 text-xs font-semibold text-foreground">{completedContacts}/{contactRequirements.length} requirements covered</span></div>
-                <div className="border-b border-border bg-secondary/20 p-4 sm:p-5"><div className="mb-3 flex items-center justify-between gap-3"><p className="text-sm font-semibold text-foreground">{editingContactId ? "Update contact" : "Add contact"}</p>{editingContactId ? <button type="button" onClick={resetContactDraft} className="text-xs font-semibold text-muted-foreground underline">Cancel edit</button> : null}</div><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Configured role<select value={contactDraft.requirement} onChange={(event) => setContactDraft((prev) => ({ ...prev, requirement: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground"><option value="">Select role</option>{contactRequirements.filter((item) => item.multipleAllowed || editingContactId || !assignmentContacts.some((contact) => contact.contactRequirement === item.id)).map((item) => <option key={item.id} value={item.id}>{item.contactType}{item.isRequired ? " · Required" : ""}{item.multipleAllowed ? " · Multiple" : ""}</option>)}</select></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">First name<input value={contactDraft.firstName} onChange={(event) => setContactDraft((prev) => ({ ...prev, firstName: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Last name<input value={contactDraft.lastName} onChange={(event) => setContactDraft((prev) => ({ ...prev, lastName: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Designation<input value={contactDraft.designation} onChange={(event) => setContactDraft((prev) => ({ ...prev, designation: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Email<input value={contactDraft.email} onChange={(event) => setContactDraft((prev) => ({ ...prev, email: event.target.value }))} type="email" className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Telephone<input value={contactDraft.phone} onChange={(event) => setContactDraft((prev) => ({ ...prev, phone: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Mobile<input value={contactDraft.mobile} onChange={(event) => setContactDraft((prev) => ({ ...prev, mobile: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="flex items-center gap-2 rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal"><input type="checkbox" checked={contactDraft.isPrimary} onChange={(event) => setContactDraft((prev) => ({ ...prev, isPrimary: event.target.checked }))} className="h-4 w-4 accent-black" /> Primary contact</label></div><div className="mt-3 flex justify-end"><button type="button" onClick={() => void saveContact()} className="inline-flex items-center gap-2 rounded-lg bg-foreground px-4 py-2.5 text-sm font-semibold text-background"><Plus className="h-4 w-4" />{editingContactId ? "Update contact" : "Add contact"}</button></div></div>
+                <div className="border-b border-border bg-secondary/20 p-4 sm:p-5"><div className="mb-3 flex items-center justify-between gap-3"><p className="text-sm font-semibold text-foreground">{editingContactId ? "Update contact" : "Add contact"}</p>{editingContactId ? <button type="button" onClick={resetContactDraft} className="text-xs font-semibold text-muted-foreground underline">Cancel edit</button> : null}</div><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Configured role<select value={contactDraft.requirement} onChange={(event) => setContactDraft((prev) => ({ ...prev, requirement: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground"><option value="">Select role</option>{contactRequirements.filter((item) => item.multipleAllowed || editingContactId || !assignmentContacts.some((contact) => contact.contactRequirement === item.id)).map((item) => <option key={item.id} value={item.id}>{item.contactType}{item.isRequired ? " · Required" : ""}{item.multipleAllowed ? " · Multiple" : ""}</option>)}</select></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">First name<input value={contactDraft.firstName} onChange={(event) => setContactDraft((prev) => ({ ...prev, firstName: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Last name<input value={contactDraft.lastName} onChange={(event) => setContactDraft((prev) => ({ ...prev, lastName: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Designation<input value={contactDraft.designation} onChange={(event) => setContactDraft((prev) => ({ ...prev, designation: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Email<input value={contactDraft.email} onChange={(event) => setContactDraft((prev) => ({ ...prev, email: event.target.value }))} type="email" className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Telephone<input value={contactDraft.phone} onChange={(event) => setContactDraft((prev) => ({ ...prev, phone: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Mobile<input value={contactDraft.mobile} onChange={(event) => setContactDraft((prev) => ({ ...prev, mobile: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="flex items-center gap-2 rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal"><input type="checkbox" checked={contactDraft.isPrimary} onChange={(event) => setContactDraft((prev) => ({ ...prev, isPrimary: event.target.checked }))} className="h-4 w-4 accent-primary" /> Primary contact</label></div><div className="mt-3 flex justify-end"><button type="button" onClick={() => void saveContact()} className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"><Plus className="h-4 w-4" />{editingContactId ? "Update contact" : "Add contact"}</button></div></div>
                 <div className="overflow-x-auto"><table className="w-full min-w-[820px] border-collapse text-sm"><thead className="bg-secondary/30"><tr className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"><th className="border-r border-border px-3 py-3">Configured role</th><th className="border-r border-border px-3 py-3">Contact</th><th className="border-r border-border px-3 py-3">Designation</th><th className="border-r border-border px-3 py-3">Email / Mobile</th><th className="px-3 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-border">{assignmentContacts.length === 0 ? <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">No contacts captured for this partner type yet.</td></tr> : assignmentContacts.map((contact) => <tr key={contact.id} className="transition hover:bg-secondary/20"><td className="border-r border-border px-3 py-3 font-medium">{contactRequirements.find((item) => item.id === contact.contactRequirement)?.contactType ?? contact.contactType}</td><td className="border-r border-border px-3 py-3">{contact.firstName} {contact.lastName}{contact.isPrimary ? <span className="ml-2 rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold">Primary</span> : null}</td><td className="border-r border-border px-3 py-3 text-muted-foreground">{contact.designation || "—"}</td><td className="border-r border-border px-3 py-3 text-muted-foreground">{contact.email || contact.mobile || contact.phone || "—"}</td><td className="px-3 py-3 text-right"><button type="button" onClick={() => editContact(contact)} className="mr-3 inline-flex items-center gap-1 text-xs font-semibold underline"><Pencil className="h-3.5 w-3.5" />Edit</button><button type="button" onClick={() => void removeContact(contact)} className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground underline"><Trash2 className="h-3.5 w-3.5" />Remove</button></td></tr>)}</tbody></table></div>
               </section>}
 
               {!setupLoading && activeSection === "banks" && <section className="rounded-xl border border-border bg-card">
                 <div className="flex flex-col gap-3 border-b border-border px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-5"><div><h3 className="text-base font-semibold text-foreground">Partner Type Banks</h3><p className="mt-1 text-sm text-muted-foreground">Bank roles and validation rules are loaded from the partner type parameter configuration.</p></div><span className="rounded-full border border-border px-3 py-1 text-xs font-semibold text-foreground">{completedBanks}/{bankRequirements.length} requirements covered</span></div>
-                <div className="border-b border-border bg-secondary/20 p-4 sm:p-5"><div className="mb-3 flex items-center justify-between gap-3"><p className="text-sm font-semibold text-foreground">{editingBankId ? "Update bank account" : "Add bank account"}</p>{editingBankId ? <button type="button" onClick={resetBankDraft} className="text-xs font-semibold text-muted-foreground underline">Cancel edit</button> : null}</div><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Configured bank role<select value={bankDraft.requirement} onChange={(event) => setBankDraft((prev) => ({ ...prev, requirement: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground"><option value="">Select role</option>{bankRequirements.filter((item) => item.multipleAllowed || editingBankId || !assignmentBanks.some((bank) => bank.bankRequirement === item.id)).map((item) => <option key={item.id} value={item.id}>{item.bankType}{item.isRequired ? " · Required" : ""}{item.multipleAllowed ? " · Multiple" : ""}</option>)}</select></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Bank name<input value={bankDraft.bankName} onChange={(event) => setBankDraft((prev) => ({ ...prev, bankName: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Branch<input value={bankDraft.branchName} onChange={(event) => setBankDraft((prev) => ({ ...prev, branchName: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Account name<input value={bankDraft.accountName} onChange={(event) => setBankDraft((prev) => ({ ...prev, accountName: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Account number<input value={bankDraft.accountNumber} onChange={(event) => setBankDraft((prev) => ({ ...prev, accountNumber: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">SWIFT code<input value={bankDraft.swiftCode} onChange={(event) => setBankDraft((prev) => ({ ...prev, swiftCode: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Currency<input value={bankDraft.currency} onChange={(event) => setBankDraft((prev) => ({ ...prev, currency: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="flex items-center gap-2 rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal"><input type="checkbox" checked={bankDraft.isPrimary} onChange={(event) => setBankDraft((prev) => ({ ...prev, isPrimary: event.target.checked }))} className="h-4 w-4 accent-black" /> Primary account</label></div><div className="mt-3 flex justify-end"><button type="button" onClick={() => void saveBank()} className="inline-flex items-center gap-2 rounded-lg bg-foreground px-4 py-2.5 text-sm font-semibold text-background"><Plus className="h-4 w-4" />{editingBankId ? "Update bank account" : "Add bank account"}</button></div></div>
+                <div className="border-b border-border bg-secondary/20 p-4 sm:p-5"><div className="mb-3 flex items-center justify-between gap-3"><p className="text-sm font-semibold text-foreground">{editingBankId ? "Update bank account" : "Add bank account"}</p>{editingBankId ? <button type="button" onClick={resetBankDraft} className="text-xs font-semibold text-muted-foreground underline">Cancel edit</button> : null}</div><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Configured bank role<select value={bankDraft.requirement} onChange={(event) => setBankDraft((prev) => ({ ...prev, requirement: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground"><option value="">Select role</option>{bankRequirements.filter((item) => item.multipleAllowed || editingBankId || !assignmentBanks.some((bank) => bank.bankRequirement === item.id)).map((item) => <option key={item.id} value={item.id}>{item.bankType}{item.isRequired ? " · Required" : ""}{item.multipleAllowed ? " · Multiple" : ""}</option>)}</select></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Bank name<input value={bankDraft.bankName} onChange={(event) => setBankDraft((prev) => ({ ...prev, bankName: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Branch<input value={bankDraft.branchName} onChange={(event) => setBankDraft((prev) => ({ ...prev, branchName: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Account name<input value={bankDraft.accountName} onChange={(event) => setBankDraft((prev) => ({ ...prev, accountName: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Account number<input value={bankDraft.accountNumber} onChange={(event) => setBankDraft((prev) => ({ ...prev, accountNumber: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">SWIFT code<input value={bankDraft.swiftCode} onChange={(event) => setBankDraft((prev) => ({ ...prev, swiftCode: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="space-y-1.5 text-xs font-semibold text-muted-foreground">Currency<input value={bankDraft.currency} onChange={(event) => setBankDraft((prev) => ({ ...prev, currency: event.target.value }))} className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal text-foreground" /></label><label className="flex items-center gap-2 rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal"><input type="checkbox" checked={bankDraft.isPrimary} onChange={(event) => setBankDraft((prev) => ({ ...prev, isPrimary: event.target.checked }))} className="h-4 w-4 accent-primary" /> Primary account</label></div><div className="mt-3 flex justify-end"><button type="button" onClick={() => void saveBank()} className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"><Plus className="h-4 w-4" />{editingBankId ? "Update bank account" : "Add bank account"}</button></div></div>
                 <div className="overflow-x-auto"><table className="w-full min-w-[900px] border-collapse text-sm"><thead className="bg-secondary/30"><tr className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"><th className="border-r border-border px-3 py-3">Configured role</th><th className="border-r border-border px-3 py-3">Bank</th><th className="border-r border-border px-3 py-3">Account</th><th className="border-r border-border px-3 py-3">Currency</th><th className="px-3 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-border">{assignmentBanks.length === 0 ? <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">No bank accounts captured for this partner type yet.</td></tr> : assignmentBanks.map((bank) => <tr key={bank.id} className="transition hover:bg-secondary/20"><td className="border-r border-border px-3 py-3 font-medium">{bankRequirements.find((item) => item.id === bank.bankRequirement)?.bankType ?? bank.bankRequirement ?? "Configured bank"}</td><td className="border-r border-border px-3 py-3">{bank.bankName}<span className="block text-xs text-muted-foreground">{bank.branchName || "No branch"}</span></td><td className="border-r border-border px-3 py-3">{bank.accountName}<span className="block text-xs text-muted-foreground">{bank.accountNumber}{bank.isPrimary ? " · Primary" : ""}</span></td><td className="border-r border-border px-3 py-3 text-muted-foreground">{bank.currency || "—"}</td><td className="px-3 py-3 text-right"><button type="button" onClick={() => editBank(bank)} className="mr-3 inline-flex items-center gap-1 text-xs font-semibold underline"><Pencil className="h-3.5 w-3.5" />Edit</button><button type="button" onClick={() => void removeBank(bank)} className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground underline"><Trash2 className="h-3.5 w-3.5" />Remove</button></td></tr>)}</tbody></table></div>
               </section>}
 
               {(error || notice) && <div className={`rounded-lg border px-3 py-2.5 text-sm ${error ? "border-destructive/30 bg-destructive/5 text-destructive" : "border-border bg-secondary/30 text-foreground"}`}>{error || notice}</div>}
             </div>
 
-            <aside className="h-fit rounded-xl border border-border bg-card p-4 sm:p-5 xl:sticky xl:top-0"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Setup progress</p><h3 className="mt-1 text-base font-semibold text-foreground">{assignment.partnerTypeName}</h3><div className="mt-5 space-y-3">{steps.map((step) => { const current = step.key === activeSection; const count = step.key === "documents" ? `${completedDocuments}/${documentRequirements.length}` : step.key === "attributes" ? `${completedFields}/${fieldConfigurations.length}` : step.key === "contacts" ? `${completedContacts}/${contactRequirements.length}` : `${completedBanks}/${bankRequirements.length}`; return <button key={step.key} type="button" onClick={() => setActiveSection(step.key)} className={`flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-3 text-left transition ${current ? "border-foreground bg-foreground text-background" : "border-border hover:bg-secondary"}`}><span className="flex items-center gap-2">{step.icon}<span className="text-sm font-semibold">{step.shortLabel}</span></span><span className="text-xs font-semibold opacity-75">{count}</span></button> })}</div><div className="mt-5 border-t border-border pt-4"><dl className="space-y-3 text-sm"><div className="flex justify-between gap-3"><dt className="text-muted-foreground">Branch</dt><dd className="text-right font-medium text-foreground">{assignment.branchName || "Not assigned"}</dd></div><div className="flex justify-between gap-3"><dt className="text-muted-foreground">Region</dt><dd className="text-right font-medium text-foreground">{assignment.region || "Not assigned"}</dd></div><div className="flex justify-between gap-3"><dt className="text-muted-foreground">Data sharing</dt><dd className="text-right font-medium text-foreground">{shareData ? "Enabled" : "Disabled"}</dd></div></dl></div><p className="mt-5 text-xs leading-5 text-muted-foreground">Configuration is read from system parameters. Every nested update is synchronized with the assignment and recorded in the audit/event history.</p></aside>
+            <aside className="h-fit rounded-xl border border-border bg-card p-4 sm:p-5 xl:sticky xl:top-0"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Setup progress</p><h3 className="mt-1 text-base font-semibold text-foreground">{assignment.partnerTypeName}</h3><div className="mt-5 space-y-3">{steps.map((step) => { const current = step.key === activeSection; const count = step.key === "documents" ? `${completedDocuments}/${documentRequirements.length}` : step.key === "attributes" ? `${completedFields}/${fieldConfigurations.length}` : step.key === "contacts" ? `${completedContacts}/${contactRequirements.length}` : `${completedBanks}/${bankRequirements.length}`; return <button key={step.key} type="button" onClick={() => setActiveSection(step.key)} className={`flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-3 text-left transition ${current ? "border-primary bg-primary text-primary-foreground" : "border-border hover:bg-secondary"}`}><span className="flex items-center gap-2">{step.icon}<span className="text-sm font-semibold">{step.shortLabel}</span></span><span className="text-xs font-semibold opacity-75">{count}</span></button> })}</div><div className="mt-5 border-t border-border pt-4"><dl className="space-y-3 text-sm"><div className="flex justify-between gap-3"><dt className="text-muted-foreground">Branch</dt><dd className="text-right font-medium text-foreground">{assignment.branchName || "Not assigned"}</dd></div><div className="flex justify-between gap-3"><dt className="text-muted-foreground">Region</dt><dd className="text-right font-medium text-foreground">{assignment.region || "Not assigned"}</dd></div><div className="flex justify-between gap-3"><dt className="text-muted-foreground">Data sharing</dt><dd className="text-right font-medium text-foreground">{shareData ? "Enabled" : "Disabled"}</dd></div></dl></div><p className="mt-5 text-xs leading-5 text-muted-foreground">Configuration is read from system parameters. Every nested update is synchronized with the assignment and recorded in the audit/event history.</p></aside>
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 border-t border-border bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6"><div className="flex items-center gap-2"><button type="button" onClick={() => void moveToStep(activeStepIndex - 1)} disabled={activeStepIndex <= 0 || setupLoading} className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-2 text-xs font-semibold text-foreground transition hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-40"><ArrowLeft className="h-3.5 w-3.5" />Previous</button><button type="button" onClick={() => void moveToStep(activeStepIndex + 1)} disabled={activeStepIndex >= steps.length - 1 || setupLoading} className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-2 text-xs font-semibold text-foreground transition hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-40">Next</button><span className="hidden text-xs text-muted-foreground sm:inline">Step {activeStepIndex + 1} of {steps.length}</span></div><div className="flex items-center justify-end gap-2"><button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition hover:bg-secondary disabled:opacity-50">Close</button><button type="button" onClick={() => void saveAssignment()} disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-semibold text-background transition hover:opacity-90 disabled:opacity-50">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{saving ? "Saving..." : "Save assignment"}</button></div></div>
+        <div className="flex flex-col gap-3 border-t border-border bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6"><div className="flex items-center gap-2"><button type="button" onClick={() => void moveToStep(activeStepIndex - 1)} disabled={activeStepIndex <= 0 || setupLoading} className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-2 text-xs font-semibold text-foreground transition hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-40"><ArrowLeft className="h-3.5 w-3.5" />Previous</button><button type="button" onClick={() => void moveToStep(activeStepIndex + 1)} disabled={activeStepIndex >= steps.length - 1 || setupLoading} className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-2 text-xs font-semibold text-foreground transition hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-40">Next</button><span className="hidden text-xs text-muted-foreground sm:inline">Step {activeStepIndex + 1} of {steps.length}</span></div><div className="flex items-center justify-end gap-2"><button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition hover:bg-secondary disabled:opacity-50">Close</button><button type="button" onClick={() => void saveAssignment()} disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{saving ? "Saving..." : "Save assignment"}</button></div></div>
       </div>
     </div>
   )

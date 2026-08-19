@@ -323,6 +323,7 @@ export interface ApplicationDocument {
   verifiedAt: string | null
   verificationNotes: string
   uploadedBy: string | null
+  uploadedByName: string | null
   createdAt: string
 }
 
@@ -455,6 +456,7 @@ export interface ApplicationPartnerType {
   locationName: string | null
   region: string
   shareDataExternally: boolean
+  kycStatus: string
   createdAt: string
 }
 

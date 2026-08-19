@@ -35,9 +35,6 @@ export function Footer() {
         <Sparkles className="h-3.5 w-3.5" />
         AI
       </button>
-      <span className="ml-auto text-muted-foreground">
-        Powered by <span className="font-semibold text-foreground">ZIC AIMS Life</span>
-      </span>
     </footer>
   )
 }
