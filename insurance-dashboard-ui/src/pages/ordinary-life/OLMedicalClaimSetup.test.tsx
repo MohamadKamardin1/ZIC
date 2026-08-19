@@ -29,7 +29,7 @@ const claimStatus = { id: "status-1", code: "REGISTERED", name: "Registered", is
 const nextStatus = { id: "status-2", code: "APPROVED", name: "Approved", is_active: true, badge_type: "SUCCESS", display_order: 2, is_terminal: false, is_payable: true, allowed_transitions: [], effective_from: "2026-01-01", effective_to: null }
 
 function accessValue() {
-  return { access: { visibleModules: ["ol_parameters"], permissions, groups: [] }, isLoading: false, isError: false, canAccess: vi.fn(() => true) }
+  return { access: { visibleModules: ["ol_parameters"], permissions, groups: [] }, isLoading: false, isError: false, canAccess: vi.fn(() => true), isSuperAdmin: false }
 }
 
 function optionsPayload() {

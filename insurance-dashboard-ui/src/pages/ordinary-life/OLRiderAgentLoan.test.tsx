@@ -51,7 +51,7 @@ const loanSystem = { id: "loan-1", code: "LOAN-1", name: "Cash value loans", is_
 const loanInterest = { id: "interest-1", code: "INT-1", name: "Annual loan interest", is_active: true, interest_rate: "8.0000", compounding_frequency: "ANNUAL", interest_calculation_basis: "OUTSTANDING_BALANCE", grace_period_days: 30, penalty_interest_rate: "2.0000", capitalize_interest: true, effective_from: "2026-01-01", effective_to: null }
 
 function accessValue() {
-  return { access: { visibleModules: ["ol_parameters"], permissions, groups: [] }, isLoading: false, isError: false, canAccess: vi.fn(() => true) }
+  return { access: { visibleModules: ["ol_parameters"], permissions, groups: [] }, isLoading: false, isError: false, canAccess: vi.fn(() => true), isSuperAdmin: false }
 }
 
 function optionsPayload() {

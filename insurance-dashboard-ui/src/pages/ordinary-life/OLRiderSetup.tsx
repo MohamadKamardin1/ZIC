@@ -121,7 +121,7 @@ function RiderEditor({ screen, draft, setDraft, errors, choices }: { screen: Scr
 }
 
 export default function OLRiderSetup() {
-  const { access, canAccess } = useAccess()
+  const { access, canAccess, isSuperAdmin } = useAccess()
   const { toast } = useToast()
   const [screen, setScreen] = useState<ScreenKey>("riders")
   const [filtersState, setFiltersState] = useState<FilterValues>({})
@@ -135,8 +135,8 @@ export default function OLRiderSetup() {
   const metadataEndpoint = endpoint
   const choiceFields = screen === "riders" ? ["rider_category", "benefit_type", "calculation_basis"] : screen === "rate-tables" ? ["rating_basis"] : ["gender", "smoker_status", "frequency", "rate_unit"]
   const { choices, loading: choicesLoading } = useRemoteChoices(metadataEndpoint, choiceFields, rows)
-  const permissions = access.permissions.map((permission) => `${permission.module}.${permission.action}`)
-  const writable = canAccess("ol_parameters") && permissions.length === 0 || permissions.some((permission) => permission.includes("write") || permission.includes("create") || permission.includes("update"))
+  const permissions = isSuperAdmin ? ["ol_parameters.view", "ol_parameters.create", "ol_parameters.update", "ol_parameters.deactivate"] : access.permissions.map((permission) => `${permission.module}.${permission.action}`)
+  const writable = isSuperAdmin || (canAccess("ol_parameters") && (permissions.length === 0 || permissions.some((permission) => permission.includes("write") || permission.includes("create") || permission.includes("update"))))
   const deactivatable = writable
 
   const fetcher = useCallback(async (query: TableQuery) => {

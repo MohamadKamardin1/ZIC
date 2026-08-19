@@ -135,10 +135,10 @@ export default function OLMOrbClaimSetup({ section = "medical" }: { section?: Se
   const [refreshKey, setRefreshKey] = useState(0)
   const [transitionRows, setTransitionRows] = useState<AnyRecord[]>([])
   const config = configs[screen]
-  const { access, canAccess } = useAccess()
+  const { access, canAccess, isSuperAdmin } = useAccess()
   const { toast } = useToast()
-  const permissions = access.permissions.map((permission) => `${permission.module}.${permission.action}`)
-  const writable = canAccess("ol_parameters") && (permissions.length === 0 || permissions.some((permission) => /\.(create|update|write)$/.test(permission)))
+  const permissions = isSuperAdmin ? ["ol_parameters.view", "ol_parameters.create", "ol_parameters.update", "ol_parameters.deactivate"] : access.permissions.map((permission) => `${permission.module}.${permission.action}`)
+  const writable = isSuperAdmin || (canAccess("ol_parameters") && (permissions.length === 0 || permissions.some((permission) => /\.(create|update|write)$/.test(permission))))
   const { choices } = useRemoteChoices(config.endpoint, config.choiceFields, rows)
   const choiceMap = useMemo(() => Object.fromEntries(config.filters.map((filter) => [filter.key, filter.key === "is_active" ? statusOptions : choices[filter.key] ?? []])), [choices, config.filters])
   const definitions = useMemo(() => config.filters.map((filter) => ({ ...filter, options: choiceMap[filter.key] })), [choiceMap, config.filters])

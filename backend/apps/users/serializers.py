@@ -28,7 +28,7 @@ class UserListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name', 'full_name',
             'phone_number', 'user_type', 'status', 'partner_id', 'is_active', 'is_approved',
-            'is_2fa_enabled', 'mfa_required', 'sso_provider', 'sso_subject',
+            'is_staff', 'is_superuser', 'is_2fa_enabled', 'mfa_required', 'sso_provider', 'sso_subject',
             'last_password_changed_at', 'email_verified', 'phone_verified',
             'department', 'job_title', 'employee_id',
             'last_login', 'last_activity', 'date_joined',
@@ -122,7 +122,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name', 'full_name',
-            'phone_number', 'user_type', 'is_2fa_enabled', 'otp_method',
+            'phone_number', 'user_type', 'is_staff', 'is_superuser', 'is_2fa_enabled', 'otp_method',
             'email_verified', 'phone_verified',
             'avatar', 'date_of_birth', 'department', 'job_title', 'employee_id',
             'last_login', 'last_activity', 'date_joined', 'visible_report_categories',

@@ -38,6 +38,19 @@ export interface ExtendedAuthUser extends AuthUser {
   groups: string[]
 }
 
+function normalizeUser(value: unknown): ExtendedAuthUser | undefined {
+  if (!value || typeof value !== "object") return undefined
+  const record = value as Record<string, unknown>
+  return {
+    ...record,
+    userType: (record.userType ?? record.user_type) as AuthUser["userType"],
+    isStaff: (record.isStaff ?? record.is_staff) as AuthUser["isStaff"],
+    isSuperuser: (record.isSuperuser ?? record.is_superuser) as AuthUser["isSuperuser"],
+    permissions: (Array.isArray(record.permissions) ? record.permissions : []) as Permission[],
+    groups: (Array.isArray(record.groups) ? record.groups : []) as string[],
+  } as ExtendedAuthUser
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<ExtendedAuthUser | null>(() => readStoredUser())
   const [tokens, setTokens] = useState(() => loadStoredTokens())
@@ -47,7 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const hasPermission = useCallback((module: string, action: string): boolean => {
     if (!user) return false
     const normalizedUserType = user.userType?.toUpperCase().replace(/[\s-]+/g, "_")
-    const isSuperAdmin = normalizedUserType === "SUPER_ADMIN" || user.groups?.some(
+    const isSuperAdmin = user.isSuperuser === true || normalizedUserType === "SUPER_ADMIN" || user.groups?.some(
       (group) => group.toUpperCase().replace(/[\s-]+/g, "_") === "SUPER_ADMIN",
     )
     if (isSuperAdmin) return true
@@ -72,12 +85,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return true
     }
 
-    const userObj = data.user as ExtendedAuthUser | undefined
+    const userObj = normalizeUser(data.user)
     if (userObj) {
-      // Ensure permissions and groups are present
-      userObj.permissions = (userObj.permissions || []) as Permission[]
-      userObj.groups = (userObj.groups || []) as string[]
-      
       setUser(userObj)
       setTokens({
         accessToken: (data.accessToken as string) ?? (data.access_token as string) ?? "",
@@ -95,11 +104,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const result = await apiLogin(pendingCreds, otpCode)
     const data = result.data as unknown as Record<string, unknown>
 
-    const userObj = data.user as ExtendedAuthUser | undefined
+    const userObj = normalizeUser(data.user)
     if (userObj) {
-      userObj.permissions = (userObj.permissions || []) as Permission[]
-      userObj.groups = (userObj.groups || []) as string[]
-      
       setUser(userObj)
       setTokens({
         accessToken: (data.accessToken as string) ?? (data.access_token as string) ?? "",

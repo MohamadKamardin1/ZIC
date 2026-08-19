@@ -28,6 +28,7 @@ const accessWith = (permissions: Array<{ module: string; action: string }>) => (
   isLoading: false,
   isError: false,
   canAccess: vi.fn(() => true),
+  isSuperAdmin: false,
 })
 
 const rows = [{

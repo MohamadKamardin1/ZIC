@@ -223,13 +223,13 @@ function EffectiveFields({ value, update, errors }: { value: EditorState; update
 }
 
 export default function OLProductSetup() {
-  const { access } = useAccess()
+  const { access, isSuperAdmin } = useAccess()
   const { toast } = useToast()
-  const permissionKeys = useMemo(() => (access?.permissions ?? []).map((permission) => `${permission.module}.${permission.action}`), [access])
-  const canView = permissionKeys.includes("ol_parameters.view")
-  const canCreate = permissionKeys.includes("ol_parameters.create")
-  const canUpdate = permissionKeys.includes("ol_parameters.update")
-  const canDeactivate = permissionKeys.includes("ol_parameters.deactivate")
+  const permissionKeys = useMemo(() => isSuperAdmin ? ["ol_parameters.view", "ol_parameters.create", "ol_parameters.update", "ol_parameters.deactivate"] : (access?.permissions ?? []).map((permission) => `${permission.module}.${permission.action}`), [access, isSuperAdmin])
+  const canView = isSuperAdmin || permissionKeys.includes("ol_parameters.view")
+  const canCreate = isSuperAdmin || permissionKeys.includes("ol_parameters.create")
+  const canUpdate = isSuperAdmin || permissionKeys.includes("ol_parameters.update")
+  const canDeactivate = isSuperAdmin || permissionKeys.includes("ol_parameters.deactivate")
   const [active, setActive] = useState<ScreenKey>("plan-types")
   const [filters, setFilters] = useState<FilterValues>({})
   const [refreshKey, setRefreshKey] = useState(0)

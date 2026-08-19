@@ -71,8 +71,8 @@ const baseRow = {
   unit_price: "1.0000",
 }
 
-function accessWith(currentPermissions = permissions) {
-  return { access: { visibleModules: ["ol_parameters"], permissions: currentPermissions, groups: [] }, isLoading: false, isError: false, canAccess: vi.fn(() => true) }
+function accessWith(currentPermissions = permissions, isSuperAdmin = false) {
+  return { access: { visibleModules: ["ol_parameters"], permissions: currentPermissions, groups: [] }, isLoading: false, isError: false, isSuperAdmin, canAccess: vi.fn(() => true) }
 }
 
 function mockApi() {
@@ -110,6 +110,17 @@ describe("OLProductSetup", () => {
       expect(await screen.findByRole("columnheader", { name: column })).toBeInTheDocument()
     }
     await waitFor(() => expect(requestMock.mock.calls.some(([path]) => String(path).includes("/api/v1/ol-parameters/investment-funds/"))).toBe(true))
+  })
+
+  it("grants unrestricted Product Setup access to a superuser without IAM permission entries", async () => {
+    useAccessMock.mockReturnValue(accessWith([], true))
+    render(<OLProductSetup />)
+
+    expect(await screen.findByText("Traditional")).toBeInTheDocument()
+    expect(screen.queryByText("Read access required")).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "New setup" })).not.toBeDisabled()
+    fireEvent.click(screen.getByRole("button", { name: "Actions for row 1" }))
+    expect(await screen.findByRole("button", { name: "Edit" })).toBeInTheDocument()
   })
 
   it("saves a product with capability toggles", async () => {

@@ -453,7 +453,7 @@ function QuestionnaireBuilderPanel({ value, onChange, items, catalog, onItemsCha
 }
 
 export default function OLPolicySetup() {
-  const { access, canAccess } = useAccess()
+  const { access, canAccess, isSuperAdmin } = useAccess()
   const { toast } = useToast()
   const [active, setActive] = useState<ScreenKey>("rates")
   const [filters, setFilters] = useState<FilterValues>({})
@@ -473,10 +473,10 @@ export default function OLPolicySetup() {
   const [questionnaireLoading, setQuestionnaireLoading] = useState(false)
   const screen = screens[active]
 
-  const hasPermission = useCallback((permission: string) => { const [module, action] = permission.split("."); if (!access.permissions.length) return canAccess(module); return access.permissions.some((item) => item.module.toLowerCase() === module.toLowerCase() && item.action.toLowerCase() === action.toLowerCase()) }, [access.permissions, canAccess])
+  const hasPermission = useCallback((permission: string) => { const [module, action] = permission.split("."); if (isSuperAdmin) return true; if (!access.permissions.length) return canAccess(module); return access.permissions.some((item) => item.module.toLowerCase() === module.toLowerCase() && item.action.toLowerCase() === action.toLowerCase()) }, [access.permissions, canAccess, isSuperAdmin])
   const canManage = hasPermission("ol_parameters.create") || hasPermission("ol_parameters.update")
   const canDeactivate = hasPermission("ol_parameters.deactivate") || canManage
-  const permissionKeys = access.permissions.map((item) => `${item.module}.${item.action}`)
+  const permissionKeys = isSuperAdmin ? ["ol_parameters.view", "ol_parameters.create", "ol_parameters.update", "ol_parameters.deactivate"] : access.permissions.map((item) => `${item.module}.${item.action}`)
 
   useEffect(() => { if (!editor.open || active !== "status") return; let mounted = true; request<unknown>(`${screens.status.endpoint}?is_active=true&page_size=100&ordering=display_order`).then((payload) => { if (mounted) setTransitionOptions(normalizeTableResponse<PolicyRecord>(payload).results) }).catch(() => { if (mounted) setTransitionOptions([]) }); return () => { mounted = false } }, [active, editor.open, refreshKey])
 

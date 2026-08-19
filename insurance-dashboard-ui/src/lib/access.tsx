@@ -8,6 +8,7 @@ interface AccessContextValue {
   access: AccessMetadata
   isLoading: boolean
   isError: boolean
+  isSuperAdmin: boolean
   canAccess: (moduleKey: string) => boolean
 }
 
@@ -39,10 +40,10 @@ export function AccessProvider({ children }: { children: ReactNode }) {
 
   const isSuperAdmin = useMemo(() => {
     const normalizedUserType = user?.userType?.toUpperCase().replace(/[\s-]+/g, "_")
-    return normalizedUserType === "SUPER_ADMIN" || user?.groups?.some(
+    return query.data?.isSuperuser === true || user?.isSuperuser === true || normalizedUserType === "SUPER_ADMIN" || user?.groups?.some(
       (group) => group.toUpperCase().replace(/[\s-]+/g, "_") === "SUPER_ADMIN",
     ) === true
-  }, [user?.groups, user?.userType])
+  }, [query.data?.isSuperuser, user?.groups, user?.isSuperuser, user?.userType])
 
   const canAccess = (moduleKey: string): boolean => {
     if (!moduleKey || isSuperAdmin) return true
@@ -58,7 +59,7 @@ export function AccessProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AccessContext.Provider value={{ access, isLoading: query.isLoading, isError: query.isError, canAccess }}>
+    <AccessContext.Provider value={{ access, isLoading: query.isLoading, isError: query.isError, isSuperAdmin, canAccess }}>
       {children}
     </AccessContext.Provider>
   )

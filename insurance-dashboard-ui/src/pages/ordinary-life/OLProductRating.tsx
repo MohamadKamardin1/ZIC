@@ -414,7 +414,7 @@ function Part2Editor({ tab, record, onChange }: { tab: Exclude<RatingTab, "premi
 }
 
 export default function OLProductRating() {
-  const { access, canAccess } = useAccess()
+  const { access, canAccess, isSuperAdmin } = useAccess()
   const { toast } = useToast()
   const [activeTab, setActiveTab] = useState<RatingTab>("premium")
   const [filters, setFilters] = useState<FilterValues>({})
@@ -428,10 +428,10 @@ export default function OLProductRating() {
   const [importErrors, setImportErrors] = useState<CsvError[]>([])
   const [overlapWarning, setOverlapWarning] = useState<string | null>(null)
 
-  const permissions = useMemo(() => access.permissions.filter((permission) => permission.module === "ol_parameters").map((permission) => `${permission.module}.${permission.action}`), [access.permissions])
-  const canCreate = canAccess("ol_parameters.create")
-  const canUpdate = canAccess("ol_parameters.update")
-  const canDeactivate = canAccess("ol_parameters.deactivate")
+  const permissions = useMemo(() => isSuperAdmin ? ["ol_parameters.view", "ol_parameters.create", "ol_parameters.update", "ol_parameters.deactivate"] : access.permissions.filter((permission) => permission.module === "ol_parameters").map((permission) => `${permission.module}.${permission.action}`), [access.permissions, isSuperAdmin])
+  const canCreate = isSuperAdmin || canAccess("ol_parameters")
+  const canUpdate = isSuperAdmin || canAccess("ol_parameters")
+  const canDeactivate = isSuperAdmin || canAccess("ol_parameters")
   const config = configs[activeTab]
   const metadata: TableMetadata<RatingRecord> = activeTab === "premium" ? premiumMetadata : activeTab === "mortality" ? mortalityMetadata : activeTab === "joint" ? jointMetadata : { totalLabel: config.title, defaultOrdering: "effective_from", columns: config.columns }
 

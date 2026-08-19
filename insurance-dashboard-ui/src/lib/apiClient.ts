@@ -120,6 +120,7 @@ export interface AccessMetadata {
   visibleModules: string[]
   permissions: AccessPermission[]
   groups: string[]
+  isSuperuser?: boolean
   fetchedAt?: string
 }
 
@@ -136,17 +137,34 @@ export async function fetchAccessMetadata(): Promise<AccessMetadata | null> {
     const permissions = (raw.permissions ?? profile.permissions ?? []) as AccessMetadata["permissions"]
     const groups = (raw.groups ?? profile.groups ?? []) as string[]
     const visibleModules = (raw.visibleModules ?? profile.visibleModules ?? permissions.map((permission) => permission.module)) as string[]
+    const isSuperuser = raw.isSuperuser ?? raw.is_superuser ?? profile.isSuperuser ?? profile.is_superuser
     return {
       visibleModules,
       permissions,
       groups,
+      ...(typeof isSuperuser === "boolean" ? { isSuperuser } : {}),
       fetchedAt: new Date().toISOString(),
     }
   }
 
   try {
     const payload = await request<Partial<AccessMetadata> | { access?: Partial<AccessMetadata> }>("/api/v1/iam/me/access/")
-    return normalize(payload)
+    const access = normalize(payload)
+    try {
+      const profile = await request<unknown>("/api/v1/auth/me/")
+      const profileAccess = normalize(profile)
+      if (access && profileAccess) {
+        return {
+          ...access,
+          groups: profileAccess.groups.length ? profileAccess.groups : access.groups,
+          isSuperuser: profileAccess.isSuperuser ?? access.isSuperuser,
+        }
+      }
+      return profileAccess ?? access
+    } catch (profileError) {
+      if (profileError instanceof ApiClientError && [404, 405].includes(profileError.status)) return access
+      throw profileError
+    }
   } catch (error) {
     if (!(error instanceof ApiClientError) || ![404, 405].includes(error.status)) throw error
   }

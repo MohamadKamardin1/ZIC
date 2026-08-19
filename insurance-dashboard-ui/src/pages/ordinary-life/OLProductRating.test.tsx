@@ -99,7 +99,7 @@ const cashSurrenderValue = { id: "csv-1", code: "CSV-2026", product: "product-1"
 const reserveLoading = { id: "reserve-1", code: "RESERVE-2026", product: "product-1", plan: null, loading_type: "EXPENSE", loading_basis: "RESERVE", rate_value: "2.50000000", effective_from: "2026-01-01", effective_to: null, is_active: true }
 
 function accessWith(currentPermissions = permissions) {
-  return { access: { visibleModules: ["ol_parameters"], permissions: currentPermissions, groups: [] }, isLoading: false, isError: false, canAccess: vi.fn(() => true) }
+  return { access: { visibleModules: ["ol_parameters"], permissions: currentPermissions, groups: [] }, isLoading: false, isError: false, canAccess: vi.fn(() => true), isSuperAdmin: false }
 }
 
 function mockApi() {

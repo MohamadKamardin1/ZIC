@@ -89,7 +89,7 @@ function Choice({ label, value, onChange, options, required, error }: { label: s
 }
 
 export default function OLLoanSetup() {
-  const { access, canAccess } = useAccess()
+  const { access, canAccess, isSuperAdmin } = useAccess()
   const { toast } = useToast()
   const [screen, setScreen] = useState<ScreenKey>("system")
   const [filtersState, setFiltersState] = useState<FilterValues>({})
@@ -102,8 +102,8 @@ export default function OLLoanSetup() {
   const endpoint = endpointFor(screen)
   const choiceFields = screen === "system" ? ["loan_basis", "effect_on_claim", "effect_on_surrender", "effect_on_maturity"] : ["compounding_frequency", "interest_calculation_basis"]
   const { choices } = useRemoteChoices(endpoint, choiceFields, rows)
-  const permissions = access.permissions.map((permission) => `${permission.module}.${permission.action}`)
-  const writable = canAccess("ol_parameters") && (permissions.length === 0 || permissions.some((permission) => /\.create$|\.update$|\.write$/.test(permission)))
+  const permissions = isSuperAdmin ? ["ol_parameters.view", "ol_parameters.create", "ol_parameters.update", "ol_parameters.deactivate"] : access.permissions.map((permission) => `${permission.module}.${permission.action}`)
+  const writable = isSuperAdmin || (canAccess("ol_parameters") && (permissions.length === 0 || permissions.some((permission) => /\.create$|\.update$|\.write$/.test(permission))))
   const fetcher = useCallback(async (query: TableQuery) => { const payload = await request<unknown>(`${endpoint}${buildTableQuery(query)}`); const result = normalizeTableResponse<LoanRecord>(payload); setRows(result.results); return result }, [endpoint])
   const definitions = useMemo(() => filters[screen].map((definition) => ({ ...definition, options: definition.key === "is_active" ? [{ label: "Active", value: "true" }, { label: "Inactive", value: "false" }] : choices[definition.key] ?? [] })), [choices, screen])
   const update = (key: string, value: Primitive) => setEditor((current) => current ? { ...current, [key]: value } : current)

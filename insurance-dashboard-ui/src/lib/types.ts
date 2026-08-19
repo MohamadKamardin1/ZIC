@@ -26,6 +26,8 @@ export interface AuthUser {
   userType: string
   isActive: boolean
   isApproved: boolean
+  isStaff?: boolean
+  isSuperuser?: boolean
   is2faEnabled: boolean
   emailVerified: boolean
   phoneVerified: boolean

@@ -263,7 +263,7 @@ function serializeEditor(screen: ScreenKey, state: EditorState) {
 }
 
 export default function OLDefaultSetup() {
-  const { canAccess } = useAccess()
+  const { canAccess, isSuperAdmin } = useAccess()
   const { toast } = useToast()
   const [active, setActive] = useState<ScreenKey>("default")
   const [filters, setFilters] = useState<FilterValues>({})
@@ -275,12 +275,13 @@ export default function OLDefaultSetup() {
   const { access } = useAccess()
   const hasPermission = useCallback((permission: string) => {
     const [module, action] = permission.split(".")
+    if (isSuperAdmin) return true
     if (!access.permissions.length) return canAccess(module)
     return access.permissions.some((item) => item.module.toLowerCase() === module.toLowerCase() && item.action.toLowerCase() === action.toLowerCase())
-  }, [access.permissions, canAccess])
+  }, [access.permissions, canAccess, isSuperAdmin])
   const canManage = hasPermission("ol_parameters.update") || hasPermission("ol_parameters.create")
   const canDeactivate = hasPermission("ol_parameters.deactivate") || canManage
-  const permissionKeys = access.permissions.map((item) => `${item.module}.${item.action}`)
+  const permissionKeys = isSuperAdmin ? ["ol_parameters.view", "ol_parameters.create", "ol_parameters.update", "ol_parameters.deactivate"] : access.permissions.map((item) => `${item.module}.${item.action}`)
 
   const fetcher = useCallback(async (query: { page?: number; pageSize?: number; search?: string; ordering?: string; filters?: Record<string, string | number | boolean | null | undefined> }) => {
     const params = new URLSearchParams()
