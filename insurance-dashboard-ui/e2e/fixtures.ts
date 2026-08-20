@@ -60,9 +60,9 @@ export async function seedSuperuserSession(page: Page) {
   }, superuser)
 }
 
-export async function mockAccessApi(page: Page, visibleModules = ["ol_quotations", "ol_parameters", "ol_proposals", "ordinary_life"]) {
+export async function mockAccessApi(page: Page, visibleModules = ["ol_quotations", "ol_parameters", "ol_proposals", "ordinary_life"], permissions: Array<{ module: string; action: string }> = [{ module: "system_parameters", action: "manage" }, { module: "ol_parameters", action: "create" }, { module: "partners", action: "create" }]) {
   await page.route("**/api/v1/iam/me/access/**", async (route) => {
-    await route.fulfill({ json: { data: { visibleModules, permissions: [], groups: ["SUPER_ADMIN"], isSuperuser: true } } })
+    await route.fulfill({ json: { data: { visibleModules, permissions, groups: ["SUPER_ADMIN"], isSuperuser: true } } })
   })
   await page.route("**/api/v1/auth/me/**", async (route) => {
     await route.fulfill({ json: { data: superuser } })
@@ -94,7 +94,7 @@ export async function mockQuotationApi(page: Page, overrides: Partial<typeof quo
     else if (path.endsWith("/quotations/") && method === "GET") response = { count: 1, results: [currentQuotation], next: null, previous: null }
     else if (path.endsWith("/quote-1/") && method === "GET") response = currentQuotation
     else if (method === "POST" && path.endsWith("/quotations/")) response = currentQuotation
-    else if (path.endsWith("/personal-details-options/")) response = { identity_types: [{ value: "NIN", label: "National Identification Number" }], genders: [{ value: "MALE", label: "Male" }], smoker_statuses: [{ value: "NON_SMOKER", label: "Non-smoker" }], locations: [{ value: "location-1", label: "Dar es Salaam" }], agents: [{ value: "agent-1", label: "E2E Agent" }] }
+    else if (path.endsWith("/personal-details-options/")) response = { identity_types: [{ value: "NIN", label: "National Identification Number" }], genders: [{ value: "MALE", label: "Male" }, { value: "FEMALE", label: "Female" }], smoker_statuses: [{ value: "NON_SMOKER", label: "Non-smoker" }], locations: [{ value: "location-1", label: "Dar es Salaam" }], agents: [{ value: "agent-1", label: "E2E Agent" }] }
     else if (path.includes("/personal-details/") && method === "POST") response = currentQuotation
     else if (path.includes("/plans/search/")) response = { count: 1, plans: [{ id: "plan-1", code: "TERM-20", name: "Twenty Year Term", description: "Protection plan for twenty years.", badges: ["WITH_PROFIT"], with_profit: true, joint_life: false, payment_frequencies: ["ANNUAL"], min_entry_age: 18, max_entry_age: 65, min_term_years: 5, max_term_years: 20 }] }
     else if (path.includes("/plan-options/")) response = { payment_frequencies: [{ value: "ANNUAL", label: "Annual" }], quote_bases: [{ value: "SUM_ASSURED", label: "Sum Assured" }], premium_factors: [{ value: "NONE", label: "None" }], plan_features: {} }
@@ -111,6 +111,133 @@ export async function mockQuotationApi(page: Page, overrides: Partial<typeof quo
 
   await page.route("**/api/v1/ol/plans/search/**", async (route) => {
     await route.fulfill({ json: { data: { count: 1, plans: [{ id: "plan-1", code: "TERM-20", name: "Twenty Year Term", description: "Protection plan for twenty years.", badges: ["WITH_PROFIT"], with_profit: true, joint_life: false, payment_frequencies: ["ANNUAL"], min_entry_age: 18, max_entry_age: 65, min_term_years: 5, max_term_years: 20 }] } } })
+  })
+}
+
+export async function mockDropdownQuickCreateApi(page: Page) {
+  let productCreated = false
+  let memberCreated = false
+  let installmentConfigured = false
+  let fundCreated = false
+  let riderCreated = false
+  let benefitCreated = false
+  let currentQuotation = { ...quotation, plan_configurations: [], wizard_step_completion: {} }
+  const auditEntries: Array<Record<string, unknown>> = []
+  const createdOptions: Record<string, { value: string; label: string; meta?: Record<string, unknown> }> = {}
+
+  const optionDefinitions: Record<string, { value: string; label: string }> = {
+    "identity-types": { value: "identity-e2e", label: "Passport (E2E)" },
+    locations: { value: "location-e2e", label: "Zanzibar City" },
+    "plan-types": { value: "plan-type-e2e", label: "Individual Life" },
+    products: { value: "product-e2e", label: "E2E Dropdown Product" },
+    "member-relations": { value: "relation-e2e", label: "Spouse (E2E)" },
+    "payment-modes": { value: "payment-mode-e2e", label: "Electronic Transfer (E2E)" },
+    "investment-fund-types": { value: "fund-type-e2e", label: "Balanced (E2E)" },
+    "investment-funds": { value: "fund-e2e", label: "ZIC Balanced Fund (E2E)" },
+    riders: { value: "rider-e2e", label: "Family Protection Rider (E2E)" },
+    "benefit-types": { value: "benefit-e2e", label: "Death Benefit (E2E)" },
+  }
+
+  const schemas: Record<string, unknown> = {
+    "identity-types": { fields: [{ name: "code", type: "string", required: true }, { name: "name", type: "string", required: true }] },
+    locations: { fields: [{ name: "code", type: "string", required: true }, { name: "name", type: "string", required: true }, { name: "branch", type: "select", required: true, choices: [{ value: "branch-e2e", label: "Zanzibar Main Branch" }] }] },
+    "plan-types": { fields: [{ name: "code", type: "string", required: true }, { name: "name", type: "string", required: true }, { name: "plan_category", type: "select", required: false, default: "INDIVIDUAL", choices: [{ value: "INDIVIDUAL", label: "Individual" }] }] },
+    products: { fields: [{ name: "code", type: "string", required: true }, { name: "name", type: "string", required: true }, { name: "plan_type", type: "select", required: true, nested_entity: "plan-types" }, { name: "insurance_class", type: "select", required: false, default: "INDIVIDUAL", choices: [{ value: "INDIVIDUAL", label: "Individual" }] }, { name: "allow_riders", type: "boolean", required: false, default: true }, { name: "allow_surrender", type: "boolean", required: false, default: true }] },
+    "member-relations": { fields: [{ name: "code", type: "string", required: true }, { name: "name", type: "string", required: true }] },
+    "payment-modes": { fields: [{ name: "code", type: "string", required: true }, { name: "name", type: "string", required: true }] },
+    "investment-fund-types": { fields: [{ name: "code", type: "string", required: true }, { name: "name", type: "string", required: true }, { name: "risk_profile", type: "select", required: false, default: "MODERATE", choices: [{ value: "MODERATE", label: "Moderate" }] }] },
+    "investment-funds": { fields: [{ name: "code", type: "string", required: true }, { name: "name", type: "string", required: true }, { name: "fund_type", type: "select", required: true, nested_entity: "investment-fund-types" }, { name: "currency", type: "select", required: false, default: "TZS", choices: [{ value: "TZS", label: "TZS — Tanzanian Shilling" }] }, { name: "valuation_frequency", type: "select", required: false, default: "DAILY", choices: [{ value: "DAILY", label: "Daily" }] }] },
+    riders: { fields: [{ name: "code", type: "string", required: true }, { name: "name", type: "string", required: true }, { name: "rider_category", type: "select", required: true, choices: [{ value: "PROTECTION", label: "Protection" }] }, { name: "benefit_type", type: "select", required: true, choices: [{ value: "DEATH", label: "Death" }] }, { name: "calculation_basis", type: "select", required: false, default: "SUM_ASSURED", choices: [{ value: "SUM_ASSURED", label: "Sum Assured" }] }] },
+    "benefit-types": { fields: [{ name: "code", type: "string", required: true }, { name: "name", type: "string", required: true }] },
+  }
+
+  const audit = (entity: string, option: { value: string; label: string }) => {
+    auditEntries.push({ id: `audit-${auditEntries.length + 1}`, action: "CREATE", source_channel: "QUICK_CREATE", reason: "Created from OL quotation wizard", actor: "e2e-superuser", actor_display: "ZIC Superadmin", entity, object_id: option.value })
+  }
+
+  await page.route("**/api/v1/ol/options/**", async (route) => {
+    const url = new URL(route.request().url())
+    const segments = url.pathname.split("/").filter(Boolean)
+    const entity = segments[segments.indexOf("options") + 1]
+    const method = route.request().method()
+    if (!entity) return route.fallback()
+    if (segments.includes("quick-create-schema")) {
+      await route.fulfill({ json: { data: schemas[entity] ?? { fields: [] } } })
+      return
+    }
+    if (segments.includes("quick-create") && method === "POST") {
+      const definition = optionDefinitions[entity]
+      if (!definition) { await route.fulfill({ status: 400, json: { detail: "Unknown entity" } }); return }
+      const option = { ...definition, meta: { code: definition.value, name: definition.label } }
+      createdOptions[entity] = option
+      if (entity === "products") productCreated = true
+      if (entity === "member-relations") memberCreated = true
+      if (entity === "investment-fund-types") createdOptions[entity] = option
+      if (entity === "investment-funds") fundCreated = true
+      if (entity === "riders") riderCreated = true
+      if (entity === "benefit-types") benefitCreated = true
+      audit(entity, option)
+      await route.fulfill({ status: 201, json: { data: option } })
+      return
+    }
+    const baseline: Record<string, { value: string; label: string }[]> = {
+      "payment-frequencies": [{ value: "ANNUAL", label: "Annual" }],
+      "quote-bases": [{ value: "SUM_ASSURED", label: "Sum Assured" }],
+      "premium-factors": [{ value: "NONE", label: "None" }],
+      currencies: [{ value: "TZS", label: "TZS — Tanzanian Shilling" }],
+      agents: [{ value: "agent-1", label: "E2E Agent" }],
+      "benefit-types": [],
+      riders: [],
+    }
+    const option = createdOptions[entity]
+    const results = option ? [option] : (baseline[entity] ?? [])
+    await route.fulfill({ json: { data: { count: results.length, results, next: null, previous: null } } })
+  })
+
+  await page.route("**/api/v1/onboarding/locations/**", async (route) => {
+    await route.fulfill({ json: { data: [] } })
+  })
+
+  await page.route("**/api/v1/governance/audit-logs/**", async (route) => {
+    await route.fulfill({ json: { data: { count: auditEntries.length, results: auditEntries, next: null, previous: null } } })
+  })
+
+  await page.route("**/api/v1/ol-quotations/quotations/**", async (route) => {
+    const url = new URL(route.request().url())
+    const path = url.pathname
+    const method = route.request().method()
+    let response: unknown = {}
+    if (path.endsWith("/personal-details-options/")) response = { identity_types: [], genders: [{ value: "MALE", label: "Male" }, { value: "FEMALE", label: "Female" }], smoker_statuses: [{ value: "NON_SMOKER", label: "Non-smoker" }], locations: [], agents: [{ value: "agent-1", label: "E2E Agent" }] }
+    else if (path.includes("/plans/search/")) response = { count: productCreated ? 1 : 0, plans: productCreated ? [{ id: "product-e2e", plan_id: "product-e2e", product_version_id: "product-e2e-version", code: "E2E-DROPDOWN", name: "E2E Dropdown Product", description: "Created from the quotation wizard.", badges: ["WITH_PROFIT"], with_profit: true, joint_life: false, payment_frequencies: ["ANNUAL"], min_entry_age: 18, max_entry_age: 65, min_term_years: 5, max_term_years: 20 }] : [] }
+    else if (path.endsWith("/plan-options/") || path.includes("/plan-options?")) response = { payment_frequencies: [{ value: "ANNUAL", label: "Annual" }], quote_bases: [{ value: "SUM_ASSURED", label: "Sum Assured" }], premium_factors: [{ value: "NONE", label: "None" }], plan_features: {} }
+    else if (path.endsWith("/personal-details/") && method === "POST") response = currentQuotation
+    else if (path.endsWith("/plans/") && method === "POST") { currentQuotation = { ...currentQuotation, plan_configurations: [{ id: "config-e2e", plan_id: "product-e2e", product_version_id: "product-e2e-version", plan_code: "E2E-DROPDOWN", plan_name: "E2E Dropdown Product", term_years: 20, payment_period_years: 20, premium_frequency: "ANNUAL", quote_basis: "SUM_ASSURED", estimated_maturity_value: "250000", premium_factor: "NONE", is_selected: true }] }; response = { configurations: currentQuotation.plan_configurations, quotation: currentQuotation }
+    }
+    else if (path.endsWith("/members/") && method === "GET") response = { principal_member: { id: "member-principal", full_name: "E2E Applicant", relation: "POLICY_HOLDER", date_of_birth: "1990-01-01", age_at_quote: 36, gender: "MALE", is_principal: true }, members: memberCreated ? [{ id: "member-e2e", full_name: "E2E Spouse", relation: "relation-e2e", date_of_birth: "1992-01-01", age_at_quote: 34, gender: "FEMALE", is_principal: false }] : [], additional_members: memberCreated ? [{ id: "member-e2e", full_name: "E2E Spouse", relation: "relation-e2e", date_of_birth: "1992-01-01", age_at_quote: 34, gender: "FEMALE", is_principal: false }] : [], requires_additional_coverage: true, wizard_step_complete: memberCreated }
+    else if (path.endsWith("/members/") && method === "POST") { memberCreated = true; response = { id: "member-e2e" } }
+    else if (path.endsWith("/installments/") && method === "GET") response = { rows: [{ plan_configuration_id: "config-e2e", plan_code: "E2E-DROPDOWN", plan_name: "E2E Dropdown Product", policy_term_years: 20, payment_mode: "payment-mode-e2e", total_number_of_installments: 1, status: installmentConfigured ? "CONFIGURED" : "READY_TO_CONFIGURE", can_configure: true }], requires_configuration: true, wizard_complete: installmentConfigured }
+    else if (path.includes("/installments/") && path.includes("/template/")) response = { plan_configuration_id: "config-e2e", has_template: false, banner: "No templates available. You can still configure installments manually.", policy_term_years: 20, payment_mode: "payment-mode-e2e", available_payment_modes: [], rate_rows: [] }
+    else if (path.includes("/installments/") && path.includes("/configure/") && method === "POST") { installmentConfigured = true; response = { status: "CONFIGURED" } }
+    else if (path.endsWith("/investment-funds/") && method === "GET") response = { plan_rows: [{ plan_configuration_id: "config-e2e", plan_code: "E2E-DROPDOWN", plan_name: "E2E Dropdown Product", investment_linked: true, status: fundCreated ? "CONFIGURED" : "READY_TO_CONFIGURE", allocations: fundCreated ? [{ id: "allocation-e2e", fund_id: "fund-e2e", fund_display: "ZIC Balanced Fund (E2E)", allocation_percent: "100", amount: "250000" }] : [] }], not_applicable: false, wizard_complete: fundCreated }
+    else if (path.includes("/investment-funds/options/")) response = { not_applicable: false, quotation_currency: "TZS", funds: fundCreated ? [{ value: "fund-e2e", label: "ZIC Balanced Fund (E2E)" }] : [] }
+    else if (path.endsWith("/investment-funds/") && method === "POST") { fundCreated = true; response = { status: "CONFIGURED" } }
+    else if (path.endsWith("/riders/") && method === "GET") response = { state: { plan_rows: [{ plan_configuration_id: "config-e2e", plan_code: "E2E-DROPDOWN", plan_name: "E2E Dropdown Product", riders: riderCreated ? [{ rider_id: "rider-e2e", rider_display: "Family Protection Rider (E2E)", rider_sum_assured: "100000", rider_term_years: 20, benefit_basis: "FIXED", benefit_value: "100000", benefits: benefitCreated ? [{ beneficial_type_id: "benefit-e2e", benefit_type_display: "Death Benefit (E2E)", benefit_basis: "FIXED", benefit_value: "100000" }] : [] }] : [] }], available_benefit_types: benefitCreated ? [{ value: "benefit-e2e", label: "Death Benefit (E2E)" }] : [], requires_configuration: true, wizard_complete: riderCreated && benefitCreated } }
+    else if (path.includes("/riders/options/")) response = { riders: riderCreated ? [{ value: "rider-e2e", label: "Family Protection Rider (E2E)" }] : [], benefit_types: benefitCreated ? [{ value: "benefit-e2e", label: "Death Benefit (E2E)" }] : [] }
+    else if (path.endsWith("/riders/") && method === "POST") { riderCreated = true; benefitCreated = true; response = { status: "CONFIGURED" } }
+    else if (path.endsWith("/financial-details/") || path.endsWith("/calculate/")) response = financial
+    else if (path.endsWith("/finalize/") && method === "POST") { currentQuotation = { ...currentQuotation, status: "FINALIZED" }; response = currentQuotation }
+    else response = currentQuotation
+    await route.fulfill({ json: { data: response } })
+  })
+
+  await page.route("**/api/v1/ol-quotations/quotations/", async (route) => {
+    if (route.request().method() === "POST") await route.fulfill({ json: { data: { ...currentQuotation, id: "quote-1" } } })
+    else await route.fallback()
+  })
+
+  await page.route("**/api/v1/ol/plans/search/**", async (route) => {
+    const plans = productCreated ? [{ id: "product-e2e", plan_id: "product-e2e", product_version_id: "product-e2e-version", code: "E2E-DROPDOWN", name: "E2E Dropdown Product", description: "Created from the quotation wizard.", badges: ["WITH_PROFIT"], with_profit: true, joint_life: false, payment_frequencies: ["ANNUAL"], min_entry_age: 18, max_entry_age: 65, min_term_years: 5, max_term_years: 20 }] : []
+    await route.fulfill({ json: { data: { count: plans.length, plans } } })
   })
 }
 

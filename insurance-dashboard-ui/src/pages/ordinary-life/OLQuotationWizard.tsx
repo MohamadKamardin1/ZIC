@@ -26,6 +26,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import { ApiClientError, request } from "../../lib/apiClient"
 import { useAccess } from "../../lib/access"
+import { hasExplicitPermission } from "../../lib/optionMetadata"
 import { useToast } from "../../components/ui/Toast"
 import {
   DateInput,
@@ -601,9 +602,9 @@ function ChoiceSelect({ label, name, value, options, required, error, onChange, 
 }
 
 function PlanSelectionPanel({ plans, selectedPlanIds, search, loading, onSearch, onToggle, onProductCreated }: { plans: PlanCard[]; selectedPlanIds: string[]; search: string; loading: boolean; onSearch: (value: string) => void; onToggle: (plan: PlanCard) => void; onProductCreated: (option: QuickCreateOption) => void | Promise<void> }) {
-  const { hasPermission, isSuperAdmin } = useAccess()
+  const { access } = useAccess()
   const [quickCreateOpen, setQuickCreateOpen] = useState(false)
-  const canCreateProducts = isSuperAdmin || Boolean(hasPermission?.("ol_parameters.create"))
+  const canCreateProducts = hasExplicitPermission(access.permissions, "ol_parameters.create")
   return <aside className="w-full shrink-0 lg:w-[320px] xl:w-[360px]" aria-label="Plan selection panel">
     <div className="surface-card overflow-hidden">
       <div className="border-b bg-[var(--muted)]/35 p-4">

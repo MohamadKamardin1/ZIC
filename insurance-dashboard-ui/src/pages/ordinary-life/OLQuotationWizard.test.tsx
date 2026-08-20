@@ -445,6 +445,7 @@ describe("OL quotation wizard", () => {
     fireEvent.change(typeFields[0], { target: { value: "BALANCED" } })
     fireEvent.change(typeFields[1], { target: { value: "Balanced" } })
     fireEvent.click(within(typeDialog!).getByRole("button", { name: "Create option" }))
+    await waitFor(() => expect(screen.getAllByRole("dialog")).toHaveLength(1))
 
     const refreshedFundDialog = (await screen.findAllByRole("dialog")).at(-1)
     expect(refreshedFundDialog).toBeTruthy()
