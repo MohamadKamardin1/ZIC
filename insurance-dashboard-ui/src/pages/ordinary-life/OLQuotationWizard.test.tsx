@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import OLQuotationWizard from "./OLQuotationWizard"
 
@@ -18,6 +19,17 @@ const { requestMock, navigateMock, toastMock, MockApiClientError } = vi.hoisted(
 vi.mock("../../lib/apiClient", () => ({
   request: requestMock,
   ApiClientError: MockApiClientError,
+}))
+
+vi.mock("../../lib/access", () => ({
+  useAccess: () => ({
+    access: { visibleModules: [], permissions: [], groups: [] },
+    isLoading: false,
+    isError: false,
+    isSuperAdmin: true,
+    canAccess: () => true,
+    hasPermission: () => true,
+  }),
 }))
 
 vi.mock("react-router-dom", () => ({
@@ -85,6 +97,7 @@ const plans = [
 ]
 
 let templateRows: Array<{ sequence: number; description: string; rate_percent: string; paid_up_rate: string | null }> = []
+let productCreatedScenario = false
 let investmentFundScenario = false
 let riderScenario = false
 let financialScenario = false
@@ -115,6 +128,7 @@ beforeEach(() => {
   navigateMock.mockReset()
   toastMock.mockReset()
   templateRows = []
+  productCreatedScenario = false
   investmentFundScenario = false
   riderScenario = false
   financialScenario = false
@@ -130,7 +144,35 @@ beforeEach(() => {
       locations: [{ value: "location-1", label: "Dar es Salaam" }],
       agents: [{ value: "agent-1", label: "Asha Agent" }],
     }
-    if (path.startsWith("/api/v1/ol/plans/search/")) return { plans, count: plans.length }
+    if (path.includes("/api/v1/ol/options/products/quick-create-schema/")) return {
+      permission: "ol_parameters.create",
+      fields: [
+        { name: "code", type: "string", required: true },
+        { name: "name", type: "string", required: true },
+      ],
+    }
+    if (path.includes("/api/v1/ol/options/products/quick-create/") && options?.method === "POST") {
+      productCreatedScenario = true
+      return { value: "plan-created", label: "New Product", meta: { product_code: "OLNEW", product_name: "New Product" } }
+    }
+    if (path.startsWith("/api/v1/ol/options/")) {
+      const entity = path.split("/api/v1/ol/options/")[1]?.split("/")[0]
+      const optionsByEntity: Record<string, Array<{ value: string; label: string }>> = {
+        "identity-types": [{ value: "NIN", label: "National Identification Number" }],
+        locations: [{ value: "location-1", label: "Dar es Salaam" }],
+        agents: [{ value: "agent-1", label: "Asha Agent" }],
+        "payment-frequencies": [{ value: "ANNUAL", label: "Annual" }, { value: "MONTHLY", label: "Monthly" }],
+        "quote-bases": [{ value: "SUM_ASSURED", label: "Sum Assured" }],
+        "premium-factors": [{ value: "NONE", label: "None" }],
+        products: plans.map((plan) => ({ value: plan.plan_id, label: plan.name })),
+      }
+      return { items: optionsByEntity[entity ?? ""] ?? [] }
+    }
+    if (path.startsWith("/api/v1/ol/plans/search/")) {
+      const refreshedPlan = { ...plans[0], id: "plan-created", plan_id: "plan-created", product_version_id: "version-created", product_code: "OLNEW", product_name: "New Product", code: "OLNEW", name: "New Product", description: "A newly created product." }
+      const availablePlans = productCreatedScenario ? [...plans, refreshedPlan] : plans
+      return { plans: availablePlans, count: availablePlans.length }
+    }
     if (path.includes("/plan-options/")) return {
       payment_frequencies: [{ value: "ANNUAL", label: "Annual" }, { value: "MONTHLY", label: "Monthly" }],
       quote_bases: [{ value: "SUM_ASSURED", label: "Sum Assured" }],
@@ -185,9 +227,14 @@ beforeEach(() => {
   })
 })
 
+function renderWizard() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(<QueryClientProvider client={queryClient}><OLQuotationWizard /></QueryClientProvider>)
+}
+
 describe("OL quotation wizard", () => {
   it("blocks navigation when Personal Details is invalid", async () => {
-    render(<OLQuotationWizard />)
+    renderWizard()
     expect(await screen.findByRole("heading", { name: "Personal Details" })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: /Next/ }))
@@ -198,7 +245,7 @@ describe("OL quotation wizard", () => {
   })
 
   it("computes age from Date of Birth and Quote Date", async () => {
-    render(<OLQuotationWizard />)
+    renderWizard()
     await screen.findByLabelText(/Date of Birth/)
 
     fireEvent.change(screen.getByLabelText(/Quote Date/), { target: { value: "2026-08-19" } })
@@ -208,7 +255,7 @@ describe("OL quotation wizard", () => {
   })
 
   it("selects only the clicked plan and updates the header count", async () => {
-    render(<OLQuotationWizard />)
+    renderWizard()
     const selectedCard = await screen.findByRole("button", { name: /TERM-20/ })
     const otherCard = await screen.findByRole("button", { name: /TERM-10/ })
 
@@ -220,21 +267,26 @@ describe("OL quotation wizard", () => {
   })
 
   it("renders the selected plan configuration immediately in Step 2", async () => {
-    render(<OLQuotationWizard />)
+    renderWizard()
     await screen.findByLabelText(/Quote Name/)
     fireEvent.change(screen.getByLabelText(/Quote Name/), { target: { value: "Asha quote" } })
-    fireEvent.change(screen.getByLabelText(/Identity Type/), { target: { value: "NIN" } })
+    fireEvent.click(screen.getByRole("button", { name: /^Identity Type/ }))
+    fireEvent.click(await screen.findByRole("option", { name: "National Identification Number" }))
     fireEvent.change(screen.getByLabelText(/Identity Number/), { target: { value: "NIN-001" } })
     fireEvent.change(screen.getByLabelText(/Gender/), { target: { value: "MALE" } })
     fireEvent.change(screen.getByLabelText(/Smoker/), { target: { value: "NON_SMOKER" } })
     fireEvent.change(screen.getByLabelText(/Address/), { target: { value: "Dar es Salaam" } })
     fireEvent.change(screen.getByLabelText(/Date of Birth/), { target: { value: "1990-01-01" } })
-    fireEvent.click(screen.getByRole("button", { name: /Location/ }))
+    fireEvent.click(screen.getByRole("button", { name: /^Location/ }))
     fireEvent.click(await screen.findByRole("option", { name: "Dar es Salaam" }))
-    fireEvent.click(screen.getByRole("button", { name: /Agent/ }))
+    fireEvent.click(screen.getByRole("button", { name: /^Agent/ }))
     fireEvent.click(await screen.findByRole("option", { name: "Asha Agent" }))
     fireEvent.click(screen.getByRole("button", { name: /Next/ }))
     await waitFor(() => expect(screen.getByRole("button", { name: "Plan & Sub-Products" })).toHaveAttribute("aria-current", "step"))
+
+    const personalCall = requestMock.mock.calls.find(([path, options]) => String(path).includes("/personal-details/") && options?.method === "POST")
+    expect(personalCall).toBeTruthy()
+    expect(JSON.parse(String(personalCall?.[1]?.body))).toEqual(expect.objectContaining({ identity_type: "NIN", location_id: "location-1", agent_id: "agent-1" }))
 
     fireEvent.click(await screen.findByRole("button", { name: /TERM-20/ }))
 
@@ -243,19 +295,45 @@ describe("OL quotation wizard", () => {
     expect(screen.getByLabelText(/Policy Term/)).toBeInTheDocument()
   })
 
+  it("creates a product inline, refreshes plans, and auto-selects the new plan", async () => {
+    renderWizard()
+    await screen.findByRole("button", { name: /TERM-20/ })
+
+    fireEvent.click(screen.getByRole("button", { name: "Add product" }))
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByRole("heading", { name: "Add Product" })).toBeInTheDocument()
+    const quickCreateFields = await within(dialog).findAllByRole("textbox")
+    fireEvent.change(quickCreateFields[0], { target: { value: "OLNEW" } })
+    fireEvent.change(quickCreateFields[1], { target: { value: "New Product" } })
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create option" }))
+
+    const newPlan = await screen.findByRole("button", { name: /OLNEW.*New Product/ })
+    await waitFor(() => expect(newPlan).toHaveAttribute("aria-pressed", "true"))
+    expect(screen.getByText("1 Plan", { selector: "span" })).toBeInTheDocument()
+  })
+
+  it("keeps fixed enum fields free of quick-create controls", async () => {
+    renderWizard()
+    await screen.findByLabelText(/Gender/)
+    expect(screen.queryByRole("button", { name: "Add new Gender" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Add new Smoker" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Add new Identity Type" })).toBeInTheDocument()
+  })
+
   async function reachMemberCoverageStep() {
-    render(<OLQuotationWizard />)
+    renderWizard()
     await screen.findByLabelText(/Quote Name/)
     fireEvent.change(screen.getByLabelText(/Quote Name/), { target: { value: "Asha quote" } })
-    fireEvent.change(screen.getByLabelText(/Identity Type/), { target: { value: "NIN" } })
+    fireEvent.click(screen.getByRole("button", { name: /^Identity Type/ }))
+    fireEvent.click(await screen.findByRole("option", { name: "National Identification Number" }))
     fireEvent.change(screen.getByLabelText(/Identity Number/), { target: { value: "NIN-001" } })
     fireEvent.change(screen.getByLabelText(/Gender/), { target: { value: "MALE" } })
     fireEvent.change(screen.getByLabelText(/Smoker/), { target: { value: "NON_SMOKER" } })
     fireEvent.change(screen.getByLabelText(/Address/), { target: { value: "Dar es Salaam" } })
     fireEvent.change(screen.getByLabelText(/Date of Birth/), { target: { value: "1990-01-01" } })
-    fireEvent.click(screen.getByRole("button", { name: /Location/ }))
+    fireEvent.click(screen.getByRole("button", { name: /^Location/ }))
     fireEvent.click(await screen.findByRole("option", { name: "Dar es Salaam" }))
-    fireEvent.click(screen.getByRole("button", { name: /Agent/ }))
+    fireEvent.click(screen.getByRole("button", { name: /^Agent/ }))
     fireEvent.click(await screen.findByRole("option", { name: "Asha Agent" }))
     fireEvent.click(screen.getByRole("button", { name: /Next/ }))
     await waitFor(() => expect(screen.getByRole("button", { name: "Plan & Sub-Products" })).toHaveAttribute("aria-current", "step"))
@@ -362,20 +440,21 @@ describe("OL quotation wizard", () => {
   })
 
   it("shows backend plan configuration errors inline", async () => {
-    render(<OLQuotationWizard />)
+    renderWizard()
     await screen.findByLabelText(/Quote Name/)
 
     fireEvent.change(screen.getByLabelText(/Quote Name/), { target: { value: "Asha quote" } })
-    fireEvent.change(screen.getByLabelText(/Identity Type/), { target: { value: "NIN" } })
+    fireEvent.click(screen.getByRole("button", { name: /^Identity Type/ }))
+    fireEvent.click(await screen.findByRole("option", { name: "National Identification Number" }))
     fireEvent.change(screen.getByLabelText(/Identity Number/), { target: { value: "NIN-001" } })
     fireEvent.change(screen.getByLabelText(/Gender/), { target: { value: "MALE" } })
     fireEvent.change(screen.getByLabelText(/Smoker/), { target: { value: "NON_SMOKER" } })
     fireEvent.change(screen.getByLabelText(/Address/), { target: { value: "Dar es Salaam" } })
     fireEvent.change(screen.getByLabelText(/Date of Birth/), { target: { value: "1990-01-01" } })
 
-    fireEvent.click(screen.getByRole("button", { name: /Location/ }))
+    fireEvent.click(screen.getByRole("button", { name: /^Location/ }))
     fireEvent.click(await screen.findByRole("option", { name: "Dar es Salaam" }))
-    fireEvent.click(screen.getByRole("button", { name: /Agent/ }))
+    fireEvent.click(screen.getByRole("button", { name: /^Agent/ }))
     fireEvent.click(await screen.findByRole("option", { name: "Asha Agent" }))
 
     fireEvent.click(screen.getByRole("button", { name: /Next/ }))

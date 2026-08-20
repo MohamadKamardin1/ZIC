@@ -25,6 +25,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import { ApiClientError, request } from "../../lib/apiClient"
+import { useAccess } from "../../lib/access"
 import { useToast } from "../../components/ui/Toast"
 import {
   DateInput,
@@ -40,6 +41,8 @@ import {
 } from "../../components/ui/FormControls"
 import type { FilterOption } from "../../components/ui/types"
 import { InfoBanner, Modal } from "../../components/ui/Overlays"
+import { QuickCreateModal, type QuickCreateOption } from "../../components/ui/QuickCreateModal"
+import { SmartSelect } from "../../components/ui/SmartSelect"
 
 const QUOTATION_PREFIX = "/api/v1/ol-quotations/quotations/"
 const PLAN_SEARCH_ENDPOINT = "/api/v1/ol/plans/search/"
@@ -596,11 +599,14 @@ function ChoiceSelect({ label, name, value, options, required, error, onChange, 
   </SelectInput>
 }
 
-function PlanSelectionPanel({ plans, selectedPlanIds, search, loading, onSearch, onToggle }: { plans: PlanCard[]; selectedPlanIds: string[]; search: string; loading: boolean; onSearch: (value: string) => void; onToggle: (plan: PlanCard) => void }) {
+function PlanSelectionPanel({ plans, selectedPlanIds, search, loading, onSearch, onToggle, onProductCreated }: { plans: PlanCard[]; selectedPlanIds: string[]; search: string; loading: boolean; onSearch: (value: string) => void; onToggle: (plan: PlanCard) => void; onProductCreated: (option: QuickCreateOption) => void | Promise<void> }) {
+  const { hasPermission, isSuperAdmin } = useAccess()
+  const [quickCreateOpen, setQuickCreateOpen] = useState(false)
+  const canCreateProducts = isSuperAdmin || Boolean(hasPermission?.("ol_parameters.create"))
   return <aside className="w-full shrink-0 lg:w-[320px] xl:w-[360px]" aria-label="Plan selection panel">
     <div className="surface-card overflow-hidden">
       <div className="border-b bg-[var(--muted)]/35 p-4">
-        <div className="mb-3 flex items-center gap-2"><PanelLeft size={17} aria-hidden="true" /><h2 className="text-base font-bold">Plans & Sub-Products</h2></div>
+        <div className="mb-3 flex items-center justify-between gap-2"><div className="flex min-w-0 items-center gap-2"><PanelLeft size={17} aria-hidden="true" /><h2 className="truncate text-base font-bold">Plans & Sub-Products</h2></div>{canCreateProducts && <button type="button" className="button-secondary !min-h-8 !px-2.5" aria-label="Add product" onClick={() => setQuickCreateOpen(true)}><Plus size={15} aria-hidden="true" /><span className="hidden sm:inline">Add product</span></button>}</div>
         <div className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" size={16} aria-hidden="true" /><input aria-label="Search plans and sub-products" value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Search plans and sub-products..." className="h-10 w-full rounded-[10px] border bg-[var(--card)] pl-9 pr-3 text-sm outline-none focus:border-[var(--ring)]" /></div>
         <p className="mt-3 text-xs font-semibold text-[var(--muted-foreground)]">{selectedPlanIds.length ? `${selectedPlanIds.length} ${selectedPlanIds.length === 1 ? "Plan" : "Plans"} selected` : "No products selected"}</p>
       </div>
@@ -615,6 +621,7 @@ function PlanSelectionPanel({ plans, selectedPlanIds, search, loading, onSearch,
           </button>
         })}
       </div>
+      {canCreateProducts && <QuickCreateModal open={quickCreateOpen} entity="products" entityLabel="Product" permissionCode="ol_parameters.create" onClose={() => setQuickCreateOpen(false)} onCreated={(option) => { setQuickCreateOpen(false); return onProductCreated(option) }} />}
     </div>
   </aside>
 }
@@ -631,14 +638,14 @@ function PersonalDetailsStep({ form, options, errors, age, onChange }: { form: P
   return <div className="surface-card overflow-visible"><StepHeader eyebrow="Step 1 of 7" title="Personal Details" description="Capture the prospect information used to calculate eligibility, partner matching, and quotation rating." /><div className="space-y-6 p-5"><FormGrid columns={2}>
     <TextInput label="Quote Name" name="quote_name" required value={form.quote_name} onChange={(event) => onChange("quote_name", event.target.value)} error={fieldError(errors, "quote_name")} placeholder="Enter quote name" />
     <DateInput label="Quote Date" name="quote_date" required value={form.quote_date} onChange={(event) => onChange("quote_date", event.target.value)} error={fieldError(errors, "quote_date")} />
-    <ChoiceSelect label="Identity Type" name="identity_type" required value={form.identity_type} options={options.identityTypes} onChange={(value) => onChange("identity_type", value)} error={fieldError(errors, "identity_type")} />
+    <SmartSelect entity="identity-types" label="Identity Type" name="identity_type" required value={form.identity_type} onChange={(value) => onChange("identity_type", value)} error={fieldError(errors, "identity_type")} placeholder="Search and select identity type" />
     <TextInput label="Identity Number" name="identity_number" required value={form.identity_number} onChange={(event) => onChange("identity_number", event.target.value)} error={fieldError(errors, "identity_number")} placeholder="Enter identity number" />
     <DateInput label="Date of Birth" name="date_of_birth" required value={form.date_of_birth} onChange={(event) => onChange("date_of_birth", event.target.value)} error={fieldError(errors, "date_of_birth")} />
     <ReadOnlyField label="Age" value={age === null ? "—" : `${age} years`} />
     <ChoiceSelect label="Gender" name="gender" required value={form.gender} options={options.genders} onChange={(value) => onChange("gender", value)} error={fieldError(errors, "gender")} />
     <ChoiceSelect label="Smoker" name="smoker_status" required value={form.smoker_status} options={options.smokerStatuses} onChange={(value) => onChange("smoker_status", value)} error={fieldError(errors, "smoker_status")} />
-    <SearchableSelect label="Location" name="location_id" required value={form.location_id} options={options.locations} onChange={(value) => onChange("location_id", value)} error={fieldError(errors, "location_id") ?? fieldError(errors, "location")} placeholder="Search and select location" />
-    <SearchableSelect label="Agent" name="agent_id" required value={form.agent_id} options={options.agents} onChange={(value) => onChange("agent_id", value)} error={fieldError(errors, "agent_id")} placeholder="Search and select agent" />
+    <SmartSelect entity="locations" label="Location" name="location_id" required value={form.location_id} onChange={(value) => onChange("location_id", value)} error={fieldError(errors, "location_id") ?? fieldError(errors, "location")} placeholder="Search and select location" manageHref="/system-parameters/locations" />
+    <SmartSelect entity="agents" label="Agent" name="agent_id" required value={form.agent_id} onChange={(value) => onChange("agent_id", value)} error={fieldError(errors, "agent_id")} placeholder="Search and select agent" />
   </FormGrid>
   <TextareaInput label="Address" name="address" required value={form.address} onChange={(event) => onChange("address", event.target.value)} error={fieldError(errors, "address")} placeholder="Enter residential or postal address" />
   </div></div>
@@ -650,10 +657,10 @@ function PlanConfigurationSection({ index, config, card, options, errors, onChan
   return <section className="rounded-[12px] border bg-[var(--card)] shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3 border-b bg-[var(--muted)]/35 px-4 py-3"><div><p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">Section {index + 1}</p><h3 className="mt-1 text-base font-bold">{planName}</h3></div><span className="rounded-full border px-3 py-1 text-xs font-semibold text-[var(--muted-foreground)]">Plan-only configuration</span></div><div className="space-y-5 p-4"><FormGrid columns={2}>
     <TextInput label="Policy Term (Years)" name={`term_years_${config.id}`} required type="number" min={1} value={String(config.term_years ?? "")} onChange={(event) => onChange("term_years", event.target.value)} error={fieldError(errors, "term_years")} />
     <TextInput label="Payment Period (Years)" name={`payment_period_years_${config.id}`} required type="number" min={1} value={String(config.payment_period_years ?? "")} onChange={(event) => onChange("payment_period_years", event.target.value)} error={fieldError(errors, "payment_period_years")} />
-    <ChoiceSelect label="Payment Frequency" name={`premium_frequency_${config.id}`} required value={String(config.premium_frequency ?? "")} options={options.payment_frequencies} onChange={(value) => onChange("premium_frequency", value)} error={fieldError(errors, "premium_frequency")} />
-    <ChoiceSelect label="Quote Basis" name={`quote_basis_${config.id}`} required value={String(config.quote_basis ?? "")} options={options.quote_bases} onChange={(value) => onChange("quote_basis", value)} error={fieldError(errors, "quote_basis")} />
+    <SmartSelect entity="payment-frequencies" label="Payment Frequency" name={`premium_frequency_${config.id}`} required value={String(config.premium_frequency ?? "")} onChange={(value) => onChange("premium_frequency", value)} error={fieldError(errors, "premium_frequency")} placeholder="Search and select payment frequency" />
+    <SmartSelect entity="quote-bases" label="Quote Basis" name={`quote_basis_${config.id}`} required value={String(config.quote_basis ?? "")} onChange={(value) => onChange("quote_basis", value)} error={fieldError(errors, "quote_basis")} placeholder="Search and select quote basis" />
     <DecimalInput label="Estimated Maturity Value" name={`estimated_maturity_value_${config.id}`} required value={String(config.estimated_maturity_value ?? "")} onChange={(event) => onChange("estimated_maturity_value", event.target.value)} error={fieldError(errors, "estimated_maturity_value")} />
-    <ChoiceSelect label="Premium Factor" name={`premium_factor_${config.id}`} value={String(config.premium_factor ?? "")} options={options.premium_factors} onChange={(value) => onChange("premium_factor", value)} error={fieldError(errors, "premium_factor")} placeholder="None" />
+    <SmartSelect entity="premium-factors" label="Premium Factor" name={`premium_factor_${config.id}`} value={String(config.premium_factor ?? "")} onChange={(value) => onChange("premium_factor", value)} error={fieldError(errors, "premium_factor")} placeholder="None" />
     <DecimalInput label="Estimated Bonus Rate (per mille)" name={`estimated_bonus_rate_${config.id}`} value={String(config.estimated_bonus_rate ?? "")} onChange={(event) => onChange("estimated_bonus_rate", event.target.value)} error={fieldError(errors, "estimated_bonus_rate")} />
   </FormGrid>
   <div className="grid gap-4 rounded-[10px] border bg-[var(--muted)]/25 p-4 md:grid-cols-2 xl:grid-cols-4"><Toggle label="Joint Life" checked={Boolean(config.joint_life)} disabled={!features.joint_life} onChange={(checked) => onChange("joint_life", checked)} hint={!features.joint_life ? "Not available for this plan" : "Apply joint-life rules"} /><Toggle label="Mortgage" checked={Boolean(config.mortgage)} disabled={!features.mortgage} onChange={(checked) => onChange("mortgage", checked)} hint={!features.mortgage ? "Not available for this plan" : "Apply mortgage factor"} /><Toggle label="Personal Accident (PA)" checked={Boolean(config.personal_accident)} disabled={!features.personal_accident} onChange={(checked) => onChange("personal_accident", checked)} hint={!features.personal_accident ? "Not available for this plan" : "Attach PA rider option"} /><Toggle label="Premium Waiver (WP)" checked={Boolean(config.premium_waiver)} disabled={!features.premium_waiver} onChange={(checked) => onChange("premium_waiver", checked)} hint={!features.premium_waiver ? "Not available for this plan" : "Attach WP rider option"} /></div>
@@ -848,18 +855,21 @@ export default function OLQuotationWizard() {
     setPersonalOptions({ identityTypes: asChoices(payload.identity_types), genders: asChoices(payload.genders), smokerStatuses: asChoices(payload.smoker_statuses), locations, agents: asChoices(payload.agents) })
   }, [])
 
-  const loadPlans = useCallback(async () => {
-    if (!quotationId) return
+  const loadPlans = useCallback(async (searchOverride?: string): Promise<PlanCard[]> => {
+    if (!quotationId) return []
     setPlansLoading(true)
     try {
       const query = new URLSearchParams({ quotation_id: quotationId, limit: "200" })
-      if (planSearch.trim()) query.set("search", planSearch.trim())
+      const effectiveSearch = searchOverride ?? planSearch
+      if (effectiveSearch.trim()) query.set("search", effectiveSearch.trim())
       const payload = await requestNormalized<ApiPayload>(`${PLAN_SEARCH_ENDPOINT}?${query.toString()}`)
       const nextPlans = (payload.plans ?? []).map(normalizePlanCard).filter((plan): plan is PlanCard => Boolean(plan))
       setPlans(nextPlans)
       setSelectedPlanIds((current) => current.filter((planId) => nextPlans.some((plan) => plan.plan_id === planId)))
+      return nextPlans
     } catch (error) {
       toast({ tone: "danger", title: "Unable to load plans", message: parseApiError(error).message })
+      return []
     } finally { setPlansLoading(false) }
   }, [planSearch, quotationId, toast])
 
@@ -1139,6 +1149,20 @@ export default function OLQuotationWizard() {
     })
   }
 
+  const handleProductCreated = async (option: QuickCreateOption) => {
+    const refreshedPlans = await loadPlans("")
+    const meta = option.meta ?? {}
+    const productCode = String(meta.product_code ?? meta.code ?? "").trim().toLowerCase()
+    const productName = String(meta.product_name ?? meta.name ?? option.label).trim().toLowerCase()
+    const createdPlan = refreshedPlans.find((plan) => plan.plan_id === option.value || plan.product_version_id === option.value || (productCode && plan.code.toLowerCase() === productCode) || (productName && (plan.name.toLowerCase() === productName || plan.product_name?.toLowerCase() === productName)))
+    if (!createdPlan) {
+      toast({ tone: "success", title: "Product created", message: "The product was created. Refresh the plan search to make it available." })
+      return
+    }
+    if (!selectedPlanIds.includes(createdPlan.plan_id)) handlePlanToggle(createdPlan)
+    toast({ tone: "success", title: "Product created and selected", message: createdPlan.name })
+  }
+
   const savePersonal = useCallback(async () => {
     if (!quotationId) return false
     const clientErrors = validatePersonalForm(personal, age)
@@ -1253,7 +1277,7 @@ export default function OLQuotationWizard() {
   return <div className="space-y-4 p-4 md:p-6">
     <header className="surface-card relative overflow-visible"><div className="flex flex-wrap items-center justify-between gap-4 border-b bg-[linear-gradient(110deg,#f8fafc,#eef2ff)] px-5 py-4 dark:bg-[linear-gradient(110deg,#171717,#262626)]"><div><p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">Ordinary Life / Quotations</p><div className="mt-1 flex flex-wrap items-center gap-3"><h1 className="text-2xl font-bold tracking-tight">Create New Quote</h1><span className="rounded-full border bg-[var(--card)] px-3 py-1 text-xs font-bold">{selectedPlanLabel}</span></div></div><div className="relative flex items-center gap-2"><span className="hidden items-center gap-1 text-xs text-[var(--muted-foreground)] sm:flex"><Save size={14} aria-hidden="true" />Draft autosave on</span><button type="button" className="button-secondary !min-h-9 !px-3" aria-expanded={detailsOpen} onClick={() => setDetailsOpen((current) => !current)}>Details<ChevronDown size={15} aria-hidden="true" /></button>{detailsOpen && <div className="absolute right-0 top-11 z-40 w-72 rounded-[10px] border bg-[var(--popover)] p-4 text-sm shadow-xl"><div className="mb-3 flex items-center justify-between border-b pb-3"><span className="font-semibold">Draft details</span><button type="button" aria-label="Close details" onClick={() => setDetailsOpen(false)}><X size={15} /></button></div><dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-xs"><dt className="text-[var(--muted-foreground)]">Quote number</dt><dd className="text-right font-semibold">{quotation.quote_number ?? "Pending"}</dd><dt className="text-[var(--muted-foreground)]">Status</dt><dd className="text-right font-semibold">{quotation.status ?? "DRAFT"}</dd><dt className="text-[var(--muted-foreground)]">Currency</dt><dd className="text-right font-semibold">{quotation.currency ?? "—"}</dd><dt className="text-[var(--muted-foreground)]">Expiry</dt><dd className="text-right font-semibold">{quotation.expiry_date ?? "—"}</dd></dl></div>}</div></div>{resumeNotice && <div className="flex items-center gap-2 border-b bg-[var(--muted)]/25 px-5 py-2.5 text-xs font-semibold text-[var(--muted-foreground)]"><RotateCcw size={14} aria-hidden="true" />Draft resumed from your last saved browser session.<button type="button" className="ml-auto underline" onClick={() => { localStorage.removeItem(LOCAL_DRAFT_KEY); setResumeNotice(false) }}>Dismiss</button></div>}</header>
     <WizardTabs activeStep={activeStep} completedSteps={completedSteps} invalidSteps={invalidSteps} onSelect={selectStep} />
-    <div className="flex flex-col gap-4 lg:flex-row lg:items-start"><PlanSelectionPanel plans={plans} selectedPlanIds={selectedPlanIds} search={planSearch} loading={plansLoading} onSearch={setPlanSearch} onToggle={handlePlanToggle} /><main className="min-w-0 flex-1">
+    <div className="flex flex-col gap-4 lg:flex-row lg:items-start"><PlanSelectionPanel plans={plans} selectedPlanIds={selectedPlanIds} search={planSearch} loading={plansLoading} onSearch={setPlanSearch} onToggle={handlePlanToggle} onProductCreated={handleProductCreated} /><main className="min-w-0 flex-1">
       {currentStep === "personal" && <PersonalDetailsStep form={personal} options={personalOptions} errors={personalErrors} age={age} onChange={handlePersonalChange} />}
       {currentStep === "plans" && <div className="space-y-4"><div className="surface-card overflow-hidden"><StepHeader eyebrow="Step 2 of 7" title="Plan & Sub-Products" description="Configure each selected plan using effective product setup and Ordinary Life parameter options." /><div className="p-5">{fieldError(planErrors.selection ?? {}, "plans") && <div className="mb-4"><div className="rounded-[10px] border border-[var(--destructive)]/35 bg-[var(--destructive)]/5 p-3 text-sm font-semibold text-[var(--destructive)]" role="alert">{fieldError(planErrors.selection ?? {}, "plans")}</div></div>}{!visibleConfigurations.length && <div className="rounded-[10px] border border-dashed p-8 text-center text-sm text-[var(--muted-foreground)]">Select one or more plans from the left panel, then continue to create configuration sections.</div>}</div></div>{visibleConfigurations.map((config, index) => <PlanConfigurationSection key={config.id} index={index} config={config} card={cardByPlanId.get(configurationPlanId(config) ?? "")} options={planOptions} errors={planErrors[config.id] ?? {}} onChange={(field, value) => void patchConfiguration(config, field, value)} />)}</div>}
       {currentStep === "members" && <MemberCoverageStep quotation={quotation} state={memberState} genderOptions={personalOptions.genders} errors={memberErrors} onSaveMember={saveMember} onRemoveMember={removeMember} />}
