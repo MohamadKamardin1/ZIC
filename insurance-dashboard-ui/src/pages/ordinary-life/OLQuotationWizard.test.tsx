@@ -219,6 +219,30 @@ describe("OL quotation wizard", () => {
     expect(otherCard).toHaveAttribute("aria-pressed", "false")
   })
 
+  it("renders the selected plan configuration immediately in Step 2", async () => {
+    render(<OLQuotationWizard />)
+    await screen.findByLabelText(/Quote Name/)
+    fireEvent.change(screen.getByLabelText(/Quote Name/), { target: { value: "Asha quote" } })
+    fireEvent.change(screen.getByLabelText(/Identity Type/), { target: { value: "NIN" } })
+    fireEvent.change(screen.getByLabelText(/Identity Number/), { target: { value: "NIN-001" } })
+    fireEvent.change(screen.getByLabelText(/Gender/), { target: { value: "MALE" } })
+    fireEvent.change(screen.getByLabelText(/Smoker/), { target: { value: "NON_SMOKER" } })
+    fireEvent.change(screen.getByLabelText(/Address/), { target: { value: "Dar es Salaam" } })
+    fireEvent.change(screen.getByLabelText(/Date of Birth/), { target: { value: "1990-01-01" } })
+    fireEvent.click(screen.getByRole("button", { name: /Location/ }))
+    fireEvent.click(await screen.findByRole("option", { name: "Dar es Salaam" }))
+    fireEvent.click(screen.getByRole("button", { name: /Agent/ }))
+    fireEvent.click(await screen.findByRole("option", { name: "Asha Agent" }))
+    fireEvent.click(screen.getByRole("button", { name: /Next/ }))
+    await waitFor(() => expect(screen.getByRole("button", { name: "Plan & Sub-Products" })).toHaveAttribute("aria-current", "step"))
+
+    fireEvent.click(await screen.findByRole("button", { name: /TERM-20/ }))
+
+    expect(await screen.findByText("Section 1")).toBeInTheDocument()
+    expect(screen.getAllByText("Twenty Year Term").length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByLabelText(/Policy Term/)).toBeInTheDocument()
+  })
+
   async function reachMemberCoverageStep() {
     render(<OLQuotationWizard />)
     await screen.findByLabelText(/Quote Name/)

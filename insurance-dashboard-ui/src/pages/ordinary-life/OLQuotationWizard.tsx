@@ -90,7 +90,9 @@ type PlanCard = {
 type PlanConfiguration = {
   id: string
   plan?: string | null
+  plan_id?: string | null
   product_version?: string | null
+  product_version_id?: string | null
   sub_product_code?: string
   section_number?: number | null
   term_years?: number | null
@@ -544,7 +546,19 @@ function planBadgeLabel(value: string): string {
 }
 
 function configurationPlanId(configuration: PlanConfiguration): string | null {
-  return configuration.plan ? String(configuration.plan) : null
+  const planId = configuration.plan ?? configuration.plan_id
+  return planId ? String(planId) : null
+}
+function draftConfiguration(plan: PlanCard, sectionNumber: number): PlanConfiguration {
+  return {
+    id: `draft:${plan.plan_id}`,
+    plan: plan.plan_id,
+    product_version: plan.product_version_id,
+    product_version_id: plan.product_version_id,
+    sub_product_code: plan.code,
+    section_number: sectionNumber,
+    is_selected: true,
+  }
 }
 
 function initialPersonal(quotation?: Quotation): PersonalForm {
@@ -1115,7 +1129,14 @@ export default function OLQuotationWizard() {
   }
 
   const handlePlanToggle = (plan: PlanCard) => {
-    setSelectedPlanIds((current) => current.includes(plan.plan_id) ? current.filter((id) => id !== plan.plan_id) : [...current, plan.plan_id])
+    const isSelected = selectedPlanIds.includes(plan.plan_id)
+    const next = isSelected ? selectedPlanIds.filter((id) => id !== plan.plan_id) : [...selectedPlanIds, plan.plan_id]
+    setSelectedPlanIds(next)
+    setConfigurations((configs) => {
+      if (isSelected) return configs.filter((config) => configurationPlanId(config) !== plan.plan_id)
+      if (configs.some((config) => configurationPlanId(config) === plan.plan_id)) return configs
+      return [...configs, draftConfiguration(plan, next.length)]
+    })
   }
 
   const savePersonal = useCallback(async () => {
@@ -1179,12 +1200,13 @@ export default function OLQuotationWizard() {
   }, [configurations, loadPlanOptions, plans, quotationId, selectedPlanIds, toast])
 
   const patchConfiguration = async (configuration: PlanConfiguration, field: string, value: string | boolean) => {
-    if (!quotationId || !configuration.id) return
+    if (!quotationId) return
     const numericFields = new Set(["term_years", "payment_period_years"])
     const decimalFields = new Set(["estimated_maturity_value", "estimated_bonus_rate"])
     const parsedValue = typeof value === "boolean" ? value : numericFields.has(field) ? (value === "" ? null : Number(value)) : decimalFields.has(field) ? (value === "" ? null : value) : value
     setConfigurations((current) => current.map((item) => item.id === configuration.id ? { ...item, [field]: parsedValue } : item))
     setPlanErrors((current) => { const next = { ...current }; if (next[configuration.id]) { const errors = { ...next[configuration.id] }; delete errors[field]; next[configuration.id] = errors } return next })
+    if (!configuration.id || configuration.id.startsWith("draft:")) return
     if (activeStep !== 1) return
     try {
       const payload = await requestNormalized<ApiPayload>(`${QUOTATION_PREFIX}${quotationId}/plans/${configuration.id}/`, { method: "PATCH", body: JSON.stringify({ [field]: parsedValue }) })
@@ -1213,6 +1235,10 @@ export default function OLQuotationWizard() {
   const selectedPlanCount = selectedPlanIds.length
   const selectedPlanLabel = selectedPlanCount === 0 ? "No products selected" : `${selectedPlanCount} ${selectedPlanCount === 1 ? "Plan" : "Plans"}`
   const cardByPlanId = useMemo(() => new Map(plans.map((plan) => [plan.plan_id, plan])), [plans])
+  const visibleConfigurations = useMemo(() => selectedPlanIds.map((planId, index) => {
+    const existing = configurations.find((config) => configurationPlanId(config) === planId)
+    return existing ?? (cardByPlanId.get(planId) ? draftConfiguration(cardByPlanId.get(planId) as PlanCard, index + 1) : null)
+  }).filter((config): config is PlanConfiguration => Boolean(config)), [cardByPlanId, configurations, selectedPlanIds])
 
   useEffect(() => {
     if (!quotation || !quotationId) return
@@ -1229,7 +1255,7 @@ export default function OLQuotationWizard() {
     <WizardTabs activeStep={activeStep} completedSteps={completedSteps} invalidSteps={invalidSteps} onSelect={selectStep} />
     <div className="flex flex-col gap-4 lg:flex-row lg:items-start"><PlanSelectionPanel plans={plans} selectedPlanIds={selectedPlanIds} search={planSearch} loading={plansLoading} onSearch={setPlanSearch} onToggle={handlePlanToggle} /><main className="min-w-0 flex-1">
       {currentStep === "personal" && <PersonalDetailsStep form={personal} options={personalOptions} errors={personalErrors} age={age} onChange={handlePersonalChange} />}
-      {currentStep === "plans" && <div className="space-y-4"><div className="surface-card overflow-hidden"><StepHeader eyebrow="Step 2 of 7" title="Plan & Sub-Products" description="Configure each selected plan using effective product setup and Ordinary Life parameter options." /><div className="p-5">{fieldError(planErrors.selection ?? {}, "plans") && <div className="mb-4"><div className="rounded-[10px] border border-[var(--destructive)]/35 bg-[var(--destructive)]/5 p-3 text-sm font-semibold text-[var(--destructive)]" role="alert">{fieldError(planErrors.selection ?? {}, "plans")}</div></div>}{!configurations.length && <div className="rounded-[10px] border border-dashed p-8 text-center text-sm text-[var(--muted-foreground)]">Select one or more plans from the left panel, then continue to create configuration sections.</div>}</div></div>{configurations.map((config, index) => <PlanConfigurationSection key={config.id} index={index} config={config} card={cardByPlanId.get(configurationPlanId(config) ?? "")} options={planOptions} errors={planErrors[config.id] ?? {}} onChange={(field, value) => void patchConfiguration(config, field, value)} />)}</div>}
+      {currentStep === "plans" && <div className="space-y-4"><div className="surface-card overflow-hidden"><StepHeader eyebrow="Step 2 of 7" title="Plan & Sub-Products" description="Configure each selected plan using effective product setup and Ordinary Life parameter options." /><div className="p-5">{fieldError(planErrors.selection ?? {}, "plans") && <div className="mb-4"><div className="rounded-[10px] border border-[var(--destructive)]/35 bg-[var(--destructive)]/5 p-3 text-sm font-semibold text-[var(--destructive)]" role="alert">{fieldError(planErrors.selection ?? {}, "plans")}</div></div>}{!visibleConfigurations.length && <div className="rounded-[10px] border border-dashed p-8 text-center text-sm text-[var(--muted-foreground)]">Select one or more plans from the left panel, then continue to create configuration sections.</div>}</div></div>{visibleConfigurations.map((config, index) => <PlanConfigurationSection key={config.id} index={index} config={config} card={cardByPlanId.get(configurationPlanId(config) ?? "")} options={planOptions} errors={planErrors[config.id] ?? {}} onChange={(field, value) => void patchConfiguration(config, field, value)} />)}</div>}
       {currentStep === "members" && <MemberCoverageStep quotation={quotation} state={memberState} genderOptions={personalOptions.genders} errors={memberErrors} onSaveMember={saveMember} onRemoveMember={removeMember} />}
       {currentStep === "installments" && <InstallmentsStep rows={installmentState?.rows ?? []} loading={!installmentState} selectedPlan={selectedInstallmentPlan} template={installmentTemplate} templateLoading={installmentTemplateLoading} saving={saving} errors={installmentErrors} onConfigure={(plan) => void loadInstallmentTemplate(plan)} onCloseModal={() => { setInstallmentModalOpen(false); setSelectedInstallmentPlan(null) }} onSave={saveInstallment} modalOpen={installmentModalOpen} />}
       {currentStep === "funds" && <InvestmentFundsStep quotation={quotation} state={fundState} optionsByPlan={fundOptions} allocations={fundAllocations} errors={fundErrors} onChange={(planConfigId, rows) => setFundAllocations((current) => ({ ...current, [planConfigId]: rows }))} onSave={saveFunds} />}
