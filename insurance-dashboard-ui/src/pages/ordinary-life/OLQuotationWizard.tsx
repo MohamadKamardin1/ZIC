@@ -43,6 +43,7 @@ import { InfoBanner, Modal } from "../../components/ui/Overlays"
 
 const QUOTATION_PREFIX = "/api/v1/ol-quotations/quotations/"
 const PLAN_SEARCH_ENDPOINT = "/api/v1/ol/plans/search/"
+const LOCATION_MASTER_ENDPOINT = "/api/v1/onboarding/locations/"
 const LOCAL_DRAFT_KEY = "zic.ol-quotation.resume"
 
 const today = () => new Date().toISOString().slice(0, 10)
@@ -491,11 +492,20 @@ function normalizePlanCard(value: unknown): PlanCard | null {
 }
 
 function asChoices(value: unknown): Choice[] {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>
+    for (const key of ["results", "items", "rows", "choices", "data"]) {
+      if (key in record) return asChoices(record[key])
+    }
+    return []
+  }
   if (!Array.isArray(value)) return []
   return value.map((item) => {
     if (typeof item === "string") return { value: item, label: item.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()) }
     const record = item as Record<string, unknown>
-    return { value: String(record.value ?? record.code ?? ""), label: String(record.label ?? record.name ?? record.value ?? "") }
+    const rawValue = record.value ?? record.id ?? record.code ?? ""
+    const rawLabel = record.label ?? record.name ?? record.code ?? rawValue
+    return { value: String(rawValue), label: String(rawLabel) }
   }).filter((item) => item.value)
 }
 
@@ -816,7 +826,12 @@ export default function OLQuotationWizard() {
 
   const loadPersonalOptions = useCallback(async () => {
     const payload = await requestNormalized<ApiPayload>(`${QUOTATION_PREFIX}personal-details-options/`)
-    setPersonalOptions({ identityTypes: asChoices(payload.identity_types), genders: asChoices(payload.genders), smokerStatuses: asChoices(payload.smoker_statuses), locations: asChoices(payload.locations), agents: asChoices(payload.agents) })
+    let locations = asChoices(payload.locations)
+    if (locations.length === 0) {
+      const masterLocations = await requestNormalized<unknown>(LOCATION_MASTER_ENDPOINT)
+      locations = asChoices(masterLocations)
+    }
+    setPersonalOptions({ identityTypes: asChoices(payload.identity_types), genders: asChoices(payload.genders), smokerStatuses: asChoices(payload.smoker_statuses), locations, agents: asChoices(payload.agents) })
   }, [])
 
   const loadPlans = useCallback(async () => {

@@ -11,6 +11,7 @@ from apps.ol_parameters.models import (
     OLRiderSetup,
 )
 from apps.ordinary_life.models import OLPlan, OLProductVersion
+from apps.partner_onboarding.models import Branch, Location
 
 
 @pytest.mark.django_db
@@ -26,6 +27,8 @@ def test_zanzibar_ol_demo_seed_is_idempotent_and_quotation_ready():
         "premium_rows": OLPremiumRateRow.objects.filter(code__startswith="ZIC_", is_active=True).count(),
         "rider_rate_tables": OLRiderRateTable.objects.filter(table_code__startswith="ZIC_", is_active=True).count(),
         "rider_rate_rows": OLRiderRateRow.objects.filter(code__startswith="ZIC_", is_active=True).count(),
+        "branches": Branch.objects.filter(code__startswith="ZIC-", is_active=True).count(),
+        "locations": Location.objects.filter(branch__code__startswith="ZIC-", is_active=True).count(),
     }
 
     call_command("seed_zanzibar_ol_demo", verbosity=0)
@@ -39,6 +42,8 @@ def test_zanzibar_ol_demo_seed_is_idempotent_and_quotation_ready():
         "premium_rows": OLPremiumRateRow.objects.filter(code__startswith="ZIC_", is_active=True).count(),
         "rider_rate_tables": OLRiderRateTable.objects.filter(table_code__startswith="ZIC_", is_active=True).count(),
         "rider_rate_rows": OLRiderRateRow.objects.filter(code__startswith="ZIC_", is_active=True).count(),
+        "branches": Branch.objects.filter(code__startswith="ZIC-", is_active=True).count(),
+        "locations": Location.objects.filter(branch__code__startswith="ZIC-", is_active=True).count(),
     }
 
     assert first_counts == second_counts
@@ -51,3 +56,5 @@ def test_zanzibar_ol_demo_seed_is_idempotent_and_quotation_ready():
     assert first_counts["premium_rows"] == 432
     assert first_counts["rider_rate_tables"] == 6
     assert first_counts["rider_rate_rows"] == 432
+    assert first_counts["branches"] == 4
+    assert first_counts["locations"] == 17

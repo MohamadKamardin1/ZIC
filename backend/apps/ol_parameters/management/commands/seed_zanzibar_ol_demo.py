@@ -29,6 +29,7 @@ from apps.ordinary_life.models import (
     OLProductVersion,
     OLRateBand,
 )
+from apps.partner_onboarding.models import Branch, Location
 from apps.partners.models import Partner, PartnerType, PartnerTypeAssignment
 
 
@@ -45,6 +46,55 @@ class Command(BaseCommand):
         "Seed a complete, idempotent Zanzibar Insurance Ordinary Life demo dataset "
         "for parameter dropdowns and quotation-wizard testing without flushing data."
     )
+
+    def _seed_demo_locations(self):
+        """Create the canonical Zanzibar location master data used by quotations.
+
+        Location is shared onboarding master data, not an OL-specific lookup. The
+        records are deliberately maintained here as part of the official demo seed
+        so a fresh environment and an existing environment converge idempotently.
+        """
+        branches = {
+            "ZIC-ZNZ": ("ZIC Zanzibar Main Branch", [
+                ("ZIC-MALINDI", "Malindi"),
+                ("ZIC-STONE-TOWN", "Stone Town"),
+                ("ZIC-MWANAKWEREKWE", "Mwanakwerekwe"),
+                ("ZIC-MAGOMENI", "Magomeni"),
+                ("ZIC-MICHENZANI", "Michenzani"),
+            ]),
+            "ZIC-UNGUJA-NORTH": ("ZIC Unguja North Branch", [
+                ("ZIC-KIWENGWA", "Kiwengwa"),
+                ("ZIC-MKOKOTONI", "Mkokotoni"),
+                ("ZIC-NUNGWI", "Nungwi"),
+                ("ZIC-MATEMWE", "Matemwe"),
+            ]),
+            "ZIC-UNGUJA-SOUTH": ("ZIC Unguja South Branch", [
+                ("ZIC-KIZIMKAZI", "Kizimkazi"),
+                ("ZIC-JAMBIANI", "Jambiani"),
+                ("ZIC-MAKUNDUCHI", "Makunduchi"),
+                ("ZIC-FUONI", "Fuoni"),
+            ]),
+            "ZIC-PEMBA": ("ZIC Pemba Branch", [
+                ("ZIC-CHAKE-CHAKE", "Chake Chake"),
+                ("ZIC-MKOANI", "Mkoani"),
+                ("ZIC-WETE", "Wete"),
+                ("ZIC-MICHEWENI", "Micheweni"),
+            ]),
+        }
+        seeded_locations = 0
+        for branch_code, (branch_name, locations) in branches.items():
+            branch, _ = Branch.objects.update_or_create(
+                code=branch_code,
+                defaults={"name": branch_name, "is_active": True},
+            )
+            for location_code, location_name in locations:
+                Location.objects.update_or_create(
+                    branch=branch,
+                    code=location_code.upper(),
+                    defaults={"name": location_name, "is_active": True},
+                )
+                seeded_locations += 1
+        return seeded_locations
 
     def _seed_demo_agent(self):
         agent_type, _ = PartnerType.objects.update_or_create(
@@ -101,6 +151,8 @@ class Command(BaseCommand):
             self.stdout.write(f"Running {command_name}...")
             call_command(command_name, verbosity=0)
 
+        seeded_locations = self._seed_demo_locations()
+        self.stdout.write(f"Seeded {seeded_locations} canonical Zanzibar locations.")
         agent = self._seed_demo_agent()
 
         for code, name, area, basis, formula, sequence, configuration in [
