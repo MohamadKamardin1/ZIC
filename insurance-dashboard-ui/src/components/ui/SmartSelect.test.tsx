@@ -81,9 +81,9 @@ describe("SmartSelect", () => {
     addButton.focus()
     fireEvent.keyDown(addButton, { key: "Enter" })
     await waitFor(() => expect(screen.getByLabelText(/Code/)).toBeInTheDocument())
-    expect(screen.getByRole("link", { name: "Manage…" })).toHaveAttribute("href", "/ordinary-life/parameters")
+    expect(screen.getByRole("link", { name: "Manage…" })).toHaveAttribute("href", "/system-parameters/partner/locations")
     expect(screen.getByText(/This creates a minimal record\. Complete full configuration in/)).toBeInTheDocument()
-    expect(screen.getByRole("link", { name: "Default Setup" })).toHaveAttribute("href", "/ordinary-life/parameters")
+    expect(screen.getByRole("link", { name: "Location Management" })).toHaveAttribute("href", "/system-parameters/partner/locations")
   })
 
   it("shows duplicate field errors and a duplicate warning", async () => {

@@ -21,7 +21,7 @@ const STORAGE_KEY = "aims_user"
 
 function readStoredUser(): ExtendedAuthUser | null {
   try {
-    const raw = sessionStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(STORAGE_KEY) ?? sessionStorage.getItem(STORAGE_KEY)
     return raw ? (JSON.parse(raw) as ExtendedAuthUser) : null
   } catch {
     return null
@@ -94,6 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         accessExpiresIn: Number((data.accessExpiresIn ?? data.access_expires_in) ?? 0),
         refreshExpiresIn: Number((data.refreshExpiresIn ?? data.refresh_expires_in) ?? 0),
       })
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(userObj))
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(userObj))
     }
     return false
@@ -113,6 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         accessExpiresIn: Number((data.accessExpiresIn ?? data.access_expires_in) ?? 0),
         refreshExpiresIn: Number((data.refreshExpiresIn ?? data.refresh_expires_in) ?? 0),
       })
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(userObj))
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(userObj))
     }
 
@@ -131,6 +133,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setTokens(null)
     setRequires2FA(false)
     setPendingCreds(null)
+    localStorage.removeItem(STORAGE_KEY)
     sessionStorage.removeItem(STORAGE_KEY)
   }, [])
 

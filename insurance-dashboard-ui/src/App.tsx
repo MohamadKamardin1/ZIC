@@ -47,6 +47,7 @@ import OLRiderSetup from "./pages/ordinary-life/OLRiderSetup"
 import OLAgentManagement from "./pages/ordinary-life/OLAgentManagement"
 import OLLoanSetup from "./pages/ordinary-life/OLLoanSetup"
 import OLParameterPlaceholder from "./pages/ordinary-life/OLParameterPlaceholder"
+import OLDropdownConfiguration from "./pages/ordinary-life/OLDropdownConfiguration"
 import OLMOrbClaimSetup from "./pages/ordinary-life/OLMedicalClaimSetup"
 import OLApplications from "./pages/ordinary-life/OLApplications"
 import OLDocuments from "./pages/ordinary-life/OLDocuments"
@@ -152,6 +153,7 @@ export default function App() {
         <Route path="ordinary-life/setup" element={<OLSetup />} />
         <Route path="ordinary-life/parameters" element={<OLDefaultSetup />} />
         <Route path="ordinary-life/parameters/default-setup" element={<OLDefaultSetup />} />
+        <Route path="ordinary-life/parameters/dropdown-configuration" element={<OLDropdownConfiguration />} />
         <Route path="ordinary-life/parameters/:screen" element={<OLDefaultSetup />} />
         <Route path="ordinary-life/parameters/policy-setup" element={<OLPolicySetup />} />
         <Route path="ordinary-life/parameters/product-setup" element={<OLProductSetup />} />

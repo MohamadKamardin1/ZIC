@@ -81,6 +81,7 @@ const PARTNER_PARAMS_CHILDREN: SubNavItem[] = [
 
 const OL_PARAMETER_CHILDREN: SubNavItem[] = [
   { label: "Default Setup", icon: Settings, path: "/ordinary-life/parameters" },
+  { label: "Drop Down Configuration", icon: Grip, path: "/ordinary-life/parameters/dropdown-configuration" },
   { label: "Policy Setup", icon: FileText, path: "/ordinary-life/parameters/policy-setup" },
   { label: "Product Setup", icon: ShieldCheck, path: "/ordinary-life/parameters/product-setup" },
   { label: "Product Rating", icon: BarChart3, path: "/ordinary-life/parameters/product-rating" },

@@ -76,16 +76,19 @@ function collectFieldErrors(value: unknown): Record<string, string[]> {
 export async function normalizeResponseError(response: Response): Promise<ApiClientError> {
   const correlationId = response.headers.get("X-Correlation-ID") ?? response.headers.get("X-Request-ID") ?? undefined
   const body = await response.json().catch(() => null)
-  const envelope = body && typeof body === "object" && "data" in body ? (body as Record<string, unknown>) : null
-  const payload = (envelope?.data ?? body) as unknown
-  const record = payload && typeof payload === "object" ? payload as Record<string, unknown> : {}
-  const fieldErrors = collectFieldErrors(record)
-  const message = typeof record.detail === "string"
-    ? record.detail
-    : typeof record.message === "string"
-      ? record.message
-      : Object.values(fieldErrors)[0]?.[0] ?? `Request failed (${response.status}).`
-  const code = typeof record.code === "string" ? record.code : `HTTP_${response.status}`
+  const bodyRecord = body && typeof body === "object" && !Array.isArray(body) ? body as Record<string, unknown> : {}
+  const payload = ("data" in bodyRecord ? bodyRecord.data : body) as unknown
+  const record = payload && typeof payload === "object" && !Array.isArray(payload) ? payload as Record<string, unknown> : {}
+  const rawFieldErrors = bodyRecord.errors ?? bodyRecord.fieldErrors ?? bodyRecord.field_errors ?? record.errors ?? record.fieldErrors ?? record.field_errors ?? record
+  const fieldErrors = collectFieldErrors(rawFieldErrors)
+  const message = typeof bodyRecord.message === "string"
+    ? bodyRecord.message
+    : typeof record.detail === "string"
+      ? record.detail
+      : typeof record.message === "string"
+        ? record.message
+        : Object.values(fieldErrors)[0]?.[0] ?? `Request failed (${response.status}).`
+  const code = typeof bodyRecord.code === "string" ? bodyRecord.code : typeof record.code === "string" ? record.code : `HTTP_${response.status}`
   return new ApiClientError({ status: response.status, code, message, fieldErrors, correlationId, details: body })
 }
 
@@ -101,7 +104,7 @@ export async function request<T>(path: string, options: ApiRequestOptions = {}):
   const correlationId = options.correlationId ?? createCorrelationId()
   headers.set("X-Correlation-ID", correlationId)
 
-  const token = options.skipAuth ? null : sessionStorage.getItem("aims_access_token")
+  const token = options.skipAuth ? null : (localStorage.getItem("aims_access_token") ?? sessionStorage.getItem("aims_access_token"))
   if (token) headers.set("Authorization", `Bearer ${token}`)
 
   const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers })

@@ -37,26 +37,35 @@ import type {
 export const API_BASE = import.meta.env.VITE_API_BASE ?? ""
 
 // ---------------------------------------------------------------------------
-// Token helpers (sessionStorage — cleared on tab close)
+// Token helpers. localStorage keeps authenticated same-origin Manage tabs in the
+// same session, while the sessionStorage fallback preserves existing sessions.
 // ---------------------------------------------------------------------------
 
 const TK_ACCESS = "aims_access_token"
 const TK_REFRESH = "aims_refresh_token"
 
+function readStoredValue(key: string): string | null {
+  return localStorage.getItem(key) ?? sessionStorage.getItem(key)
+}
+
 function getAccessToken(): string | null {
-  return sessionStorage.getItem(TK_ACCESS)
+  return readStoredValue(TK_ACCESS)
 }
 
 function getRefreshToken(): string | null {
-  return sessionStorage.getItem(TK_REFRESH)
+  return readStoredValue(TK_REFRESH)
 }
 
 function setTokens(tokens: LoginTokens) {
+  localStorage.setItem(TK_ACCESS, tokens.accessToken)
+  localStorage.setItem(TK_REFRESH, tokens.refreshToken)
   sessionStorage.setItem(TK_ACCESS, tokens.accessToken)
   sessionStorage.setItem(TK_REFRESH, tokens.refreshToken)
 }
 
 function clearTokens() {
+  localStorage.removeItem(TK_ACCESS)
+  localStorage.removeItem(TK_REFRESH)
   sessionStorage.removeItem(TK_ACCESS)
   sessionStorage.removeItem(TK_REFRESH)
 }

@@ -49,6 +49,7 @@ const QUOTATION_PREFIX = "/api/v1/ol-quotations/quotations/"
 const PLAN_SEARCH_ENDPOINT = "/api/v1/ol/plans/search/"
 const LOCATION_MASTER_ENDPOINT = "/api/v1/onboarding/locations/"
 const LOCAL_DRAFT_KEY = "zic.ol-quotation.resume"
+const ACTIVE_DRAFT_KEY = "zic.ol-quotation.active-draft"
 
 const today = () => new Date().toISOString().slice(0, 10)
 
@@ -646,7 +647,7 @@ function PersonalDetailsStep({ form, options, errors, age, onChange }: { form: P
     <ReadOnlyField label="Age" value={age === null ? "—" : `${age} years`} />
     <ChoiceSelect label="Gender" name="gender" required value={form.gender} options={options.genders} onChange={(value) => onChange("gender", value)} error={fieldError(errors, "gender")} />
     <ChoiceSelect label="Smoker" name="smoker_status" required value={form.smoker_status} options={options.smokerStatuses} onChange={(value) => onChange("smoker_status", value)} error={fieldError(errors, "smoker_status")} />
-    <SmartSelect entity="locations" label="Location" name="location_id" required value={form.location_id} onChange={(value) => onChange("location_id", value)} error={fieldError(errors, "location_id") ?? fieldError(errors, "location")} placeholder="Search and select location" manageHref="/system-parameters/locations" />
+    <SmartSelect entity="locations" label="Location" name="location_id" required value={form.location_id} onChange={(value) => onChange("location_id", value)} error={fieldError(errors, "location_id") ?? fieldError(errors, "location")} placeholder="Search and select location" manageHref="/system-parameters/partner/locations" />
     <SmartSelect entity="agents" label="Agent" name="agent_id" required value={form.agent_id} onChange={(value) => onChange("agent_id", value)} error={fieldError(errors, "agent_id")} placeholder="Search and select agent" />
   </FormGrid>
   <TextareaInput label="Address" name="address" required value={form.address} onChange={(event) => onChange("address", event.target.value)} error={fieldError(errors, "address")} placeholder="Enter residential or postal address" />
@@ -825,6 +826,7 @@ export default function OLQuotationWizard() {
   const [saving, setSaving] = useState(false)
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [resumeNotice, setResumeNotice] = useState(false)
+  const [refreshDraftPromptOpen, setRefreshDraftPromptOpen] = useState(false)
 
   const loadQuotation = useCallback(async (id: string) => {
     const payload = await requestNormalized<Quotation>(`${QUOTATION_PREFIX}${id}/`)
@@ -841,26 +843,76 @@ export default function OLQuotationWizard() {
 
   const createQuotation = useCallback(async () => {
     const saved = readDraftSnapshot()
+    const activeDraftId = sessionStorage.getItem(ACTIVE_DRAFT_KEY)
     const explicitResume = new URLSearchParams(window.location.search).get("resume") === "1"
-    if (!routeId && explicitResume && saved?.quotationId) {
+    const navigationEntry = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined
+    const isBrowserRefresh = navigationEntry?.type === "reload"
+    const restoreSavedDraft = async () => {
+      if (!saved?.quotationId) return false
       try {
         await loadQuotation(saved.quotationId)
         if (saved.personal) setPersonal(saved.personal)
         if (saved.configurations) setConfigurations(saved.configurations)
         if (saved.selectedPlanIds) setSelectedPlanIds(saved.selectedPlanIds)
         setResumeNotice(true)
-        return
+        return true
       } catch {
         localStorage.removeItem(LOCAL_DRAFT_KEY)
+        return false
       }
+    }
+    if (!routeId && isBrowserRefresh && activeDraftId) {
+      try {
+        await loadQuotation(activeDraftId)
+        if (saved?.quotationId === activeDraftId) {
+          if (saved.personal) setPersonal(saved.personal)
+          if (saved.configurations) setConfigurations(saved.configurations)
+          if (saved.selectedPlanIds) setSelectedPlanIds(saved.selectedPlanIds)
+          setResumeNotice(true)
+        }
+        if (!explicitResume) setRefreshDraftPromptOpen(true)
+        return
+      } catch {
+        sessionStorage.removeItem(ACTIVE_DRAFT_KEY)
+        if (saved?.quotationId === activeDraftId) localStorage.removeItem(LOCAL_DRAFT_KEY)
+      }
+    }
+    if (!routeId && saved?.quotationId && explicitResume) {
+      if (await restoreSavedDraft()) return
     }
     if (routeId) {
       await loadQuotation(routeId)
       return
     }
     const payload = await requestNormalized<Quotation>(QUOTATION_PREFIX, { method: "POST", body: JSON.stringify({ currency: "TZS" }) })
+    sessionStorage.setItem(ACTIVE_DRAFT_KEY, payload.id)
     await loadQuotation(payload.id)
   }, [loadQuotation, routeId])
+
+  const discardRefreshDraftAndCreateNew = useCallback(async () => {
+    setSaving(true)
+    try {
+      if (quotationId) {
+        await request(`${QUOTATION_PREFIX}${quotationId}/`, { method: "DELETE" })
+      }
+      localStorage.removeItem(LOCAL_DRAFT_KEY)
+      sessionStorage.removeItem(ACTIVE_DRAFT_KEY)
+      setRefreshDraftPromptOpen(false)
+      setResumeNotice(false)
+      setLoading(true)
+      const payload = await requestNormalized<Quotation>(QUOTATION_PREFIX, { method: "POST", body: JSON.stringify({ currency: "TZS" }) })
+      sessionStorage.setItem(ACTIVE_DRAFT_KEY, payload.id)
+      await loadQuotation(payload.id)
+      setActiveStep(0)
+      setCompletedSteps(new Set())
+      setInvalidSteps(new Set())
+    } catch (error) {
+      toast({ tone: "danger", title: "Unable to start a fresh quotation", message: parseApiError(error).message })
+    } finally {
+      setLoading(false)
+      setSaving(false)
+    }
+  }, [loadQuotation, quotationId, toast])
 
   useEffect(() => {
     let mounted = true
@@ -1077,6 +1129,8 @@ export default function OLQuotationWizard() {
     setFinalizeErrors({})
     try {
       await requestNormalized(`${QUOTATION_PREFIX}${quotationId}/finalize/`, { method: "POST", body: JSON.stringify({}) })
+      localStorage.removeItem(LOCAL_DRAFT_KEY)
+      sessionStorage.removeItem(ACTIVE_DRAFT_KEY)
       setQuotation((current) => current ? { ...current, status: "FINALIZED" } : current)
       toast({ tone: "success", title: "Quotation finalized" })
       return true
@@ -1303,6 +1357,7 @@ export default function OLQuotationWizard() {
 
   const currentStep: StepId = steps[activeStep].id
   return <div className="space-y-4 p-4 md:p-6">
+    <Modal open={refreshDraftPromptOpen} title="Resume saved quotation draft?" description="This browser refresh found a draft that was already created. Choose whether to keep working on it or remove it before starting a new quotation." onClose={() => setRefreshDraftPromptOpen(false)} size="sm" footer={<><button type="button" className="button-secondary" onClick={() => setRefreshDraftPromptOpen(false)} disabled={saving}>Keep draft</button><button type="button" className="inline-flex min-h-10 items-center justify-center rounded-[10px] bg-[var(--destructive)] px-4 text-sm font-bold text-white" onClick={() => void discardRefreshDraftAndCreateNew()} disabled={saving}>{saving ? "Removing…" : "Discard and start new"}</button></>}><div className="space-y-3 text-sm text-[var(--muted-foreground)]"><p>Refreshing no longer creates another draft automatically. The existing draft will remain only if you choose <strong className="text-[var(--foreground)]">Keep draft</strong>.</p><p>If you discard it, the saved draft and its browser snapshot are removed, then one fresh draft is created.</p></div></Modal>
     <header className="surface-card relative overflow-visible"><div className="flex flex-wrap items-center justify-between gap-4 border-b bg-[linear-gradient(110deg,#f8fafc,#eef2ff)] px-5 py-4 dark:bg-[linear-gradient(110deg,#171717,#262626)]"><div><p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">Ordinary Life / Quotations</p><div className="mt-1 flex flex-wrap items-center gap-3"><h1 className="text-2xl font-bold tracking-tight">Create New Quote</h1><span className="rounded-full border bg-[var(--card)] px-3 py-1 text-xs font-bold">{selectedPlanLabel}</span></div></div><div className="relative flex items-center gap-2"><span className="hidden items-center gap-1 text-xs text-[var(--muted-foreground)] sm:flex"><Save size={14} aria-hidden="true" />Draft autosave on</span><button type="button" className="button-secondary !min-h-9 !px-3" aria-expanded={detailsOpen} onClick={() => setDetailsOpen((current) => !current)}>Details<ChevronDown size={15} aria-hidden="true" /></button>{detailsOpen && <div className="absolute right-0 top-11 z-40 w-72 rounded-[10px] border bg-[var(--popover)] p-4 text-sm shadow-xl"><div className="mb-3 flex items-center justify-between border-b pb-3"><span className="font-semibold">Draft details</span><button type="button" aria-label="Close details" onClick={() => setDetailsOpen(false)}><X size={15} /></button></div><dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-xs"><dt className="text-[var(--muted-foreground)]">Quote number</dt><dd className="text-right font-semibold">{quotation.quote_number ?? "Pending"}</dd><dt className="text-[var(--muted-foreground)]">Status</dt><dd className="text-right font-semibold">{quotation.status ?? "DRAFT"}</dd><dt className="text-[var(--muted-foreground)]">Currency</dt><dd className="text-right font-semibold">{quotation.currency ?? "—"}</dd><dt className="text-[var(--muted-foreground)]">Expiry</dt><dd className="text-right font-semibold">{quotation.expiry_date ?? "—"}</dd></dl></div>}</div></div>{resumeNotice && <div className="flex items-center gap-2 border-b bg-[var(--muted)]/25 px-5 py-2.5 text-xs font-semibold text-[var(--muted-foreground)]"><RotateCcw size={14} aria-hidden="true" />Draft resumed from your last saved browser session.<button type="button" className="ml-auto underline" onClick={() => { localStorage.removeItem(LOCAL_DRAFT_KEY); setResumeNotice(false) }}>Dismiss</button></div>}</header>
     <WizardTabs activeStep={activeStep} completedSteps={completedSteps} invalidSteps={invalidSteps} onSelect={selectStep} />
     <div className="flex flex-col gap-4 lg:flex-row lg:items-start"><PlanSelectionPanel plans={plans} selectedPlanIds={selectedPlanIds} search={planSearch} loading={plansLoading} onSearch={setPlanSearch} onToggle={handlePlanToggle} onProductCreated={handleProductCreated} /><main className="min-w-0 flex-1">
@@ -1314,6 +1369,6 @@ export default function OLQuotationWizard() {
       {currentStep === "riders" && <RidersBenefitsStep state={riderState} optionsByPlan={riderOptions} errors={riderErrors} onSave={saveRiders} />}
       {currentStep === "financial" && <div className="space-y-4"><FinancialDetailsStep summary={financialSummary} loading={financialLoading} calculating={calculating} onCalculate={calculateFinancials} /><ReviewFinalize completedSteps={completedSteps} invalidSteps={invalidSteps} errors={finalizeErrors} onJump={(step) => setActiveStep(step)} onFinalize={finalizeQuotation} disabled={completedSteps.size < steps.length || !financialSummary || Boolean(financialSummary.recalculation_required) || quotation.status === "FINALIZED"} /></div>}
     </main></div>
-    <footer className="surface-card flex flex-wrap items-center justify-between gap-3 px-5 py-4"><button type="button" className="button-secondary" onClick={() => navigate("/ordinary-life/quotations")}><X size={15} aria-hidden="true" />Cancel</button><div className="flex gap-2"><button type="button" className="button-secondary" disabled={activeStep === 0 || saving} onClick={() => setActiveStep((current) => Math.max(0, current - 1))}><ChevronLeft size={15} aria-hidden="true" />Previous</button><button type="button" className="button-primary" disabled={saving} onClick={() => void validateAndNavigate(activeStep + 1)}>{saving ? <LoaderCircle className="animate-spin" size={15} aria-hidden="true" /> : null}{activeStep === steps.length - 1 ? "Review & Finalize" : "Next"}<ChevronRight size={15} aria-hidden="true" /></button></div></footer>
+    <footer className="surface-card flex flex-wrap items-center justify-between gap-3 px-5 py-4"><button type="button" className="button-secondary" onClick={() => { localStorage.removeItem(LOCAL_DRAFT_KEY); sessionStorage.removeItem(ACTIVE_DRAFT_KEY); navigate("/ordinary-life/quotations") }}><X size={15} aria-hidden="true" />Cancel</button><div className="flex gap-2"><button type="button" className="button-secondary" disabled={activeStep === 0 || saving} onClick={() => setActiveStep((current) => Math.max(0, current - 1))}><ChevronLeft size={15} aria-hidden="true" />Previous</button><button type="button" className="button-primary" disabled={saving} onClick={() => void validateAndNavigate(activeStep + 1)}>{saving ? <LoaderCircle className="animate-spin" size={15} aria-hidden="true" /> : null}{activeStep === steps.length - 1 ? "Review & Finalize" : "Next"}<ChevronRight size={15} aria-hidden="true" /></button></div></footer>
   </div>
 }
