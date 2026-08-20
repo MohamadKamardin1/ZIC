@@ -24,7 +24,16 @@ class OLDefaultSetupService:
 
     @classmethod
     @transaction.atomic
-    def create(cls, *, model, actor, data, request=None):
+    def create(
+        cls,
+        *,
+        model,
+        actor,
+        data,
+        request=None,
+        audit_reason=None,
+        source_channel=None,
+    ):
         cls._require(actor, "create")
         instance = model(**data)
         cls._assign_actor(instance, actor, creating=True)
@@ -35,7 +44,8 @@ class OLDefaultSetupService:
             instance,
             actor=actor,
             request=request,
-            reason=f"OL Default Setup {model._meta.verbose_name} created.",
+            reason=audit_reason or f"OL Default Setup {model._meta.verbose_name} created.",
+            source_channel=source_channel,
         )
         return instance
 

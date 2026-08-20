@@ -1,7 +1,11 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
-from .option_views import OLOptionRegistryView
+from .option_views import (
+    OLOptionQuickCreateSchemaView,
+    OLOptionQuickCreateView,
+    OLOptionRegistryView,
+)
 
 from .views import (
     OLQuotationBeneficiaryViewSet,
@@ -44,5 +48,7 @@ router.register("events", OLQuotationEventViewSet, basename="ol-quotation-event"
 urlpatterns = [
     path("plans/search/", OLPlanSearchView.as_view(), name="ol-plan-search"),
     path("options/<str:entity>/", OLOptionRegistryView.as_view(), name="ol-option-registry"),
+    path("options/<str:entity>/quick-create-schema/", OLOptionQuickCreateSchemaView.as_view(), name="ol-option-quick-create-schema"),
+    path("options/<str:entity>/quick-create/", OLOptionQuickCreateView.as_view(), name="ol-option-quick-create"),
     *router.urls,
 ]

@@ -59,6 +59,7 @@ class AuditLog(models.Model):
         IMPORT = "IMPORT", "Import"
         PORTAL = "PORTAL", "Portal"
         BATCH = "BATCH", "Batch"
+        QUICK_CREATE = "QUICK_CREATE", "Quick create"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(

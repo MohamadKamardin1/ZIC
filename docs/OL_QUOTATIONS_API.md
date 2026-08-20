@@ -297,3 +297,27 @@ Catalog providers exclude inactive records and records outside their effective d
 All model-backed OL quotation and parameter serializers retain UUID foreign-key fields for write compatibility but also expose a matching `<field>_display` field. The display field is the authoritative presentation value for UI tables, detail pages, and select controls; clients must never render a foreign-key UUID directly. Quotation headers additionally expose `agent_display`, `location_display`, and `currency_display` aliases for the wizard’s personal-details and summary views.
 
 The baseline `seed_ol_quotations` command is idempotent and seeds identity types, payment modes, premium frequencies, quote bases, premium factors, member relations, cover types, benefit types, and currencies. The unified Zanzibar demo seeder adds the canonical location and demo-agent prerequisites. No seed operation flushes or destructively resets existing data.
+
+
+## OL option quick-create
+
+The quotation wizard can discover and create missing reference data through the registry-driven endpoints:
+
+```text
+GET  /api/v1/ol/options/<entity>/quick-create-schema/
+POST /api/v1/ol/options/<entity>/quick-create/
+```
+
+The schema response is wrapped in the standard API envelope and returns `entity`, `permission`, `fields`, and `defaults`. Each field contains `name`, `type`, `required`, `choices`, and `default`. Relational fields such as `branch`, `plan_type`, and `fund_type` expose current active choices as human-readable labels.
+
+Successful creation returns a selectable option under `data.option` together with top-level `value` and `label` fields. The created option includes its persisted `id`, canonical `code`, human-readable `name`, and `meta` information. Validation failures return HTTP 400 with field-level `errors`; users missing the entity permission receive HTTP 403.
+
+The current quick-create permission map is:
+
+| Entity family | Required permission |
+|---|---|
+| Choice-backed catalogs | `system_parameters.manage` |
+| Locations, products, plans, funds, fund types, riders, benefit catalog | `ol_parameters.create` |
+| Agents/intermediaries | `partners.create` |
+
+Every successful quick-create operation uses the existing model validation and creation service where applicable and writes an audit record with source channel `QUICK_CREATE` and reason `Created from OL quotation wizard`. Agent creation also marks incomplete KYC through `meta.completion_required` in the returned option.
