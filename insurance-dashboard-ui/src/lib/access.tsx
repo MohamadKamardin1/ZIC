@@ -10,6 +10,7 @@ interface AccessContextValue {
   isError: boolean
   isSuperAdmin: boolean
   canAccess: (moduleKey: string) => boolean
+  hasPermission?: (permissionCode: string) => boolean
 }
 
 const AccessContext = createContext<AccessContextValue | null>(null)
@@ -45,6 +46,19 @@ export function AccessProvider({ children }: { children: ReactNode }) {
     ) === true
   }, [query.data?.isSuperuser, user?.groups, user?.isSuperuser, user?.userType])
 
+  const hasPermission = (permissionCode: string): boolean => {
+    if (!permissionCode || isSuperAdmin) return Boolean(permissionCode)
+    const normalized = permissionCode.toLowerCase().replace(/:/g, ".")
+    const separator = normalized.lastIndexOf(".")
+    const moduleKey = separator > 0 ? normalized.slice(0, separator) : normalized
+    const action = separator > 0 ? normalized.slice(separator + 1) : ""
+    return access.permissions.some((permission) => {
+      const permissionModule = String(permission.module ?? "").toLowerCase().replace(/:/g, ".")
+      const permissionAction = String(permission.action ?? "").toLowerCase()
+      return permissionModule === moduleKey && (!action || permissionAction === action)
+    })
+  }
+
   const canAccess = (moduleKey: string): boolean => {
     if (!moduleKey || isSuperAdmin) return true
     const aliases = new Set([moduleKey.toLowerCase()])
@@ -59,7 +73,7 @@ export function AccessProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AccessContext.Provider value={{ access, isLoading: query.isLoading, isError: query.isError, isSuperAdmin, canAccess }}>
+    <AccessContext.Provider value={{ access, isLoading: query.isLoading, isError: query.isError, isSuperAdmin, canAccess, hasPermission }}>
       {children}
     </AccessContext.Provider>
   )
