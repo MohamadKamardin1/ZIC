@@ -89,6 +89,39 @@ function dateLabel(value?: string | null): string {
   return Number.isNaN(parsed.getTime()) ? value : new Intl.DateTimeFormat("en-GB", { dateStyle: "medium" }).format(parsed)
 }
 
+function normalizeActionMetadata(value: unknown): Partial<Record<ActionKey, ActionMetadata>> | undefined {
+  if (!value || typeof value !== "object") return undefined
+  const source = value as Record<string, unknown>
+  const normalized: Partial<Record<ActionKey, ActionMetadata>> = {}
+  ;(["view", "edit", "revise", "finalize", "print", "convert_to_proposal", "delete"] as ActionKey[]).forEach((key) => {
+    const candidate = source[key] ?? source[key.replace(/_([a-z])/g, (_match, letter: string) => letter.toUpperCase())]
+    if (candidate && typeof candidate === "object") normalized[key] = candidate as ActionMetadata
+  })
+  return Object.keys(normalized).length ? normalized : undefined
+}
+
+function normalizeQuotationRecord(value: QuotationRecord & { rowActions?: unknown }): QuotationRecord {
+  const record = value as unknown as Record<string, unknown>
+  return {
+    ...value,
+    id: String(record.id ?? ""),
+    quote_number: String(record.quote_number ?? record.quoteNumber ?? ""),
+    quote_name: String(record.quote_name ?? record.quoteName ?? ""),
+    prospect_name: String(record.prospect_name ?? record.prospectName ?? ""),
+    plans_summary: String(record.plans_summary ?? record.plansSummary ?? ""),
+    plan_count: Number(record.plan_count ?? record.planCount ?? 0),
+    total_premium: (record.total_premium ?? record.totalPremium) as string | number | null | undefined,
+    currency: record.currency as string | null | undefined,
+    status: String(record.status ?? "").toUpperCase(),
+    status_badge: (record.status_badge ?? record.statusBadge) as QuotationRecord["status_badge"],
+    version: Number(record.version ?? 1),
+    quote_date: String(record.quote_date ?? record.quoteDate ?? ""),
+    agent: record.agent as QuotationRecord["agent"],
+    created_by: (record.created_by ?? record.createdBy) as QuotationRecord["created_by"],
+    row_actions: normalizeActionMetadata(record.row_actions ?? record.rowActions),
+  }
+}
+
 function actionPath(row: QuotationRecord, key: ActionKey, fallback: string): string {
   return row.row_actions?.[key]?.url ?? `${API_PREFIX}${row.id}${fallback}`
 }
@@ -109,7 +142,7 @@ const columns: TableColumn<QuotationRecord>[] = [
 
 export default function OLQuotations() {
   const navigate = useNavigate()
-  const { access, canAccess } = useAccess()
+  const { access, canAccess, isSuperAdmin } = useAccess()
   const { toast } = useToast()
   const [filters, setFilters] = useState<FilterValues>({})
   const [summary, setSummary] = useState<Summary>(emptySummary)
@@ -143,7 +176,8 @@ export default function OLQuotations() {
       if (from) nextFilters.quote_date_from = from
       if (to) nextFilters.quote_date_to = to
     }
-    return normalizeTableResponse<QuotationRecord>(await request<unknown>(`${API_PREFIX}${buildTableQuery({ ...query, filters: nextFilters })}`))
+    const table = normalizeTableResponse<QuotationRecord & { rowActions?: unknown }>(await request<unknown>(`${API_PREFIX}${buildTableQuery({ ...query, filters: nextFilters })}`))
+    return { ...table, results: table.results.map(normalizeQuotationRecord) }
   }, [])
 
   const runAction = useCallback(async (row: QuotationRecord, key: "revise" | "finalize" | "convert_to_proposal") => {
@@ -188,15 +222,15 @@ export default function OLQuotations() {
     const key = action.key as ActionKey
     const backendAction = row.row_actions?.[key]
     if (backendAction) return Boolean(backendAction.visible && backendAction.enabled)
-    if (key === "view") return hasPermission("ol_quotations.view")
-    if (key === "edit") return row.status === "DRAFT" && hasPermission("ol_quotations.update")
-    if (key === "revise") return row.status === "FINALIZED" && hasPermission("ol_quotations.update")
-    if (key === "finalize") return row.status === "DRAFT" && hasPermission("ol_quotations.finalize")
-    if (key === "print") return ["FINALIZED", "CONVERTED"].includes(row.status) && hasPermission("ol_quotations.print")
-    if (key === "convert_to_proposal") return row.status === "FINALIZED" && hasPermission("ol_quotations.convert")
-    if (key === "delete") return row.status === "DRAFT" && hasPermission("ol_quotations.destroy")
+    if (key === "view") return isSuperAdmin || hasPermission("ol_quotations.view")
+    if (key === "edit") return row.status === "DRAFT" && (isSuperAdmin || hasPermission("ol_quotations.update"))
+    if (key === "revise") return row.status === "FINALIZED" && (isSuperAdmin || hasPermission("ol_quotations.update"))
+    if (key === "finalize") return row.status === "DRAFT" && (isSuperAdmin || hasPermission("ol_quotations.finalize"))
+    if (key === "print") return ["FINALIZED", "CONVERTED"].includes(row.status) && (isSuperAdmin || hasPermission("ol_quotations.print"))
+    if (key === "convert_to_proposal") return row.status === "FINALIZED" && (isSuperAdmin || hasPermission("ol_quotations.convert"))
+    if (key === "delete") return row.status === "DRAFT" && (isSuperAdmin || hasPermission("ol_quotations.delete"))
     return false
-  }, [hasPermission])
+  }, [hasPermission, isSuperAdmin])
 
   const stats = [
     { label: "Drafts", value: summary.drafts.toLocaleString(), helper: "Editable quotations" },

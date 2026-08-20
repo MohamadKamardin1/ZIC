@@ -814,8 +814,8 @@ export default function OLQuotationWizard() {
     return () => { mounted = false }
   }, [createQuotation, toast])
 
-  const loadPersonalOptions = useCallback(async (id: string) => {
-    const payload = await requestNormalized<ApiPayload>(`${QUOTATION_PREFIX}${id}/personal-details-options/`)
+  const loadPersonalOptions = useCallback(async () => {
+    const payload = await requestNormalized<ApiPayload>(`${QUOTATION_PREFIX}personal-details-options/`)
     setPersonalOptions({ identityTypes: asChoices(payload.identity_types), genders: asChoices(payload.genders), smokerStatuses: asChoices(payload.smoker_statuses), locations: asChoices(payload.locations), agents: asChoices(payload.agents) })
   }, [])
 
@@ -834,7 +834,7 @@ export default function OLQuotationWizard() {
     } finally { setPlansLoading(false) }
   }, [planSearch, quotationId, toast])
 
-  useEffect(() => { if (quotationId) void loadPersonalOptions(quotationId).catch((error) => toast({ tone: "danger", title: "Unable to load quotation options", message: parseApiError(error).message })) }, [loadPersonalOptions, quotationId, toast])
+  useEffect(() => { if (quotationId) void loadPersonalOptions().catch((error) => toast({ tone: "danger", title: "Unable to load quotation options", message: parseApiError(error).message })) }, [loadPersonalOptions, quotationId, toast])
   useEffect(() => { void loadPlans() }, [loadPlans])
 
   const loadPlanOptions = useCallback(async (planId?: string) => {
