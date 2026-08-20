@@ -1,6 +1,8 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
+from .option_views import OLOptionRegistryView
+
 from .views import (
     OLQuotationBeneficiaryViewSet,
     OLQuotationBenefitViewSet,
@@ -41,5 +43,6 @@ router.register("events", OLQuotationEventViewSet, basename="ol-quotation-event"
 
 urlpatterns = [
     path("plans/search/", OLPlanSearchView.as_view(), name="ol-plan-search"),
+    path("options/<str:entity>/", OLOptionRegistryView.as_view(), name="ol-option-registry"),
     *router.urls,
 ]

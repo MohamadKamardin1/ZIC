@@ -75,6 +75,72 @@ PERMISSIONS = [
 ]
 
 CHOICE_LIST_SEEDS = {
+    "IDENTIFICATION_TYPE_CHOICES": {
+        "name": "Identification Types",
+        "description": "Identity documents accepted by the OL quotation wizard.",
+        "options": [
+            ("NIN", "National ID (NIDA)"),
+            ("PASSPORT", "Passport"),
+            ("ZAN_ID", "Zanzibar ID"),
+            ("DRIVING_LICENSE", "Driving Licence"),
+            ("VOTER_ID", "Voter ID"),
+        ],
+    },
+    "GENDER_CHOICES": {
+        "name": "Gender",
+        "description": "Gender options accepted by OL underwriting and rating.",
+        "options": [("MALE", "Male"), ("FEMALE", "Female"), ("OTHER", "Other")],
+    },
+    "OL_PREMIUM_FREQUENCY_CHOICES": {
+        "name": "OL Premium Frequencies",
+        "description": "Premium payment frequencies available in OL quotations.",
+        "options": [
+            ("ANNUAL", "Annual"),
+            ("SEMI_ANNUAL", "Semi-annual"),
+            ("QUARTERLY", "Quarterly"),
+            ("MONTHLY", "Monthly"),
+        ],
+    },
+    "OL_PAYMENT_MODE_CHOICES": {
+        "name": "OL Payment Modes",
+        "description": "Payment modes available for OL quotation payment details.",
+        "options": [("CASH", "Cash"), ("BANK_TRANSFER", "Bank transfer"), ("MOBILE_MONEY", "Mobile money")],
+    },
+    "OL_MEMBER_RELATION_CHOICES": {
+        "name": "OL Member Relations",
+        "description": "Relations available for additional quotation members.",
+        "options": [
+            ("SELF", "Policy holder"),
+            ("SPOUSE", "Spouse"),
+            ("CHILD", "Child"),
+            ("PARENT", "Parent"),
+            ("OTHER", "Other dependant"),
+        ],
+    },
+    "OL_COVER_TYPE_CHOICES": {
+        "name": "OL Cover Types",
+        "description": "Coverage types available for OL member coverage configuration.",
+        "options": [("PRINCIPAL", "Principal member"), ("DEPENDENT", "Dependent member")],
+    },
+    "OL_BENEFIT_TYPE_CHOICES": {
+        "name": "OL Benefit Types",
+        "description": "Benefit types available in OL rider and benefit configuration.",
+        "options": [
+            ("DEATH", "Death benefit"),
+            ("MATURITY", "Maturity benefit"),
+            ("DISABILITY", "Disability benefit"),
+            ("ACCIDENT", "Accidental benefit"),
+        ],
+    },
+    "CURRENCY_CHOICES": {
+        "name": "Currencies",
+        "description": "Currencies available for OL quotations and funds.",
+        "options": [
+            ("TZS", "TZS — Tanzanian Shilling"),
+            ("USD", "USD — US Dollar"),
+            ("KES", "KES — Kenyan Shilling"),
+        ],
+    },
     "OL_QUOTE_BASIS_CHOICES": {
         "name": "OL Quote Bases",
         "description": "Configured bases used to calculate Ordinary Life quotation values.",

@@ -73,7 +73,57 @@ class OLQuotationPartnerCompletionSerializer(serializers.Serializer):
         return attrs
 
 
-class OLProposalSerializer(serializers.ModelSerializer):
+def _display_value(value):
+    if value is None:
+        return None
+    number = next(
+        (getattr(value, field, None) for field in ("partner_number", "quote_number", "quotation_number", "code") if getattr(value, field, None)),
+        None,
+    )
+    name = getattr(value, "name", None) or getattr(value, "legal_name", None)
+    if not name:
+        parts = [
+            getattr(value, field, None)
+            for field in ("title", "first_name", "other_name", "surname", "last_name")
+        ]
+        name = " ".join(str(part) for part in parts if part).strip() or None
+    if number:
+        return f"{number} — {name}" if name and str(name) != str(number) else str(number)
+    if name:
+        return str(name)
+    return str(value)
+
+
+class _ForeignKeyDisplayField(serializers.Field):
+    def __init__(self, relation_name, **kwargs):
+        self.relation_name = relation_name
+        super().__init__(read_only=True, **kwargs)
+
+    def get_attribute(self, instance):
+        return getattr(instance, self.relation_name, None)
+
+    def to_representation(self, value):
+        return _display_value(value)
+
+
+class ForeignKeyDisplayMixin:
+    """Append a display label beside each direct FK in model-backed responses."""
+
+    def get_fields(self):
+        fields = super().get_fields()
+        model = getattr(getattr(self, "Meta", None), "model", None)
+        if model is None:
+            return fields
+        for model_field in model._meta.get_fields():
+            if not getattr(model_field, "many_to_one", False) or not getattr(model_field, "concrete", False):
+                continue
+            display_name = f"{model_field.name}_display"
+            if display_name not in fields:
+                fields[display_name] = _ForeignKeyDisplayField(model_field.name)
+        return fields
+
+
+class OLProposalSerializer(ForeignKeyDisplayMixin, serializers.ModelSerializer):
     quotation_id = serializers.UUIDField(source="quotation.pk", read_only=True)
     quotation_version_id = serializers.UUIDField(source="quotation_version.pk", read_only=True, allow_null=True)
 
@@ -90,7 +140,7 @@ class OLProposalSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class QuotationValidatedModelSerializer(serializers.ModelSerializer):
+class QuotationValidatedModelSerializer(ForeignKeyDisplayMixin, serializers.ModelSerializer):
     def validate(self, attrs):
         instance = self.instance or self.Meta.model(**attrs)
         for key, value in attrs.items():
@@ -471,14 +521,14 @@ class OLQuotationDocumentSerializer(QuotationNestedReadMixin, QuotationValidated
         read_only_fields = fields
 
 
-class OLQuotationVersionSerializer(serializers.ModelSerializer):
+class OLQuotationVersionSerializer(ForeignKeyDisplayMixin, serializers.ModelSerializer):
     class Meta:
         model = OLQuotationVersion
         fields = "__all__"
         read_only_fields = [field.name for field in OLQuotationVersion._meta.fields]
 
 
-class OLQuotationVersionListSerializer(serializers.ModelSerializer):
+class OLQuotationVersionListSerializer(ForeignKeyDisplayMixin, serializers.ModelSerializer):
     class Meta:
         model = OLQuotationVersion
         fields = ["id", "version_number", "status", "created_by", "created_at", "change_reason"]
@@ -506,7 +556,7 @@ class OLQuotationInstallmentPayoutSerializer(serializers.Serializer):
     paid_up_rate = serializers.DecimalField(max_digits=18, decimal_places=8, required=False)
 
 
-class OLQuotationFinancialSummarySerializer(serializers.ModelSerializer):
+class OLQuotationFinancialSummarySerializer(ForeignKeyDisplayMixin, serializers.ModelSerializer):
     quotation_id = serializers.UUIDField(read_only=True)
 
     class Meta:
@@ -515,7 +565,7 @@ class OLQuotationFinancialSummarySerializer(serializers.ModelSerializer):
         read_only_fields = [field.name for field in OLQuotationFinancialSummary._meta.fields]
 
 
-class OLQuotationFinancialDetailsSerializer(serializers.ModelSerializer):
+class OLQuotationFinancialDetailsSerializer(ForeignKeyDisplayMixin, serializers.ModelSerializer):
     quotation_id = serializers.UUIDField(read_only=True)
     projections = OLQuotationProjectionRowSerializer(many=True, read_only=True)
     installment_payouts = OLQuotationInstallmentPayoutSerializer(many=True, read_only=True)
@@ -570,7 +620,7 @@ class OLQuotationBeneficiarySerializer(QuotationNestedReadMixin, QuotationValida
         read_only_fields = ["id", "created_at", "updated_at", "created_by", "updated_by"]
 
 
-class OLQuotationEventSerializer(serializers.ModelSerializer):
+class OLQuotationEventSerializer(ForeignKeyDisplayMixin, serializers.ModelSerializer):
     class Meta:
         model = OLQuotationEvent
         fields = "__all__"
@@ -713,12 +763,18 @@ class OLQuotationPersonalDetailsSerializer(serializers.Serializer):
             "smoker_status": quotation.smoker_status,
             "location": quotation.location,
             "location_id": str(quotation.location_master_id) if quotation.location_master_id else None,
+            "location_display": (
+                f"{quotation.location_master.code} — {quotation.location_master.name}"
+                if quotation.location_master_id and quotation.location_master
+                else quotation.location or None
+            ),
             "agent_id": str(quotation.agent_partner_id) if quotation.agent_partner_id else None,
             "agent": {
                 "id": str(quotation.agent_partner_id),
                 "name": str(quotation.agent_partner),
                 "partner_number": quotation.agent_partner.partner_number,
             } if quotation.agent_partner_id else None,
+            "agent_display": _display_value(quotation.agent_partner or quotation.agent),
             "address": quotation.address,
             "partner_exists": bool(quotation.linked_partner_id or quotation.partner_id),
             "partner_id": str(quotation.linked_partner_id or quotation.partner_id) if (quotation.linked_partner_id or quotation.partner_id) else None,
@@ -727,8 +783,11 @@ class OLQuotationPersonalDetailsSerializer(serializers.Serializer):
         return data
 
 
-class OLQuotationListSerializer(serializers.ModelSerializer):
+class OLQuotationListSerializer(ForeignKeyDisplayMixin, serializers.ModelSerializer):
     status = serializers.SerializerMethodField()
+    agent_display = serializers.SerializerMethodField()
+    location_display = serializers.SerializerMethodField()
+    currency_display = serializers.SerializerMethodField()
     prospect_name = serializers.SerializerMethodField()
     plans_summary = serializers.SerializerMethodField()
     plan_count = serializers.SerializerMethodField()
@@ -754,6 +813,9 @@ class OLQuotationListSerializer(serializers.ModelSerializer):
             "version",
             "quote_date",
             "agent",
+            "agent_display",
+            "location_display",
+            "currency_display",
             "created_by",
             "row_actions",
         ]
@@ -763,7 +825,7 @@ class OLQuotationListSerializer(serializers.ModelSerializer):
     def _user_payload(user):
         if not user:
             return None
-        name = " ".join(
+        name = _display_value(user) or " ".join(
             part for part in [
                 getattr(user, "first_name", ""),
                 getattr(user, "last_name", ""),
@@ -816,7 +878,21 @@ class OLQuotationListSerializer(serializers.ModelSerializer):
         return {"code": effective_status, "label": label, "tone": effective_status.lower()}
 
     def get_agent(self, obj):
-        return self._user_payload(obj.agent)
+        return self._user_payload(obj.agent_partner or obj.agent)
+
+    def get_agent_display(self, obj):
+        agent = obj.agent_partner or obj.agent
+        return _display_value(agent)
+
+    def get_location_display(self, obj):
+        if obj.location_master_id and obj.location_master:
+            return f"{obj.location_master.code} — {obj.location_master.name}"
+        return obj.location or None
+
+    def get_currency_display(self, obj):
+        options = ConfigurationService.get_choice_list("CURRENCY_CHOICES", active_only=True)
+        match = next((item for item in options if item.get("value") == obj.currency), None)
+        return match.get("label") if match else obj.currency
 
     def get_created_by(self, obj):
         return self._user_payload(obj.created_by)
@@ -871,8 +947,11 @@ class OLQuotationListSerializer(serializers.ModelSerializer):
         }
 
 
-class OLQuotationSerializer(serializers.ModelSerializer):
+class OLQuotationSerializer(ForeignKeyDisplayMixin, serializers.ModelSerializer):
     status = serializers.SerializerMethodField()
+    agent_display = serializers.SerializerMethodField()
+    location_display = serializers.SerializerMethodField()
+    currency_display = serializers.SerializerMethodField()
     products = OLQuotationProductSerializer(many=True, read_only=True)
     plan_configurations = OLQuotationPlanConfigurationSerializer(many=True, read_only=True)
     members = OLQuotationMemberSerializer(many=True, read_only=True)
@@ -911,6 +990,9 @@ class OLQuotationSerializer(serializers.ModelSerializer):
             "smoker_status",
             "location",
             "agent",
+            "agent_display",
+            "location_display",
+            "currency_display",
             "address",
             "partner_verified",
             "approval_required",
@@ -972,6 +1054,19 @@ class OLQuotationSerializer(serializers.ModelSerializer):
 
     def get_status(self, obj):
         return QuotationService.effective_status(obj)
+
+    def get_agent_display(self, obj):
+        return _display_value(obj.agent_partner or obj.agent)
+
+    def get_location_display(self, obj):
+        if obj.location_master_id and obj.location_master:
+            return f"{obj.location_master.code} — {obj.location_master.name}"
+        return obj.location or None
+
+    def get_currency_display(self, obj):
+        options = ConfigurationService.get_choice_list("CURRENCY_CHOICES", active_only=True)
+        match = next((item for item in options if item.get("value") == obj.currency), None)
+        return match.get("label") if match else obj.currency
 
     def validate(self, attrs):
         instance = self.instance or OLQuotation(**attrs)

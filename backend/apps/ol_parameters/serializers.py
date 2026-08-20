@@ -28,7 +28,53 @@ class OLParameterBaseSerializer(serializers.Serializer):
         return attrs
 
 
-class OLTableRegistrySerializer(serializers.ModelSerializer):
+def _display_value(value):
+    if value is None:
+        return None
+    for number_field in ("partner_number", "quote_number", "quotation_number", "code"):
+        number = getattr(value, number_field, None)
+        if number:
+            name = getattr(value, "name", None) or getattr(value, "legal_name", None)
+            if name and str(name) != str(number):
+                return f"{number} — {name}"
+            return str(number)
+    name = getattr(value, "name", None) or getattr(value, "legal_name", None)
+    if name:
+        return str(name)
+    parts = [getattr(value, field, None) for field in ("first_name", "surname")]
+    if any(parts):
+        return " ".join(str(part) for part in parts if part)
+    return str(value)
+
+
+class _ForeignKeyDisplayField(serializers.Field):
+    def __init__(self, relation_name, **kwargs):
+        self.relation_name = relation_name
+        super().__init__(read_only=True, **kwargs)
+
+    def get_attribute(self, instance):
+        return getattr(instance, self.relation_name, None)
+
+    def to_representation(self, value):
+        return _display_value(value)
+
+
+class ForeignKeyDisplayMixin:
+    def get_fields(self):
+        fields = super().get_fields()
+        model = getattr(getattr(self, "Meta", None), "model", None)
+        if model is None:
+            return fields
+        for model_field in model._meta.get_fields():
+            if not getattr(model_field, "many_to_one", False) or not getattr(model_field, "concrete", False):
+                continue
+            display_name = f"{model_field.name}_display"
+            if display_name not in fields:
+                fields[display_name] = _ForeignKeyDisplayField(model_field.name)
+        return fields
+
+
+class OLTableRegistrySerializer(ForeignKeyDisplayMixin, serializers.ModelSerializer):
     required_permissions = serializers.SerializerMethodField()
 
     class Meta:
@@ -151,7 +197,7 @@ from .models import (
 _AUDIT_READ_ONLY = ["id", "created_by", "updated_by", "created_at", "updated_at"]
 
 
-class OLDefaultSystemParameterSerializer(serializers.ModelSerializer):
+class OLDefaultSystemParameterSerializer(ForeignKeyDisplayMixin, serializers.ModelSerializer):
     typed_value = serializers.JSONField(required=False, allow_null=True, write_only=True)
     value = serializers.SerializerMethodField(read_only=True)
 
@@ -241,7 +287,7 @@ class OLDefaultSystemParameterSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class _ValidatedDefaultSetupModelSerializer(serializers.ModelSerializer):
+class _ValidatedDefaultSetupModelSerializer(ForeignKeyDisplayMixin, serializers.ModelSerializer):
     class Meta:
         fields = "__all__"
         read_only_fields = _AUDIT_READ_ONLY

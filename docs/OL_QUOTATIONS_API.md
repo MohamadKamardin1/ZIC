@@ -279,3 +279,21 @@ python manage.py seed_ol_quotations
 ```
 
 The seed command configures quotation permissions, role groups, quotation/proposal numbering prefixes, lifecycle defaults, and the configured quotation partner-type code without duplicating existing rows.
+
+## Standardized OL option registry
+
+The quotation wizard uses the authenticated registry endpoint:
+
+```http
+GET /api/v1/ol/options/<entity>/?q=<search>&page=1&page_size=50
+```
+
+The supported entities are `identity-types`, `locations`, `agents`, `products`, `plan-types`, `payment-frequencies`, `quote-bases`, `premium-factors`, `member-relations`, `cover-types`, `payment-modes`, `investment-funds`, `investment-fund-types`, `riders`, `benefit-types`, and `currencies`. A compatibility route is also available below `/api/v1/ol-quotations/options/<entity>/`.
+
+Each option is returned in the stable shape `{value, label, meta}`. `value` is the canonical UUID or code used for writes, while `label` is always human-readable, for example `008 — Boresha Elimu`, `National ID (NIDA)`, or `TZS — Tanzanian Shilling`. `meta` carries entity-specific details such as branch, product, plan, fund type, risk profile, currency, and status.
+
+Catalog providers exclude inactive records and records outside their effective date window. Product, agent, and rider providers support case-insensitive `q` search and all providers support bounded pagination through `page` and `page_size` (maximum 200). Unknown entities return HTTP 404 with the available entity list.
+
+All model-backed OL quotation and parameter serializers retain UUID foreign-key fields for write compatibility but also expose a matching `<field>_display` field. The display field is the authoritative presentation value for UI tables, detail pages, and select controls; clients must never render a foreign-key UUID directly. Quotation headers additionally expose `agent_display`, `location_display`, and `currency_display` aliases for the wizard’s personal-details and summary views.
+
+The baseline `seed_ol_quotations` command is idempotent and seeds identity types, payment modes, premium frequencies, quote bases, premium factors, member relations, cover types, benefit types, and currencies. The unified Zanzibar demo seeder adds the canonical location and demo-agent prerequisites. No seed operation flushes or destructively resets existing data.
