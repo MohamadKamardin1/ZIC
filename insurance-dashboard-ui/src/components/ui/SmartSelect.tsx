@@ -39,6 +39,7 @@ export type SmartSelectProps = FormFieldProps & {
   value?: string
   values?: string[]
   onChange?: (value: string) => void
+  onOptionChange?: (option: SmartOption) => void
   onValuesChange?: (values: string[]) => void
   placeholder?: string
   pageSize?: number
@@ -115,6 +116,7 @@ export function SmartSelect({
   value,
   values = [],
   onChange,
+  onOptionChange,
   onValuesChange,
   label,
   name,
@@ -202,6 +204,7 @@ export function SmartSelect({
       onValuesChange?.(next)
       return
     }
+    onOptionChange?.(option)
     onChange?.(option.value)
     setOpen(false)
     setQuery("")
@@ -216,7 +219,10 @@ export function SmartSelect({
     setCreatedOptions((current) => [...current.filter((item) => item.value !== option.value), option])
     queryClient.invalidateQueries({ queryKey: ["ol-options", entity] })
     if (multiple) onValuesChange?.([...selectedValues, option.value])
-    else onChange?.(option.value)
+    else {
+      onOptionChange?.(option)
+      onChange?.(option.value)
+    }
     setQuickCreateOpen(false)
     toast({ title: `${entityLabel} created`, message: `${option.label} is now selected.`, tone: "success" })
   }

@@ -10,6 +10,7 @@ import { MasterDetailPage } from "../../components/ui/Patterns"
 import OLQuotationDetailPage from "./OLQuotationDetail"
 import { StatusBadge, type StatusTone } from "../../components/ui/StatusBadge"
 import { useToast } from "../../components/ui/Toast"
+import { renderFk, scrubUuids } from "../../lib/display"
 import type { RowAction, TableColumn, TableMetadata } from "../../components/ui/types"
 
 type ActionKey = "view" | "edit" | "revise" | "finalize" | "print" | "convert_to_proposal" | "delete"
@@ -34,12 +35,18 @@ type QuotationRecord = {
   plan_count: number
   total_premium?: string | number | null
   currency?: string | null
+  currency_display?: string | null
   status: string
   status_badge?: { code?: string; label?: string; tone?: string }
   version: number
   quote_date: string
   agent?: { id?: string; name?: string; username?: string } | null
+  agent_display?: string | null
   created_by?: { id?: string; name?: string; username?: string } | null
+  created_by_display?: string | null
+  partner_display?: string | null
+  branch_display?: string | null
+  product_display?: string | null
   row_actions?: Partial<Record<ActionKey, ActionMetadata>>
 }
 
@@ -63,7 +70,7 @@ const filterDefinitions = [
 ]
 
 function textValue(value: unknown): string {
-  return value === null || value === undefined || value === "" ? "—" : String(value)
+  return value === null || value === undefined || value === "" ? "—" : scrubUuids(value)
 }
 
 function statusTone(status: string): StatusTone {
@@ -112,12 +119,18 @@ function normalizeQuotationRecord(value: QuotationRecord & { rowActions?: unknow
     plan_count: Number(record.plan_count ?? record.planCount ?? 0),
     total_premium: (record.total_premium ?? record.totalPremium) as string | number | null | undefined,
     currency: record.currency as string | null | undefined,
+    currency_display: (record.currency_display ?? record.currencyDisplay) as string | null | undefined,
     status: String(record.status ?? "").toUpperCase(),
     status_badge: (record.status_badge ?? record.statusBadge) as QuotationRecord["status_badge"],
     version: Number(record.version ?? 1),
     quote_date: String(record.quote_date ?? record.quoteDate ?? ""),
     agent: record.agent as QuotationRecord["agent"],
+    agent_display: (record.agent_display ?? record.agentDisplay) as string | null | undefined,
     created_by: (record.created_by ?? record.createdBy) as QuotationRecord["created_by"],
+    created_by_display: (record.created_by_display ?? record.createdByDisplay) as string | null | undefined,
+    partner_display: (record.partner_display ?? record.partnerDisplay) as string | null | undefined,
+    branch_display: (record.branch_display ?? record.branchDisplay) as string | null | undefined,
+    product_display: (record.product_display ?? record.productDisplay) as string | null | undefined,
     row_actions: normalizeActionMetadata(record.row_actions ?? record.rowActions),
   }
 }
@@ -131,13 +144,13 @@ const columns: TableColumn<QuotationRecord>[] = [
   { key: "quote_name", label: "Quote name", field: "quote_name", sortable: true },
   { key: "prospect_name", label: "Prospect", field: "prospect_name", sortable: true },
   { key: "plans", label: "Plans", render: (_value, row) => <div><span className="font-semibold">{row.plan_count}</span><span className="ml-2 text-xs text-[var(--muted-foreground)]">{textValue(row.plans_summary)}</span></div> },
-  { key: "total_premium", label: "Total premium", field: "total_premium", sortable: true, align: "right", render: (_value, row) => amountLabel(row.total_premium, row.currency) },
-  { key: "currency", label: "Currency", field: "currency", sortable: true, align: "center" },
+  { key: "total_premium", label: "Total premium", field: "total_premium", sortable: true, align: "right", render: (_value, row) => amountLabel(row.total_premium, renderFk(row.currency, row.currency_display)) },
+  { key: "currency", label: "Currency", field: "currency", sortable: true, align: "center", render: (_value, row) => renderFk(row.currency, row.currency_display) },
   { key: "state", label: "Status", field: "status", sortable: true, render: (_value, row) => <StatusBadge value={row.status_badge?.label ?? row.status} tone={statusTone(row.status)} /> },
   { key: "version", label: "Version", field: "version", sortable: true, align: "center" },
   { key: "quote_date", label: "Quote date", field: "quote_date", sortable: true, render: (value) => dateLabel(value as string | null) },
-  { key: "agent_name", label: "Agent", render: (_value, row) => textValue(row.agent?.name ?? row.agent?.username) },
-  { key: "created_by_name", label: "Created by", render: (_value, row) => textValue(row.created_by?.name ?? row.created_by?.username) },
+  { key: "agent_name", label: "Agent", render: (_value, row) => renderFk(row.agent, row.agent_display) },
+  { key: "created_by_name", label: "Created by", render: (_value, row) => renderFk(row.created_by, row.created_by_display) },
 ]
 
 export default function OLQuotations() {

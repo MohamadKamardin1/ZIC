@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import type { ReactNode } from "react"
 import OLProductSetup from "./OLProductSetup"
 import { request } from "../../lib/apiClient"
 import { useAccess } from "../../lib/access"
@@ -13,6 +15,7 @@ vi.mock("../../lib/access", () => ({ useAccess: vi.fn() }))
 vi.mock("../../components/ui/Toast", () => ({ useToast: vi.fn() }))
 
 const requestMock = vi.mocked(request)
+const renderWithClient = (ui: ReactNode) => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{ui}</QueryClientProvider>)
 const useAccessMock = vi.mocked(useAccess)
 const toastMock = vi.fn()
 
@@ -94,7 +97,7 @@ describe("OLProductSetup", () => {
   })
 
   it("renders all eight Product Setup screens from their APIs", async () => {
-    render(<OLProductSetup />)
+    renderWithClient(<OLProductSetup />)
     expect(await screen.findByRole("columnheader", { name: "Plan category" })).toBeInTheDocument()
     const tabs = [
       ["OL Product", "Insurance class"],
@@ -114,7 +117,7 @@ describe("OLProductSetup", () => {
 
   it("grants unrestricted Product Setup access to a superuser without IAM permission entries", async () => {
     useAccessMock.mockReturnValue(accessWith([], true))
-    render(<OLProductSetup />)
+    renderWithClient(<OLProductSetup />)
 
     expect(await screen.findByText("Traditional")).toBeInTheDocument()
     expect(screen.queryByText("Read access required")).not.toBeInTheDocument()
@@ -124,7 +127,7 @@ describe("OLProductSetup", () => {
   })
 
   it("saves a product with capability toggles", async () => {
-    render(<OLProductSetup />)
+    renderWithClient(<OLProductSetup />)
     await screen.findByText("Traditional")
     await waitFor(() => expect(requestMock.mock.calls.filter(([path]) => String(path).includes("page_size=200")).length).toBeGreaterThanOrEqual(3))
     fireEvent.click(await screen.findByRole("button", { name: "OL Product" }))
@@ -134,7 +137,7 @@ describe("OLProductSetup", () => {
     fireEvent.change(screen.getByRole("textbox", { name: /Insurance class/ }), { target: { value: "ORDINARY_LIFE" } })
     fireEvent.change(screen.getByRole("textbox", { name: /Currency/ }), { target: { value: "TZS" } })
     fireEvent.click(screen.getByRole("button", { name: /^Plan typerequired$/ }))
-    fireEvent.click(await screen.findByRole("option", { name: /TYPE-1/ }))
+    fireEvent.click(await screen.findByRole("option", { name: "Traditional" }))
     fireEvent.change(screen.getByRole("spinbutton", { name: /Minimum entry age/ }), { target: { value: "18" } })
     fireEvent.change(screen.getByRole("spinbutton", { name: /Maximum entry age/ }), { target: { value: "65" } })
     fireEvent.change(screen.getByRole("spinbutton", { name: /Minimum term/ }), { target: { value: "1" } })
@@ -150,7 +153,7 @@ describe("OLProductSetup", () => {
   })
 
   it("shows inline range validation and blocks an invalid product save", async () => {
-    render(<OLProductSetup />)
+    renderWithClient(<OLProductSetup />)
     await screen.findByText("Traditional")
     await waitFor(() => expect(requestMock.mock.calls.filter(([path]) => String(path).includes("page_size=200")).length).toBeGreaterThanOrEqual(3))
     fireEvent.click(await screen.findByRole("button", { name: "OL Product" }))
@@ -160,7 +163,7 @@ describe("OLProductSetup", () => {
     fireEvent.change(screen.getByRole("textbox", { name: /Insurance class/ }), { target: { value: "ORDINARY_LIFE" } })
     fireEvent.change(screen.getByRole("textbox", { name: /Currency/ }), { target: { value: "TZS" } })
     fireEvent.click(screen.getByRole("button", { name: /^Plan typerequired$/ }))
-    fireEvent.click(await screen.findByRole("option", { name: /TYPE-1/ }))
+    fireEvent.click(await screen.findByRole("option", { name: "Traditional" }))
     fireEvent.change(screen.getByRole("spinbutton", { name: /Minimum entry age/ }), { target: { value: "70" } })
     fireEvent.change(screen.getByRole("spinbutton", { name: /Maximum entry age/ }), { target: { value: "60" } })
     fireEvent.click(screen.getByRole("button", { name: "Create setup" }))

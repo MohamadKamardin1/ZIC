@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import type { ReactNode } from "react"
 import OLProductRating from "./OLProductRating"
 import { request } from "../../lib/apiClient"
 import { useAccess } from "../../lib/access"
@@ -13,6 +15,7 @@ vi.mock("../../lib/access", () => ({ useAccess: vi.fn() }))
 vi.mock("../../components/ui/Toast", () => ({ useToast: vi.fn() }))
 
 const requestMock = vi.mocked(request)
+const renderWithClient = (ui: ReactNode) => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{ui}</QueryClientProvider>)
 const useAccessMock = vi.mocked(useAccess)
 const toastMock = vi.fn()
 
@@ -106,6 +109,7 @@ function mockApi() {
   requestMock.mockImplementation(async (path, options) => {
     const url = String(path)
     if (options?.method === "POST" || options?.method === "PATCH" || options?.method === "DELETE") return {} as never
+    if (url.includes("/api/v1/ol/options/products/")) return { options: [{ value: "product-1", label: "Product One" }], count: 1, page: 1, page_size: 30 } as never
     if (url.includes("premium-rate-tables")) return { results: [premiumTable], count: 1, page: 1, page_size: 20 } as never
     if (url.includes("mortality-rate-tables")) return { results: [mortalityTable], count: 1, page: 1, page_size: 20 } as never
     if (url.includes("joint-life-setups")) return { results: [jointSetup], count: 1, page: 1, page_size: 20 } as never
@@ -130,7 +134,7 @@ describe("OLProductRating", () => {
   })
 
   it("renders premium, mortality, and joint-life screens from APIs", async () => {
-    render(<OLProductRating />)
+    renderWithClient(<OLProductRating />)
     expect(await screen.findByRole("columnheader", { name: "Table" })).toBeInTheDocument()
     expect(screen.getByText("PREM-2026")).toBeInTheDocument()
 
@@ -144,7 +148,7 @@ describe("OLProductRating", () => {
   })
 
   it("supports premium row add, edit, remove, and persistence", async () => {
-    render(<OLProductRating />)
+    renderWithClient(<OLProductRating />)
     await screen.findByText("PREM-2026")
     fireEvent.click(screen.getByRole("button", { name: "Actions for row 1" }))
     fireEvent.click(screen.getByRole("button", { name: "Open rate rows" }))
@@ -165,7 +169,7 @@ describe("OLProductRating", () => {
   })
 
   it("renders row-level mortality CSV import errors", async () => {
-    render(<OLProductRating />)
+    renderWithClient(<OLProductRating />)
     fireEvent.click(await screen.findByRole("button", { name: "OL Mortality Rate" }))
     await screen.findByText("MORT-2026")
     fireEvent.click(screen.getByRole("button", { name: "Actions for row 1" }))
@@ -179,7 +183,7 @@ describe("OLProductRating", () => {
   })
 
   it("creates a new premium version from an existing table", async () => {
-    render(<OLProductRating />)
+    renderWithClient(<OLProductRating />)
     await screen.findByText("PREM-2026")
     fireEvent.click(screen.getByRole("button", { name: "Actions for row 1" }))
     fireEvent.click(screen.getByRole("button", { name: "Create new version" }))
@@ -187,7 +191,7 @@ describe("OLProductRating", () => {
   })
 
   it("blocks an invalid joint-life setup with inline validation", async () => {
-    render(<OLProductRating />)
+    renderWithClient(<OLProductRating />)
     fireEvent.click(await screen.findByRole("button", { name: "OL Joint Life Setup" }))
     await screen.findByText("JOINT-FIRST")
     fireEvent.click(screen.getByRole("button", { name: "Add setup" }))
@@ -197,7 +201,7 @@ describe("OLProductRating", () => {
   })
 
   it("renders all six Part 2 screens from their backend collections", async () => {
-    render(<OLProductRating />)
+    renderWithClient(<OLProductRating />)
     const screens = [
       ["Reinstatement Interest Rate", "Basis", "REIN-2026"],
       ["OL Bonus Rate", "Bonus type", "BONUS-2026"],
@@ -215,7 +219,7 @@ describe("OLProductRating", () => {
   })
 
   it("saves a reinstatement interest rate with its backend scope and enum values", async () => {
-    render(<OLProductRating />)
+    renderWithClient(<OLProductRating />)
     fireEvent.click(await screen.findByRole("button", { name: "Reinstatement Interest Rate" }))
     await screen.findByText("REIN-2026")
     fireEvent.click(screen.getByRole("button", { name: "Actions for row 1" }))
@@ -228,14 +232,13 @@ describe("OLProductRating", () => {
   })
 
   it("blocks a bonus setup when the required code and scope are missing", async () => {
-    render(<OLProductRating />)
+    renderWithClient(<OLProductRating />)
     fireEvent.click(await screen.findByRole("button", { name: "OL Bonus Rate" }))
     await screen.findByText("BONUS-2026")
     fireEvent.click(screen.getByRole("button", { name: "Actions for row 1" }))
     fireEvent.click(await screen.findByRole("button", { name: "Edit" }))
     await screen.findByLabelText(/^Code/)
     fireEvent.change(screen.getByLabelText(/^Code/), { target: { value: "" } })
-    fireEvent.change(screen.getByLabelText("Product ID"), { target: { value: "" } })
     fireEvent.click(screen.getByRole("button", { name: "Save setup" }))
 
     expect(await screen.findByText(/Code is required/)).toBeInTheDocument()
@@ -243,7 +246,7 @@ describe("OLProductRating", () => {
   })
 
   it("rejects an out-of-range cash-surrender factor during CSV import", async () => {
-    render(<OLProductRating />)
+    renderWithClient(<OLProductRating />)
     fireEvent.click(await screen.findByRole("button", { name: "OL Cash Surrender Value" }))
     await screen.findByText("CSV-2026")
     const csv = new File(["code,product,policy_year_from,policy_year_to,age_from,age_to,term_from,term_to,gender,smoker_status,surrender_value_factor,rate\nCSV-BAD,product-1,1,30,18,65,5,30,M,NS,1.1,"], "cash-surrender.csv", { type: "text/csv" })
@@ -255,7 +258,7 @@ describe("OLProductRating", () => {
   })
 
   it("deactivates a Part 2 record only after confirmation", async () => {
-    render(<OLProductRating />)
+    renderWithClient(<OLProductRating />)
     fireEvent.click(await screen.findByRole("button", { name: "Reinstatement Interest Rate" }))
     await screen.findByText("REIN-2026")
     fireEvent.click(screen.getByRole("button", { name: "Actions for row 1" }))

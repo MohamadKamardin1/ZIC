@@ -6,6 +6,8 @@ import { DataTable, fetchTable, normalizeTableResponse } from "../../components/
 import { FilterBar, type FilterValues } from "../../components/ui/FilterBar"
 import { ConfirmModal, FormModal, InfoBanner } from "../../components/ui/Overlays"
 import { DateInput, DecimalInput, EditableGrid, SelectInput, TextInput, TextareaInput, Toggle } from "../../components/ui"
+import { SmartSelect } from "../../components/ui/SmartSelect"
+import { renderFk } from "../../lib/display"
 import type { EditableGridColumn } from "../../components/ui/EditableGrid"
 import type { FilterDefinition, FilterOption, RowAction, TableColumn, TableMetadata } from "../../components/ui/types"
 import { MasterDetailPage } from "../../components/ui/Patterns"
@@ -30,7 +32,9 @@ type RatingRecord = Record<string, unknown> & {
   rating_basis?: string
   currency?: string
   product?: string | null
+  product_display?: string | null
   plan?: string | null
+  plan_display?: string | null
   gender?: string
   smoker_status?: string
   age_from?: number | string
@@ -185,8 +189,8 @@ const configs: Record<RatingTab, ScreenConfig> = {
     endpoint: `${API_PREFIX}/premium-rate-tables/`,
     columns: premiumMetadata.columns,
     filters: [
-      { key: "product", label: "Product", type: "text", placeholder: "Product ID" },
-      { key: "plan", label: "Plan", type: "text", placeholder: "Plan ID" },
+      { key: "product", label: "Product", type: "text", placeholder: "Search products" },
+      { key: "plan", label: "Plan", type: "text", placeholder: "Plan display (read-only)" },
       { key: "version", label: "Version", type: "text" },
       { key: "effective_from", label: "Effective date", type: "date-range" },
       { key: "is_active", label: "Status", type: "select", options: [{ label: "Active", value: "true" }, { label: "Inactive", value: "false" }] },
@@ -220,8 +224,8 @@ const configs: Record<RatingTab, ScreenConfig> = {
     endpoint: `${API_PREFIX}/reinstatement-interest-rates/`,
     columns: [
       { key: "code", label: "Code", field: "code", sortable: true },
-      { key: "product", label: "Product", field: "product", sortable: true },
-      { key: "plan", label: "Plan", field: "plan", sortable: true },
+      { key: "product", label: "Product", field: "product", sortable: true, render: (value, row) => renderFk(value, row.product_display ?? row.plan_display) },
+      { key: "plan", label: "Plan", field: "plan", sortable: true, render: (value, row) => renderFk(value, row.plan_display ?? row.product_display) },
       { key: "calculation_basis", label: "Basis", field: "calculation_basis" },
       { key: "rate", label: "Rate", field: "rate", align: "right", render: (value) => formatRate(value) },
       { key: "effective_from", label: "Effective from", field: "effective_from", sortable: true },
@@ -229,8 +233,8 @@ const configs: Record<RatingTab, ScreenConfig> = {
       { key: "status", label: "Status", render: (_value, row) => <StatusBadge value={effectiveState(row)} tone={statusTone(effectiveState(row))} /> },
     ],
     filters: [
-      { key: "product", label: "Product", type: "text", placeholder: "Product ID" },
-      { key: "plan", label: "Plan", type: "text", placeholder: "Plan ID" },
+      { key: "product", label: "Product", type: "text", placeholder: "Search products" },
+      { key: "plan", label: "Plan", type: "text", placeholder: "Plan display (read-only)" },
       { key: "calculation_basis", label: "Basis", type: "text" },
       { key: "effective_from", label: "Effective date", type: "date-range" },
     ],
@@ -241,8 +245,8 @@ const configs: Record<RatingTab, ScreenConfig> = {
     endpoint: `${API_PREFIX}/bonus-rates/`,
     columns: [
       { key: "code", label: "Code", field: "code", sortable: true },
-      { key: "product", label: "Product", field: "product", sortable: true },
-      { key: "plan", label: "Plan", field: "plan", sortable: true },
+      { key: "product", label: "Product", field: "product", sortable: true, render: (value, row) => renderFk(value, row.product_display ?? row.plan_display) },
+      { key: "plan", label: "Plan", field: "plan", sortable: true, render: (value, row) => renderFk(value, row.plan_display ?? row.product_display) },
       { key: "bonus_type", label: "Bonus type", field: "bonus_type" },
       { key: "valuation_year", label: "Valuation year", field: "valuation_year", sortable: true },
       { key: "rate", label: "Rate", field: "rate", align: "right", render: (value) => formatRate(value) },
@@ -251,8 +255,8 @@ const configs: Record<RatingTab, ScreenConfig> = {
       { key: "status", label: "Status", render: (_value, row) => <StatusBadge value={effectiveState(row)} tone={statusTone(effectiveState(row))} /> },
     ],
     filters: [
-      { key: "product", label: "Product", type: "text", placeholder: "Product ID" },
-      { key: "plan", label: "Plan", type: "text", placeholder: "Plan ID" },
+      { key: "product", label: "Product", type: "text", placeholder: "Search products" },
+      { key: "plan", label: "Plan", type: "text", placeholder: "Plan display (read-only)" },
       { key: "bonus_type", label: "Bonus type", type: "text" },
       { key: "effective_from", label: "Effective date", type: "date-range" },
     ],
@@ -263,8 +267,8 @@ const configs: Record<RatingTab, ScreenConfig> = {
     endpoint: `${API_PREFIX}/mortgage-interest-factors/`,
     columns: [
       { key: "code", label: "Code", field: "code", sortable: true },
-      { key: "product", label: "Product", field: "product", sortable: true },
-      { key: "plan", label: "Plan", field: "plan", sortable: true },
+      { key: "product", label: "Product", field: "product", sortable: true, render: (value, row) => renderFk(value, row.product_display ?? row.plan_display) },
+      { key: "plan", label: "Plan", field: "plan", sortable: true, render: (value, row) => renderFk(value, row.plan_display ?? row.product_display) },
       { key: "calculation_basis", label: "Basis", field: "calculation_basis" },
       { key: "factor", label: "Factor", field: "factor", align: "right", render: (value) => formatRate(value) },
       { key: "effective_from", label: "Effective from", field: "effective_from", sortable: true },
@@ -272,8 +276,8 @@ const configs: Record<RatingTab, ScreenConfig> = {
       { key: "status", label: "Status", render: (_value, row) => <StatusBadge value={effectiveState(row)} tone={statusTone(effectiveState(row))} /> },
     ],
     filters: [
-      { key: "product", label: "Product", type: "text", placeholder: "Product ID" },
-      { key: "plan", label: "Plan", type: "text", placeholder: "Plan ID" },
+      { key: "product", label: "Product", type: "text", placeholder: "Search products" },
+      { key: "plan", label: "Plan", type: "text", placeholder: "Plan display (read-only)" },
       { key: "calculation_basis", label: "Basis", type: "text" },
       { key: "effective_from", label: "Effective date", type: "date-range" },
     ],
@@ -284,8 +288,8 @@ const configs: Record<RatingTab, ScreenConfig> = {
     endpoint: `${API_PREFIX}/installment-charge-rates/`,
     columns: [
       { key: "code", label: "Code", field: "code", sortable: true },
-      { key: "product", label: "Product", field: "product", sortable: true },
-      { key: "plan", label: "Plan", field: "plan", sortable: true },
+      { key: "product", label: "Product", field: "product", sortable: true, render: (value, row) => renderFk(value, row.product_display ?? row.plan_display) },
+      { key: "plan", label: "Plan", field: "plan", sortable: true, render: (value, row) => renderFk(value, row.plan_display ?? row.product_display) },
       { key: "frequency", label: "Frequency", field: "frequency" },
       { key: "charge_type", label: "Charge type", field: "charge_type" },
       { key: "apply_on", label: "Apply on", field: "apply_on" },
@@ -295,8 +299,8 @@ const configs: Record<RatingTab, ScreenConfig> = {
       { key: "status", label: "Status", render: (_value, row) => <StatusBadge value={effectiveState(row)} tone={statusTone(effectiveState(row))} /> },
     ],
     filters: [
-      { key: "product", label: "Product", type: "text", placeholder: "Product ID" },
-      { key: "plan", label: "Plan", type: "text", placeholder: "Plan ID" },
+      { key: "product", label: "Product", type: "text", placeholder: "Search products" },
+      { key: "plan", label: "Plan", type: "text", placeholder: "Plan display (read-only)" },
       { key: "frequency", label: "Frequency", type: "text" },
       { key: "effective_from", label: "Effective date", type: "date-range" },
     ],
@@ -307,8 +311,8 @@ const configs: Record<RatingTab, ScreenConfig> = {
     endpoint: `${API_PREFIX}/cash-surrender-values/`,
     columns: [
       { key: "code", label: "Code", field: "code", sortable: true },
-      { key: "product", label: "Product", field: "product", sortable: true },
-      { key: "plan", label: "Plan", field: "plan", sortable: true },
+      { key: "product", label: "Product", field: "product", sortable: true, render: (value, row) => renderFk(value, row.product_display ?? row.plan_display) },
+      { key: "plan", label: "Plan", field: "plan", sortable: true, render: (value, row) => renderFk(value, row.plan_display ?? row.product_display) },
       { key: "policy_year_from", label: "Policy year", field: "policy_year_from", render: (_value, row) => `${row.policy_year_from ?? "—"}–${row.policy_year_to ?? "—"}` },
       { key: "age_from", label: "Age band", field: "age_from", render: (_value, row) => `${row.age_from ?? "—"}–${row.age_to ?? "—"}` },
       { key: "term_from", label: "Term band", field: "term_from", render: (_value, row) => `${row.term_from ?? "—"}–${row.term_to ?? "—"}` },
@@ -320,8 +324,8 @@ const configs: Record<RatingTab, ScreenConfig> = {
       { key: "status", label: "Status", render: (_value, row) => <StatusBadge value={effectiveState(row)} tone={statusTone(effectiveState(row))} /> },
     ],
     filters: [
-      { key: "product", label: "Product", type: "text", placeholder: "Product ID" },
-      { key: "plan", label: "Plan", type: "text", placeholder: "Plan ID" },
+      { key: "product", label: "Product", type: "text", placeholder: "Search products" },
+      { key: "plan", label: "Plan", type: "text", placeholder: "Plan display (read-only)" },
       { key: "gender", label: "Gender", type: "text" },
       { key: "smoker_status", label: "Smoker", type: "text" },
       { key: "effective_from", label: "Effective date", type: "date-range" },
@@ -333,8 +337,8 @@ const configs: Record<RatingTab, ScreenConfig> = {
     endpoint: `${API_PREFIX}/reserve-loadings/`,
     columns: [
       { key: "code", label: "Code", field: "code", sortable: true },
-      { key: "product", label: "Product", field: "product", sortable: true },
-      { key: "plan", label: "Plan", field: "plan", sortable: true },
+      { key: "product", label: "Product", field: "product", sortable: true, render: (value, row) => renderFk(value, row.product_display ?? row.plan_display) },
+      { key: "plan", label: "Plan", field: "plan", sortable: true, render: (value, row) => renderFk(value, row.plan_display ?? row.product_display) },
       { key: "loading_type", label: "Loading type", field: "loading_type" },
       { key: "loading_basis", label: "Basis", field: "loading_basis" },
       { key: "rate_value", label: "Rate", field: "rate_value", align: "right", render: (value) => formatRate(value) },
@@ -343,8 +347,8 @@ const configs: Record<RatingTab, ScreenConfig> = {
       { key: "status", label: "Status", render: (_value, row) => <StatusBadge value={effectiveState(row)} tone={statusTone(effectiveState(row))} /> },
     ],
     filters: [
-      { key: "product", label: "Product", type: "text", placeholder: "Product ID" },
-      { key: "plan", label: "Plan", type: "text", placeholder: "Plan ID" },
+      { key: "product", label: "Product", type: "text", placeholder: "Search products" },
+      { key: "plan", label: "Plan", type: "text", placeholder: "Plan display (read-only)" },
       { key: "loading_type", label: "Loading type", type: "text" },
       { key: "effective_from", label: "Effective date", type: "date-range" },
     ],
@@ -403,7 +407,7 @@ function Part2Editor({ tab, record, onChange, productOptions, planOptions }: { t
   const valueMode = record.rate != null && String(record.rate).trim() !== "" ? "rate" : "factor"
   const set = (key: string) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => onChange(key, event.target.value || null)
   return <div className="space-y-5">
-    <section className="surface-card space-y-4 p-4"><h3 className="text-sm font-extrabold uppercase tracking-[0.12em]">Scope and effective dates</h3><div className="grid gap-4 md:grid-cols-2"><TextInput label="Code" name="code" required value={field("code")} onChange={set("code") as (event: ChangeEvent<HTMLInputElement>) => void} /><SelectInput label="Product ID" name="product" value={field("product")} onChange={set("product") as (event: ChangeEvent<HTMLSelectElement>) => void}><option value="">Any product</option>{productOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</SelectInput><SelectInput label="Plan ID" name="plan" value={field("plan")} onChange={set("plan") as (event: ChangeEvent<HTMLSelectElement>) => void}><option value="">Any plan</option>{planOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</SelectInput><DateInput label="Effective from" name="effective_from" required value={field("effective_from")} onChange={set("effective_from") as (event: ChangeEvent<HTMLInputElement>) => void} /><DateInput label="Effective to" name="effective_to" value={field("effective_to")} onChange={set("effective_to") as (event: ChangeEvent<HTMLInputElement>) => void} /><Toggle label="Active" checked={Boolean(record.is_active ?? true)} onChange={(checked) => onChange("is_active", checked)} /></div></section>
+    <section className="surface-card space-y-4 p-4"><h3 className="text-sm font-extrabold uppercase tracking-[0.12em]">Scope and effective dates</h3><div className="grid gap-4 md:grid-cols-2"><TextInput label="Code" name="code" required value={field("code")} onChange={set("code") as (event: ChangeEvent<HTMLInputElement>) => void} /><SmartSelect entity="products" label="Product" name="product" value={field("product")} onChange={(next) => onChange("product", next || null)} placeholder="Search and select product" /><TextInput label="Plan" name="plan" value={renderFk(record.plan, record.plan_display)} readOnly /><DateInput label="Effective from" name="effective_from" required value={field("effective_from")} onChange={set("effective_from") as (event: ChangeEvent<HTMLInputElement>) => void} /><DateInput label="Effective to" name="effective_to" value={field("effective_to")} onChange={set("effective_to") as (event: ChangeEvent<HTMLInputElement>) => void} /><Toggle label="Active" checked={Boolean(record.is_active ?? true)} onChange={(checked) => onChange("is_active", checked)} /></div></section>
     {tab === "reinstatement" && <section className="surface-card space-y-4 p-4"><h3 className="text-sm font-extrabold uppercase tracking-[0.12em]">Reinstatement interest</h3><div className="grid gap-4 md:grid-cols-2"><SelectInput label="Calculation basis" name="calculation_basis" required value={field("calculation_basis")} onChange={set("calculation_basis") as (event: ChangeEvent<HTMLSelectElement>) => void}><option value="OUTSTANDING_PREMIUM">Outstanding premium</option><option value="POLICY_VALUE">Policy value</option><option value="LOAN_BALANCE">Loan balance</option></SelectInput><DecimalInput label="Rate (%)" name="rate" required value={field("rate")} onChange={set("rate") as (event: ChangeEvent<HTMLInputElement>) => void} /></div></section>}
     {tab === "bonus" && <section className="surface-card space-y-4 p-4"><h3 className="text-sm font-extrabold uppercase tracking-[0.12em]">Bonus declaration</h3><div className="grid gap-4 md:grid-cols-2"><SelectInput label="Bonus type" name="bonus_type" required value={field("bonus_type")} onChange={set("bonus_type") as (event: ChangeEvent<HTMLSelectElement>) => void}><option value="REVERSIONARY">Reversionary</option><option value="TERMINAL">Terminal</option><option value="LOYALTY">Loyalty</option><option value="SPECIAL">Special</option><option value="GUARANTEED">Guaranteed</option></SelectInput><DecimalInput label="Rate" name="rate" required value={field("rate")} onChange={set("rate") as (event: ChangeEvent<HTMLInputElement>) => void} /><DecimalInput label="Valuation year" name="valuation_year" value={field("valuation_year")} onChange={set("valuation_year") as (event: ChangeEvent<HTMLInputElement>) => void} /><SelectInput label="Declaration frequency" name="declaration_frequency" value={field("declaration_frequency")} onChange={set("declaration_frequency") as (event: ChangeEvent<HTMLSelectElement>) => void}><option value="ANNUAL">Annual</option><option value="QUARTERLY">Quarterly</option><option value="MONTHLY">Monthly</option><option value="ON_MATURITY">On maturity</option><option value="AD_HOC">Ad hoc</option></SelectInput></div></section>}
     {tab === "mortgage" && <section className="surface-card space-y-4 p-4"><h3 className="text-sm font-extrabold uppercase tracking-[0.12em]">Mortgage interest factor</h3><div className="grid gap-4 md:grid-cols-2"><SelectInput label="Calculation basis" name="calculation_basis" required value={field("calculation_basis")} onChange={set("calculation_basis") as (event: ChangeEvent<HTMLSelectElement>) => void}><option value="CASH_VALUE">Cash value</option><option value="PREMIUM">Premium</option><option value="LOAN_BALANCE">Loan balance</option></SelectInput><DecimalInput label="Factor" name="factor" required value={field("factor")} onChange={set("factor") as (event: ChangeEvent<HTMLInputElement>) => void} /></div></section>}
@@ -669,7 +673,7 @@ export default function OLProductRating() {
       {importErrors.length > 0 && <InfoBanner title="CSV rows rejected"><ul className="mt-1 list-disc pl-5">{importErrors.map((error) => <li key={`${error.row}-${error.message}`}>Row {error.row}: {error.message}</li>)}</ul></InfoBanner>}
       {rowTable && (activeTab === "premium" || activeTab === "mortality") ? <section className="surface-card space-y-4 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">Rate row editor</p><h2 className="mt-1 text-lg font-extrabold">{String(rowTable.table_code ?? rowTable.name ?? "Selected table")} · v{String(rowTable.version ?? "—")}</h2><p className="mt-1 text-sm text-[var(--muted-foreground)]">Dimension filters are applied through the table selection. Rate values use backend decimal precision.</p></div><div className="flex flex-wrap gap-2"><button type="button" className="button-secondary" onClick={() => setRowTable(null)}>Back to versions</button><label className="button-secondary cursor-pointer"><Upload size={15} aria-hidden="true" />Import CSV<input aria-label="Import rate rows CSV" type="file" accept=".csv,text/csv" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importCsv(file); event.target.value = "" }} /></label>{canUpdate && <button type="button" className="button-primary" onClick={() => void saveRows()} disabled={saving}><Save size={15} aria-hidden="true" />{saving ? "Saving…" : "Save rows"}</button>}</div></div>{activeTab === "premium" ? <PremiumGrid rows={premiumRows} onChange={setPremiumRows} /> : <MortalityGrid rows={mortalityRows} onChange={setMortalityRows} />}</section> : <DataTable metadata={metadata} fetcher={fetcher} filters={filters} refreshKey={refreshKey} actions={actions} permissions={permissions} onImportCsv={activeTab === "premium" || activeTab === "mortality" || activeTab === "cash-surrender" ? importCsv : undefined} exportFileName={`ol-${activeTab}-rating.csv`} caption={config.title} />}
     </div>
-    <FormModal open={Boolean(editor)} title={editor ? `${editor.mode === "create" ? "Create" : "Edit"} ${config.title}` : "Rating editor"} description="All values are validated by the backend before becoming effective." onClose={() => setEditor(null)} onSave={() => void saveTable()} saving={saving} saveLabel="Save setup" size="lg">{editor ? (editor.tab === "joint" ? <div className="space-y-4"><div className="grid gap-4 md:grid-cols-2"><TextInput label="Code" name="code" required value={String(editor.record.code ?? "")} onChange={(event: ChangeEvent<HTMLInputElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, code: event.target.value } } : current)} /><TextInput label="Name" name="name" value={String(editor.record.name ?? "")} onChange={(event: ChangeEvent<HTMLInputElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, name: event.target.value } } : current)} /><SelectInput label="Joint-life type" name="joint_life_type" required value={String(editor.record.joint_life_type ?? "FIRST_DEATH")} onChange={(event: ChangeEvent<HTMLSelectElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, joint_life_type: event.target.value } } : current)}><option value="FIRST_DEATH">First death</option><option value="LAST_SURVIVOR">Last survivor</option><option value="JOINT_AND_SURVIVOR">Joint and survivor</option></SelectInput><SelectInput label="Age basis" name="age_basis" required value={String(editor.record.age_basis ?? "YOUNGER_LIFE")} onChange={(event: ChangeEvent<HTMLSelectElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, age_basis: event.target.value } } : current)}><option value="YOUNGER_LIFE">Younger life</option><option value="OLDER_LIFE">Older life</option><option value="AVERAGE_AGE">Average age</option><option value="JOINT_AGE">Joint age</option></SelectInput><SelectInput label="Product ID" name="product" value={String(editor.record.product ?? "")} onChange={(event: ChangeEvent<HTMLSelectElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, product: event.target.value || null } } : current)}><option value="">Any product</option>{productOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</SelectInput><SelectInput label="Plan ID" name="plan" value={String(editor.record.plan ?? "")} onChange={(event: ChangeEvent<HTMLSelectElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, plan: event.target.value || null } } : current)}><option value="">Any plan</option>{planOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</SelectInput><DecimalInput label="Premium adjustment factor" name="premium_adjustment_factor" required value={String(editor.record.premium_adjustment_factor ?? "1")} onChange={(event: ChangeEvent<HTMLInputElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, premium_adjustment_factor: event.target.value } } : current)} /><DateInput label="Effective from" name="effective_from" required value={String(editor.record.effective_from ?? "")} onChange={(event: ChangeEvent<HTMLInputElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, effective_from: event.target.value } } : current)} /><DateInput label="Effective to" name="effective_to" value={String(editor.record.effective_to ?? "")} onChange={(event: ChangeEvent<HTMLInputElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, effective_to: event.target.value || null } } : current)} /></div><TextareaInput label="Survivor benefit rule" name="survivor_benefit_rule" required value={String(editor.record.survivor_benefit_rule ?? "")} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, survivor_benefit_rule: event.target.value } } : current)} /><TextareaInput label="Underwriting rule" name="underwriting_rule" required value={String(editor.record.underwriting_rule ?? "")} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, underwriting_rule: event.target.value } } : current)} /></div> : (editor.tab === "premium" || editor.tab === "mortality") ? <div className="space-y-4"><div className="grid gap-4 md:grid-cols-2"><TextInput label="Table code" name="table_code" required value={String(editor.record.table_code ?? "")} onChange={(event: ChangeEvent<HTMLInputElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, table_code: event.target.value } } : current)} /><TextInput label="Name" name="name" required value={String(editor.record.name ?? "")} onChange={(event: ChangeEvent<HTMLInputElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, name: event.target.value } } : current)} /><TextInput label="Version" name="version" required value={String(editor.record.version ?? "1.0")} onChange={(event: ChangeEvent<HTMLInputElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, version: event.target.value } } : current)} /><TextInput label="Rating basis" name="rating_basis" value={String(editor.record.rating_basis ?? "SUM_ASSURED")} onChange={(event: ChangeEvent<HTMLInputElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, rating_basis: event.target.value } } : current)} /><TextInput label="Currency" name="currency" value={String(editor.record.currency ?? "TZS")} onChange={(event: ChangeEvent<HTMLInputElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, currency: event.target.value } } : current)} /><DateInput label="Effective from" name="effective_from" required value={String(editor.record.effective_from ?? "")} onChange={(event: ChangeEvent<HTMLInputElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, effective_from: event.target.value } } : current)} /><DateInput label="Effective to" name="effective_to" value={String(editor.record.effective_to ?? "")} onChange={(event: ChangeEvent<HTMLInputElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, effective_to: event.target.value || null } } : current)} /></div><TextareaInput label="Description" name="description" value={String(editor.record.description ?? "")} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, description: event.target.value } } : current)} /></div> : <Part2Editor tab={editor.tab as Exclude<RatingTab, "premium" | "mortality" | "joint">} record={editor.record} productOptions={productOptions} planOptions={planOptions} onChange={(key, value) => setEditor((current) => current ? { ...current, record: { ...current.record, [key]: value } } : current)} />): null}
+    <FormModal open={Boolean(editor)} title={editor ? `${editor.mode === "create" ? "Create" : "Edit"} ${config.title}` : "Rating editor"} description="All values are validated by the backend before becoming effective." onClose={() => setEditor(null)} onSave={() => void saveTable()} saving={saving} saveLabel="Save setup" size="lg">{editor ? (editor.tab === "joint" ? <div className="space-y-4"><div className="grid gap-4 md:grid-cols-2"><TextInput label="Code" name="code" required value={String(editor.record.code ?? "")} onChange={(event: ChangeEvent<HTMLInputElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, code: event.target.value } } : current)} /><TextInput label="Name" name="name" value={String(editor.record.name ?? "")} onChange={(event: ChangeEvent<HTMLInputElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, name: event.target.value } } : current)} /><SelectInput label="Joint-life type" name="joint_life_type" required value={String(editor.record.joint_life_type ?? "FIRST_DEATH")} onChange={(event: ChangeEvent<HTMLSelectElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, joint_life_type: event.target.value } } : current)}><option value="FIRST_DEATH">First death</option><option value="LAST_SURVIVOR">Last survivor</option><option value="JOINT_AND_SURVIVOR">Joint and survivor</option></SelectInput><SelectInput label="Age basis" name="age_basis" required value={String(editor.record.age_basis ?? "YOUNGER_LIFE")} onChange={(event: ChangeEvent<HTMLSelectElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, age_basis: event.target.value } } : current)}><option value="YOUNGER_LIFE">Younger life</option><option value="OLDER_LIFE">Older life</option><option value="AVERAGE_AGE">Average age</option><option value="JOINT_AGE">Joint age</option></SelectInput><SmartSelect entity="products" label="Product" name="product" value={String(editor.record.product ?? "")} onChange={(next) => setEditor((current) => current ? { ...current, record: { ...current.record, product: next || null } } : current)} placeholder="Search and select product" /><TextInput label="Plan" name="plan" value={renderFk(editor.record.plan, editor.record.plan_display)} readOnly /><DecimalInput label="Premium adjustment factor" name="premium_adjustment_factor" required value={String(editor.record.premium_adjustment_factor ?? "1")} onChange={(event: ChangeEvent<HTMLInputElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, premium_adjustment_factor: event.target.value } } : current)} /><DateInput label="Effective from" name="effective_from" required value={String(editor.record.effective_from ?? "")} onChange={(event: ChangeEvent<HTMLInputElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, effective_from: event.target.value } } : current)} /><DateInput label="Effective to" name="effective_to" value={String(editor.record.effective_to ?? "")} onChange={(event: ChangeEvent<HTMLInputElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, effective_to: event.target.value || null } } : current)} /></div><TextareaInput label="Survivor benefit rule" name="survivor_benefit_rule" required value={String(editor.record.survivor_benefit_rule ?? "")} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, survivor_benefit_rule: event.target.value } } : current)} /><TextareaInput label="Underwriting rule" name="underwriting_rule" required value={String(editor.record.underwriting_rule ?? "")} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, underwriting_rule: event.target.value } } : current)} /></div> : (editor.tab === "premium" || editor.tab === "mortality") ? <div className="space-y-4"><div className="grid gap-4 md:grid-cols-2"><TextInput label="Table code" name="table_code" required value={String(editor.record.table_code ?? "")} onChange={(event: ChangeEvent<HTMLInputElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, table_code: event.target.value } } : current)} /><TextInput label="Name" name="name" required value={String(editor.record.name ?? "")} onChange={(event: ChangeEvent<HTMLInputElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, name: event.target.value } } : current)} /><TextInput label="Version" name="version" required value={String(editor.record.version ?? "1.0")} onChange={(event: ChangeEvent<HTMLInputElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, version: event.target.value } } : current)} /><TextInput label="Rating basis" name="rating_basis" value={String(editor.record.rating_basis ?? "SUM_ASSURED")} onChange={(event: ChangeEvent<HTMLInputElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, rating_basis: event.target.value } } : current)} /><TextInput label="Currency" name="currency" value={String(editor.record.currency ?? "TZS")} onChange={(event: ChangeEvent<HTMLInputElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, currency: event.target.value } } : current)} /><DateInput label="Effective from" name="effective_from" required value={String(editor.record.effective_from ?? "")} onChange={(event: ChangeEvent<HTMLInputElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, effective_from: event.target.value } } : current)} /><DateInput label="Effective to" name="effective_to" value={String(editor.record.effective_to ?? "")} onChange={(event: ChangeEvent<HTMLInputElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, effective_to: event.target.value || null } } : current)} /></div><TextareaInput label="Description" name="description" value={String(editor.record.description ?? "")} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setEditor((current) => current ? { ...current, record: { ...current.record, description: event.target.value } } : current)} /></div> : <Part2Editor tab={editor.tab as Exclude<RatingTab, "premium" | "mortality" | "joint">} record={editor.record} productOptions={productOptions} planOptions={planOptions} onChange={(key, value) => setEditor((current) => current ? { ...current, record: { ...current.record, [key]: value } } : current)} />): null}
     </FormModal>
     <ConfirmModal open={Boolean(confirm)} title="Deactivate rating setup" description={`Deactivate ${String(confirm?.table_code ?? confirm?.code ?? "this setup")}? Existing quotation calculations retain their source version.`} onClose={() => setConfirm(null)} onConfirm={() => void deactivate()} />
   </MasterDetailPage>

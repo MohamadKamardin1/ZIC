@@ -156,6 +156,8 @@ beforeEach(() => {
     if (path.includes("/api/v1/ol/options/member-relations/quick-create-schema/")) return { permission: "system_parameters.manage", fields: [{ name: "code", type: "string", required: true }, { name: "name", type: "string", required: true }] }
     if (path.includes("/api/v1/ol/options/cover-types/quick-create-schema/")) return { permission: "system_parameters.manage", fields: [{ name: "code", type: "string", required: true }, { name: "name", type: "string", required: true }] }
     if (path.includes("/api/v1/ol/options/payment-modes/quick-create-schema/")) return { permission: "system_parameters.manage", fields: [{ name: "code", type: "string", required: true }, { name: "name", type: "string", required: true }] }
+    if (path.includes("/api/v1/ol/options/benefit-types/quick-create-schema/")) return { permission: "system_parameters.manage", fields: [{ name: "code", type: "string", required: true }, { name: "name", type: "string", required: true }] }
+    if (path.includes("/api/v1/ol/options/riders/quick-create-schema/")) return { permission: "ol_parameters.create", fields: [{ name: "code", type: "string", required: true }, { name: "name", type: "string", required: true }, { name: "rider_category", type: "string", required: true }] }
     if (path.includes("/api/v1/ol/options/investment-funds/quick-create-schema/")) return { permission: "ol_parameters.create", fields: [{ name: "code", type: "string", required: true }, { name: "name", type: "string", required: true }, { name: "fund_type", type: "select", required: true, choices: [{ value: "BALANCED", label: "Balanced" }], nested_entity: "investment-fund-types" }] }
     if (path.includes("/api/v1/ol/options/investment-fund-types/quick-create-schema/")) return { permission: "ol_parameters.create", fields: [{ name: "code", type: "string", required: true }, { name: "name", type: "string", required: true }]
     }
@@ -166,6 +168,8 @@ beforeEach(() => {
     if (path.includes("/api/v1/ol/options/member-relations/quick-create/") && options?.method === "POST") return { value: "SIBLING", label: "Sibling" }
     if (path.includes("/api/v1/ol/options/cover-types/quick-create/") && options?.method === "POST") return { value: "DEPENDENT", label: "Dependent Cover" }
     if (path.includes("/api/v1/ol/options/payment-modes/quick-create/") && options?.method === "POST") return { value: "QUARTERLY", label: "Quarterly" }
+    if (path.includes("/api/v1/ol/options/benefit-types/quick-create/") && options?.method === "POST") return { value: "ACCIDENTAL", label: "Accidental Benefit" }
+    if (path.includes("/api/v1/ol/options/riders/quick-create/") && options?.method === "POST") return { value: "rider-created", label: "Travel Protection", meta: { code: "TRAVEL-01", name: "Travel Protection", rider_category: "TRAVEL" } }
     if (path.includes("/api/v1/ol/options/investment-fund-types/quick-create/") && options?.method === "POST") return { value: "BALANCED", label: "Balanced" }
     if (path.includes("/api/v1/ol/options/investment-funds/quick-create/") && options?.method === "POST") return { value: "fund-created", label: "New Fund", meta: { code: "FUND-NEW", name: "New Fund" } }
     if (path.startsWith("/api/v1/ol/options/")) {
@@ -180,6 +184,7 @@ beforeEach(() => {
         "member-relations": [{ value: "CHILD", label: "Child" }, { value: "SPOUSE", label: "Spouse" }],
         "cover-types": [{ value: "DEPENDENT", label: "Dependent Cover" }],
         "payment-modes": [{ value: "ANNUAL", label: "Annual" }, { value: "MONTHLY", label: "Monthly" }],
+        "benefit-types": [{ value: "DEATH", label: "Death Benefit" }],
         "investment-funds": [{ value: "fund-1", label: "FUND-1 — Balanced Growth" }],
         "investment-fund-types": [{ value: "BALANCED", label: "Balanced" }],
         products: plans.map((plan) => ({ value: plan.plan_id, label: plan.name })),
@@ -479,6 +484,47 @@ describe("OL quotation wizard", () => {
     expect(await screen.findByText("Investment-linked Plan")).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: /Next/ }))
     expect(await screen.findByText("Each investment-linked plan must have fund allocations totaling exactly 100%."))
+  })
+
+  it("quick-creates and auto-selects a benefit type in the rider editor", async () => {
+    riderScenario = true
+    await reachMemberCoverageStep()
+    fireEvent.click(screen.getByRole("button", { name: "Riders & Benefits" }))
+    fireEvent.click(await screen.findByRole("button", { name: /PA-01/ }))
+    const picker = document.getElementById("benefit_type_0")
+    expect(picker).toBeTruthy()
+    const benefitControl = picker!.parentElement?.parentElement
+    expect(benefitControl).toBeTruthy()
+    fireEvent.click(within(benefitControl!).getByRole("button", { name: "Add new Benefit Type" }))
+    const dialog = (await screen.findAllByRole("dialog")).at(-1)
+    expect(dialog).toBeTruthy()
+    const fields = await within(dialog!).findAllByRole("textbox")
+    fireEvent.change(fields[0], { target: { value: "ACCIDENTAL" } })
+    fireEvent.change(fields[1], { target: { value: "Accidental Benefit" } })
+    fireEvent.click(within(dialog!).getByRole("button", { name: "Create option" }))
+    await waitFor(() => expect(requestMock.mock.calls.some(([path, options]) => String(path).includes("benefit-types/quick-create/") && options?.method === "POST")).toBe(true))
+    await waitFor(() => expect(picker).toHaveTextContent("Accidental Benefit"))
+  })
+
+  it("quick-creates and auto-selects a rider in the rider editor", async () => {
+    riderScenario = true
+    await reachMemberCoverageStep()
+    fireEvent.click(screen.getByRole("button", { name: "Riders & Benefits" }))
+    expect(await screen.findByText("Applicable Riders")).toBeInTheDocument()
+    const riderPicker = document.getElementById("rider_picker_config-1")
+    expect(riderPicker).toBeTruthy()
+    const riderControl = riderPicker!.parentElement?.parentElement
+    expect(riderControl).toBeTruthy()
+    fireEvent.click(within(riderControl!).getByRole("button", { name: "Add new rider" }))
+    const dialog = (await screen.findAllByRole("dialog")).at(-1)
+    expect(dialog).toBeTruthy()
+    const fields = await within(dialog!).findAllByRole("textbox")
+    fireEvent.change(fields[0], { target: { value: "TRAVEL-01" } })
+    fireEvent.change(fields[1], { target: { value: "Travel Protection" } })
+    fireEvent.change(fields[2], { target: { value: "TRAVEL" } })
+    fireEvent.click(within(dialog!).getByRole("button", { name: "Create option" }))
+    await waitFor(() => expect(requestMock.mock.calls.some(([path, options]) => String(path).includes("riders/quick-create/") && options?.method === "POST")).toBe(true))
+    expect(await screen.findByText("Travel Protection")).toBeInTheDocument()
   })
 
   it("attaches a rider and displays the updated backend premium after recalculation", async () => {

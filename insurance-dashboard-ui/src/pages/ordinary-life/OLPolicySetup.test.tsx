@@ -1,4 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import type { ReactNode } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import OLPolicySetup from "./OLPolicySetup"
 import { request } from "../../lib/apiClient"
@@ -13,6 +15,7 @@ vi.mock("../../lib/access", () => ({ useAccess: vi.fn() }))
 vi.mock("../../components/ui/Toast", () => ({ useToast: vi.fn() }))
 
 const requestMock = vi.mocked(request)
+const renderWithClient = (ui: ReactNode) => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{ui}</QueryClientProvider>)
 const useAccessMock = vi.mocked(useAccess)
 const toastMock = vi.fn()
 
@@ -82,7 +85,7 @@ describe("OLPolicySetup", () => {
   })
 
   it("renders each Policy Setup screen from its backend API", async () => {
-    render(<OLPolicySetup />)
+    renderWithClient(<OLPolicySetup />)
     expect(await screen.findByRole("columnheader", { name: "Rate factor" })).toBeInTheDocument()
 
     const tabs = [
@@ -101,7 +104,7 @@ describe("OLPolicySetup", () => {
   })
 
   it("shows inline validation and blocks an invalid rate-row save", async () => {
-    render(<OLPolicySetup />)
+    renderWithClient(<OLPolicySetup />)
     fireEvent.click(await screen.findByRole("button", { name: "New setup" }))
 
     expect(screen.getByText("Rate factor is required.")).toBeInTheDocument()
@@ -112,7 +115,7 @@ describe("OLPolicySetup", () => {
   })
 
   it("saves policy status transitions selected from the active status catalog", async () => {
-    render(<OLPolicySetup />)
+    renderWithClient(<OLPolicySetup />)
     fireEvent.click(await screen.findByRole("button", { name: "OL Policy Status" }))
     fireEvent.click(await screen.findByRole("button", { name: "New setup" }))
 
@@ -131,7 +134,7 @@ describe("OLPolicySetup", () => {
 
   it("hides create and row mutation actions for view-only users", async () => {
     useAccessMock.mockReturnValue(accessWith([{ module: "ol_parameters", action: "view" }]))
-    render(<OLPolicySetup />)
+    renderWithClient(<OLPolicySetup />)
 
     expect(await screen.findByText("POLICY_ACTIVE")).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "New setup" })).not.toBeInTheDocument()
@@ -139,7 +142,7 @@ describe("OLPolicySetup", () => {
   })
 
   it("supports questionnaire builder add, reorder, and mandatory behavior with live preview", async () => {
-    render(<OLPolicySetup />)
+    renderWithClient(<OLPolicySetup />)
     fireEvent.click(await screen.findByRole("button", { name: "OL Health Questionnaires" }))
     fireEvent.click(await screen.findByRole("button", { name: "New setup" }))
 
@@ -157,7 +160,7 @@ describe("OLPolicySetup", () => {
   })
 
   it("creates a new questionnaire version from an existing version", async () => {
-    render(<OLPolicySetup />)
+    renderWithClient(<OLPolicySetup />)
     fireEvent.click(await screen.findByRole("button", { name: "OL Health Questionnaires" }))
     expect(await screen.findByText("POLICY_ACTIVE")).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Actions for row 1" }))
@@ -167,7 +170,7 @@ describe("OLPolicySetup", () => {
   })
 
   it("validates lifecycle schedule and reinstatement modal fields inline", async () => {
-    render(<OLPolicySetup />)
+    renderWithClient(<OLPolicySetup />)
     fireEvent.click(await screen.findByRole("button", { name: "Grace Period Notification Schedule" }))
     fireEvent.click(await screen.findByRole("button", { name: "New setup" }))
     fireEvent.click(screen.getByRole("button", { name: "Create setup" }))
@@ -181,7 +184,7 @@ describe("OLPolicySetup", () => {
   })
 
   it("renders the Part 2 policy setup tabs and rate version dimensions from APIs", async () => {
-    render(<OLPolicySetup />)
+    renderWithClient(<OLPolicySetup />)
     expect(await screen.findByRole("columnheader", { name: "Rate factor" })).toBeInTheDocument()
 
     const tabs = [
@@ -199,7 +202,7 @@ describe("OLPolicySetup", () => {
   })
 
   it("supports rate row add, edit, and remove operations", async () => {
-    render(<OLPolicySetup />)
+    renderWithClient(<OLPolicySetup />)
     fireEvent.click(await screen.findByRole("button", { name: "OL Surrender Value Rate" }))
     fireEvent.click(await screen.findByRole("button", { name: "New setup" }))
 
@@ -213,7 +216,7 @@ describe("OLPolicySetup", () => {
   })
 
   it("renders a row-level CSV import error for malformed input", async () => {
-    const { container } = render(<OLPolicySetup />)
+    const { container } = renderWithClient(<OLPolicySetup />)
     fireEvent.click(await screen.findByRole("button", { name: "OL Paid-Up Rate" }))
     const fileInput = container.querySelector('input[type="file"]')
     expect(fileInput).toBeTruthy()

@@ -1,5 +1,11 @@
-import { expect, test } from "@playwright/test"
+import { expect, test, type Page } from "@playwright/test"
 import { mockAccessApi, mockParameterApi, seedSuperuserSession } from "./fixtures"
+
+const UUID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i
+
+async function expectNoVisibleUuid(page: Page) {
+  await expect(page.locator("body")).not.toContainText(UUID_RE)
+}
 
 test("OL default parameter setup supports create and refresh", async ({ page }) => {
   await seedSuperuserSession(page)
@@ -18,4 +24,5 @@ test("OL default parameter setup supports create and refresh", async ({ page }) 
   await page.getByRole("button", { name: "Create setup" }).click()
 
   await expect(page.getByRole("heading", { name: "Create Default System Parameters" })).toBeHidden()
+  await expectNoVisibleUuid(page)
 })

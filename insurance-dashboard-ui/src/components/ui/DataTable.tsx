@@ -1,11 +1,20 @@
 import { ChevronDown, ChevronUp, Download, FileUp, MoreHorizontal, RefreshCw } from "lucide-react"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { buildTableQuery, request, type TableQuery } from "../../lib/apiClient"
 import type { FilterValues } from "./FilterBar"
 import type { RowAction, TableMetadata, TableResponse } from "./types"
 export type { TableResponse } from "./types"
 import { StatusBadge } from "./StatusBadge"
+import { renderFk } from "../../lib/display"
+
+const FK_FIELD_KEYS = new Set(["agent", "branch", "benefit_type", "beneficial_type", "created_by", "currency", "facility", "fund", "location", "medical_facility", "partner", "payment_mode", "plan", "product", "rider", "linked_partner"])
+
+function isForeignKeyField(field: string) {
+  if (field.endsWith("_id")) return true
+  const normalized = field.endsWith("_id") ? field.slice(0, -3) : field
+  return FK_FIELD_KEYS.has(normalized) || normalized.endsWith("_type") || normalized.endsWith("_relation")
+}
 
 export type TableFetcher<T> = (query: TableQuery) => Promise<TableResponse<T>>
 
@@ -100,7 +109,18 @@ export function DataTable<T extends Record<string, unknown>>({ metadata, fetcher
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const availableActions = (row: T) => actions.filter((action) => (!action.permission || permissions.includes(action.permission)) && (action.isVisible ? action.isVisible(row) : true) && (canAction ? canAction(action, row) : true))
-  const renderValue = (column: TableMetadata<T>["columns"][number], row: T, index: number) => column.render ? column.render(column.field ? row[column.field] : row[column.key], row, index) : String(column.field ? row[column.field] ?? "—" : row[column.key] ?? "—")
+  const renderValue = (column: TableMetadata<T>["columns"][number], row: T, index: number): ReactNode => {
+    const fieldKey = String(column.field ?? column.key)
+    const rawValue = column.field ? row[column.field] : row[column.key]
+    const displayValue = row[`${fieldKey}_display`] ?? row[`${column.key}_display`]
+    const safeValue: unknown = isForeignKeyField(fieldKey) ? renderFk(rawValue, displayValue) : rawValue
+    if (column.render) return column.render(safeValue, row, index)
+    if (isForeignKeyField(fieldKey)) return String(safeValue)
+    if (rawValue === null || rawValue === undefined || rawValue === "") return "—"
+    if (typeof rawValue === "string" || typeof rawValue === "number") return rawValue
+    if (typeof rawValue === "boolean") return rawValue ? "Yes" : "No"
+    return renderFk(rawValue, displayValue)
+  }
 
   function toggleOrdering(column: TableMetadata<T>["columns"][number]) {
     if (!column.sortable) return
@@ -111,7 +131,7 @@ export function DataTable<T extends Record<string, unknown>>({ metadata, fetcher
 
   function exportCsv() {
     const columns = metadata.columns
-    const csvRows = [columns.map((column) => column.label), ...rows.map((row, index) => columns.map((column) => { const value = column.field ? row[column.field] : row[column.key]; return String(value ?? "").split('"').join('""') }))]
+    const csvRows = [columns.map((column) => column.label), ...rows.map((row, index) => columns.map((column) => { const fieldKey = String(column.field ?? column.key); const value = isForeignKeyField(fieldKey) ? renderFk(column.field ? row[column.field] : row[column.key], row[`${fieldKey}_display`] ?? row[`${column.key}_display`], "") : column.field ? row[column.field] : row[column.key]; return String(value ?? "").split('"').join('""') }))]
     const csv = csvRows.map((line) => line.map((value) => `"${value}"`).join(",")).join("\n")
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }))
     const link = document.createElement("a"); link.href = url; link.download = exportFileName; link.click(); URL.revokeObjectURL(url)
