@@ -1,8 +1,9 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Check, ChevronDown, ExternalLink, Loader2, Plus, Search, X } from "lucide-react"
+import { Check, ChevronDown, ExternalLink, Plus, Search, X } from "lucide-react"
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { useAccess } from "../../lib/access"
+import { hasExplicitPermission, OPTION_CREATE_PERMISSIONS, OPTION_MANAGE_HREFS, OPTION_PARAMETER_SCREEN_LABELS, prettifyOptionEntity } from "../../lib/optionMetadata"
 import { ApiClientError, request } from "../../lib/apiClient"
 import { useToast } from "./Toast"
 import { FieldLabel } from "./FormControls"
@@ -15,24 +16,7 @@ export type SmartOption = FilterOption & {
 
 export type SmartSelectEntity = string
 
-export const OPTION_CREATE_PERMISSIONS: Record<string, string> = {
-  "identity-types": "system_parameters.manage",
-  locations: "ol_parameters.create",
-  agents: "partners.create",
-  products: "ol_parameters.create",
-  "plan-types": "ol_parameters.create",
-  "payment-frequencies": "system_parameters.manage",
-  "quote-bases": "system_parameters.manage",
-  "premium-factors": "system_parameters.manage",
-  "member-relations": "system_parameters.manage",
-  "cover-types": "system_parameters.manage",
-  "payment-modes": "system_parameters.manage",
-  "investment-funds": "ol_parameters.create",
-  "investment-fund-types": "ol_parameters.create",
-  riders: "ol_parameters.create",
-  "benefit-types": "system_parameters.manage",
-  currencies: "system_parameters.manage",
-}
+export { OPTION_CREATE_PERMISSIONS } from "../../lib/optionMetadata"
 
 export type SmartSelectProps = FormFieldProps & {
   entity: SmartSelectEntity
@@ -60,14 +44,6 @@ type OptionListPayload = {
   total?: number
   has_next?: boolean
   hasNext?: boolean
-}
-
-function prettifyEntity(entity: string): string {
-  return entity
-    .replace(/[-_]/g, " ")
-    .replace(/\b\w/g, (character) => character.toUpperCase())
-    .replace(/Types$/, "Types")
-    .replace(/s$/, "")
 }
 
 function normalizeOption(value: unknown): SmartOption | null {
@@ -102,7 +78,7 @@ function getErrorMessage(error: unknown): string {
   return "Unable to load options."
 }
 
-function useDebouncedValue(value: string, delay = 250): string {
+function useDebouncedValue(value: string, delay = 300): string {
   const [debounced, setDebounced] = useState(value)
   useEffect(() => {
     const timer = window.setTimeout(() => setDebounced(value), delay)
@@ -133,7 +109,7 @@ export function SmartSelect({
   emptyEntityLabel,
   className = "",
 }: SmartSelectProps) {
-  const { access, isSuperAdmin, hasPermission } = useAccess()
+  const { access } = useAccess()
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
@@ -143,10 +119,12 @@ export function SmartSelect({
   const buttonRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const debouncedQuery = useDebouncedValue(query)
-  const entityLabel = emptyEntityLabel ?? prettifyEntity(entity)
+  const entityLabel = emptyEntityLabel ?? prettifyOptionEntity(entity)
   const permissionCode = createPermission ?? OPTION_CREATE_PERMISSIONS[entity]
-  const canCreate = isSuperAdmin || Boolean(permissionCode && hasPermission?.(permissionCode))
-  const hasAccessMetadata = isSuperAdmin || access.permissions.length > 0 || access.visibleModules.length > 0
+  const canCreate = hasExplicitPermission(access.permissions, permissionCode)
+  const resolvedManageHref = manageHref ?? OPTION_MANAGE_HREFS[entity]
+  const parameterScreenLabel = OPTION_PARAMETER_SCREEN_LABELS[entity] ?? "the full parameter screen"
+  const lastUsedKey = `zic.smart-select.last-used.${entity}`
 
   const optionsQuery = useQuery({
     queryKey: ["ol-options", entity, debouncedQuery, pageSize],
@@ -167,6 +145,34 @@ export function SmartSelect({
   const selectedLabel = multiple
     ? selectedOptions.length ? selectedOptions.map((option) => option.label).join(", ") : placeholder
     : selectedOptions[0]?.label ?? placeholder
+
+  const rememberLastUsed = (option: SmartOption) => {
+    try {
+      window.sessionStorage.setItem(lastUsedKey, JSON.stringify({ value: option.value, label: option.label, meta: option.meta }))
+    } catch {
+      // Session storage can be unavailable in privacy-restricted browser contexts.
+    }
+  }
+
+  const lastUsedAppliedRef = useRef(false)
+  useEffect(() => {
+    lastUsedAppliedRef.current = false
+  }, [entity])
+  useEffect(() => {
+    if (multiple || value || !onChange || lastUsedAppliedRef.current || optionsQuery.isLoading || options.length === 0) return
+    lastUsedAppliedRef.current = true
+    try {
+      const raw = window.sessionStorage.getItem(lastUsedKey)
+      if (!raw) return
+      const stored = JSON.parse(raw) as { value?: string }
+      const option = options.find((candidate) => candidate.value === stored.value)
+      if (!option) return
+      onOptionChange?.(option)
+      onChange(option.value)
+    } catch {
+      // Ignore malformed or unavailable session storage.
+    }
+  }, [lastUsedKey, multiple, onChange, onOptionChange, options, optionsQuery.isLoading, value])
 
   useEffect(() => {
     if (!open) return undefined
@@ -197,6 +203,7 @@ export function SmartSelect({
   }, [open])
 
   const choose = (option: SmartOption) => {
+    rememberLastUsed(option)
     if (multiple) {
       const next = selectedValues.includes(option.value)
         ? selectedValues.filter((selectedValue) => selectedValue !== option.value)
@@ -216,6 +223,7 @@ export function SmartSelect({
   }
 
   const handleCreated = (option: QuickCreateOption) => {
+    rememberLastUsed(option)
     setCreatedOptions((current) => [...current.filter((item) => item.value !== option.value), option])
     queryClient.invalidateQueries({ queryKey: ["ol-options", entity] })
     if (multiple) onValuesChange?.([...selectedValues, option.value])
@@ -224,7 +232,7 @@ export function SmartSelect({
       onChange?.(option.value)
     }
     setQuickCreateOpen(false)
-    toast({ title: `${entityLabel} created`, message: `${option.label} is now selected.`, tone: "success" })
+    toast({ title: `${entityLabel} created and selected`, message: option.label, tone: "success" })
   }
 
   return (
@@ -242,7 +250,7 @@ export function SmartSelect({
             aria-invalid={Boolean(error)}
             aria-describedby={error ? `${name}-error` : undefined}
             onClick={() => setOpen((current) => !current)}
-            className={`flex h-10 w-full items-center justify-between rounded-[10px] border bg-[var(--card)] px-3 text-left text-sm text-[var(--foreground)] shadow-sm outline-none transition focus:border-[var(--ring)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--ring)_18%,transparent)] disabled:cursor-not-allowed disabled:opacity-60 ${className}`}
+            className={`flex h-10 w-full items-center justify-between rounded-[10px] border bg-[var(--card)] px-3 text-left text-sm text-[var(--foreground)] shadow-sm outline-none transition hover:border-[var(--ring)] focus-visible:border-[var(--ring)] focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--ring)_18%,transparent)] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 ${className}`}
           >
             <span className={`min-w-0 truncate ${selectedOptions.length ? "text-[var(--foreground)]" : "text-[var(--muted-foreground)]"}`}>{selectedLabel}</span>
             <ChevronDown size={16} className="ml-2 shrink-0 text-[var(--muted-foreground)]" aria-hidden="true" />
@@ -255,7 +263,7 @@ export function SmartSelect({
                 {query && <button type="button" aria-label="Clear search" onClick={() => setQuery("")} className="rounded p-1 text-[var(--muted-foreground)] hover:bg-[var(--secondary)]"><X size={14} aria-hidden="true" /></button>}
               </div>
               <div className="max-h-60 overflow-auto py-1">
-                {optionsQuery.isLoading && <div className="flex items-center justify-center gap-2 px-3 py-4 text-xs text-[var(--muted-foreground)]" role="status"><Loader2 size={14} className="animate-spin" aria-hidden="true" /> Loading options…</div>}
+                {optionsQuery.isLoading && <div className="space-y-2 px-2 py-3" role="status" aria-label={`Loading ${entityLabel.toLowerCase()}`}><span className="sr-only">Loading options…</span>{["w-11/12", "w-8/12", "w-10/12"].map((width) => <span key={width} className={`block h-8 ${width} animate-pulse rounded-md bg-[var(--muted)]`} aria-hidden="true" />)}</div>}
                 {optionsQuery.isError && <p className="px-3 py-4 text-center text-xs text-[var(--destructive)]" role="alert">{getErrorMessage(optionsQuery.error)}</p>}
                 {!optionsQuery.isLoading && !optionsQuery.isError && options.length === 0 && <p className="px-3 py-4 text-center text-xs text-[var(--muted-foreground)]">No results found. Use + to add a new {entityLabel.toLowerCase()}.</p>}
                 {!optionsQuery.isLoading && !optionsQuery.isError && options.map((option) => {
@@ -268,13 +276,13 @@ export function SmartSelect({
             document.body,
           )}
         </div>
-        {hasAccessMetadata && canCreate && <button type="button" disabled={disabled} onClick={() => setQuickCreateOpen(true)} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border border-[var(--border)] bg-[var(--card)] text-[var(--primary)] shadow-sm transition hover:bg-[var(--secondary)] disabled:cursor-not-allowed disabled:opacity-60" aria-label={`Add new ${entityLabel}`} title={`Add new ${entityLabel}`}><Plus size={17} aria-hidden="true" /></button>}
+        {canCreate && <button type="button" disabled={disabled} onClick={() => setQuickCreateOpen(true)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setQuickCreateOpen(true) } }} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border border-[var(--border)] bg-[var(--card)] text-[var(--primary)] shadow-sm outline-none transition hover:bg-[var(--secondary)] focus-visible:border-[var(--ring)] focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--ring)_18%,transparent)] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60" aria-label={`Add new ${entityLabel}`} title={`Add new ${entityLabel}`}><Plus size={17} aria-hidden="true" /></button>}
       </div>
       {(selectedOptions.length > 0 || (multiple && selectedValues.length > 0)) && <div className="flex flex-wrap items-center gap-1.5">{selectedOptions.map((option) => <span key={option.value} className="inline-flex max-w-full items-center gap-1 rounded-full bg-[var(--secondary)] px-2.5 py-1 text-xs text-[var(--foreground)]"><span className="max-w-[18rem] truncate">{option.label}</span></span>)}<button type="button" onClick={clear} className="text-xs font-semibold text-[var(--muted-foreground)] underline-offset-2 hover:text-[var(--foreground)] hover:underline">Clear</button></div>}
-      {manageHref && hasAccessMetadata && canCreate && <a href={manageHref} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--primary)] hover:underline">{manageLabel}<ExternalLink size={12} aria-hidden="true" /></a>}
+      {resolvedManageHref && canCreate && <a href={resolvedManageHref} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-md text-xs font-semibold text-[var(--primary)] outline-none transition hover:underline focus-visible:ring-2 focus-visible:ring-[var(--ring)]">{manageLabel}<ExternalLink size={12} aria-hidden="true" /></a>}
       {error && <p id={`${name}-error`} className="mt-1 text-xs font-medium text-[var(--destructive)]" role="alert">{error}</p>}
       {optionsQuery.isError && !open && <p className="text-xs text-[var(--destructive)]" role="alert">{getErrorMessage(optionsQuery.error)}</p>}
-      <QuickCreateModal open={quickCreateOpen} entity={entity} entityLabel={entityLabel} permissionCode={permissionCode} onClose={() => setQuickCreateOpen(false)} onCreated={handleCreated} />
+      <QuickCreateModal open={quickCreateOpen} entity={entity} entityLabel={entityLabel} permissionCode={permissionCode} manageHref={resolvedManageHref} parameterScreenLabel={parameterScreenLabel} onClose={() => setQuickCreateOpen(false)} onCreated={handleCreated} />
     </div>
   )
 }

@@ -11,7 +11,7 @@ vi.mock("../../lib/access", () => ({
     access: { permissions: [{ module: "ol_parameters", action: "create" }], visibleModules: ["ol_parameters"], groups: [] },
     isLoading: false,
     isError: false,
-    isSuperAdmin: false,
+    isSuperAdmin: true,
     canAccess: () => true,
     hasPermission: (permission: string) => permission === "ol_parameters.create",
   }),
@@ -68,7 +68,22 @@ describe("SmartSelect", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create option" }))
     await waitFor(() => expect(onChange).toHaveBeenCalledWith("location-new"))
     expect(screen.getAllByText("NEW — New Location").length).toBeGreaterThan(0)
-    expect(screen.getByText("Location created")).toBeInTheDocument()
+    expect(screen.getByText("Location created and selected")).toBeInTheDocument()
+  })
+
+  it("opens quick-create from the keyboard and exposes the permission-gated manage link", async () => {
+    mockedRequest.mockImplementation(async (path) => {
+      if (path.includes("quick-create-schema")) return { entity: "locations", permission: "ol_parameters.create", fields: [{ name: "code", required: true }, { name: "name", required: true }] }
+      return { items: [], total: 0 }
+    })
+    renderSmartSelect()
+    const addButton = screen.getByRole("button", { name: "Add new Location" })
+    addButton.focus()
+    fireEvent.keyDown(addButton, { key: "Enter" })
+    await waitFor(() => expect(screen.getByLabelText(/Code/)).toBeInTheDocument())
+    expect(screen.getByRole("link", { name: "Manage…" })).toHaveAttribute("href", "/ordinary-life/parameters")
+    expect(screen.getByText(/This creates a minimal record\. Complete full configuration in/)).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Default Setup" })).toHaveAttribute("href", "/ordinary-life/parameters")
   })
 
   it("shows duplicate field errors and a duplicate warning", async () => {

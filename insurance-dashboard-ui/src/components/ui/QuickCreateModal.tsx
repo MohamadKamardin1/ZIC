@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query"
 import { AlertTriangle, Loader2, Plus } from "lucide-react"
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react"
 import { useAccess } from "../../lib/access"
+import { hasExplicitPermission, OPTION_CREATE_PERMISSIONS, OPTION_MANAGE_HREFS, OPTION_PARAMETER_SCREEN_LABELS, prettifyOptionEntity } from "../../lib/optionMetadata"
 import { ApiClientError, request } from "../../lib/apiClient"
 import { Modal } from "./Overlays"
 import { DateInput, DecimalInput, FieldLabel, SelectInput, TextInput, TextareaInput } from "./FormControls"
@@ -40,6 +41,8 @@ type QuickCreateModalProps = {
   entity: string
   entityLabel?: string
   permissionCode?: string
+  manageHref?: string
+  parameterScreenLabel?: string
   onClose: () => void
   onCreated: (option: QuickCreateOption) => void
 }
@@ -92,8 +95,8 @@ function initialValues(schema: QuickCreateSchema): Record<string, string | numbe
   return values
 }
 
-export function QuickCreateModal({ open, entity, entityLabel = entity, permissionCode, onClose, onCreated }: QuickCreateModalProps) {
-  const { isSuperAdmin, hasPermission } = useAccess()
+export function QuickCreateModal({ open, entity, entityLabel = entity, permissionCode, manageHref, parameterScreenLabel, onClose, onCreated }: QuickCreateModalProps) {
+  const { access } = useAccess()
   const [values, setValues] = useState<Record<string, string | number | boolean>>({})
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [submitError, setSubmitError] = useState("")
@@ -101,7 +104,9 @@ export function QuickCreateModal({ open, entity, entityLabel = entity, permissio
   const [nestedField, setNestedField] = useState<QuickCreateField | null>(null)
   const [schemaPermission, setSchemaPermission] = useState<string | undefined>(undefined)
   const resolvedPermission = permissionCode ?? schemaPermission
-  const allowed = isSuperAdmin || Boolean(resolvedPermission && hasPermission?.(resolvedPermission))
+  const allowed = hasExplicitPermission(access.permissions, resolvedPermission)
+  const resolvedManageHref = manageHref ?? OPTION_MANAGE_HREFS[entity]
+  const resolvedParameterScreenLabel = parameterScreenLabel ?? OPTION_PARAMETER_SCREEN_LABELS[entity] ?? prettifyOptionEntity(entity)
 
   const schemaQuery = useQuery({
     queryKey: ["ol-option-quick-create-schema", entity],
@@ -161,8 +166,9 @@ export function QuickCreateModal({ open, entity, entityLabel = entity, permissio
     const label = prettifyField(field.name)
     const help = field.help_text ?? field.helpText
     const nestedEntity = field.nested_entity ?? field.nestedEntity ?? field.quick_create_entity ?? field.quickCreateEntity
+    const canCreateNested = Boolean(nestedEntity && hasExplicitPermission(access.permissions, OPTION_CREATE_PERMISSIONS[nestedEntity]))
     if (type === "select" || type === "choice" || type === "relation") {
-      return <div key={field.name} className="flex items-end gap-2"><div className="min-w-0 flex-1"><SelectInput label={label} name={field.name} required={field.required} hint={help} error={fieldError} value={String(values[field.name] ?? "")} onChange={(event) => setValue(field.name, event.target.value)}><option value="">Select {label.toLowerCase()}</option>{(field.choices ?? []).map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</SelectInput></div>{nestedEntity && <button type="button" className="mb-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border border-[var(--border)] text-[var(--primary)] hover:bg-[var(--secondary)]" onClick={() => setNestedField(field)} aria-label={`Add new ${prettifyField(nestedEntity)}`} title={`Add new ${prettifyField(nestedEntity)}`}><Plus size={16} aria-hidden="true" /></button>}</div>
+      return <div key={field.name} className="flex items-end gap-2"><div className="min-w-0 flex-1"><SelectInput label={label} name={field.name} required={field.required} hint={help} error={fieldError} value={String(values[field.name] ?? "")} onChange={(event) => setValue(field.name, event.target.value)}><option value="">Select {label.toLowerCase()}</option>{(field.choices ?? []).map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</SelectInput></div>{canCreateNested && <button type="button" className="mb-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border border-[var(--border)] text-[var(--primary)] outline-none transition hover:bg-[var(--secondary)] focus-visible:border-[var(--ring)] focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--ring)_18%,transparent)] active:scale-[0.97]" onClick={() => setNestedField(field)} aria-label={`Add new ${prettifyField(nestedEntity ?? "option")}`} title={`Add new ${prettifyField(nestedEntity ?? "option")}`}><Plus size={16} aria-hidden="true" /></button>}</div>
     }
     if (type === "boolean" || type === "bool" || type === "checkbox") {
       return <label key={field.name} className="flex items-center gap-3 rounded-[10px] border px-3 py-2.5 text-sm"><input type="checkbox" checked={Boolean(values[field.name])} onChange={(event) => setValue(field.name, event.target.checked)} /> <span>{label}{field.required && <span className="ml-1 text-[var(--destructive)]" aria-label="required">*</span>}</span>{help && <span className="ml-auto text-xs text-[var(--muted-foreground)]">{help}</span>}</label>
@@ -187,7 +193,7 @@ export function QuickCreateModal({ open, entity, entityLabel = entity, permissio
       {!allowed && <div className="rounded-[10px] border border-[var(--destructive)]/30 bg-[var(--destructive)]/10 p-3 text-sm text-[var(--destructive)]" role="alert">You do not have permission to create this option.</div>}
       {allowed && schemaQuery.isLoading && <div className="flex items-center justify-center gap-2 py-8 text-sm text-[var(--muted-foreground)]" role="status"><Loader2 size={16} className="animate-spin" aria-hidden="true" /> Loading quick-create fields…</div>}
       {allowed && schemaQuery.isError && <div className="rounded-[10px] border border-[var(--destructive)]/30 bg-[var(--destructive)]/10 p-3 text-sm text-[var(--destructive)]" role="alert">Unable to load the quick-create schema.</div>}
-      {allowed && schema && <form id="quick-create-form" onSubmit={submit} className="space-y-4"><div className="grid grid-cols-1 gap-4 md:grid-cols-2">{schema.fields.map(renderField)}</div>{duplicateMessage && <div className="flex gap-2 rounded-[10px] border border-[var(--warning)]/35 bg-[var(--warning)]/10 p-3 text-sm text-[var(--foreground)]" role="alert"><AlertTriangle size={16} className="mt-0.5 shrink-0 text-[var(--warning)]" aria-hidden="true" /><span>{duplicateMessage}</span></div>}{submitError && !duplicateMessage && <p className="text-sm text-[var(--destructive)]" role="alert">{submitError}</p>}</form>}
+      {allowed && schema && <form id="quick-create-form" onSubmit={submit} className="space-y-4"><div className="flex gap-2 rounded-[10px] border border-[var(--primary)]/25 bg-[var(--primary)]/10 p-3 text-sm text-[var(--foreground)]" role="note"><span className="font-semibold">Info</span><span>This creates a minimal record. Complete full configuration in {resolvedManageHref ? <a href={resolvedManageHref} target="_blank" rel="noreferrer" className="font-semibold text-[var(--primary)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]">{resolvedParameterScreenLabel}</a> : resolvedParameterScreenLabel}.</span></div><div className="grid grid-cols-1 gap-4 md:grid-cols-2">{schema.fields.map(renderField)}</div>{duplicateMessage && <div className="flex gap-2 rounded-[10px] border border-[var(--warning)]/35 bg-[var(--warning)]/10 p-3 text-sm text-[var(--foreground)]" role="alert"><AlertTriangle size={16} className="mt-0.5 shrink-0 text-[var(--warning)]" aria-hidden="true" /><span>{duplicateMessage}</span></div>}{submitError && !duplicateMessage && <p className="text-sm text-[var(--destructive)]" role="alert">{submitError}</p>}</form>}
     </Modal>
     {nestedField && (nestedField.nested_entity ?? nestedField.nestedEntity ?? nestedField.quick_create_entity ?? nestedField.quickCreateEntity) && <QuickCreateModal open={Boolean(nestedField)} entity={nestedField.nested_entity ?? nestedField.nestedEntity ?? nestedField.quick_create_entity ?? nestedField.quickCreateEntity ?? ""} entityLabel={nestedLabel} onClose={() => setNestedField(null)} onCreated={(option) => { setValue(nestedField.name, option.value); setNestedField(null) }} />}
   </>

@@ -23,7 +23,11 @@ vi.mock("../../lib/apiClient", () => ({
 
 vi.mock("../../lib/access", () => ({
   useAccess: () => ({
-    access: { visibleModules: [], permissions: [], groups: [] },
+    access: { visibleModules: [], permissions: [
+      { module: "system_parameters", action: "manage" },
+      { module: "ol_parameters", action: "create" },
+      { module: "partners", action: "create" },
+    ], groups: [] },
     isLoading: false,
     isError: false,
     isSuperAdmin: true,
