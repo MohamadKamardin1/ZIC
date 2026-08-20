@@ -209,6 +209,17 @@ class OLOptionQuickCreateTests(TestCase):
                     self.assertIn("choices", field)
                     self.assertIn("default", field)
 
+    def test_investment_fund_schema_advertises_nested_fund_type_creation(self):
+        response = self.client.get("/api/v1/ol/options/investment-funds/quick-create-schema/")
+        self.assertEqual(response.status_code, 200, response.data)
+        fields = {field["name"]: field for field in response.data["data"]["fields"]}
+        self.assertEqual(fields["fund_type"]["nested_entity"], "investment-fund-types")
+
+        product_response = self.client.get("/api/v1/ol/options/products/quick-create-schema/")
+        self.assertEqual(product_response.status_code, 200, product_response.data)
+        product_fields = {field["name"]: field for field in product_response.data["data"]["fields"]}
+        self.assertEqual(product_fields["plan_type"]["nested_entity"], "plan-types")
+
     def test_quick_create_returns_selectable_labeled_object_and_audit_record(self):
         response = self.client.post(
             "/api/v1/ol/options/identity-types/quick-create/",

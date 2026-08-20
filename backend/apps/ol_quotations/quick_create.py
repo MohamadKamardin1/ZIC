@@ -46,15 +46,19 @@ class FieldSpec:
     required: bool = True
     choices: tuple[tuple[str, str], ...] = ()
     default: Any = None
+    nested_entity: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "name": self.name,
             "type": self.type,
             "required": self.required,
             "choices": [{"value": value, "label": label} for value, label in self.choices],
             "default": self.default,
         }
+        if self.nested_entity:
+            payload["nested_entity"] = self.nested_entity
+        return payload
 
 
 @dataclass(frozen=True)
@@ -332,8 +336,8 @@ def _specs() -> dict[str, QuickCreateSpec]:
         ),
         "plan-types": QuickCreateSpec("plan-types", "ol_parameters.create", (*_model_fields(OLPlanType), FieldSpec("plan_category", "select", False, (("INDIVIDUAL", "Individual"), ("GROUP", "Group"), ("CREDIT", "Credit")), "INDIVIDUAL")), _create_plan_type),
         "investment-fund-types": QuickCreateSpec("investment-fund-types", "ol_parameters.create", (*_model_fields(OLInvestmentFundType), FieldSpec("risk_profile", "select", False, _enum_choices(OLInvestmentFundRiskProfile), OLInvestmentFundRiskProfile.MODERATE)), _create_fund_type),
-        "investment-funds": QuickCreateSpec("investment-funds", "ol_parameters.create", (*_model_fields(OLInvestmentFund), FieldSpec("fund_type", "select", True, ()), FieldSpec("currency", "select", False, _dynamic_choices("currencies"), "TZS"), FieldSpec("valuation_frequency", "select", False, _enum_choices(OLValuationFrequency), OLValuationFrequency.DAILY)), _create_fund),
-        "products": QuickCreateSpec("products", "ol_parameters.create", (*_model_fields(OLProduct), FieldSpec("plan_type", "select", True, ()), FieldSpec("insurance_class", "select", False, _enum_choices(OLInsuranceClass), OLInsuranceClass.INDIVIDUAL), FieldSpec("allow_riders", "boolean", False, (), False), FieldSpec("allow_loans", "boolean", False, (), False), FieldSpec("allow_withdrawals", "boolean", False, (), False), FieldSpec("allow_surrender", "boolean", False, (), True), FieldSpec("allow_paidup", "boolean", False, (), False), FieldSpec("allow_bonus", "boolean", False, (), False), FieldSpec("investment_linked", "boolean", False, (), False)), _create_product),
+        "investment-funds": QuickCreateSpec("investment-funds", "ol_parameters.create", (*_model_fields(OLInvestmentFund), FieldSpec("fund_type", "select", True, (), None, "investment-fund-types"), FieldSpec("currency", "select", False, _dynamic_choices("currencies"), "TZS"), FieldSpec("valuation_frequency", "select", False, _enum_choices(OLValuationFrequency), OLValuationFrequency.DAILY)), _create_fund),
+        "products": QuickCreateSpec("products", "ol_parameters.create", (*_model_fields(OLProduct), FieldSpec("plan_type", "select", True, (), None, "plan-types"), FieldSpec("insurance_class", "select", False, _enum_choices(OLInsuranceClass), OLInsuranceClass.INDIVIDUAL), FieldSpec("allow_riders", "boolean", False, (), False), FieldSpec("allow_loans", "boolean", False, (), False), FieldSpec("allow_withdrawals", "boolean", False, (), False), FieldSpec("allow_surrender", "boolean", False, (), True), FieldSpec("allow_paidup", "boolean", False, (), False), FieldSpec("allow_bonus", "boolean", False, (), False), FieldSpec("investment_linked", "boolean", False, (), False)), _create_product),
         "riders": QuickCreateSpec("riders", "ol_parameters.create", (*_model_fields(OLRiderSetup), FieldSpec("rider_category", "select", True, _enum_choices(OLRiderCategory)), FieldSpec("benefit_type", "select", True, _enum_choices(OLRiderBenefitType)), FieldSpec("calculation_basis", "select", False, _enum_choices(OLRiderCalculationBasis), OLRiderCalculationBasis.SUM_ASSURED)), _create_rider),
         "benefit-types-catalog": QuickCreateSpec("benefit-types-catalog", "ol_parameters.create", (*_model_fields(OLBeneficialType), FieldSpec("category", "select", False, _enum_choices(OLBeneficialTypeCategory), OLBeneficialTypeCategory.BENEFIT), FieldSpec("calculation_basis", required=False, default="PERCENTAGE"), FieldSpec("default_ratio", "decimal", False, (), 0)), _create_benefit_catalog),
     }
