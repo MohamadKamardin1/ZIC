@@ -39,15 +39,24 @@ function mergeOptions(...lists: FilterOption[][]): FilterOption[] {
   })
 }
 
+function camelCase(value: string): string {
+  return value.replace(/_([a-z])/g, (_match, character: string) => character.toUpperCase())
+}
+
 function readFieldChoices(payload: unknown, field: string): FilterOption[] {
   const record = asRecord(unwrap(payload))
   const actions = asRecord(record.actions)
-  const post = asRecord(actions.POST)
-  const fieldMeta = asRecord(post[field])
-  const choices = parseChoiceList(fieldMeta.choices)
-  if (choices.length) return choices
-  const topLevel = asRecord(record[field])
-  return parseChoiceList(topLevel.choices)
+  const post = asRecord(actions.POST ?? actions.post)
+  const candidates = [field, camelCase(field)]
+  for (const candidate of candidates) {
+    const fieldMeta = asRecord(post[candidate])
+    const choices = parseChoiceList(fieldMeta.choices)
+    if (choices.length) return choices
+    const topLevel = asRecord(record[candidate])
+    const topLevelChoices = parseChoiceList(topLevel.choices)
+    if (topLevelChoices.length) return topLevelChoices
+  }
+  return []
 }
 
 export function distinctRecordOptions(rows: UnknownRecord[], field: string): FilterOption[] {
@@ -62,23 +71,25 @@ export function distinctRecordOptions(rows: UnknownRecord[], field: string): Fil
 export function useRemoteChoices(endpoint: string, fields: string[], rows: UnknownRecord[] = []) {
   const [remote, setRemote] = useState<RemoteChoiceMap>({})
   const [loading, setLoading] = useState(true)
-  const rowSignature = useMemo(() => rows.map((row) => fields.map((field) => String(row[field] ?? "")).join(":" )).join("|"), [fields, rows])
+  const fieldSignature = fields.join("|")
+  const rowSignature = useMemo(() => rows.map((row) => fields.map((field) => String(row[field] ?? "")).join(":" )).join("|"), [fieldSignature, rows])
 
   useEffect(() => {
     let active = true
+    const requestedFields = fieldSignature ? fieldSignature.split("|") : []
     setLoading(true)
     request<unknown>(endpoint, { method: "OPTIONS" }).then((payload) => {
       if (!active) return
       const next: RemoteChoiceMap = {}
-      fields.forEach((field) => { next[field] = readFieldChoices(payload, field) })
+      requestedFields.forEach((field) => { next[field] = readFieldChoices(payload, field) })
       setRemote(next)
     }).catch(() => {
       if (active) setRemote({})
     }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [endpoint, fields])
+  }, [endpoint, fieldSignature])
 
-  const choices = useMemo(() => Object.fromEntries(fields.map((field) => [field, mergeOptions(remote[field] ?? [], distinctRecordOptions(rows, field))])), [fields, remote, rowSignature, rows])
+  const choices = useMemo(() => Object.fromEntries(fields.map((field) => [field, mergeOptions(remote[field] ?? [], distinctRecordOptions(rows, field))])), [fieldSignature, remote, rowSignature, rows])
   return { choices, loading }
 }
 

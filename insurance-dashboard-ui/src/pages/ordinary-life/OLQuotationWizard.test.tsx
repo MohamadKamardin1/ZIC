@@ -61,6 +61,27 @@ const plans = [
     min_term_years: 5,
     max_term_years: 20,
   },
+  {
+    id: "plan-2",
+    plan_id: "plan-2",
+    product_version_id: "version-1",
+    product_code: "OL001",
+    product_name: "Family Protection",
+    code: "TERM-10",
+    name: "Ten Year Term",
+    description: "Short-term protection plan.",
+    badges: [],
+    with_profit: false,
+    joint_life: false,
+    mortgage: false,
+    personal_accident: false,
+    premium_waiver: false,
+    payment_frequencies: ["ANNUAL"],
+    min_entry_age: 18,
+    max_entry_age: 65,
+    min_term_years: 5,
+    max_term_years: 10,
+  },
 ]
 
 let templateRows: Array<{ sequence: number; description: string; rate_percent: string; paid_up_rate: string | null }> = []
@@ -186,14 +207,16 @@ describe("OL quotation wizard", () => {
     expect(screen.getByText("35 years")).toBeInTheDocument()
   })
 
-  it("updates the header count when plans are multi-selected", async () => {
+  it("selects only the clicked plan and updates the header count", async () => {
     render(<OLQuotationWizard />)
-    const planCard = await screen.findByRole("button", { name: /TERM-20/ })
+    const selectedCard = await screen.findByRole("button", { name: /TERM-20/ })
+    const otherCard = await screen.findByRole("button", { name: /TERM-10/ })
 
-    fireEvent.click(planCard)
+    fireEvent.click(selectedCard)
 
     expect(screen.getByText("1 Plan", { selector: "span" })).toBeInTheDocument()
-    expect(planCard).toHaveAttribute("aria-pressed", "true")
+    expect(selectedCard).toHaveAttribute("aria-pressed", "true")
+    expect(otherCard).toHaveAttribute("aria-pressed", "false")
   })
 
   async function reachMemberCoverageStep() {

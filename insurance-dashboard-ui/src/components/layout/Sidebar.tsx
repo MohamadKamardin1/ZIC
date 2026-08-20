@@ -174,6 +174,9 @@ const NAV: NavItem[] = [
 
 function isActivePath(path: string | undefined, current: string): boolean {
   if (!path) return false
+  // The OL Default Setup route is the parent landing page, not an active
+  // wildcard for its sibling parameter screens.
+  if (path === "/ordinary-life/parameters") return current === path
   return current === path || current.startsWith(path + "/")
 }
 
@@ -277,9 +280,7 @@ export function Sidebar({ open }: { open: boolean }) {
       <nav className="flex-1 overflow-y-auto px-3 py-4">
         <ul className="flex flex-col gap-1">
           {visibleNav.map((item) => {
-            const active = item.path
-              ? location.pathname === item.path || location.pathname.startsWith(item.path + "/")
-              : false
+            const active = isActivePath(item.path, location.pathname)
             const Icon = item.icon
             const isExpanded = expanded.includes(item.label)
 

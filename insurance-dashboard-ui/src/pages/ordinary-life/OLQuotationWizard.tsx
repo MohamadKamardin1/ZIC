@@ -455,6 +455,41 @@ type ApiPayload = {
   state?: MemberCoverageState | InstallmentState | InvestmentFundState | RiderState
 }
 
+function apiKeyToSnakeCase(key: string): string {
+  return key.replace(/[A-Z]/g, (character) => `_${character.toLowerCase()}`)
+}
+
+function normalizeApiValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(normalizeApiValue)
+  if (!value || typeof value !== "object") return value
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, nested]) => [apiKeyToSnakeCase(key), normalizeApiValue(nested)]))
+}
+
+async function requestNormalized<T>(path: string, options: Parameters<typeof request>[1] = {}): Promise<T> {
+  return normalizeApiValue(await request<unknown>(path, options)) as T
+}
+
+function normalizePlanCard(value: unknown): PlanCard | null {
+  if (!value || typeof value !== "object") return null
+  const record = value as Record<string, unknown>
+  const planId = record.plan_id ?? record.id ?? record.planId
+  const productVersionId = record.product_version_id ?? record.productVersionId ?? record.product_version ?? ""
+  if (planId === undefined || planId === null || planId === "") return null
+  return {
+    ...(record as unknown as PlanCard),
+    id: String(record.id ?? planId),
+    plan_id: String(planId),
+    product_version_id: String(productVersionId),
+    product_code: String(record.product_code ?? record.productCode ?? ""),
+    product_name: String(record.product_name ?? record.productName ?? ""),
+    code: String(record.code ?? record.plan_code ?? record.planCode ?? planId),
+    name: String(record.name ?? record.plan_name ?? record.planName ?? record.code ?? planId),
+    description: record.description as string | null | undefined,
+    badges: Array.isArray(record.badges) ? record.badges.map(String) : undefined,
+    plan_type_badges: Array.isArray(record.plan_type_badges) ? record.plan_type_badges.map(String) : undefined,
+  }
+}
+
 function asChoices(value: unknown): Choice[] {
   if (!Array.isArray(value)) return []
   return value.map((item) => {
@@ -733,7 +768,7 @@ export default function OLQuotationWizard() {
   const [resumeNotice, setResumeNotice] = useState(false)
 
   const loadQuotation = useCallback(async (id: string) => {
-    const payload = await request<Quotation>(`${QUOTATION_PREFIX}${id}/`)
+    const payload = await requestNormalized<Quotation>(`${QUOTATION_PREFIX}${id}/`)
     setQuotation(payload)
     setQuotationId(id)
     setPersonal(initialPersonal(payload))
@@ -747,7 +782,8 @@ export default function OLQuotationWizard() {
 
   const createQuotation = useCallback(async () => {
     const saved = readDraftSnapshot()
-    if (!routeId && saved?.quotationId) {
+    const explicitResume = new URLSearchParams(window.location.search).get("resume") === "1"
+    if (!routeId && explicitResume && saved?.quotationId) {
       try {
         await loadQuotation(saved.quotationId)
         if (saved.personal) setPersonal(saved.personal)
@@ -763,7 +799,7 @@ export default function OLQuotationWizard() {
       await loadQuotation(routeId)
       return
     }
-    const payload = await request<Quotation>(QUOTATION_PREFIX, { method: "POST", body: JSON.stringify({ currency: "TZS" }) })
+    const payload = await requestNormalized<Quotation>(QUOTATION_PREFIX, { method: "POST", body: JSON.stringify({ currency: "TZS" }) })
     await loadQuotation(payload.id)
   }, [loadQuotation, routeId])
 
@@ -779,7 +815,7 @@ export default function OLQuotationWizard() {
   }, [createQuotation, toast])
 
   const loadPersonalOptions = useCallback(async (id: string) => {
-    const payload = await request<ApiPayload>(`${QUOTATION_PREFIX}${id}/personal-details-options/`)
+    const payload = await requestNormalized<ApiPayload>(`${QUOTATION_PREFIX}${id}/personal-details-options/`)
     setPersonalOptions({ identityTypes: asChoices(payload.identity_types), genders: asChoices(payload.genders), smokerStatuses: asChoices(payload.smoker_statuses), locations: asChoices(payload.locations), agents: asChoices(payload.agents) })
   }, [])
 
@@ -789,8 +825,10 @@ export default function OLQuotationWizard() {
     try {
       const query = new URLSearchParams({ quotation_id: quotationId, limit: "200" })
       if (planSearch.trim()) query.set("search", planSearch.trim())
-      const payload = await request<ApiPayload>(`${PLAN_SEARCH_ENDPOINT}?${query.toString()}`)
-      setPlans(payload.plans ?? [])
+      const payload = await requestNormalized<ApiPayload>(`${PLAN_SEARCH_ENDPOINT}?${query.toString()}`)
+      const nextPlans = (payload.plans ?? []).map(normalizePlanCard).filter((plan): plan is PlanCard => Boolean(plan))
+      setPlans(nextPlans)
+      setSelectedPlanIds((current) => current.filter((planId) => nextPlans.some((plan) => plan.plan_id === planId)))
     } catch (error) {
       toast({ tone: "danger", title: "Unable to load plans", message: parseApiError(error).message })
     } finally { setPlansLoading(false) }
@@ -802,7 +840,7 @@ export default function OLQuotationWizard() {
   const loadPlanOptions = useCallback(async (planId?: string) => {
     if (!quotationId) return
     try {
-      const payload = await request<ApiPayload>(`${QUOTATION_PREFIX}${quotationId}/plan-options/${planId ? `?plan_id=${encodeURIComponent(planId)}` : ""}`)
+      const payload = await requestNormalized<ApiPayload>(`${QUOTATION_PREFIX}${quotationId}/plan-options/${planId ? `?plan_id=${encodeURIComponent(planId)}` : ""}`)
       setPlanOptions({ payment_frequencies: asChoices(payload.payment_frequencies), quote_bases: asChoices(payload.quote_bases), premium_factors: asChoices(payload.premium_factors), plan_features: payload.plan_features })
     } catch (error) {
       toast({ tone: "danger", title: "Unable to load plan options", message: parseApiError(error).message })
@@ -812,7 +850,7 @@ export default function OLQuotationWizard() {
   const loadMemberCoverage = useCallback(async () => {
     if (!quotationId) return
     try {
-      const payload = await request<MemberCoverageState>(`${QUOTATION_PREFIX}${quotationId}/members/`)
+      const payload = await requestNormalized<MemberCoverageState>(`${QUOTATION_PREFIX}${quotationId}/members/`)
       setMemberState(payload)
     } catch (error) {
       toast({ tone: "danger", title: "Unable to load member coverage", message: parseApiError(error).message })
@@ -822,7 +860,7 @@ export default function OLQuotationWizard() {
   const loadInstallments = useCallback(async () => {
     if (!quotationId) return
     try {
-      const payload = await request<InstallmentState>(`${QUOTATION_PREFIX}${quotationId}/installments/`)
+      const payload = await requestNormalized<InstallmentState>(`${QUOTATION_PREFIX}${quotationId}/installments/`)
       setInstallmentState(payload)
     } catch (error) {
       toast({ tone: "danger", title: "Unable to load installments", message: parseApiError(error).message })
@@ -837,7 +875,7 @@ export default function OLQuotationWizard() {
     setInstallmentModalOpen(true)
     setInstallmentTemplateLoading(true)
     try {
-      const payload = await request<InstallmentTemplate>(`${QUOTATION_PREFIX}${quotationId}/installments/${plan.plan_configuration_id}/template/`)
+      const payload = await requestNormalized<InstallmentTemplate>(`${QUOTATION_PREFIX}${quotationId}/installments/${plan.plan_configuration_id}/template/`)
       setInstallmentTemplate(payload)
     } catch (error) {
       setInstallmentErrors(parseApiError(error).fieldErrors)
@@ -857,7 +895,7 @@ export default function OLQuotationWizard() {
     setSaving(true)
     setInstallmentErrors({})
     try {
-      await request(`${QUOTATION_PREFIX}${quotationId}/installments/${selectedInstallmentPlan.plan_configuration_id}/configure/`, { method: "POST", body: JSON.stringify(payload) })
+      await requestNormalized(`${QUOTATION_PREFIX}${quotationId}/installments/${selectedInstallmentPlan.plan_configuration_id}/configure/`, { method: "POST", body: JSON.stringify(payload) })
       await loadInstallments()
       setCompletedSteps((current) => new Set(current).add(3))
       toast({ tone: "success", title: "Installments configured" })
@@ -873,7 +911,7 @@ export default function OLQuotationWizard() {
   const loadInvestmentFunds = useCallback(async () => {
     if (!quotationId) return
     try {
-      const payload = await request<InvestmentFundState>(`${QUOTATION_PREFIX}${quotationId}/investment-funds/`)
+      const payload = await requestNormalized<InvestmentFundState>(`${QUOTATION_PREFIX}${quotationId}/investment-funds/`)
       setFundState(payload)
       const nextAllocations: Record<string, FundAllocation[]> = {}
       for (const row of payload.plan_rows ?? []) nextAllocations[row.plan_configuration_id] = row.allocations ?? []
@@ -881,7 +919,7 @@ export default function OLQuotationWizard() {
       const applicable = (payload.plan_rows ?? []).filter((row) => row.investment_linked)
       await Promise.all(applicable.map(async (row) => {
         try {
-          const options = await request<InvestmentFundOptions>(`${QUOTATION_PREFIX}${quotationId}/investment-funds/options/?plan_config_id=${encodeURIComponent(row.plan_configuration_id)}`)
+          const options = await requestNormalized<InvestmentFundOptions>(`${QUOTATION_PREFIX}${quotationId}/investment-funds/options/?plan_config_id=${encodeURIComponent(row.plan_configuration_id)}`)
           setFundOptions((current) => ({ ...current, [row.plan_configuration_id]: options }))
         } catch (error) {
           toast({ tone: "danger", title: "Unable to load investment funds", message: parseApiError(error).message })
@@ -895,7 +933,7 @@ export default function OLQuotationWizard() {
   const loadRiders = useCallback(async () => {
     if (!quotationId) return
     try {
-      const payload = await request<ApiPayload>(`${QUOTATION_PREFIX}${quotationId}/riders/`)
+      const payload = await requestNormalized<ApiPayload>(`${QUOTATION_PREFIX}${quotationId}/riders/`)
       const state = (payload.state as RiderState | undefined) ?? { plan_rows: payload.plan_rows ?? [], available_benefit_types: payload.available_benefit_types ?? [], requires_configuration: payload.requires_configuration ?? false, wizard_complete: payload.wizard_complete ?? false }
       setRiderState(state)
       const nextSelections: Record<string, RiderSelection[]> = {}
@@ -903,7 +941,7 @@ export default function OLQuotationWizard() {
       setRiderSelections(nextSelections)
       await Promise.all((state.plan_rows ?? []).map(async (row) => {
         try {
-          const options = await request<RiderOptions>(`${QUOTATION_PREFIX}${quotationId}/riders/options/?plan_config_id=${encodeURIComponent(row.plan_configuration_id)}`)
+          const options = await requestNormalized<RiderOptions>(`${QUOTATION_PREFIX}${quotationId}/riders/options/?plan_config_id=${encodeURIComponent(row.plan_configuration_id)}`)
           setRiderOptions((current) => ({ ...current, [row.plan_configuration_id]: options }))
         } catch (error) {
           toast({ tone: "danger", title: "Unable to load rider options", message: parseApiError(error).message })
@@ -921,7 +959,7 @@ export default function OLQuotationWizard() {
     setSaving(true)
     setRiderErrors({})
     try {
-      await request(`${QUOTATION_PREFIX}${quotationId}/riders/`, { method: "POST", body: JSON.stringify({ selections: payloadSelections }) })
+      await requestNormalized(`${QUOTATION_PREFIX}${quotationId}/riders/`, { method: "POST", body: JSON.stringify({ selections: payloadSelections }) })
       setRiderSelections(nextSelections)
       await loadRiders()
       setCompletedSteps((current) => new Set(current).add(5))
@@ -940,7 +978,7 @@ export default function OLQuotationWizard() {
     if (!quotationId) return
     setFinancialLoading(true)
     try {
-      const payload = await request<ApiPayload>(`${QUOTATION_PREFIX}${quotationId}/financial-details/`)
+      const payload = await requestNormalized<ApiPayload>(`${QUOTATION_PREFIX}${quotationId}/financial-details/`)
       setFinancialSummary(payload.summary ?? (payload.total_premium != null ? payload as unknown as FinancialDetails : null))
     } catch (error) {
       toast({ tone: "danger", title: "Unable to load financial details", message: parseApiError(error).message })
@@ -951,7 +989,7 @@ export default function OLQuotationWizard() {
     if (!quotationId) return false
     setCalculating(true)
     try {
-      const payload = await request<FinancialDetails>(`${QUOTATION_PREFIX}${quotationId}/calculate/`, { method: "POST", body: JSON.stringify({}) })
+      const payload = await requestNormalized<FinancialDetails>(`${QUOTATION_PREFIX}${quotationId}/calculate/`, { method: "POST", body: JSON.stringify({}) })
       setFinancialSummary(payload)
       setCompletedSteps((current) => new Set(current).add(6))
       setInvalidSteps((current) => { const next = new Set(current); next.delete(6); return next })
@@ -971,7 +1009,7 @@ export default function OLQuotationWizard() {
     setSaving(true)
     setFinalizeErrors({})
     try {
-      await request(`${QUOTATION_PREFIX}${quotationId}/finalize/`, { method: "POST", body: JSON.stringify({}) })
+      await requestNormalized(`${QUOTATION_PREFIX}${quotationId}/finalize/`, { method: "POST", body: JSON.stringify({}) })
       setQuotation((current) => current ? { ...current, status: "FINALIZED" } : current)
       toast({ tone: "success", title: "Quotation finalized" })
       return true
@@ -1002,7 +1040,7 @@ export default function OLQuotationWizard() {
     setSaving(true)
     setFundErrors({})
     try {
-      await request(`${QUOTATION_PREFIX}${quotationId}/investment-funds/`, { method: "POST", body: JSON.stringify({ allocations: Object.values(fundAllocations).flat() }) })
+      await requestNormalized(`${QUOTATION_PREFIX}${quotationId}/investment-funds/`, { method: "POST", body: JSON.stringify({ allocations: Object.values(fundAllocations).flat() }) })
       await loadInvestmentFunds()
       setCompletedSteps((current) => new Set(current).add(4))
       toast({ tone: "success", title: "Investment fund allocations saved" })
@@ -1030,7 +1068,7 @@ export default function OLQuotationWizard() {
     setMemberErrors({})
     try {
       const path = memberId ? `${QUOTATION_PREFIX}${quotationId}/members/${memberId}/` : `${QUOTATION_PREFIX}${quotationId}/members/`
-      await request(path, { method: memberId ? "PATCH" : "POST", body: JSON.stringify(member) })
+      await requestNormalized(path, { method: memberId ? "PATCH" : "POST", body: JSON.stringify(member) })
       await loadMemberCoverage()
       setCompletedSteps((current) => new Set(current).add(2))
       toast({ tone: "success", title: memberId ? "Member updated" : "Member added" })
@@ -1046,7 +1084,7 @@ export default function OLQuotationWizard() {
   const removeMember = useCallback(async (memberId: string) => {
     if (!quotationId) return
     try {
-      await request(`${QUOTATION_PREFIX}${quotationId}/members/${memberId}/`, { method: "DELETE" })
+      await requestNormalized(`${QUOTATION_PREFIX}${quotationId}/members/${memberId}/`, { method: "DELETE" })
       await loadMemberCoverage()
       toast({ tone: "success", title: "Member removed" })
     } catch (error) {
@@ -1077,7 +1115,7 @@ export default function OLQuotationWizard() {
     setSaving(true)
     setPersonalErrors({})
     try {
-      const payload = await request<ApiPayload>(`${QUOTATION_PREFIX}${quotationId}/personal-details/`, { method: "POST", body: JSON.stringify({ ...personal, location_id: personal.location_id, agent_id: personal.agent_id }) })
+      const payload = await requestNormalized<ApiPayload>(`${QUOTATION_PREFIX}${quotationId}/personal-details/`, { method: "POST", body: JSON.stringify({ ...personal, location_id: personal.location_id, agent_id: personal.agent_id }) })
       const updated = payload as unknown as Quotation
       setQuotation((current) => ({ ...current, ...updated, id: quotationId }))
       setCompletedSteps((current) => new Set(current).add(0))
@@ -1108,7 +1146,7 @@ export default function OLQuotationWizard() {
         const existing = configurations.find((config) => configurationPlanId(config) === planId)
         return { plan_id: planId, product_version_id: plan?.product_version_id, ...(existing ? { term_years: existing.term_years, payment_period_years: existing.payment_period_years, premium_frequency: existing.premium_frequency, quote_basis: existing.quote_basis, estimated_maturity_value: existing.estimated_maturity_value, premium_factor: existing.premium_factor, joint_life: existing.joint_life, mortgage: existing.mortgage, personal_accident: existing.personal_accident, premium_waiver: existing.premium_waiver, estimated_bonus_rate: existing.estimated_bonus_rate } : {}) }
       })
-      const payload = await request<ApiPayload>(`${QUOTATION_PREFIX}${quotationId}/plans/`, { method: "POST", body: JSON.stringify({ plans: selections }) })
+      const payload = await requestNormalized<ApiPayload>(`${QUOTATION_PREFIX}${quotationId}/plans/`, { method: "POST", body: JSON.stringify({ plans: selections }) })
       setConfigurations(payload.configurations ?? [])
       setQuotation((current) => current && payload.quotation ? { ...current, ...payload.quotation } : current)
       setCompletedSteps((current) => new Set(current).add(1))
@@ -1134,7 +1172,7 @@ export default function OLQuotationWizard() {
     setPlanErrors((current) => { const next = { ...current }; if (next[configuration.id]) { const errors = { ...next[configuration.id] }; delete errors[field]; next[configuration.id] = errors } return next })
     if (activeStep !== 1) return
     try {
-      const payload = await request<ApiPayload>(`${QUOTATION_PREFIX}${quotationId}/plans/${configuration.id}/`, { method: "PATCH", body: JSON.stringify({ [field]: parsedValue }) })
+      const payload = await requestNormalized<ApiPayload>(`${QUOTATION_PREFIX}${quotationId}/plans/${configuration.id}/`, { method: "PATCH", body: JSON.stringify({ [field]: parsedValue }) })
       if (payload.configuration) setConfigurations((current) => current.map((item) => item.id === configuration.id ? payload.configuration as PlanConfiguration : item))
     } catch (error) {
       const parsed = parseApiError(error)
