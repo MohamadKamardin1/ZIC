@@ -604,7 +604,7 @@ function StepHeader({ eyebrow, title, description }: { eyebrow: string; title: s
 }
 
 function PersonalDetailsStep({ form, options, errors, age, onChange }: { form: PersonalForm; options: { identityTypes: Choice[]; genders: Choice[]; smokerStatuses: Choice[]; locations: Choice[]; agents: Choice[] }; errors: ApiFieldErrors; age: number | null; onChange: (field: keyof PersonalForm, value: string) => void }) {
-  return <div className="surface-card overflow-hidden"><StepHeader eyebrow="Step 1 of 7" title="Personal Details" description="Capture the prospect information used to calculate eligibility, partner matching, and quotation rating." /><div className="space-y-6 p-5"><FormGrid columns={2}>
+  return <div className="surface-card overflow-visible"><StepHeader eyebrow="Step 1 of 7" title="Personal Details" description="Capture the prospect information used to calculate eligibility, partner matching, and quotation rating." /><div className="space-y-6 p-5"><FormGrid columns={2}>
     <TextInput label="Quote Name" name="quote_name" required value={form.quote_name} onChange={(event) => onChange("quote_name", event.target.value)} error={fieldError(errors, "quote_name")} placeholder="Enter quote name" />
     <DateInput label="Quote Date" name="quote_date" required value={form.quote_date} onChange={(event) => onChange("quote_date", event.target.value)} error={fieldError(errors, "quote_date")} />
     <ChoiceSelect label="Identity Type" name="identity_type" required value={form.identity_type} options={options.identityTypes} onChange={(value) => onChange("identity_type", value)} error={fieldError(errors, "identity_type")} />
