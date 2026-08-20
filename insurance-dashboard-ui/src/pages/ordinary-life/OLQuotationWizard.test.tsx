@@ -98,6 +98,7 @@ const plans = [
 
 let templateRows: Array<{ sequence: number; description: string; rate_percent: string; paid_up_rate: string | null }> = []
 let productCreatedScenario = false
+let memberCoverageScenario = false
 let investmentFundScenario = false
 let riderScenario = false
 let financialScenario = false
@@ -129,6 +130,7 @@ beforeEach(() => {
   toastMock.mockReset()
   templateRows = []
   productCreatedScenario = false
+  memberCoverageScenario = false
   investmentFundScenario = false
   riderScenario = false
   financialScenario = false
@@ -151,10 +153,21 @@ beforeEach(() => {
         { name: "name", type: "string", required: true },
       ],
     }
+    if (path.includes("/api/v1/ol/options/member-relations/quick-create-schema/")) return { permission: "system_parameters.manage", fields: [{ name: "code", type: "string", required: true }, { name: "name", type: "string", required: true }] }
+    if (path.includes("/api/v1/ol/options/cover-types/quick-create-schema/")) return { permission: "system_parameters.manage", fields: [{ name: "code", type: "string", required: true }, { name: "name", type: "string", required: true }] }
+    if (path.includes("/api/v1/ol/options/payment-modes/quick-create-schema/")) return { permission: "system_parameters.manage", fields: [{ name: "code", type: "string", required: true }, { name: "name", type: "string", required: true }] }
+    if (path.includes("/api/v1/ol/options/investment-funds/quick-create-schema/")) return { permission: "ol_parameters.create", fields: [{ name: "code", type: "string", required: true }, { name: "name", type: "string", required: true }, { name: "fund_type", type: "select", required: true, choices: [{ value: "BALANCED", label: "Balanced" }], nested_entity: "investment-fund-types" }] }
+    if (path.includes("/api/v1/ol/options/investment-fund-types/quick-create-schema/")) return { permission: "ol_parameters.create", fields: [{ name: "code", type: "string", required: true }, { name: "name", type: "string", required: true }]
+    }
     if (path.includes("/api/v1/ol/options/products/quick-create/") && options?.method === "POST") {
       productCreatedScenario = true
       return { value: "plan-created", label: "New Product", meta: { product_code: "OLNEW", product_name: "New Product" } }
     }
+    if (path.includes("/api/v1/ol/options/member-relations/quick-create/") && options?.method === "POST") return { value: "SIBLING", label: "Sibling" }
+    if (path.includes("/api/v1/ol/options/cover-types/quick-create/") && options?.method === "POST") return { value: "DEPENDENT", label: "Dependent Cover" }
+    if (path.includes("/api/v1/ol/options/payment-modes/quick-create/") && options?.method === "POST") return { value: "QUARTERLY", label: "Quarterly" }
+    if (path.includes("/api/v1/ol/options/investment-fund-types/quick-create/") && options?.method === "POST") return { value: "BALANCED", label: "Balanced" }
+    if (path.includes("/api/v1/ol/options/investment-funds/quick-create/") && options?.method === "POST") return { value: "fund-created", label: "New Fund", meta: { code: "FUND-NEW", name: "New Fund" } }
     if (path.startsWith("/api/v1/ol/options/")) {
       const entity = path.split("/api/v1/ol/options/")[1]?.split("/")[0]
       const optionsByEntity: Record<string, Array<{ value: string; label: string }>> = {
@@ -164,6 +177,11 @@ beforeEach(() => {
         "payment-frequencies": [{ value: "ANNUAL", label: "Annual" }, { value: "MONTHLY", label: "Monthly" }],
         "quote-bases": [{ value: "SUM_ASSURED", label: "Sum Assured" }],
         "premium-factors": [{ value: "NONE", label: "None" }],
+        "member-relations": [{ value: "CHILD", label: "Child" }, { value: "SPOUSE", label: "Spouse" }],
+        "cover-types": [{ value: "DEPENDENT", label: "Dependent Cover" }],
+        "payment-modes": [{ value: "ANNUAL", label: "Annual" }, { value: "MONTHLY", label: "Monthly" }],
+        "investment-funds": [{ value: "fund-1", label: "FUND-1 — Balanced Growth" }],
+        "investment-fund-types": [{ value: "BALANCED", label: "Balanced" }],
         products: plans.map((plan) => ({ value: plan.plan_id, label: plan.name })),
       }
       return { items: optionsByEntity[entity ?? ""] ?? [] }
@@ -179,7 +197,15 @@ beforeEach(() => {
       premium_factors: [{ value: "NONE", label: "None" }],
       plan_features: { joint_life: true, mortgage: false, personal_accident: false, premium_waiver: false },
     }
-    if (path.endsWith("/members/")) return {
+    if (path.endsWith("/members/")) return memberCoverageScenario ? {
+      principal_member: { id: "member-principal", full_name: "Asha Applicant", relation: "POLICY_HOLDER", date_of_birth: "1990-01-01", age_at_quote: 36, gender: "MALE", sum_assured: null, is_principal: true },
+      members: [],
+      additional_members: [],
+      requires_additional_coverage: true,
+      info_banner: null,
+      allowed_configurations: [{ relation: "CHILD", cover_type: "DEPENDENT", min_age: 1, max_age: 17, waiting_period_days: 30, benefit_limit: "5000.00", coverage_basis: "SUM_ASSURED" }],
+      wizard_step_complete: false,
+    } : {
       principal_member: { id: "member-principal", full_name: "Asha Applicant", relation: "POLICY_HOLDER", date_of_birth: "1990-01-01", age_at_quote: 36, gender: "MALE", sum_assured: null, is_principal: true },
       members: [],
       additional_members: [],
@@ -349,6 +375,76 @@ describe("OL quotation wizard", () => {
     expect(await screen.findByText("Selected plans do not require additional member coverage configuration. Principal member is configured automatically.")).toBeInTheDocument()
     expect(screen.getByText("Principal Member (Policy Holder)")).toBeInTheDocument()
     expect(screen.getByText("Asha Applicant")).toBeInTheDocument()
+  })
+
+  it("quick-creates and auto-selects a member relation and cover type", async () => {
+    memberCoverageScenario = true
+    await reachMemberCoverageStep()
+    expect(requestMock.mock.calls.map(([path]) => path)).toContain("/api/v1/ol-quotations/quotations/quote-1/members/")
+    fireEvent.click(await screen.findByRole("button", { name: "Add member" }))
+    const memberDialog = await screen.findByRole("dialog")
+    expect(within(memberDialog).getByRole("button", { name: "Add new Member Relation" })).toBeInTheDocument()
+
+    fireEvent.click(within(memberDialog).getByRole("button", { name: "Add new Member Relation" }))
+    const relationDialog = (await screen.findAllByRole("dialog")).at(-1)
+    expect(relationDialog).toBeTruthy()
+    const relationFields = await within(relationDialog!).findAllByRole("textbox")
+    fireEvent.change(relationFields[0], { target: { value: "SIBLING" } })
+    fireEvent.change(relationFields[1], { target: { value: "Sibling" } })
+    fireEvent.click(within(relationDialog!).getByRole("button", { name: "Create option" }))
+    await waitFor(() => expect(requestMock.mock.calls.some(([path, options]) => String(path).includes("member-relations/quick-create/") && options?.method === "POST")).toBe(true))
+
+    await waitFor(() => expect(document.getElementById("member_relation")).toHaveTextContent("Sibling"))
+    expect(document.getElementById("member_cover_type")).toHaveTextContent("Dependent Cover")
+  })
+
+  it("quick-creates and auto-selects a payment mode inside Configure Installments", async () => {
+    await reachMemberCoverageStep()
+    fireEvent.click(screen.getByRole("button", { name: "Installments" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Configure" }))
+    const dialog = await screen.findByRole("dialog")
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add new Payment Mode" }))
+    const quickCreateDialog = (await screen.findAllByRole("dialog")).at(-1)
+    expect(quickCreateDialog).toBeTruthy()
+    const fields = await within(quickCreateDialog!).findAllByRole("textbox")
+    fireEvent.change(fields[0], { target: { value: "QUARTERLY" } })
+    fireEvent.change(fields[1], { target: { value: "Quarterly" } })
+    fireEvent.click(within(quickCreateDialog!).getByRole("button", { name: "Create option" }))
+    await waitFor(() => expect(requestMock.mock.calls.some(([path, options]) => String(path).includes("payment-modes/quick-create/") && options?.method === "POST")).toBe(true))
+
+    await waitFor(() => expect(document.getElementById("installment_payment_mode")).toHaveTextContent("Quarterly"))
+  })
+
+  it("quick-creates an investment fund with nested fund type and auto-selects it", async () => {
+    investmentFundScenario = true
+    await reachMemberCoverageStep()
+    fireEvent.click(screen.getByRole("button", { name: "Investment Funds" }))
+    expect(await screen.findByText("Investment-linked Plan")).toBeInTheDocument()
+    const fundSelect = document.getElementById("fund_config-1_0")
+    expect(fundSelect).toBeTruthy()
+    fireEvent.click(fundSelect!)
+    expect(await screen.findByRole("option", { name: /Balanced Growth/ })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Add new investment fund" }))
+
+    const fundDialog = (await screen.findAllByRole("dialog")).at(-1)
+    expect(fundDialog).toBeTruthy()
+    await waitFor(() => expect(requestMock.mock.calls.map(([path]) => path)).toContain("/api/v1/ol/options/investment-funds/quick-create-schema/"))
+    fireEvent.click(await screen.findByRole("button", { name: "Add new Investment Fund Types" }))
+    const typeDialog = (await screen.findAllByRole("dialog")).at(-1)
+    expect(typeDialog).toBeTruthy()
+    const typeFields = await within(typeDialog!).findAllByRole("textbox")
+    fireEvent.change(typeFields[0], { target: { value: "BALANCED" } })
+    fireEvent.change(typeFields[1], { target: { value: "Balanced" } })
+    fireEvent.click(within(typeDialog!).getByRole("button", { name: "Create option" }))
+
+    const refreshedFundDialog = (await screen.findAllByRole("dialog")).at(-1)
+    expect(refreshedFundDialog).toBeTruthy()
+    const fundFields = await within(refreshedFundDialog!).findAllByRole("textbox")
+    fireEvent.change(fundFields[0], { target: { value: "FUND-NEW" } })
+    fireEvent.change(fundFields[1], { target: { value: "New Fund" } })
+    fireEvent.click(within(refreshedFundDialog!).getByRole("button", { name: "Create option" }))
+
+    await waitFor(() => expect(document.getElementById("fund_config-1_0")).toHaveTextContent("New Fund"))
   })
 
   it("opens Configure Installments with inherited computed fields and validates rate totals", async () => {
