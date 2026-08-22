@@ -50,7 +50,6 @@ import type { Step } from "../../components/shared/Stepper"
 interface PartnerRoleConfig {
   branches: string[]
   region: string
-  location: string | null
   shareDataExternally: boolean
 }
 
@@ -412,7 +411,6 @@ export default function ApplicationForm() {
         rc[pt.partnerType] = {
           branches: pt.branch ? [pt.branch] : [],
           region: pt.region || "",
-          location: pt.location || null,
           shareDataExternally: pt.shareDataExternally,
         }
       })
@@ -592,11 +590,10 @@ export default function ApplicationForm() {
       await deleteApplicationPartnerType(appId, pt.id)
     }
     for (const ptId of toAdd) {
-      const cfg = roleConfigs[ptId] ?? { branches: [], region: "", location: null, shareDataExternally: false }
+      const cfg = roleConfigs[ptId] ?? { branches: [], region: "", shareDataExternally: false }
       await createApplicationPartnerType(appId, {
         partner_type: ptId,
         branches: cfg.branches.length > 0 ? cfg.branches : undefined,
-        location: cfg.location || null,
         region: cfg.region,
         share_data_externally: cfg.shareDataExternally,
       })
@@ -1080,7 +1077,7 @@ function StepPartnerRoles({
       setSelectedPartnerTypes([...selectedPartnerTypes, value])
       setRoleConfigs({
         ...roleConfigs,
-        [value]: { branches: [], region: "", location: null, shareDataExternally: false },
+        [value]: { branches: [], region: "", shareDataExternally: false },
       })
     }
   }
@@ -1095,7 +1092,6 @@ function StepPartnerRoles({
   const ptLabel = (id: string) => systemPartnerTypeList.options.find((o) => o.value === id)?.label ?? id
 
   const branchOptions = choices?.branches ?? []
-  const locationOptions = choices?.locations ?? []
 
   return (
     <>
@@ -1132,10 +1128,7 @@ function StepPartnerRoles({
         {selectedPartnerTypes.length > 0 && (
           <div className="space-y-4 mb-6">
             {selectedPartnerTypes.map((ptId) => {
-              const cfg = roleConfigs[ptId] ?? { branches: [], region: "", location: null, shareDataExternally: false }
-              const locOpts = locationOptions.filter(
-                (l) => cfg.branches.length === 0 || cfg.branches.includes(l.branchId),
-              )
+              const cfg = roleConfigs[ptId] ?? { branches: [], region: "", shareDataExternally: false }
               return (
                 <div key={ptId} className="rounded-lg border border-[#d9d9d9] bg-white p-4">
                   <div className="flex items-center justify-between mb-3">
@@ -1153,7 +1146,7 @@ function StepPartnerRoles({
                     <BranchSelect
                       selected={cfg.branches}
                       options={branchOptions}
-                      onChange={(vals) => updateConfig(ptId, { branches: vals, location: vals.length === 0 ? null : cfg.location })}
+                      onChange={(vals) => updateConfig(ptId, { branches: vals })}
                     />
                     {/* Region */}
                     <SelectField
@@ -1162,14 +1155,6 @@ function StepPartnerRoles({
                       onChange={(v) => updateConfig(ptId, { region: v })}
                       options={choices?.regions ?? []}
                       placeholder="Select region"
-                    />
-                    {/* Location */}
-                    <SelectField
-                      label="Location"
-                      value={cfg.location ?? ""}
-                      onChange={(v) => updateConfig(ptId, { location: v || null })}
-                      options={locOpts}
-                      placeholder={cfg.branches.length === 0 ? "Select a branch first" : "Select location"}
                     />
                     {/* Share Data */}
                     <SelectField

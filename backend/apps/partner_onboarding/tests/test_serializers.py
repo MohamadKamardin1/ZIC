@@ -106,6 +106,18 @@ class PartnerApplicationCreateSerializerTest(TestCase):
         serializer = PartnerApplicationCreateSerializer(data=data)
         self.assertTrue(serializer.is_valid(), serializer.errors)
 
+    def test_draft_allows_blank_contact_details(self):
+        data = individual_data(email="", mobile_number="")
+        serializer = PartnerApplicationCreateSerializer(data=data)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+    def test_partner_role_assignment_is_region_only(self):
+        from apps.partner_onboarding.serializers import ApplicationPartnerTypeCreateSerializer
+
+        serializer = ApplicationPartnerTypeCreateSerializer()
+        self.assertNotIn("location", serializer.fields)
+        self.assertIn("region", serializer.fields)
+
     def test_individual_missing_first_name_allowed_for_draft(self):
         data = individual_data(first_name="")
         serializer = PartnerApplicationCreateSerializer(data=data)

@@ -932,7 +932,6 @@ export async function listApplicationPartnerTypes(applicationId: string): Promis
 export async function createApplicationPartnerType(applicationId: string, data: {
   partner_type: string
   branches?: string[]
-  location?: string | null
   region?: string
   share_data_externally?: boolean
 }): Promise<ApplicationPartnerType[]> {

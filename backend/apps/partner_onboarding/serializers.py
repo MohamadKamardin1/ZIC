@@ -42,21 +42,19 @@ class LocationSerializer(serializers.ModelSerializer):
 class ApplicationPartnerTypeSerializer(serializers.ModelSerializer):
     partner_type_name = serializers.ReadOnlyField(source="partner_type.name")
     branch_name = serializers.ReadOnlyField(source="branch.name")
-    location_name = serializers.ReadOnlyField(source="location.name")
 
     class Meta:
         model = ApplicationPartnerType
         fields = [
             "id", "application", "partner_type", "partner_type_name",
-            "branch", "branch_name", "location", "location_name",
-            "region", "share_data_externally", "kyc_status", "created_at",
+            "branch", "branch_name", "region", "share_data_externally",
+            "kyc_status", "created_at",
         ]
 
 
 class ApplicationPartnerTypeCreateSerializer(serializers.Serializer):
     partner_type = serializers.UUIDField()
     branches = serializers.ListField(child=serializers.UUIDField(), required=False, default=list)
-    location = serializers.UUIDField(required=False, allow_null=True, default=None)
     region = serializers.CharField(required=False, allow_blank=True, default="")
     share_data_externally = serializers.BooleanField(default=False)
 
@@ -75,34 +73,10 @@ class ApplicationPartnerTypeCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError("One or more branches are invalid.")
         return list(existing)
 
-    def validate_location(self, value):
-        if not value:
-            return None
-        try:
-            return Location.objects.select_related("branch").get(id=value, is_active=True)
-        except Location.DoesNotExist:
-            raise serializers.ValidationError("Invalid location.")
-
-    def validate(self, attrs):
-        branches = attrs.get("branches", [])
-        location = attrs.get("location")
-        if location and branches and len(branches) > 1:
-            raise serializers.ValidationError(
-                {"location": "A location can only be selected when one branch is selected."}
-            )
-        if location and branches and location.branch_id != branches[0].id:
-            raise serializers.ValidationError(
-                {"location": "The selected location must belong to the selected branch."}
-            )
-        if location and not branches:
-            attrs["branches"] = [location.branch]
-        return attrs
-
     def create(self, validated_data):
         application = self.context["application"]
         partner_type = validated_data["partner_type"]
         branches = validated_data.get("branches", [])
-        location = validated_data.get("location")
         region = validated_data.get("region", "")
         share = validated_data.get("share_data_externally", False)
 
@@ -113,7 +87,6 @@ class ApplicationPartnerTypeCreateSerializer(serializers.Serializer):
                     application=application,
                     partner_type=partner_type,
                     branch=branch,
-                    location=location if location and branch.pk == location.branch_id else None,
                     region=region,
                     share_data_externally=share,
                 )
@@ -122,7 +95,6 @@ class ApplicationPartnerTypeCreateSerializer(serializers.Serializer):
             apt = ApplicationPartnerType.objects.create(
                 application=application,
                 partner_type=partner_type,
-                location=location,
                 region=region,
                 share_data_externally=share,
             )
@@ -369,6 +341,11 @@ class PartnerApplicationDetailSerializer(serializers.ModelSerializer):
 # ---------------------------------------------------------------------------
 
 class PartnerApplicationCreateSerializer(serializers.ModelSerializer):
+    # Drafts may be created before contact details are completed. Final submission
+    # validation remains responsible for enforcing the configured contact rules.
+    email = serializers.EmailField(required=False, allow_blank=True, default="")
+    mobile_number = serializers.CharField(required=False, allow_blank=True, default="")
+
     class Meta:
         model = PartnerApplication
         fields = [
@@ -401,6 +378,8 @@ class PartnerApplicationCreateSerializer(serializers.ModelSerializer):
                 )
 
     def validate_email(self, value):
+        if not value:
+            return value
         from apps.partners.models import Partner
         if Partner.objects.filter(email=value).exists():
             raise serializers.ValidationError(
