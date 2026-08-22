@@ -8,7 +8,7 @@
 - [x] Prompt 6 — Commitment Payment and Reversal Modals
 - [x] Prompt 7 — Commitment Lifecycle Action Modals
 - [x] Prompt 8 — Overdue Processing and Notification Center UI
-- [ ] Prompt 9 — Commitments Dashboard KPIs and Portal View
+- [x] Prompt 9 — Commitments Dashboard KPIs and Portal View
 - [ ] Prompt 10 — [pending prompt text]
 
 > **Note on fidelity:** prompts 2–10 were not included in the pasted series message for this session. They will be appended `EXACTLY as provided` when the user supplies them, then executed strictly one at a time. Prompt 1 below is saved verbatim.
