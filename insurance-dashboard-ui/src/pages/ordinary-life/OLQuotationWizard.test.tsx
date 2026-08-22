@@ -76,6 +76,8 @@ const plans = [
     max_entry_age: 65,
     min_term_years: 5,
     max_term_years: 20,
+    minimum_sum_assured: "1000.00",
+    maximum_sum_assured: "10000000.00",
   },
   {
     id: "plan-2",
@@ -97,6 +99,8 @@ const plans = [
     max_entry_age: 65,
     min_term_years: 5,
     max_term_years: 10,
+    minimum_sum_assured: "1000.00",
+    maximum_sum_assured: "10000000.00",
   },
 ]
 
@@ -107,6 +111,7 @@ let investmentFundScenario = false
 let riderScenario = false
 let financialScenario = false
 let finalizeBlocked = false
+let planSelectionError = false
 
 const configuration = {
   id: "config-1",
@@ -118,6 +123,7 @@ const configuration = {
   premium_frequency: "ANNUAL",
   quote_basis: "SUM_ASSURED",
   estimated_maturity_value: "100000.00",
+  base_sum_assured: "1000.00",
   premium_factor: "NONE",
   joint_life: false,
   mortgage: false,
@@ -139,6 +145,7 @@ beforeEach(() => {
   riderScenario = false
   financialScenario = false
   finalizeBlocked = false
+  planSelectionError = false
   requestMock.mockImplementation(async (path: string, options?: RequestInit) => {
     const draftResponse = financialScenario && finalizeBlocked ? { ...quotation, wizard_step_completion: { "1_personal_details": true, "2_plan_and_sub_products": true, "3_member_coverage": true, "4_installments": true, "5_investment_funds": true, "6_riders_and_benefits": true, "7_financial_details": true } } : quotation
     if (path === "/api/v1/ol-quotations/quotations/" && options?.method === "POST") return draftResponse
@@ -204,6 +211,27 @@ beforeEach(() => {
       payment_frequencies: [{ value: "ANNUAL", label: "Annual" }, { value: "MONTHLY", label: "Monthly" }],
       quote_bases: [{ value: "SUM_ASSURED", label: "Sum Assured" }],
       premium_factors: [{ value: "NONE", label: "None" }],
+      constraints: {
+        plan_code: "TERM-20",
+        plan_name: "Twenty Year Term",
+        currency: "TZS",
+        min_entry_age: 18,
+        max_entry_age: 65,
+        min_term_years: 5,
+        max_term_years: 20,
+        minimum_sum_assured: "1000.00",
+        maximum_sum_assured: "10000000.00",
+        allowed_payment_frequencies: [{ value: "ANNUAL", label: "Annual" }, { value: "MONTHLY", label: "Monthly" }],
+        default_term_years: 5,
+        default_payment_period_years: 5,
+        default_payment_frequency: "ANNUAL",
+        default_quote_basis: "SUM_ASSURED",
+        default_premium_factor: "NONE",
+        default_base_sum_assured: "1000.00",
+        default_estimated_maturity_value: "1000.00",
+        default_estimated_bonus_rate: "0",
+        feature_availability: { joint_life: true, mortgage: false, personal_accident: false, premium_waiver: false },
+      },
       plan_features: { joint_life: true, mortgage: false, personal_accident: false, premium_waiver: false },
     }
     if (path.endsWith("/members/")) return memberCoverageScenario ? {
@@ -256,7 +284,10 @@ beforeEach(() => {
     if (path.endsWith("/calculate/") && options?.method === "POST") return { quotation_id: "quote-1", total_sum_assured: "100000", total_premium: riderScenario ? "13500" : "12000", total_rider_premium: riderScenario ? "3000" : "1500", total_benefit_premium: "0", base_premium: "10000", total_loading: "500", total_discount: "0", total_tax: "0", installment_charge: "0", estimated_maturity_value: "250000", currency: "TZS", calculated_at: "2026-08-19T10:00:00Z", recalculation_required: false, projections: [{ policy_year: 1, premiums_paid: "13500", estimated_bonus: "500", surrender_value: "2000", paid_up_value: "4000", estimated_maturity_value: "250000" }], installment_payouts: [{ sequence: 1, payout_date: "2046-08-19", description: "Maturity payout", rate_percent: "100", payout_amount: "250000" }] }
     if (path.endsWith("/finalize/") && options?.method === "POST") { if (finalizeBlocked) throw new MockApiClientError("Complete all required steps before finalizing.", { riders: ["Riders & Benefits is incomplete."], financial_details: ["Calculate financial details before finalizing."] }); return { quotation: { ...quotation, status: "FINALIZED" }, status: "FINALIZED" } }
     if (path.includes("/personal-details/") && options?.method === "POST") return { ...quotation, quote_name: "Asha quote" }
-    if (path.endsWith("/plans/") && options?.method === "POST") return { quotation, configurations: [configuration], selected_plan_count: 1, wizard_step_complete: true }
+    if (path.endsWith("/plans/") && options?.method === "POST") {
+      if (planSelectionError) throw new MockApiClientError("Plan selection needs attention.", { term_years: ["Choose a policy term from 5 to 20 years for TERM-20 — Twenty Year Term. You entered 3 years. Enter a value within this range."] })
+      return { quotation, configurations: [configuration], selected_plan_count: 1, wizard_step_complete: true }
+    }
     if (path.includes("/plans/config-1/") && options?.method === "PATCH") throw new MockApiClientError("Term is outside the configured range.", { term_years: ["Policy term must be between 5 and 20 years."] })
     return {}
   })
@@ -328,6 +359,67 @@ describe("OL quotation wizard", () => {
     expect(await screen.findByText("Section 1")).toBeInTheDocument()
     expect(screen.getAllByText("Twenty Year Term").length).toBeGreaterThanOrEqual(2)
     expect(screen.getByLabelText(/Policy Term/)).toBeInTheDocument()
+  })
+
+  it("shows plan constraints, includes Base Sum Assured, and submits complete defaults", async () => {
+    renderWizard()
+    await screen.findByLabelText(/Quote Name/)
+    fireEvent.change(screen.getByLabelText(/Quote Name/), { target: { value: "Asha quote" } })
+    fireEvent.click(screen.getByRole("button", { name: /^Identity Type/ }))
+    fireEvent.click(await screen.findByRole("option", { name: "National Identification Number" }))
+    fireEvent.change(screen.getByLabelText(/Identity Number/), { target: { value: "NIN-001" } })
+    fireEvent.change(screen.getByLabelText(/Gender/), { target: { value: "MALE" } })
+    fireEvent.change(screen.getByLabelText(/Smoker/), { target: { value: "NON_SMOKER" } })
+    fireEvent.change(screen.getByLabelText(/Address/), { target: { value: "Dar es Salaam" } })
+    fireEvent.change(screen.getByLabelText(/Date of Birth/), { target: { value: "1990-01-01" } })
+    fireEvent.click(screen.getByRole("button", { name: /^Location/ }))
+    fireEvent.click(await screen.findByRole("option", { name: "Dar es Salaam" }))
+    fireEvent.click(screen.getByRole("button", { name: /^Agent/ }))
+    fireEvent.click(await screen.findByRole("option", { name: "Asha Agent" }))
+    fireEvent.click(screen.getByRole("button", { name: /Next/ }))
+    await waitFor(() => expect(screen.getByRole("button", { name: "Plan & Sub-Products" })).toHaveAttribute("aria-current", "step"))
+    fireEvent.click(await screen.findByRole("button", { name: /TERM-20/ }))
+
+    expect(await screen.findByLabelText(/Base Sum Assured/)).toHaveValue(1000)
+    expect(screen.getByText(/Policy term: 5–20 years/)).toBeInTheDocument()
+    expect(screen.getByText(/Base sum assured: TZS 1,000\.00 to TZS 10,000,000\.00/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: /Next/ }))
+    await waitFor(() => expect(screen.getByRole("button", { name: "Member Coverage" })).toHaveAttribute("aria-current", "step"))
+    const planCall = requestMock.mock.calls.find(([path, options]) => String(path).endsWith("/plans/") && options?.method === "POST")
+    expect(planCall).toBeTruthy()
+    const submitted = JSON.parse(String(planCall?.[1]?.body)).plans[0]
+    expect(submitted).toEqual(expect.objectContaining({ term_years: 5, payment_period_years: 5, premium_frequency: "ANNUAL", quote_basis: "SUM_ASSURED", premium_factor: "NONE" }))
+    expect(Number(submitted.base_sum_assured)).toBe(1000)
+    expect(Number(submitted.estimated_maturity_value)).toBe(1000)
+  })
+
+  it("routes POST selection errors to the selected plan fields and complete banner", async () => {
+    renderWizard()
+    await screen.findByLabelText(/Quote Name/)
+    fireEvent.change(screen.getByLabelText(/Quote Name/), { target: { value: "Asha quote" } })
+    fireEvent.click(screen.getByRole("button", { name: /^Identity Type/ }))
+    fireEvent.click(await screen.findByRole("option", { name: "National Identification Number" }))
+    fireEvent.change(screen.getByLabelText(/Identity Number/), { target: { value: "NIN-001" } })
+    fireEvent.change(screen.getByLabelText(/Gender/), { target: { value: "MALE" } })
+    fireEvent.change(screen.getByLabelText(/Smoker/), { target: { value: "NON_SMOKER" } })
+    fireEvent.change(screen.getByLabelText(/Address/), { target: { value: "Dar es Salaam" } })
+    fireEvent.change(screen.getByLabelText(/Date of Birth/), { target: { value: "1990-01-01" } })
+    fireEvent.click(screen.getByRole("button", { name: /^Location/ }))
+    fireEvent.click(await screen.findByRole("option", { name: "Dar es Salaam" }))
+    fireEvent.click(screen.getByRole("button", { name: /^Agent/ }))
+    fireEvent.click(await screen.findByRole("option", { name: "Asha Agent" }))
+    fireEvent.click(screen.getByRole("button", { name: /Next/ }))
+    await waitFor(() => expect(screen.getByRole("button", { name: "Plan & Sub-Products" })).toHaveAttribute("aria-current", "step"))
+    fireEvent.click(await screen.findByRole("button", { name: /TERM-20/ }))
+    const term = await screen.findByLabelText(/Policy Term \(Years\)/)
+    fireEvent.change(term, { target: { value: "3" } })
+    planSelectionError = true
+    fireEvent.click(screen.getByRole("button", { name: /Next/ }))
+
+    expect((await screen.findAllByText(/Choose a policy term from 5 to 20 years/)).length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByRole("alert").some((alert) => /Policy term — Choose a policy term from 5 to 20 years/.test(alert.textContent ?? ""))).toBe(true)
+    expect(screen.getAllByText(/You entered 3 years/).length).toBeGreaterThanOrEqual(2)
   })
 
   it("creates a product inline, refreshes plans, and auto-selects the new plan", async () => {

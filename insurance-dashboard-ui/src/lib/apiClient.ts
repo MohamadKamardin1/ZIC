@@ -62,13 +62,28 @@ function createCorrelationId(): string {
   return `zic-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
-function collectFieldErrors(value: unknown): Record<string, string[]> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {}
+function collectFieldErrors(value: unknown, prefix = ""): Record<string, string[]> {
+  if (value === null || value === undefined) return {}
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return prefix ? { [prefix]: [String(value)] } : {}
+  }
+  if (Array.isArray(value)) {
+    return value.reduce<Record<string, string[]>>((result, item, index) => {
+      const isNestedRecord = item !== null && typeof item === "object" && !Array.isArray(item)
+      const nestedPrefix = isNestedRecord ? (prefix ? `${prefix}.${index}` : String(index)) : prefix
+      const nested = collectFieldErrors(item, nestedPrefix)
+      Object.entries(nested).forEach(([key, messages]) => { result[key] = [...(result[key] ?? []), ...messages] })
+      return result
+    }, {})
+  }
+  if (typeof value !== "object") return {}
   const errors: Record<string, string[]> = {}
   Object.entries(value as Record<string, unknown>).forEach(([field, detail]) => {
-    if (Array.isArray(detail)) errors[field] = detail.map(String)
-    else if (typeof detail === "string") errors[field] = [detail]
-    else if (detail && typeof detail === "object") errors[field] = [JSON.stringify(detail)]
+    const key = prefix ? `${prefix}.${field}` : field
+    const nested = collectFieldErrors(detail, key)
+    Object.entries(nested).forEach(([nestedKey, messages]) => {
+      errors[nestedKey] = [...(errors[nestedKey] ?? []), ...messages]
+    })
   })
   return errors
 }
@@ -77,18 +92,28 @@ export async function normalizeResponseError(response: Response): Promise<ApiCli
   const correlationId = response.headers.get("X-Correlation-ID") ?? response.headers.get("X-Request-ID") ?? undefined
   const body = await response.json().catch(() => null)
   const bodyRecord = body && typeof body === "object" && !Array.isArray(body) ? body as Record<string, unknown> : {}
+  const envelopeError = bodyRecord.error && typeof bodyRecord.error === "object" && !Array.isArray(bodyRecord.error)
+    ? bodyRecord.error as Record<string, unknown>
+    : {}
   const payload = ("data" in bodyRecord ? bodyRecord.data : body) as unknown
   const record = payload && typeof payload === "object" && !Array.isArray(payload) ? payload as Record<string, unknown> : {}
-  const rawFieldErrors = bodyRecord.errors ?? bodyRecord.fieldErrors ?? bodyRecord.field_errors ?? record.errors ?? record.fieldErrors ?? record.field_errors ?? record
+  const details = envelopeError.details ?? bodyRecord.details ?? bodyRecord.errors ?? bodyRecord.fieldErrors ?? bodyRecord.field_errors ?? record.errors ?? record.fieldErrors ?? record.field_errors
+  const rawFieldErrors = details ?? (Object.keys(record).length ? record : undefined)
   const fieldErrors = collectFieldErrors(rawFieldErrors)
-  const message = typeof bodyRecord.message === "string"
-    ? bodyRecord.message
-    : typeof record.detail === "string"
-      ? record.detail
-      : typeof record.message === "string"
-        ? record.message
-        : Object.values(fieldErrors)[0]?.[0] ?? `Request failed (${response.status}).`
-  const code = typeof bodyRecord.code === "string" ? bodyRecord.code : typeof record.code === "string" ? record.code : `HTTP_${response.status}`
+  const message = typeof envelopeError.message === "string"
+    ? envelopeError.message
+    : typeof bodyRecord.message === "string"
+      ? bodyRecord.message
+      : typeof record.detail === "string"
+        ? record.detail
+        : typeof record.message === "string"
+          ? record.message
+          : Object.values(fieldErrors).flat()[0] ?? `Request failed (${response.status}).`
+  const code = typeof envelopeError.code === "string"
+    ? envelopeError.code
+    : typeof bodyRecord.code === "string"
+      ? bodyRecord.code
+      : typeof record.code === "string" ? record.code : `HTTP_${response.status}`
   return new ApiClientError({ status: response.status, code, message, fieldErrors, correlationId, details: body })
 }
 

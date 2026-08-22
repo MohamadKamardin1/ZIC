@@ -17,6 +17,34 @@ describe("api client", () => {
     })
   })
 
+  it("unwraps nested global error.details validation fields", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({
+        success: false,
+        status_code: 400,
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Plan selection needs attention.",
+          details: {
+            term_years: ["Choose a policy term from 5 to 20 years. You entered 3 years."],
+            plans: [{ base_sum_assured: ["Enter a base sum assured within the configured range."] }],
+          },
+        },
+      }),
+      { status: 400, headers: { "Content-Type": "application/json" } },
+    )))
+
+    await expect(request("/api/v1/ol-quotations/quotations/quote-1/plans/", { method: "POST", body: JSON.stringify({}) })).rejects.toMatchObject({
+      status: 400,
+      code: "VALIDATION_ERROR",
+      message: "Plan selection needs attention.",
+      fieldErrors: {
+        term_years: ["Choose a policy term from 5 to 20 years. You entered 3 years."],
+        "plans.0.base_sum_assured": ["Enter a base sum assured within the configured range."],
+      },
+    })
+  })
+
   it("preserves top-level quick-create errors when data is null", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
       JSON.stringify({

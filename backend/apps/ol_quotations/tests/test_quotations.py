@@ -880,6 +880,112 @@ class OLQuotationAPITests(TestCase):
         )
         self.assertTrue(options["plan_features"]["joint_life"])
         self.assertEqual(options["selected_plan_id"], str(self.plan.pk))
+        constraints = options["constraints"]
+        self.assertEqual(constraints["plan_code"], "TERM-20")
+        self.assertEqual(constraints["min_term_years"], 5)
+        self.assertEqual(constraints["max_term_years"], 20)
+        self.assertEqual(constraints["minimum_sum_assured"], "1000.00")
+        self.assertEqual(constraints["maximum_sum_assured"], "10000000.00")
+        self.assertEqual(constraints["default_term_years"], 5)
+        self.assertEqual(constraints["default_payment_period_years"], 5)
+        self.assertEqual(constraints["default_base_sum_assured"], "1000.00")
+        self.assertEqual(constraints["default_estimated_maturity_value"], "1000.00")
+
+    def test_minimal_plan_selection_receives_complete_valid_defaults(self):
+        draft = self.create_draft()
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/plans/",
+            {"plans": [{"plan_id": str(self.plan.pk)}]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        configuration = response.data["data"]["configurations"][0]
+        self.assertEqual(str(configuration["plan"]), str(self.plan.pk))
+        self.assertEqual(str(configuration["product_version"]), str(self.product_version.pk))
+        self.assertEqual(configuration["term_years"], 5)
+        self.assertEqual(configuration["payment_period_years"], 5)
+        self.assertEqual(configuration["premium_frequency"], "ANNUAL")
+        self.assertEqual(configuration["quote_basis"], "SUM_ASSURED")
+        self.assertEqual(configuration["premium_factor"], "NONE")
+        self.assertEqual(configuration["base_sum_assured"], "1000.00")
+        self.assertEqual(configuration["estimated_maturity_value"], "1000.00")
+        self.assertEqual(configuration["estimated_bonus_rate"], "2.500000")
+
+    def test_plan_selection_errors_explain_range_entered_value_and_next_action(self):
+        draft = self.create_draft()
+        payload = self.plan_selection_payload(
+            plans=[{
+                **self.plan_selection_payload()["plans"][0],
+                "term_years": 25,
+            }]
+        )
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/plans/",
+            payload,
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        details = response.data["error"]["details"]
+        message = details["term_years"]
+        self.assertIn("TERM-20 — Twenty Year Term", message)
+        self.assertIn("5 to 20", message)
+        self.assertIn("25", message)
+        self.assertIn("Enter", message)
+
+    def test_plan_selection_base_sum_assured_error_teaches_configured_range(self):
+        draft = self.create_draft()
+        payload = self.plan_selection_payload(
+            plans=[{
+                **self.plan_selection_payload()["plans"][0],
+                "base_sum_assured": "500.00",
+            }]
+        )
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/plans/",
+            payload,
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        message = response.data["error"]["details"]["base_sum_assured"]
+        self.assertIn("TERM-20 — Twenty Year Term", message)
+        self.assertIn("TZS 1,000.00", message)
+        self.assertIn("TZS 10,000,000.00", message)
+        self.assertIn("TZS 500.00", message)
+        self.assertIn("Increase", message)
+
+    def test_plan_selection_payment_period_and_frequency_errors_are_instructional(self):
+        draft = self.create_draft()
+        payment_response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/plans/",
+            self.plan_selection_payload(
+                plans=[{
+                    **self.plan_selection_payload()["plans"][0],
+                    "payment_period_years": 21,
+                }]
+            ),
+            format="json",
+        )
+        self.assertEqual(payment_response.status_code, 400, payment_response.data)
+        payment_message = payment_response.data["error"]["details"]["payment_period_years"]
+        self.assertIn("between 1 and 20 years", payment_message)
+        self.assertIn("Enter a whole number", payment_message)
+
+        frequency_response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/plans/",
+            self.plan_selection_payload(
+                plans=[{
+                    **self.plan_selection_payload()["plans"][0],
+                    "premium_frequency": "WEEKLY",
+                }]
+            ),
+            format="json",
+        )
+        self.assertEqual(frequency_response.status_code, 400, frequency_response.data)
+        frequency_message = frequency_response.data["error"]["details"]["premium_frequency"]
+        self.assertIn("Annual", frequency_message)
+        self.assertIn("Monthly", frequency_message)
+        self.assertIn("WEEKLY", frequency_message)
+        self.assertIn("Choose", frequency_message)
 
     def test_investment_linked_plan_search_exposes_parameter_driven_flag(self):
         self.product.investment_linked = True

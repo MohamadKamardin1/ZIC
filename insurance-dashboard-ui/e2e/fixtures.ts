@@ -74,7 +74,7 @@ export async function mockQuotationApi(page: Page, overrides: Partial<typeof quo
   const versions = [{ id: "version-1", version_number: 1, status: "CURRENT", created_by: "E2E Superadmin", created_at: "2026-08-19T10:00:00Z", change_reason: "Initial quotation" }]
   const documents = [{ id: "document-1", source_version_number: 1, template_code: "OL_QUOTATION", template_version: "3", document_type: "Quotation PDF", status: "GENERATED", generated_at: "2026-08-19T10:05:00Z", pdf_url: "/media/quotation.pdf" }]
 
-  await page.route("**/api/v1/ol-quotations/quotations/**", async (route) => {
+  await page.route("**/api/v1/ol*/quotations/**", async (route) => {
     const url = new URL(route.request().url())
     const path = url.pathname
     const method = route.request().method()
@@ -202,11 +202,11 @@ export async function mockDropdownQuickCreateApi(page: Page) {
     await route.fulfill({ json: { data: { count: auditEntries.length, results: auditEntries, next: null, previous: null } } })
   })
 
-  await page.route("**/api/v1/ol-quotations/quotations/**", async (route) => {
+  await page.route("**/api/v1/ol*/quotations/**", async (route) => {
     const url = new URL(route.request().url())
     const path = url.pathname
     const method = route.request().method()
-    let response: unknown = {}
+    let response: unknown
     if (path.endsWith("/personal-details-options/")) response = { identity_types: [], genders: [{ value: "MALE", label: "Male" }, { value: "FEMALE", label: "Female" }], smoker_statuses: [{ value: "NON_SMOKER", label: "Non-smoker" }], locations: [], agents: [{ value: "agent-1", label: "E2E Agent" }] }
     else if (path.includes("/plans/search/")) response = { count: productCreated ? 1 : 0, plans: productCreated ? [{ id: "product-e2e", plan_id: "product-e2e", product_version_id: "product-e2e-version", code: "E2E-DROPDOWN", name: "E2E Dropdown Product", description: "Created from the quotation wizard.", badges: ["WITH_PROFIT"], with_profit: true, joint_life: false, payment_frequencies: ["ANNUAL"], min_entry_age: 18, max_entry_age: 65, min_term_years: 5, max_term_years: 20 }] : [] }
     else if (path.endsWith("/plan-options/") || path.includes("/plan-options?")) response = { payment_frequencies: [{ value: "ANNUAL", label: "Annual" }], quote_bases: [{ value: "SUM_ASSURED", label: "Sum Assured" }], premium_factors: [{ value: "NONE", label: "None" }], plan_features: {} }

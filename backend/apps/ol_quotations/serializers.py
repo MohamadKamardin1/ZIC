@@ -179,6 +179,11 @@ class OLQuotationPlanSelectionSerializer(serializers.Serializer):
         child=serializers.DictField(),
         allow_empty=False,
         required=True,
+        error_messages={
+            "required": "Select at least one plan before continuing.",
+            "empty": "Select at least one plan before continuing.",
+            "invalid": "Each selected plan must be sent as a configuration object.",
+        },
     )
 
     def validate_plans(self, value):
@@ -188,23 +193,23 @@ class OLQuotationPlanSelectionSerializer(serializers.Serializer):
             if not isinstance(item, dict):
                 raise serializers.ValidationError({index: "Each selection must be an object."})
             if not item.get("plan_id"):
-                raise serializers.ValidationError({index: "plan_id is required for every selected plan."})
+                raise serializers.ValidationError({f"plan_{index}.plan_id": "Choose a plan for this section before continuing."})
         return value
 
 
 class OLQuotationPlanConfigurationPatchSerializer(serializers.Serializer):
-    term_years = serializers.IntegerField(required=False, min_value=1)
-    payment_period_years = serializers.IntegerField(required=False, min_value=1, allow_null=True)
-    premium_frequency = serializers.CharField(required=False, allow_blank=False)
-    quote_basis = serializers.CharField(required=False, allow_blank=False)
-    estimated_maturity_value = serializers.DecimalField(required=False, max_digits=18, decimal_places=2, min_value=0, allow_null=True)
-    premium_factor = serializers.CharField(required=False, allow_blank=False)
+    term_years = serializers.IntegerField(required=False, min_value=1, error_messages={"invalid": "Enter a whole number of years for the policy term.", "min_value": "Enter a policy term of at least 1 year, then use the plan range shown on screen."})
+    payment_period_years = serializers.IntegerField(required=False, min_value=1, allow_null=True, error_messages={"invalid": "Enter a whole number of years for the payment period.", "min_value": "Enter a payment period of at least 1 year and no longer than the policy term."})
+    premium_frequency = serializers.CharField(required=False, allow_blank=False, error_messages={"blank": "Choose a payment frequency from the available options."})
+    quote_basis = serializers.CharField(required=False, allow_blank=False, error_messages={"blank": "Choose a quote basis from the available options."})
+    estimated_maturity_value = serializers.DecimalField(required=False, max_digits=18, decimal_places=2, min_value=0, allow_null=True, error_messages={"invalid": "Enter a valid estimated maturity amount.", "min_value": "Enter a positive estimated maturity amount greater than TZS 0.00."})
+    premium_factor = serializers.CharField(required=False, allow_blank=False, error_messages={"blank": "Choose a premium factor from the available options, or leave it unset when the plan permits that."})
     joint_life = serializers.BooleanField(required=False)
     mortgage = serializers.BooleanField(required=False)
     personal_accident = serializers.BooleanField(required=False)
     premium_waiver = serializers.BooleanField(required=False)
-    estimated_bonus_rate = serializers.DecimalField(required=False, max_digits=12, decimal_places=6, min_value=0)
-    base_sum_assured = serializers.DecimalField(required=False, max_digits=18, decimal_places=2, min_value=0)
+    estimated_bonus_rate = serializers.DecimalField(required=False, max_digits=12, decimal_places=6, min_value=0, error_messages={"invalid": "Enter a valid bonus rate per mille.", "min_value": "Enter zero or a positive bonus rate per mille."})
+    base_sum_assured = serializers.DecimalField(required=False, max_digits=18, decimal_places=2, min_value=0, error_messages={"invalid": "Enter a valid base sum assured amount.", "min_value": "Enter a positive base sum assured greater than TZS 0.00; the configured plan range is shown on screen."})
     is_selected = serializers.BooleanField(required=False)
     sub_product_code = serializers.CharField(required=False, allow_blank=True)
     coverage_rules = serializers.DictField(required=False)

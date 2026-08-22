@@ -89,6 +89,8 @@ type PlanCard = {
   max_entry_age?: number
   min_term_years?: number
   max_term_years?: number
+  minimum_sum_assured?: string | number | null
+  maximum_sum_assured?: string | number | null
   currency?: string
 }
 
@@ -150,10 +152,35 @@ type PersonalForm = {
   address: string
 }
 
+type PlanConstraints = {
+  plan_code?: string | null
+  plan_name?: string | null
+  currency?: string
+  min_entry_age?: number
+  max_entry_age?: number
+  min_term_years?: number
+  max_term_years?: number
+  minimum_sum_assured?: string | number | null
+  maximum_sum_assured?: string | number | null
+  allowed_payment_frequencies?: Choice[]
+  quote_bases?: Choice[]
+  premium_factors?: Choice[]
+  default_term_years?: number | null
+  default_payment_period_years?: number | null
+  default_payment_frequency?: string | null
+  default_quote_basis?: string | null
+  default_premium_factor?: string | null
+  default_base_sum_assured?: string | number | null
+  default_estimated_maturity_value?: string | number | null
+  default_estimated_bonus_rate?: string | number | null
+  feature_availability?: Record<string, boolean>
+}
+
 type PlanOptions = {
   payment_frequencies: Choice[]
   quote_bases: Choice[]
   premium_factors: Choice[]
+  constraints?: PlanConstraints | null
   plan_features?: {
     joint_life?: boolean
     mortgage?: boolean
@@ -414,6 +441,7 @@ type ApiPayload = {
   payment_frequencies?: Choice[]
   quote_bases?: Choice[]
   premium_factors?: Choice[]
+  constraints?: PlanConstraints | null
   plan_features?: PlanOptions["plan_features"]
   principal_member?: MemberRow | null
   members?: MemberRow[]
@@ -496,6 +524,14 @@ function normalizePlanCard(value: unknown): PlanCard | null {
     description: record.description as string | null | undefined,
     badges: Array.isArray(record.badges) ? record.badges.map(String) : undefined,
     plan_type_badges: Array.isArray(record.plan_type_badges) ? record.plan_type_badges.map(String) : undefined,
+    minimum_sum_assured: (record.minimum_sum_assured as string | number | null | undefined) ?? null,
+    maximum_sum_assured: (record.maximum_sum_assured as string | number | null | undefined) ?? null,
+    min_entry_age: record.min_entry_age == null ? undefined : Number(record.min_entry_age),
+    max_entry_age: record.max_entry_age == null ? undefined : Number(record.max_entry_age),
+    min_term_years: record.min_term_years == null ? undefined : Number(record.min_term_years),
+    max_term_years: record.max_term_years == null ? undefined : Number(record.max_term_years),
+    payment_frequencies: Array.isArray(record.payment_frequencies) ? record.payment_frequencies.map(String) : undefined,
+    currency: record.currency == null ? undefined : String(record.currency),
   }
 }
 
@@ -536,6 +572,29 @@ function parseApiError(error: unknown): { message: string; fieldErrors: ApiField
   return { message: error instanceof Error ? error.message : "The request could not be completed.", fieldErrors: {} }
 }
 
+function routePlanSelectionErrors(fieldErrors: ApiFieldErrors, selectedPlanIds: string[], configurations: PlanConfiguration[]): Record<string, ApiFieldErrors> {
+  const routed: Record<string, ApiFieldErrors> = {}
+  const planFields = new Set(["product_version", "product_version_id", "plan", "plan_id", "age_at_quote", "term_years", "payment_period_years", "premium_frequency", "quote_basis", "premium_factor", "joint_life", "mortgage", "personal_accident", "premium_waiver", "estimated_maturity_value", "base_sum_assured", "estimated_bonus_rate", "plans"])
+  selectedPlanIds.forEach((planId, index) => {
+    const configurationId = configurations.find((config) => configurationPlanId(config) === planId)?.id ?? `draft:${planId}`
+    const sectionErrors: ApiFieldErrors = {}
+    const prefixes = [`plan_${index}.`, `plans.${index}.`]
+    Object.entries(fieldErrors).forEach(([field, messages]) => {
+      const prefix = prefixes.find((candidate) => field.startsWith(candidate))
+      if (prefix) sectionErrors[field.slice(prefix.length)] = messages
+      else if (selectedPlanIds.length === 1 && planFields.has(field)) sectionErrors[field] = messages
+    })
+    if (Object.keys(sectionErrors).length) routed[configurationId] = sectionErrors
+  })
+  return routed
+}
+
+function readablePlanErrors(errors: ApiFieldErrors): string[] {
+  const labels: Record<string, string> = { term_years: "Policy term", payment_period_years: "Payment period", premium_frequency: "Payment frequency", quote_basis: "Quote basis", premium_factor: "Premium factor", estimated_maturity_value: "Estimated maturity value", base_sum_assured: "Base sum assured", estimated_bonus_rate: "Estimated bonus rate", age_at_quote: "Customer age", product_version: "Product version", plan: "Plan" }
+  const messages = Object.entries(errors).flatMap(([field, values]) => values.map((value) => `${labels[field] ?? field.replace(/_/g, " ")} — ${value}`))
+  return Array.from(new Set(messages))
+}
+
 function computeAge(dateOfBirth: string, quoteDate: string): number | null {
   if (!dateOfBirth || !quoteDate) return null
   const dob = new Date(`${dateOfBirth}T00:00:00`)
@@ -555,7 +614,10 @@ function configurationPlanId(configuration: PlanConfiguration): string | null {
   const planId = configuration.plan ?? configuration.plan_id
   return planId ? String(planId) : null
 }
-function draftConfiguration(plan: PlanCard, sectionNumber: number): PlanConfiguration {
+function draftConfiguration(plan: PlanCard, sectionNumber: number, options?: PlanOptions): PlanConfiguration {
+  const constraints = options?.constraints
+  const term = constraints?.default_term_years ?? constraints?.min_term_years ?? plan.min_term_years ?? 1
+  const minimumSum = constraints?.default_base_sum_assured ?? constraints?.minimum_sum_assured ?? plan.minimum_sum_assured ?? "1.00"
   return {
     id: `draft:${plan.plan_id}`,
     plan: plan.plan_id,
@@ -563,6 +625,18 @@ function draftConfiguration(plan: PlanCard, sectionNumber: number): PlanConfigur
     product_version_id: plan.product_version_id,
     sub_product_code: plan.code,
     section_number: sectionNumber,
+    term_years: term,
+    payment_period_years: term,
+    premium_frequency: constraints?.default_payment_frequency ?? plan.payment_frequencies?.[0] ?? options?.payment_frequencies[0]?.value ?? "",
+    quote_basis: constraints?.default_quote_basis ?? options?.quote_bases[0]?.value ?? "",
+    estimated_maturity_value: constraints?.default_estimated_maturity_value ?? minimumSum,
+    base_sum_assured: minimumSum,
+    premium_factor: constraints?.default_premium_factor ?? options?.premium_factors[0]?.value ?? "",
+    joint_life: false,
+    mortgage: false,
+    personal_accident: false,
+    premium_waiver: false,
+    estimated_bonus_rate: "0",
     is_selected: true,
   }
 }
@@ -655,19 +729,27 @@ function PersonalDetailsStep({ form, options, errors, age, onChange }: { form: P
 }
 
 function PlanConfigurationSection({ index, config, card, options, errors, onChange }: { index: number; config: PlanConfiguration; card?: PlanCard; options: PlanOptions; errors: ApiFieldErrors; onChange: (field: string, value: string | boolean) => void }) {
-  const features = { ...(options.plan_features ?? {}), joint_life: card?.joint_life ?? options.plan_features?.joint_life, mortgage: card?.mortgage ?? options.plan_features?.mortgage, personal_accident: card?.personal_accident ?? options.plan_features?.personal_accident, premium_waiver: card?.premium_waiver ?? options.plan_features?.premium_waiver }
+  const constraints = options.constraints && (!card || options.constraints.plan_code === card.code) ? options.constraints : undefined
+  const features = { ...(constraints?.feature_availability ?? {}), ...(options.plan_features ?? {}), joint_life: card?.joint_life ?? constraints?.feature_availability?.joint_life ?? options.plan_features?.joint_life, mortgage: card?.mortgage ?? constraints?.feature_availability?.mortgage ?? options.plan_features?.mortgage, personal_accident: card?.personal_accident ?? constraints?.feature_availability?.personal_accident ?? options.plan_features?.personal_accident, premium_waiver: card?.premium_waiver ?? constraints?.feature_availability?.premium_waiver ?? options.plan_features?.premium_waiver }
   const planName = card?.name ?? card?.code ?? "Selected plan"
-  return <section className="rounded-[12px] border bg-[var(--card)] shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3 border-b bg-[var(--muted)]/35 px-4 py-3"><div><p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">Section {index + 1}</p><h3 className="mt-1 text-base font-bold">{planName}</h3></div><span className="rounded-full border px-3 py-1 text-xs font-semibold text-[var(--muted-foreground)]">Plan-only configuration</span></div><div className="space-y-5 p-4"><FormGrid columns={2}>
-    <TextInput label="Policy Term (Years)" name={`term_years_${config.id}`} required type="number" min={1} value={String(config.term_years ?? "")} onChange={(event) => onChange("term_years", event.target.value)} error={fieldError(errors, "term_years")} />
-    <TextInput label="Payment Period (Years)" name={`payment_period_years_${config.id}`} required type="number" min={1} value={String(config.payment_period_years ?? "")} onChange={(event) => onChange("payment_period_years", event.target.value)} error={fieldError(errors, "payment_period_years")} />
+  const minTerm = constraints?.min_term_years ?? card?.min_term_years
+  const maxTerm = constraints?.max_term_years ?? card?.max_term_years
+  const minSum = constraints?.minimum_sum_assured ?? card?.minimum_sum_assured
+  const maxSum = constraints?.maximum_sum_assured ?? card?.maximum_sum_assured
+  const currency = constraints?.currency ?? card?.currency ?? "TZS"
+  const frequencyLabels = (constraints?.allowed_payment_frequencies ?? []).map((option) => option.label).join(", ") || (card?.payment_frequencies ?? []).map((value) => value.replace(/_/g, " ")).join(", ")
+  const rangeText = minSum != null && maxSum != null ? `${formatMoney(minSum, currency)} to ${formatMoney(maxSum, currency)}` : minSum != null ? `at least ${formatMoney(minSum, currency)}` : maxSum != null ? `up to ${formatMoney(maxSum, currency)}` : "the configured plan limit"
+  return <section className="rounded-[12px] border bg-[var(--card)] shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3 border-b bg-[var(--muted)]/35 px-4 py-3"><div><p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">Section {index + 1}</p><h3 className="mt-1 text-base font-bold">{planName}</h3></div><span className="rounded-full border px-3 py-1 text-xs font-semibold text-[var(--muted-foreground)]">Plan-only configuration</span></div><div className="space-y-5 p-4"><div className="rounded-[10px] border border-[var(--primary)]/25 bg-[var(--primary)]/5 p-3 text-xs text-[var(--muted-foreground)]"><p className="font-bold text-[var(--foreground)]">Check these values before continuing</p><p className="mt-1">{minTerm != null && maxTerm != null ? `Policy term: ${minTerm}–${maxTerm} years. ` : "Policy term: use the configured plan range. "}Payment period must be from 1 year up to the selected policy term. {frequencyLabels ? `Supported payment frequencies: ${frequencyLabels}. ` : "Select a supported payment frequency. "}Base sum assured: {rangeText}. The estimated maturity value must be a positive projected amount.</p></div><FormGrid columns={2}>
+    <TextInput label="Policy Term (Years)" name={`term_years_${config.id}`} required type="number" min={minTerm ?? 1} max={maxTerm} value={String(config.term_years ?? "")} onChange={(event) => onChange("term_years", event.target.value)} error={fieldError(errors, "term_years")} />
+    <TextInput label="Payment Period (Years)" name={`payment_period_years_${config.id}`} required type="number" min={1} max={config.term_years ?? maxTerm} value={String(config.payment_period_years ?? "")} onChange={(event) => onChange("payment_period_years", event.target.value)} error={fieldError(errors, "payment_period_years")} />
     <SmartSelect entity="payment-frequencies" label="Payment Frequency" name={`premium_frequency_${config.id}`} required value={String(config.premium_frequency ?? "")} onChange={(value) => onChange("premium_frequency", value)} error={fieldError(errors, "premium_frequency")} placeholder="Search and select payment frequency" />
     <SmartSelect entity="quote-bases" label="Quote Basis" name={`quote_basis_${config.id}`} required value={String(config.quote_basis ?? "")} onChange={(value) => onChange("quote_basis", value)} error={fieldError(errors, "quote_basis")} placeholder="Search and select quote basis" />
     <DecimalInput label="Estimated Maturity Value" name={`estimated_maturity_value_${config.id}`} required value={String(config.estimated_maturity_value ?? "")} onChange={(event) => onChange("estimated_maturity_value", event.target.value)} error={fieldError(errors, "estimated_maturity_value")} />
+    <DecimalInput label="Base Sum Assured" name={`base_sum_assured_${config.id}`} required value={String(config.base_sum_assured ?? "")} onChange={(event) => onChange("base_sum_assured", event.target.value)} error={fieldError(errors, "base_sum_assured")} />
     <SmartSelect entity="premium-factors" label="Premium Factor" name={`premium_factor_${config.id}`} value={String(config.premium_factor ?? "")} onChange={(value) => onChange("premium_factor", value)} error={fieldError(errors, "premium_factor")} placeholder="None" />
     <DecimalInput label="Estimated Bonus Rate (per mille)" name={`estimated_bonus_rate_${config.id}`} value={String(config.estimated_bonus_rate ?? "")} onChange={(event) => onChange("estimated_bonus_rate", event.target.value)} error={fieldError(errors, "estimated_bonus_rate")} />
   </FormGrid>
   <div className="grid gap-4 rounded-[10px] border bg-[var(--muted)]/25 p-4 md:grid-cols-2 xl:grid-cols-4"><Toggle label="Joint Life" checked={Boolean(config.joint_life)} disabled={!features.joint_life} onChange={(checked) => onChange("joint_life", checked)} hint={!features.joint_life ? "Not available for this plan" : "Apply joint-life rules"} /><Toggle label="Mortgage" checked={Boolean(config.mortgage)} disabled={!features.mortgage} onChange={(checked) => onChange("mortgage", checked)} hint={!features.mortgage ? "Not available for this plan" : "Apply mortgage factor"} /><Toggle label="Personal Accident (PA)" checked={Boolean(config.personal_accident)} disabled={!features.personal_accident} onChange={(checked) => onChange("personal_accident", checked)} hint={!features.personal_accident ? "Not available for this plan" : "Attach PA rider option"} /><Toggle label="Premium Waiver (WP)" checked={Boolean(config.premium_waiver)} disabled={!features.premium_waiver} onChange={(checked) => onChange("premium_waiver", checked)} hint={!features.premium_waiver ? "Not available for this plan" : "Attach WP rider option"} /></div>
-  {card && <p className="text-xs text-[var(--muted-foreground)]">Configured term range: {card.min_term_years ?? "—"}–{card.max_term_years ?? "—"} years. Entry age range: {card.min_entry_age ?? "—"}–{card.max_entry_age ?? "—"} years.</p>}
   </div></section>
 }
 
@@ -959,12 +1041,38 @@ export default function OLQuotationWizard() {
   const loadPlanOptions = useCallback(async (planId?: string) => {
     if (!quotationId) return
     try {
-      const payload = await requestNormalized<ApiPayload>(`${QUOTATION_PREFIX}${quotationId}/plan-options/${planId ? `?plan_id=${encodeURIComponent(planId)}` : ""}`)
-      setPlanOptions({ payment_frequencies: asChoices(payload.payment_frequencies), quote_bases: asChoices(payload.quote_bases), premium_factors: asChoices(payload.premium_factors), plan_features: payload.plan_features })
+      const nextOptions: PlanOptions = await requestNormalized<ApiPayload>(`${QUOTATION_PREFIX}${quotationId}/plan-options/${planId ? `?plan_id=${encodeURIComponent(planId)}` : ""}`).then((payload) => ({
+        payment_frequencies: asChoices(payload.payment_frequencies),
+        quote_bases: asChoices(payload.quote_bases),
+        premium_factors: asChoices(payload.premium_factors),
+        constraints: payload.constraints as PlanConstraints | null | undefined,
+        plan_features: payload.plan_features,
+      }))
+      setPlanOptions(nextOptions)
+      if (planId) {
+        const plan = plans.find((item) => item.plan_id === planId)
+        if (plan) {
+          setConfigurations((current) => current.map((config) => {
+            if (!config.id.startsWith("draft:") || configurationPlanId(config) !== planId) return config
+            const defaults = draftConfiguration(plan, config.section_number ?? 1, nextOptions)
+            return {
+              ...config,
+              term_years: config.term_years || defaults.term_years,
+              payment_period_years: config.payment_period_years || defaults.payment_period_years,
+              premium_frequency: config.premium_frequency || defaults.premium_frequency,
+              quote_basis: config.quote_basis || defaults.quote_basis,
+              estimated_maturity_value: config.estimated_maturity_value || defaults.estimated_maturity_value,
+              base_sum_assured: config.base_sum_assured || defaults.base_sum_assured,
+              premium_factor: config.premium_factor || defaults.premium_factor,
+              estimated_bonus_rate: config.estimated_bonus_rate || defaults.estimated_bonus_rate,
+            }
+          }))
+        }
+      }
     } catch (error) {
       toast({ tone: "danger", title: "Unable to load plan options", message: parseApiError(error).message })
     }
-  }, [quotationId, toast])
+  }, [plans, quotationId, toast])
 
   const loadMemberCoverage = useCallback(async () => {
     if (!quotationId) return
@@ -1227,8 +1335,9 @@ export default function OLQuotationWizard() {
     setConfigurations((configs) => {
       if (isSelected) return configs.filter((config) => configurationPlanId(config) !== plan.plan_id)
       if (configs.some((config) => configurationPlanId(config) === plan.plan_id)) return configs
-      return [...configs, draftConfiguration(plan, next.length)]
+      return [...configs, draftConfiguration(plan, next.length, planOptions)]
     })
+    if (!isSelected) void loadPlanOptions(plan.plan_id)
   }
 
   const handleProductCreated = async (option: QuickCreateOption) => {
@@ -1286,7 +1395,8 @@ export default function OLQuotationWizard() {
       const selections = selectedPlanIds.map((planId) => {
         const plan = plans.find((item) => item.plan_id === planId)
         const existing = configurations.find((config) => configurationPlanId(config) === planId)
-        return { plan_id: planId, product_version_id: plan?.product_version_id, ...(existing ? { term_years: existing.term_years, payment_period_years: existing.payment_period_years, premium_frequency: existing.premium_frequency, quote_basis: existing.quote_basis, estimated_maturity_value: existing.estimated_maturity_value, premium_factor: existing.premium_factor, joint_life: existing.joint_life, mortgage: existing.mortgage, personal_accident: existing.personal_accident, premium_waiver: existing.premium_waiver, estimated_bonus_rate: existing.estimated_bonus_rate } : {}) }
+        const draft = existing ?? (plan ? draftConfiguration(plan, selectedPlanIds.indexOf(planId) + 1, planOptions) : undefined)
+        return { plan_id: planId, product_version_id: plan?.product_version_id, ...(draft ? { term_years: draft.term_years, payment_period_years: draft.payment_period_years, premium_frequency: draft.premium_frequency, quote_basis: draft.quote_basis, estimated_maturity_value: draft.estimated_maturity_value, base_sum_assured: draft.base_sum_assured, premium_factor: draft.premium_factor, joint_life: draft.joint_life, mortgage: draft.mortgage, personal_accident: draft.personal_accident, premium_waiver: draft.premium_waiver, estimated_bonus_rate: draft.estimated_bonus_rate } : {}) }
       })
       const payload = await requestNormalized<ApiPayload>(`${QUOTATION_PREFIX}${quotationId}/plans/`, { method: "POST", body: JSON.stringify({ plans: selections }) })
       setConfigurations(payload.configurations ?? [])
@@ -1298,7 +1408,7 @@ export default function OLQuotationWizard() {
       return true
     } catch (error) {
       const parsed = parseApiError(error)
-      setPlanErrors({ selection: parsed.fieldErrors })
+      setPlanErrors({ selection: parsed.fieldErrors, ...routePlanSelectionErrors(parsed.fieldErrors, selectedPlanIds, configurations) })
       setInvalidSteps((current) => new Set(current).add(1))
       toast({ tone: "danger", title: "Plan selection needs attention", message: parsed.message })
       return false
@@ -1308,7 +1418,7 @@ export default function OLQuotationWizard() {
   const patchConfiguration = async (configuration: PlanConfiguration, field: string, value: string | boolean) => {
     if (!quotationId) return
     const numericFields = new Set(["term_years", "payment_period_years"])
-    const decimalFields = new Set(["estimated_maturity_value", "estimated_bonus_rate"])
+    const decimalFields = new Set(["estimated_maturity_value", "base_sum_assured", "estimated_bonus_rate"])
     const parsedValue = typeof value === "boolean" ? value : numericFields.has(field) ? (value === "" ? null : Number(value)) : decimalFields.has(field) ? (value === "" ? null : value) : value
     setConfigurations((current) => current.map((item) => item.id === configuration.id ? { ...item, [field]: parsedValue } : item))
     setPlanErrors((current) => { const next = { ...current }; if (next[configuration.id]) { const errors = { ...next[configuration.id] }; delete errors[field]; next[configuration.id] = errors } return next })
@@ -1343,8 +1453,8 @@ export default function OLQuotationWizard() {
   const cardByPlanId = useMemo(() => new Map(plans.map((plan) => [plan.plan_id, plan])), [plans])
   const visibleConfigurations = useMemo(() => selectedPlanIds.map((planId, index) => {
     const existing = configurations.find((config) => configurationPlanId(config) === planId)
-    return existing ?? (cardByPlanId.get(planId) ? draftConfiguration(cardByPlanId.get(planId) as PlanCard, index + 1) : null)
-  }).filter((config): config is PlanConfiguration => Boolean(config)), [cardByPlanId, configurations, selectedPlanIds])
+    return existing ?? (cardByPlanId.get(planId) ? draftConfiguration(cardByPlanId.get(planId) as PlanCard, index + 1, planOptions) : null)
+  }).filter((config): config is PlanConfiguration => Boolean(config)), [cardByPlanId, configurations, planOptions, selectedPlanIds])
 
   useEffect(() => {
     if (!quotation || !quotationId) return
@@ -1362,7 +1472,7 @@ export default function OLQuotationWizard() {
     <WizardTabs activeStep={activeStep} completedSteps={completedSteps} invalidSteps={invalidSteps} onSelect={selectStep} />
     <div className="flex flex-col gap-4 lg:flex-row lg:items-start"><PlanSelectionPanel plans={plans} selectedPlanIds={selectedPlanIds} search={planSearch} loading={plansLoading} onSearch={setPlanSearch} onToggle={handlePlanToggle} onProductCreated={handleProductCreated} /><main className="min-w-0 flex-1">
       {currentStep === "personal" && <PersonalDetailsStep form={personal} options={personalOptions} errors={personalErrors} age={age} onChange={handlePersonalChange} />}
-      {currentStep === "plans" && <div className="space-y-4"><div className="surface-card overflow-hidden"><StepHeader eyebrow="Step 2 of 7" title="Plan & Sub-Products" description="Configure each selected plan using effective product setup and Ordinary Life parameter options." /><div className="p-5">{fieldError(planErrors.selection ?? {}, "plans") && <div className="mb-4"><div className="rounded-[10px] border border-[var(--destructive)]/35 bg-[var(--destructive)]/5 p-3 text-sm font-semibold text-[var(--destructive)]" role="alert">{fieldError(planErrors.selection ?? {}, "plans")}</div></div>}{!visibleConfigurations.length && <div className="rounded-[10px] border border-dashed p-8 text-center text-sm text-[var(--muted-foreground)]">Select one or more plans from the left panel, then continue to create configuration sections.</div>}</div></div>{visibleConfigurations.map((config, index) => <PlanConfigurationSection key={config.id} index={index} config={config} card={cardByPlanId.get(configurationPlanId(config) ?? "")} options={planOptions} errors={planErrors[config.id] ?? {}} onChange={(field, value) => void patchConfiguration(config, field, value)} />)}</div>}
+      {currentStep === "plans" && <div className="space-y-4"><div className="surface-card overflow-hidden"><StepHeader eyebrow="Step 2 of 7" title="Plan & Sub-Products" description="Configure each selected plan using effective product setup and Ordinary Life parameter options." /><div className="p-5">{readablePlanErrors(planErrors.selection ?? {}).length > 0 && <div className="mb-4 rounded-[10px] border border-[var(--destructive)]/35 bg-[var(--destructive)]/5 p-3 text-sm text-[var(--destructive)]" role="alert" aria-label="Plan selection validation errors"><p className="font-bold">Review plan selection</p><ul className="mt-2 list-disc space-y-1 pl-5">{readablePlanErrors(planErrors.selection ?? {}).map((message) => <li key={message}>{message}</li>)}</ul></div>}{!visibleConfigurations.length && <div className="rounded-[10px] border border-dashed p-8 text-center text-sm text-[var(--muted-foreground)]">Select one or more plans from the left panel, then continue to create configuration sections.</div>}</div></div>{visibleConfigurations.map((config, index) => <PlanConfigurationSection key={config.id} index={index} config={config} card={cardByPlanId.get(configurationPlanId(config) ?? "")} options={planOptions} errors={planErrors[config.id] ?? {}} onChange={(field, value) => void patchConfiguration(config, field, value)} />)}</div>}
       {currentStep === "members" && <MemberCoverageStep quotation={quotation} state={memberState} genderOptions={personalOptions.genders} errors={memberErrors} onSaveMember={saveMember} onRemoveMember={removeMember} />}
       {currentStep === "installments" && <InstallmentsStep rows={installmentState?.rows ?? []} loading={!installmentState} selectedPlan={selectedInstallmentPlan} template={installmentTemplate} templateLoading={installmentTemplateLoading} saving={saving} errors={installmentErrors} onConfigure={(plan) => void loadInstallmentTemplate(plan)} onCloseModal={() => { setInstallmentModalOpen(false); setSelectedInstallmentPlan(null) }} onSave={saveInstallment} modalOpen={installmentModalOpen} />}
       {currentStep === "funds" && <InvestmentFundsStep quotation={quotation} state={fundState} optionsByPlan={fundOptions} allocations={fundAllocations} errors={fundErrors} onChange={(planConfigId, rows) => setFundAllocations((current) => ({ ...current, [planConfigId]: rows }))} onSave={saveFunds} />}

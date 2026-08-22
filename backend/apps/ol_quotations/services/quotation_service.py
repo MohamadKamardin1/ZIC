@@ -1,5 +1,5 @@
 from datetime import date, timedelta
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import hashlib
 import json
 
@@ -582,6 +582,10 @@ class QuotationService:
             badges.append("WITH_PROFIT")
         if flags["joint_life"]:
             badges.append("JOINT_LIFE")
+        min_sum_values = [Decimal(str(value)) for value in (getattr(plan, "minimum_sum_assured", None), getattr(parameter_product, "min_sum_assured", None)) if value is not None]
+        max_sum_values = [Decimal(str(value)) for value in (getattr(plan, "maximum_sum_assured", None), getattr(parameter_product, "max_sum_assured", None)) if value is not None]
+        effective_min_sum = max(min_sum_values) if min_sum_values else None
+        effective_max_sum = min(max_sum_values) if max_sum_values else None
         return {
             "id": str(plan.pk),
             "plan_id": str(plan.pk),
@@ -600,8 +604,8 @@ class QuotationService:
             "personal_accident": flags["personal_accident"],
             "premium_waiver": flags["premium_waiver"],
             "investment_linked": flags["investment_linked"],
-            "minimum_sum_assured": str(plan.minimum_sum_assured) if plan.minimum_sum_assured is not None else None,
-            "maximum_sum_assured": str(plan.maximum_sum_assured) if plan.maximum_sum_assured is not None else None,
+            "minimum_sum_assured": str(effective_min_sum) if effective_min_sum is not None else None,
+            "maximum_sum_assured": str(effective_max_sum) if effective_max_sum is not None else None,
             "currency": product_version.currency,
             "payment_frequencies": list(product_version.payment_frequencies or []),
             "min_entry_age": product_version.min_entry_age,
@@ -679,80 +683,188 @@ class QuotationService:
         }
         quote_bases = ConfigurationService.get_choice_list("OL_QUOTE_BASIS_CHOICES")
         premium_factors = ConfigurationService.get_choice_list("OL_PREMIUM_FACTOR_CHOICES")
+        constraints = None
+        if selected_plan and product_version:
+            constraints = QuotationService._plan_constraints(
+                quotation=quotation,
+                product_version=product_version,
+                plan=selected_plan,
+                as_of=as_of,
+            )
         return {
             "payment_frequencies": [{"value": value, "label": value.replace("_", " ").title()} for value in frequencies],
             "quote_bases": quote_bases,
             "premium_factors": premium_factors,
             "plan_features": features,
             "selected_plan_id": str(selected_plan.pk) if selected_plan else None,
+            "constraints": constraints,
             "as_of": as_of.isoformat(),
         }
 
     @staticmethod
     def _choice_values(code):
-        return {str(item.get("value", "")).strip().upper() for item in ConfigurationService.get_choice_list(code)}
+        return list(dict.fromkeys(
+            str(item.get("value", "")).strip().upper()
+            for item in ConfigurationService.get_choice_list(code)
+            if str(item.get("value", "")).strip()
+        ))
+
+    @staticmethod
+    def _plan_label(*, product_version, plan):
+        if plan is not None:
+            return f"{plan.code} — {plan.name}"
+        product = getattr(product_version, "product", None)
+        return f"{getattr(product, 'code', 'selected product')} — {getattr(product, 'name', 'selected product')}"
+
+    @staticmethod
+    def _format_money(value, currency="TZS"):
+        if value is None:
+            return "not configured"
+        return f"{currency} {Decimal(str(value)):,.2f}"
+
+    @staticmethod
+    def _decimal_input(value, *, field, label, instruction):
+        try:
+            return Decimal(str(value))
+        except (InvalidOperation, TypeError, ValueError):
+            raise QuotationServiceError({field: f"Enter a valid number for {label} on {instruction}. You entered '{value}'. Use digits and, where needed, a decimal point."})
+
+    @staticmethod
+    def _integer_input(value, *, field, label, instruction):
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            raise QuotationServiceError({field: f"Enter a whole number for {label} on {instruction}. You entered '{value}'. Use a value in the range shown."})
+        return parsed
+
+    @staticmethod
+    def _plan_constraints(*, quotation, product_version, plan, as_of=None):
+        as_of = as_of or quotation.quote_date or timezone.localdate()
+        product = getattr(product_version, "product", None)
+        parameter_product = quotation.product or QuotationService._parameter_product_for_legacy_product(product)
+        min_age = product_version.min_entry_age
+        max_age = product_version.max_entry_age
+        min_term = product_version.min_term_years
+        max_term = product_version.max_term_years
+        if parameter_product:
+            min_age = max(min_age, parameter_product.min_entry_age)
+            max_age = min(max_age, parameter_product.max_entry_age)
+            min_term = max(min_term, parameter_product.min_term)
+            max_term = min(max_term, parameter_product.max_term)
+        plan_min_sum = getattr(plan, "minimum_sum_assured", None) if plan else None
+        plan_max_sum = getattr(plan, "maximum_sum_assured", None) if plan else None
+        product_min_sum = getattr(parameter_product, "min_sum_assured", None) if parameter_product else None
+        product_max_sum = getattr(parameter_product, "max_sum_assured", None) if parameter_product else None
+        min_sum = max([Decimal(str(value)) for value in (plan_min_sum, product_min_sum) if value is not None], default=None)
+        max_sum_values = [Decimal(str(value)) for value in (plan_max_sum, product_max_sum) if value is not None]
+        max_sum = min(max_sum_values) if max_sum_values else None
+        frequencies = list(product_version.payment_frequencies or [])
+        if not frequencies and parameter_product:
+            frequencies = list(parameter_product.premium_frequencies or [])
+        flags = QuotationService._plan_feature_availability(
+            legacy_product=product,
+            plan=plan,
+            age=quotation.age_at_quote,
+            term=None,
+            as_of=as_of,
+        ) if product else {key: False for key in ("joint_life", "mortgage", "personal_accident", "premium_waiver", "investment_linked", "with_profit")}
+        quote_bases = ConfigurationService.get_choice_list("OL_QUOTE_BASIS_CHOICES")
+        premium_factors = ConfigurationService.get_choice_list("OL_PREMIUM_FACTOR_CHOICES")
+        default_term = min_term
+        default_maturity = min_sum or QuotationService._default_maturity_value(
+            legacy_product=product,
+            plan=plan,
+            parameter_product=parameter_product,
+        )
+        return {
+            "plan_code": getattr(plan, "code", None),
+            "plan_name": getattr(plan, "name", None),
+            "currency": getattr(product_version, "currency", None) or getattr(parameter_product, "currency", None) or "TZS",
+            "min_entry_age": min_age,
+            "max_entry_age": max_age,
+            "min_term_years": min_term,
+            "max_term_years": max_term,
+            "minimum_sum_assured": str(min_sum) if min_sum is not None else None,
+            "maximum_sum_assured": str(max_sum) if max_sum is not None else None,
+            "allowed_payment_frequencies": [{"value": str(value).upper(), "label": str(value).replace("_", " ").title()} for value in frequencies],
+            "quote_bases": quote_bases,
+            "premium_factors": premium_factors,
+            "default_term_years": default_term,
+            "default_payment_period_years": default_term,
+            "default_payment_frequency": str(frequencies[0]).upper() if frequencies else None,
+            "default_quote_basis": quote_bases[0]["value"] if quote_bases else None,
+            "default_premium_factor": premium_factors[0]["value"] if premium_factors else None,
+            "default_base_sum_assured": str(default_maturity) if default_maturity is not None else None,
+            "default_estimated_maturity_value": str(default_maturity) if default_maturity is not None else None,
+            "default_estimated_bonus_rate": str(QuotationService._bonus_default(legacy_product=product, plan=plan, as_of=as_of)) if product else "0",
+            "feature_availability": flags,
+        }
 
     @staticmethod
     def _validate_plan_selection(*, quotation, product_version, plan, payload, existing=None):
+        label = QuotationService._plan_label(product_version=product_version, plan=plan)
         as_of = quotation.quote_date or timezone.localdate()
         if not product_version.is_active or not product_version.product.is_active:
-            raise QuotationServiceError({"product_version": "The selected product version is not active."})
+            raise QuotationServiceError({"product_version": f"{label} is inactive. Choose an active product version from the plan list before continuing."})
         if product_version.effective_from > as_of or (
             product_version.effective_to and product_version.effective_to < as_of
         ):
-            raise QuotationServiceError({"product_version": "The selected product version is not effective on the quote date."})
+            raise QuotationServiceError({"product_version": f"{label} is not effective on {as_of.isoformat()}. Choose a plan whose effective dates include the quote date, or change the quote date."})
         if plan is not None and (not plan.is_active or plan.product_version_id != product_version.pk):
-            raise QuotationServiceError({"plan": "The selected plan is not active or does not belong to the product version."})
+            raise QuotationServiceError({"plan": f"{label} is inactive or is not part of the selected product version. Choose a plan shown in the current plan list."})
 
         age = quotation.age_at_quote
         min_age = product_version.min_entry_age
         max_age = product_version.max_entry_age
-        if quotation.product_id:
-            min_age = max(min_age, quotation.product.min_entry_age)
-            max_age = min(max_age, quotation.product.max_entry_age)
+        parameter_product = quotation.product or QuotationService._parameter_product_for_legacy_product(product_version.product)
+        if parameter_product:
+            min_age = max(min_age, parameter_product.min_entry_age)
+            max_age = min(max_age, parameter_product.max_entry_age)
         if age is not None and not (min_age <= age <= max_age):
-            raise QuotationServiceError({"age_at_quote": f"Age must be between {min_age} and {max_age} for the selected product."})
+            raise QuotationServiceError({"age_at_quote": f"The customer is {age} years old. {label} accepts entry ages from {min_age} to {max_age} years. Update the date of birth or select a plan with an age range that includes this customer."})
 
         term = payload.get("term_years")
         if term is None:
             term = product_version.min_term_years
-            if quotation.product_id:
-                term = max(term, quotation.product.min_term)
-        term = int(term)
+            if parameter_product:
+                term = max(term, parameter_product.min_term)
+        term = QuotationService._integer_input(term, field="term_years", label="policy term", instruction=label)
         min_term = product_version.min_term_years
         max_term = product_version.max_term_years
-        if quotation.product_id:
-            min_term = max(min_term, quotation.product.min_term)
-            max_term = min(max_term, quotation.product.max_term)
+        if parameter_product:
+            min_term = max(min_term, parameter_product.min_term)
+            max_term = min(max_term, parameter_product.max_term)
         if not min_term <= term <= max_term:
-            raise QuotationServiceError({"term_years": f"Policy term must be between {min_term} and {max_term} years."})
+            raise QuotationServiceError({"term_years": f"Choose a policy term from {min_term} to {max_term} years for {label}. You entered {term} years. Enter a value within this range."})
 
         payment_period = payload.get("payment_period_years")
         if payment_period is None:
             payment_period = term
-        payment_period = int(payment_period)
+        payment_period = QuotationService._integer_input(payment_period, field="payment_period_years", label="payment period", instruction=label)
         if payment_period <= 0 or payment_period > term:
-            raise QuotationServiceError({"payment_period_years": "Payment period must be positive and cannot exceed policy term."})
+            raise QuotationServiceError({"payment_period_years": f"Payment period for {label} must be between 1 and {term} years, and cannot be longer than the {term}-year policy term. You entered {payment_period}. Enter a whole number in that range."})
 
         frequency = str(payload.get("premium_frequency") or "").strip().upper()
         allowed_frequencies = {str(item).strip().upper() for item in (product_version.payment_frequencies or [])}
-        if not allowed_frequencies and quotation.product_id:
-            allowed_frequencies = {str(item).strip().upper() for item in (quotation.product.premium_frequencies or [])}
+        if not allowed_frequencies and parameter_product:
+            allowed_frequencies = {str(item).strip().upper() for item in (parameter_product.premium_frequencies or [])}
         if not frequency and allowed_frequencies:
             frequency = sorted(allowed_frequencies)[0]
         if frequency not in allowed_frequencies:
-            raise QuotationServiceError({"premium_frequency": "The selected payment frequency is not allowed for this product version."})
+            allowed = ", ".join(value.replace("_", " ").title() for value in sorted(allowed_frequencies)) or "the payment frequencies configured for this product"
+            raise QuotationServiceError({"premium_frequency": f"Select a payment frequency for {label} from {allowed}. The value you entered is '{frequency or 'blank'}'. Choose one of the listed frequencies."})
 
         quote_basis_values = QuotationService._choice_values("OL_QUOTE_BASIS_CHOICES")
         premium_factor_values = QuotationService._choice_values("OL_PREMIUM_FACTOR_CHOICES")
-        quote_basis = str(payload.get("quote_basis") or (sorted(quote_basis_values)[0] if quote_basis_values else "")).strip().upper()
-        premium_factor = str(payload.get("premium_factor") or (sorted(premium_factor_values)[0] if premium_factor_values else "")).strip().upper()
+        quote_basis = str(payload.get("quote_basis") or (quote_basis_values[0] if quote_basis_values else "")).strip().upper()
+        premium_factor = str(payload.get("premium_factor") or (premium_factor_values[0] if premium_factor_values else "")).strip().upper()
         if quote_basis not in quote_basis_values:
-            raise QuotationServiceError({"quote_basis": "The selected quote basis is not configured."})
+            allowed = ", ".join(value.replace("_", " ").title() for value in sorted(quote_basis_values)) or "the configured quote bases"
+            raise QuotationServiceError({"quote_basis": f"Select a quote basis for {label} from {allowed}. The value you entered is '{quote_basis or 'blank'}'. Choose one of the available options."})
         if premium_factor not in premium_factor_values:
-            raise QuotationServiceError({"premium_factor": "The selected premium factor is not configured."})
+            allowed = ", ".join(value.replace("_", " ").title() for value in sorted(premium_factor_values)) or "the configured premium factors"
+            raise QuotationServiceError({"premium_factor": f"Select a premium factor for {label} from {allowed}. The value you entered is '{premium_factor or 'blank'}'. Choose one of the available options."})
 
-        parameter_product = quotation.product or QuotationService._parameter_product_for_legacy_product(product_version.product)
         features = QuotationService._plan_feature_availability(
             legacy_product=product_version.product,
             plan=plan,
@@ -762,7 +874,7 @@ class QuotationService:
         )
         for field in ("joint_life", "mortgage", "personal_accident", "premium_waiver"):
             if payload.get(field) and not features[field]:
-                raise QuotationServiceError({field: f"{field.replace('_', ' ').title()} is not available for the selected plan."})
+                raise QuotationServiceError({field: f"{field.replace('_', ' ').title()} is not available for {label}. Turn this option off, then continue, or choose a plan that supports it."})
 
         estimated_maturity_value = payload.get("estimated_maturity_value")
         if estimated_maturity_value is None:
@@ -770,16 +882,40 @@ class QuotationService:
                 legacy_product=product_version.product,
                 plan=plan,
                 parameter_product=parameter_product,
-            )
-        if estimated_maturity_value is None or Decimal(str(estimated_maturity_value)) <= 0:
-            raise QuotationServiceError({"estimated_maturity_value": "Estimated maturity value must be greater than zero."})
-        base_sum_assured = payload.get("base_sum_assured") or estimated_maturity_value
-        if Decimal(str(base_sum_assured)) <= 0:
-            raise QuotationServiceError({"base_sum_assured": "Base sum assured must be greater than zero."})
-        if plan and plan.minimum_sum_assured and Decimal(str(base_sum_assured)) < plan.minimum_sum_assured:
-            raise QuotationServiceError({"base_sum_assured": "Base sum assured is below the selected plan minimum."})
-        if plan and plan.maximum_sum_assured and Decimal(str(base_sum_assured)) > plan.maximum_sum_assured:
-            raise QuotationServiceError({"base_sum_assured": "Base sum assured exceeds the selected plan maximum."})
+            ) or Decimal("1.00")
+        maturity_decimal = QuotationService._decimal_input(
+            estimated_maturity_value,
+            field="estimated_maturity_value",
+            label="estimated maturity value",
+            instruction=label,
+        )
+        if maturity_decimal <= 0:
+            raise QuotationServiceError({"estimated_maturity_value": f"Enter an estimated maturity value greater than TZS 0.00 for {label}. You entered {QuotationService._format_money(maturity_decimal)}. This is the projected amount payable at maturity; enter a positive amount."})
+        plan_min_sum = getattr(plan, "minimum_sum_assured", None) if plan else None
+        plan_max_sum = getattr(plan, "maximum_sum_assured", None) if plan else None
+        product_min_sum = getattr(parameter_product, "min_sum_assured", None) if parameter_product else None
+        product_max_sum = getattr(parameter_product, "max_sum_assured", None) if parameter_product else None
+        min_sum = max([Decimal(str(value)) for value in (plan_min_sum, product_min_sum) if value is not None], default=None)
+        max_sum_values = [Decimal(str(value)) for value in (plan_max_sum, product_max_sum) if value is not None]
+        max_sum = min(max_sum_values) if max_sum_values else None
+        base_sum_assured = payload.get("base_sum_assured")
+        if base_sum_assured is None:
+            base_sum_assured = max(maturity_decimal, min_sum or Decimal("0"))
+        base_decimal = QuotationService._decimal_input(
+            base_sum_assured,
+            field="base_sum_assured",
+            label="base sum assured",
+            instruction=label,
+        )
+        if base_decimal <= 0:
+            raise QuotationServiceError({"base_sum_assured": f"Enter a base sum assured greater than TZS 0.00 for {label}. You entered {QuotationService._format_money(base_decimal)}. The sum assured is the cover amount used for rating."})
+        if min_sum is not None and base_decimal < min_sum:
+            range_text = f"from {QuotationService._format_money(min_sum, getattr(product_version, 'currency', None) or 'TZS')}" + (f" to {QuotationService._format_money(max_sum, getattr(product_version, 'currency', None) or 'TZS')}" if max_sum is not None else "")
+            raise QuotationServiceError({"base_sum_assured": f"Enter a base sum assured {range_text} for {label}. You entered {QuotationService._format_money(base_decimal, getattr(product_version, 'currency', None) or 'TZS')}. Increase the amount to at least the configured minimum."})
+        if max_sum is not None and base_decimal > max_sum:
+            range_text = f"from {QuotationService._format_money(min_sum, getattr(product_version, 'currency', None) or 'TZS')} " if min_sum is not None else ""
+            range_text += f"to {QuotationService._format_money(max_sum, getattr(product_version, 'currency', None) or 'TZS')}"
+            raise QuotationServiceError({"base_sum_assured": f"Enter a base sum assured {range_text} for {label}. You entered {QuotationService._format_money(base_decimal, getattr(product_version, 'currency', None) or 'TZS')}. Reduce the amount to the configured maximum."})
 
         bonus = payload.get("estimated_bonus_rate")
         if bonus is None:
@@ -788,8 +924,14 @@ class QuotationService:
                 plan=plan,
                 as_of=as_of,
             )
-        if Decimal(str(bonus)) < 0:
-            raise QuotationServiceError({"estimated_bonus_rate": "Estimated bonus rate cannot be negative."})
+        bonus_decimal = QuotationService._decimal_input(
+            bonus,
+            field="estimated_bonus_rate",
+            label="estimated bonus rate",
+            instruction=label,
+        )
+        if bonus_decimal < 0:
+            raise QuotationServiceError({"estimated_bonus_rate": f"Estimated bonus rate for {label} cannot be negative. You entered {bonus}. Enter zero or a positive per-mille rate."})
 
         return {
             "product_version": product_version,
@@ -798,14 +940,14 @@ class QuotationService:
             "payment_period_years": payment_period,
             "premium_frequency": frequency,
             "quote_basis": quote_basis,
-            "estimated_maturity_value": Decimal(str(estimated_maturity_value)),
+            "estimated_maturity_value": maturity_decimal,
             "premium_factor": premium_factor,
             "joint_life": bool(payload.get("joint_life", False)),
             "mortgage": bool(payload.get("mortgage", False)),
             "personal_accident": bool(payload.get("personal_accident", False)),
             "premium_waiver": bool(payload.get("premium_waiver", False)),
-            "estimated_bonus_rate": Decimal(str(bonus)),
-            "base_sum_assured": Decimal(str(base_sum_assured)),
+            "estimated_bonus_rate": bonus_decimal,
+            "base_sum_assured": base_decimal,
             "sub_product_code": str(payload.get("sub_product_code") or "").strip(),
             "is_selected": bool(payload.get("is_selected", True)),
             "coverage_rules": dict(payload.get("coverage_rules") or {}),
@@ -1655,10 +1797,15 @@ class QuotationService:
 
         normalized = []
         seen = set()
-        for item in selections:
+        for index, item in enumerate(selections):
             item = dict(item or {})
-            product_version_id = item.get("product_version_id") or locked.product_version_id
             plan_id = item.get("plan_id")
+            product_version_id = item.get("product_version_id") or locked.product_version_id
+            if not product_version_id and plan_id:
+                try:
+                    product_version_id = OLPlan.objects.values_list("product_version_id", flat=True).get(pk=plan_id)
+                except (OLPlan.DoesNotExist, ValueError, TypeError):
+                    raise QuotationServiceError({f"plan_{index}": f"The selected plan could not be found. Return to the plan list and choose an available plan."})
             key = (str(product_version_id), str(plan_id or ""), str(item.get("sub_product_code") or "").strip().upper())
             if key in seen:
                 raise QuotationServiceError({"plans": "The same plan cannot be selected more than once."})
@@ -1666,19 +1813,27 @@ class QuotationService:
             try:
                 product_version = OLProductVersion.objects.select_related("product").get(pk=product_version_id)
             except (OLProductVersion.DoesNotExist, ValueError, TypeError):
-                raise QuotationServiceError({"product_version_id": "Selected product version does not exist."})
+                raise QuotationServiceError({f"plan_{index}.product_version_id": "The selected product version could not be found. Return to the plan list and choose an available plan."})
             plan = None
             if plan_id:
                 try:
                     plan = OLPlan.objects.get(pk=plan_id)
                 except (OLPlan.DoesNotExist, ValueError, TypeError):
-                    raise QuotationServiceError({"plan_id": "Selected plan does not exist."})
-            validated = QuotationService._validate_plan_selection(
-                quotation=locked,
-                product_version=product_version,
-                plan=plan,
-                payload=item,
-            )
+                    raise QuotationServiceError({f"plan_{index}.plan_id": "The selected plan could not be found. Return to the plan list and choose an available plan."})
+            try:
+                validated = QuotationService._validate_plan_selection(
+                    quotation=locked,
+                    product_version=product_version,
+                    plan=plan,
+                    payload=item,
+                )
+            except QuotationServiceError as exc:
+                details = exc.detail
+                if isinstance(details, dict):
+                    scoped = dict(details)
+                    scoped.pop(f"plan_{index}", None)
+                    details = {**details, f"plan_{index}": scoped}
+                raise QuotationServiceError(details)
             normalized.append(validated)
 
         before = QuotationService.snapshot(locked)
