@@ -309,7 +309,11 @@ export default function ApplicationForm() {
   const politicalRiskOptions = configuredOptions(onboardingConfiguration, ["POLITICAL_RISK_CHOICES"], politicalRiskList.options)
   const amlRiskOptions = configuredOptions(onboardingConfiguration, ["AML_RISK_CHOICES"], amlRiskList.options)
   const documentTypeOptions = configuredOptions(onboardingConfiguration, ["DOCUMENT_TYPE_CHOICES"], documentTypeList.options)
-  const systemPartnerTypeOptions = configuredOptions(onboardingConfiguration, ["PARTNER_TYPE_CHOICES", "SYSTEM_PARTNER_TYPE_CHOICES", "system_partner_types"], systemPartnerTypeList.options.length > 0 ? systemPartnerTypeList.options : choices?.systemPartnerTypes ?? [])
+  // Partner roles are foreign keys to partners.PartnerType. Do not use the
+  // configurable PARTNER_TYPE_CHOICES catalog here: its values are business
+  // codes (for example CORPORATE), while onboarding assignment/configuration
+  // endpoints require the PartnerType UUID.
+  const systemPartnerTypeOptions = choices?.systemPartnerTypes ?? []
   const defaultCurrency = String(configuredParameter(onboardingConfiguration, "DEFAULT_CURRENCY") ?? "TZS")
 
   /* ------------------ Effects ------------------ */
@@ -385,7 +389,7 @@ export default function ApplicationForm() {
     }
     fetchConfigs()
     return () => { active = false }
-  }, [selectedPartnerTypes])
+  }, [selectedPartnerTypes, choices])
 
   useEffect(() => {
     getChoices().then(setChoices).catch(() => {})
