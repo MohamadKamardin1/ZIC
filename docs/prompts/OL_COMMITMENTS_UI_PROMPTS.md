@@ -4,7 +4,7 @@
 - [x] Prompt 2 — Commitments List Page
 - [x] Prompt 3 — Commitment Generation Wizard and Manual Creation
 - [x] Prompt 4 — Commitment Bulk Import with Row Error Handling
-- [ ] Prompt 5 — [pending prompt text]
+- [ ] Prompt 5 — Commitment Detail Page with Tabs and Actions
 - [ ] Prompt 6 — [pending prompt text]
 - [ ] Prompt 7 — [pending prompt text]
 - [ ] Prompt 8 — [pending prompt text]
@@ -122,6 +122,41 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: import UX, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 5/10 — Commitment Detail Page with Tabs and Actions
+
+```text
+You are a senior frontend engineer. Continue the ZIC Commitments UI. Execute ONLY Prompt 5.
+
+MANDATORY RULES:
+- Master-detail pattern consistent with the platform.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. Header: commitment number, partner name, product/plan, status badge, currency, due/grace/lapse dates with DueDateWarning, balance highlight.
+2. Status card showing payment progress bar (paid vs due) and allowed actions button bar.
+3. Tabs:
+   - Overview: source info, amounts, parameters applied (grace days, frequency), reasons for suspend/waive/cancel when present
+   - Allocations: table of payments with payment mode, amount, currency, exchange rate, receipt reference, reversal links
+   - History: status change timeline with actor, timestamp, previous/new state, reason, source channel
+   - Notifications: grace/overdue notification log with channel and recipient badges
+4. Action buttons render only from allowed actions payload.
+5. Fetch failures render ErrorCoach.
+
+TESTS:
+- tabs render from detail payload
+- progress bar math
+- history shows reasons and actors
+- no UUIDs rendered
+
+GIT:
+- commit: "feat(web): commitment detail page with tabs and actions"
+- push; tick checkbox
+
+FINAL OUTPUT: page structure, tests, commit hash, pushed branch.
 ```
 
 ---
