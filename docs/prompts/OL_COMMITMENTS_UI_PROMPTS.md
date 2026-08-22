@@ -9,7 +9,7 @@
 - [x] Prompt 7 — Commitment Lifecycle Action Modals
 - [x] Prompt 8 — Overdue Processing and Notification Center UI
 - [x] Prompt 9 — Commitments Dashboard KPIs and Portal View
-- [ ] Prompt 10 — [pending prompt text]
+- [ ] Prompt 10 — Commitments UI E2E, Accessibility, Docs, Release
 
 > **Note on fidelity:** prompts 2–10 were not included in the pasted series message for this session. They will be appended `EXACTLY as provided` when the user supplies them, then executed strictly one at a time. Prompt 1 below is saved verbatim.
 
@@ -289,6 +289,45 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: dashboard and portal behavior, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 10/10 — Commitments UI E2E, Accessibility, Docs, Release
+
+```text
+You are a senior QA and frontend release engineer. Complete the ZIC Commitments UI. Execute ONLY Prompt 10.
+
+MANDATORY RULES:
+- Everything green before push; all checkboxes ticked at the end.
+- Commit and push; tick final checkbox.
+
+SCOPE:
+1. Playwright E2E covering:
+   - list page KPIs, filters, chips, export
+   - generation wizard dry-run then execute
+   - import dry-run with row errors then commit
+   - detail tabs and payment recording success
+   - overpayment ErrorCoach with resolution steps
+   - PARAMETER_MISSING deep link opens the exact OL Parameters screen
+   - invalid transition ErrorCoach lists allowed transitions
+   - overdue processing summary and bell deep link
+   - portal read-only scoping
+2. Accessibility pass: focus states, aria-live for ErrorCoach and toasts, keyboard flow through modals.
+3. Dark theme parity for all commitment screens.
+4. Documentation:
+   - frontend/docs/COMMITMENTS_UI_GUIDE.md with screen map and error-code resolution table
+   - update docs/OL_COMMITMENTS_USER_GUIDE.md with UI references
+5. Run lint/typecheck/unit/E2E for frontend; fix all failures.
+6. Mark the series complete in docs/prompts/OL_COMMITMENTS_UI_PROMPTS.md.
+
+GIT:
+- commit: "feat(web): commitments UI e2e accessibility docs and release"
+- push; if blocked create feature/web-commitments-complete and push
+- tag v0.7.0-web-commitments if tagging convention exists
+
+FINAL OUTPUT:
+Return the FULL commitments UI summary: screens built, components added, E2E results, accessibility notes, docs added, all 10 checkboxes ticked, commit hash/tag, pushed branch, and next recommended UI module.
 ```
 
 ---
