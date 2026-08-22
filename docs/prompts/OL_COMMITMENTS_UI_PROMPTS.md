@@ -1,7 +1,7 @@
 # OL COMMITMENTS UI — PROMPT SERIES (10 prompts)
 
 - [x] Prompt 1 — Commitments UI Foundation and Error Coach Kit
-- [ ] Prompt 2 — [pending prompt text]
+- [ ] Prompt 2 — Commitments List Page
 - [ ] Prompt 3 — [pending prompt text]
 - [ ] Prompt 4 — [pending prompt text]
 - [ ] Prompt 5 — [pending prompt text]
@@ -58,6 +58,39 @@ GIT:
 - push; if blocked create feature/web-commitments-foundation and push; tick checkbox
 
 FINAL OUTPUT: components, hooks, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 2/10 — Commitments List Page
+
+```text
+You are a senior frontend engineer. Continue the ZIC Commitments UI. Execute ONLY Prompt 2 from the saved series file.
+
+MANDATORY RULES:
+- Table-first, names never UUIDs, actions gated by allowed-actions + permissions.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. KPI cards: Total Due, Outstanding, Overdue Count, Collected in Period (currency-aware formatting).
+2. Commitments DataTable with backend columns: commitment_number, source display, policyholder/partner name, product/plan, installment #, due_date, amount_due, amount_paid, balance, currency, status badge, grace_date, actions.
+3. Filters: status, product, source_type, currency, due date range, balance>0; search by commitment number/partner/policy; quick chips: Overdue, In Grace, Outstanding.
+4. Row actions from allowed actions: View, Record Payment, Suspend, Waive, Cancel, Reschedule, Reverse — hidden when absent.
+5. Buttons: Create New Commitment, Generate Commitments, Import CSV, Export CSV.
+6. States: loading skeleton, empty state with guidance, error state via ErrorCoach.
+7. DueDateWarning rendering on grace/lapse dates.
+
+TESTS:
+- KPI math display
+- action visibility by status/permission
+- filters, chips, search, export
+- error state renders ErrorCoach
+
+GIT:
+- commit: "feat(web): commitments list page with KPIs and filters"
+- push; tick checkbox
+
+FINAL OUTPUT: page behavior, tests, commit hash, pushed branch.
 ```
 
 ---
