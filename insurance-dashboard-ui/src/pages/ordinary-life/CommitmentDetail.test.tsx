@@ -10,6 +10,7 @@ vi.mock("react-router-dom", () => ({
   useParams: () => paramsMock,
   useNavigate: () => navigateMock,
 }))
+vi.mock("../../components/ui/Toast", () => ({ useToast: () => ({ toast: vi.fn(), dismiss: vi.fn() }) }))
 
 const DETAIL = {
   id: "uuid-1",

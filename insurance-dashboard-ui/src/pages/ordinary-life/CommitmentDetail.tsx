@@ -1,13 +1,16 @@
 import { useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
-import { ArrowLeft, ExternalLink } from "lucide-react"
+import { ArrowLeft, ExternalLink, Undo2 } from "lucide-react"
 import { useCommitmentDetail, useCommitmentOptions } from "../../lib/commitmentsHooks"
 import { CommitmentStatusBadge } from "../../components/commitments/CommitmentStatusBadge"
 import { DueDateWarning, dueDateWarning } from "../../components/commitments/DueDateWarning"
 import { ErrorCoach } from "../../components/commitments/ErrorCoach"
+import { RecordPaymentModal } from "../../components/commitments/RecordPaymentModal"
+import { ReverseAllocationModal } from "../../components/commitments/ReverseAllocationModal"
 import { StatusBadge, type StatusTone } from "../../components/ui/StatusBadge"
+import { useToast } from "../../components/ui/Toast"
 import { formatMoney, sourceLabel } from "../../lib/commitmentsDisplay"
-import type { CommitmentHistoryEntry } from "../../lib/commitments"
+import type { CommitmentAllocation, CommitmentHistoryEntry } from "../../lib/commitments"
 
 export type CommitmentDetailTab = "overview" | "allocations" | "history" | "notifications"
 
@@ -51,9 +54,12 @@ function textOrDash(value?: string | null): string {
 export function CommitmentDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { toast } = useToast()
   const detail = useCommitmentDetail(id)
   const optionsQuery = useCommitmentOptions()
   const [tab, setTab] = useState<CommitmentDetailTab>("overview")
+  const [paymentOpen, setPaymentOpen] = useState(false)
+  const [reverseTarget, setReverseTarget] = useState<CommitmentAllocation | null>(null)
 
   if (!id) return null
 
@@ -98,7 +104,22 @@ export function CommitmentDetailPage() {
   const progress = paymentProgress(due, paid)
   const warning = dueDateWarning(d.dueDate, d.graceDate, d.lapseDate)
 
-  const runAction = (action: string) => navigate(`/ordinary-life/commitments/${encodeURIComponent(id)}?action=${encodeURIComponent(action)}`)
+  const runAction = (action: string) => {
+    if (action === "record_payment") {
+      setPaymentOpen(true)
+      return
+    }
+    if (action === "reverse") {
+      const target = d.allocations.find((allocation) => !allocation.reversalOf)
+      if (target) {
+        setReverseTarget(target)
+        return
+      }
+      toast({ tone: "info", title: "Nothing to reverse", message: "No reversible allocation exists for this commitment." })
+      return
+    }
+    navigate(`/ordinary-life/commitments/${encodeURIComponent(id)}?action=${encodeURIComponent(action)}`)
+  }
 
   const historyEntries: CommitmentHistoryEntry[] = d.statusHistory ?? []
 
@@ -211,7 +232,7 @@ export function CommitmentDetailPage() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[720px] text-left text-sm">
                 <thead className="bg-[var(--muted)]/45 text-xs uppercase tracking-[0.08em] text-[var(--muted-foreground)]">
-                  <tr>{["Payment mode", "Amount", "Currency", "Exchange rate", "Receipt reference", "Reversal", "Allocated at"].map((heading) => <th key={heading} scope="col" className="px-4 py-2.5 font-bold">{heading}</th>)}</tr>
+                  <tr>{["Payment mode", "Amount", "Currency", "Exchange rate", "Receipt reference", "Reversal", "Allocated at", "Reverse"].map((heading) => <th key={heading} scope="col" className="px-4 py-2.5 font-bold">{heading}</th>)}</tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--border)]">
                   {d.allocations.map((allocation) => (
@@ -225,6 +246,14 @@ export function CommitmentDetailPage() {
                         {allocation.reversalOf ? <span className="inline-flex items-center gap-1 text-xs text-[var(--muted-foreground)]"><ExternalLink size={12} aria-hidden="true" />Reversal of {allocation.reversalOf}</span> : "—"}
                       </td>
                       <td className="px-4 py-2.5 text-xs">{dateTimeLabel(allocation.allocatedAt)}</td>
+                      <td className="px-4 py-2.5 text-right">
+                        {(d.allowedActions ?? []).includes("reverse") && !allocation.reversalOf ? (
+                          <button type="button" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-[var(--destructive)] outline-none transition hover:bg-[var(--destructive)]/10 focus-visible:ring-2 focus-visible:ring-[var(--ring)]" onClick={() => setReverseTarget(allocation)} data-testid={`reverse-${allocation.id}`}>
+                            <Undo2 size={13} aria-hidden="true" />
+                            Reverse
+                          </button>
+                        ) : "—"}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -288,6 +317,28 @@ export function CommitmentDetailPage() {
           )}
         </section>
       )}
+
+      <RecordPaymentModal
+        open={paymentOpen}
+        onClose={() => setPaymentOpen(false)}
+        commitment={d}
+        onSuccess={() => {
+          setPaymentOpen(false)
+          void detail.refetch()
+        }}
+      />
+      {reverseTarget ? (
+        <ReverseAllocationModal
+          open
+          onClose={() => setReverseTarget(null)}
+          commitmentId={id}
+          allocation={reverseTarget}
+          onSuccess={() => {
+            setReverseTarget(null)
+            void detail.refetch()
+          }}
+        />
+      ) : null}
     </div>
   )
 }
