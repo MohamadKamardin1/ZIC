@@ -7,7 +7,7 @@
 - [x] Prompt 5 — Commitment Detail Page with Tabs and Actions
 - [x] Prompt 6 — Commitment Payment and Reversal Modals
 - [x] Prompt 7 — Commitment Lifecycle Action Modals
-- [ ] Prompt 8 — [pending prompt text]
+- [ ] Prompt 8 — Overdue Processing and Notification Center UI
 - [ ] Prompt 9 — [pending prompt text]
 - [ ] Prompt 10 — [pending prompt text]
 
@@ -225,6 +225,37 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: modal behaviors, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 8/10 — Overdue Processing and Notification Center UI
+
+```text
+You are a senior frontend engineer. Continue the ZIC Commitments UI. Execute ONLY Prompt 8.
+
+MANDATORY RULES:
+- Batch actions must show staged progress and audited results.
+- If the trigger endpoint POST /api/v1/ol/commitments/process-overdue/ does not exist, add it backend-side in this prompt: permission-gated, idempotent, audited, returning processed/overdue/notified counts.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. "Run Overdue Processing" action (permission-gated) with staged progress indicator (validate -> update -> notify -> summarize).
+2. Results summary panel: processed, marked overdue, notifications created, lapse reviews flagged; link to affected commitments.
+3. Lapse review queue table: commitments past lapse date with policy reference and recommended action.
+4. Notification center integration: CommitmentOverdue events appear in the top-bar bell with deep links.
+
+TESTS:
+- trigger button permission gating
+- progress stages render
+- summary counts display and links work
+- bell notification deep link navigates
+
+GIT:
+- commit: "feat(web): overdue processing and notification center UI"
+- push; tick checkbox
+
+FINAL OUTPUT: processing UX, endpoint added if any, tests, commit hash, pushed branch.
 ```
 
 ---
