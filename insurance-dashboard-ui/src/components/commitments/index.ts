@@ -8,4 +8,8 @@ export { ReasonField, reasonError, DEFAULT_REASON_MIN_LENGTH } from "./ReasonFie
 export type { ReasonFieldProps } from "./ReasonField"
 export { CommitmentConfirmDialog } from "./ConfirmDialog"
 export type { CommitmentConfirmDialogProps } from "./ConfirmDialog"
+export { GenerateCommitmentsModal } from "./GenerateCommitmentsModal"
+export type { GenerateCommitmentsModalProps } from "./GenerateCommitmentsModal"
+export { ManualCommitmentModal } from "./ManualCommitmentModal"
+export type { ManualCommitmentModalProps } from "./ManualCommitmentModal"
 export { notifyCommitmentSuccess, notifyCommitmentFailure } from "../../lib/commitmentsNotify"

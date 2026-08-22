@@ -10,9 +10,12 @@ import { MasterDetailPage } from "../../components/ui/Patterns"
 import { InfoBanner } from "../../components/ui/Overlays"
 import { useToast } from "../../components/ui/Toast"
 import { ErrorCoach } from "../../components/commitments/ErrorCoach"
+import { GenerateCommitmentsModal } from "../../components/commitments/GenerateCommitmentsModal"
+import { ManualCommitmentModal } from "../../components/commitments/ManualCommitmentModal"
 import { CommitmentStatusBadge, commitmentStatusLabel } from "../../components/commitments/CommitmentStatusBadge"
 import { DueDateWarning } from "../../components/commitments/DueDateWarning"
 import { notifyCommitmentSuccess, notifyCommitmentFailure } from "../../lib/commitmentsNotify"
+import { formatMoney, dateLabel, sourceLabel } from "../../lib/commitmentsDisplay"
 import { useCommitmentKPIs, useCommitmentOptions } from "../../lib/commitmentsHooks"
 import {
   importCommitmentRows,
@@ -40,32 +43,6 @@ const CHIPS: Array<{ key: Exclude<ChipKey, null>; label: string }> = [
   { key: "in_grace", label: "In Grace" },
   { key: "outstanding", label: "Outstanding" },
 ]
-
-export function formatMoney(value: string | number | null | undefined, currency = "TZS"): string {
-  if (value === null || value === undefined || value === "") return "—"
-  const numeric = Number(value)
-  if (!Number.isFinite(numeric)) return String(value)
-  try {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency, maximumFractionDigits: 2 }).format(numeric)
-  } catch {
-    return `${currency} ${numeric.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-  }
-}
-
-export function dateLabel(value?: string | null): string {
-  if (!value) return "—"
-  const parsed = new Date(`${String(value).slice(0, 10)}T00:00:00`)
-  return Number.isNaN(parsed.getTime()) ? String(value) : new Intl.DateTimeFormat("en-GB", { dateStyle: "medium" }).format(parsed)
-}
-
-export function sourceLabel(sourceType?: string): string {
-  switch (String(sourceType ?? "").toUpperCase()) {
-    case "PROPOSAL": return "Proposal"
-    case "POLICY": return "Policy"
-    case "MANUAL": return "Manual"
-    default: return String(sourceType ?? "—")
-  }
-}
 
 export function isTerminalCommitmentStatus(status: string): boolean {
   return ["COMPLETED", "CANCELLED"].includes(String(status ?? "").toUpperCase())
@@ -168,6 +145,8 @@ export default function OLCommitments() {
   const [listError, setListError] = useState<unknown>(null)
   const [importErrors, setImportErrors] = useState<Array<{ row: number; message: string }>>([])
   const [importing, setImporting] = useState(false)
+  const [generateOpen, setGenerateOpen] = useState(false)
+  const [manualOpen, setManualOpen] = useState(false)
 
   const kpisQuery = useCommitmentKPIs()
   const optionsQuery = useCommitmentOptions()
@@ -387,11 +366,11 @@ export default function OLCommitments() {
         stats={stats}
         actions={
           <>
-            <button type="button" className="button-secondary" disabled={importing} onClick={() => navigate("/ordinary-life/commitments/generate")} title="Run parameter-driven commitment generation">
+            <button type="button" className="button-secondary" disabled={importing} onClick={() => setGenerateOpen(true)} title="Run parameter-driven commitment generation">
               <Workflow size={16} aria-hidden="true" />
               Generate Commitments
             </button>
-            <button type="button" className="button-primary" disabled={!hasPermission("ol_commitments.create")} onClick={() => navigate("/ordinary-life/commitments/new")}>
+            <button type="button" className="button-primary" disabled={!hasPermission("ol_commitments.create")} onClick={() => setManualOpen(true)}>
               <FilePlus2 size={16} aria-hidden="true" />
               Create New Commitment
             </button>
@@ -459,6 +438,29 @@ export default function OLCommitments() {
           />
         </div>
       </MasterDetailPage>
+
+      <GenerateCommitmentsModal
+        open={generateOpen}
+        onClose={() => setGenerateOpen(false)}
+        onOpenManual={() => {
+          setGenerateOpen(false)
+          setManualOpen(true)
+        }}
+        onComplete={() => {
+          setGenerateOpen(false)
+          setRefreshKey((value) => value + 1)
+          void queryClient.invalidateQueries({ queryKey: ["commitments", "kpis"] })
+        }}
+      />
+      <ManualCommitmentModal
+        open={manualOpen}
+        onClose={() => setManualOpen(false)}
+        onCreated={(commitment) => {
+          setManualOpen(false)
+          setRefreshKey((value) => value + 1)
+          navigate(`/ordinary-life/commitments/${commitment.id}`)
+        }}
+      />
     </div>
   )
 }
@@ -495,3 +497,5 @@ export function parseCsv(text: string): Array<Record<string, string>> {
   const headers = parseCsvLine(lines[0]).map((header) => header.toLowerCase())
   return lines.slice(1).map((line) => Object.fromEntries(parseCsvLine(line).map((value, index) => [headers[index], value])))
 }
+
+export { formatMoney, dateLabel, sourceLabel }

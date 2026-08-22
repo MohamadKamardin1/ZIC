@@ -126,6 +126,46 @@ export interface GenerationPayload {
   manual?: Record<string, unknown>
 }
 
+export interface CommitmentSourceOption {
+  id: string
+  label: string
+  reference?: string
+}
+
+export interface CommitmentReferenceOptions {
+  partners: CommitmentSourceOption[]
+  products: CommitmentSourceOption[]
+  plans: CommitmentSourceOption[]
+}
+
+export interface CommitmentPreviewRow {
+  installmentNumber: number
+  dueDate: string
+  amount: string
+  currency: string
+  graceDate?: string | null
+  lapseDate?: string | null
+  status: string
+}
+
+export interface ManualCommitmentPayload {
+  partner?: string
+  product?: string
+  plan?: string
+  currency?: string
+  installmentNumber?: number
+  dueDate: string
+  premiumAmount: string
+  paymentMode?: string
+  reason?: string
+}
+
+export interface GenerateResult {
+  created: number
+  events: number
+  existing?: Array<{ id?: string; commitment_number?: string; installment_number?: number }>
+}
+
 export const COMMITMENT_ACTIONS = [
   "record_payment",
   "reverse",
@@ -282,6 +322,59 @@ export function getCommitment(id: string): Promise<CommitmentDetail> {
 
 export function getCommitmentOptions(): Promise<CommitmentOptions> {
   return request<CommitmentOptions>(`${COMMITMENTS_API_PREFIX}/options/`)
+}
+
+export function getCommitmentSources(sourceType: CommitmentSourceType): Promise<{ results: CommitmentSourceOption[] }> {
+  return request(`${COMMITMENTS_API_PREFIX}/options/sources/?source_type=${encodeURIComponent(sourceType)}`)
+}
+
+export function getCommitmentReferenceOptions(): Promise<CommitmentReferenceOptions> {
+  return request<CommitmentReferenceOptions>(`${COMMITMENTS_API_PREFIX}/options/references/`)
+}
+
+export function createManualCommitment(payload: ManualCommitmentPayload): Promise<CommitmentDetail> {
+  return request(`${COMMITMENTS_API_PREFIX}/commitments/manual/`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  })
+}
+
+export function normalizePreviewRows(payload: { rows?: unknown[] } | unknown[] | unknown): CommitmentPreviewRow[] {
+  const rows = Array.isArray(payload)
+    ? payload
+    : payload && typeof payload === "object" && Array.isArray((payload as { rows?: unknown[] }).rows)
+      ? (payload as { rows: unknown[] }).rows
+      : []
+  return rows.map((raw) => {
+    const row = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}
+    return {
+      installmentNumber: Number(row.installmentNumber ?? row.installment_number ?? 1),
+      dueDate: String(row.dueDate ?? row.due_date ?? ""),
+      amount: String(row.amount ?? row.premiumAmount ?? row.premium_amount ?? ""),
+      currency: String(row.currency ?? "TZS"),
+      graceDate: String(row.graceDate ?? row.grace_date ?? "") || null,
+      lapseDate: String(row.lapseDate ?? row.lapse_date ?? "") || null,
+      status: String(row.status ?? "PENDING"),
+    }
+  })
+}
+
+export function normalizeGenerateResult(payload: unknown): GenerateResult {
+  const record = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {}
+  return {
+    created: Number(record.created ?? 0),
+    events: Number(record.events ?? 0),
+    existing: Array.isArray(record.existing)
+      ? record.existing.map((entry) => {
+          const item = (entry ?? {}) as Record<string, unknown>
+          return {
+            id: item.id ? String(item.id) : undefined,
+            commitment_number: item.commitment_number ?? item.commitmentNumber ? String(item.commitment_number ?? item.commitmentNumber) : undefined,
+            installment_number: item.installment_number ?? item.installmentNumber ? Number(item.installment_number ?? item.installmentNumber) : undefined,
+          }
+        })
+      : undefined,
+  }
 }
 
 export function generateCommitmentsPreview(payload: GenerationPayload): Promise<{ rows: unknown[] }> {

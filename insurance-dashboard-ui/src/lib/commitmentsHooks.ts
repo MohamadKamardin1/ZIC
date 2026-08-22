@@ -12,12 +12,16 @@ import {
   type CommitmentDetail,
   type CommitmentListFilters,
   type CommitmentOptions,
+  type CommitmentSourceType,
   commitmentAction,
+  createManualCommitment,
   generateCommitments,
   generateCommitmentsPreview,
   getCommitment,
   getCommitmentKPIs,
   getCommitmentOptions,
+  getCommitmentReferenceOptions,
+  getCommitmentSources,
   importCommitmentRows,
   listCommitments,
   normalizeCommitment,
@@ -122,6 +126,33 @@ export function useProcessOverdueMutation() {
   return useMutation({
     mutationFn: processOverdueCommitments,
     onSuccess: () => invalidateCommitmentQueries(queryClient),
+  })
+}
+
+export function useCommitmentSources(sourceType: CommitmentSourceType | null) {
+  return useQuery({
+    queryKey: ["commitments", "sources", sourceType ?? "none"],
+    queryFn: () => getCommitmentSources(sourceType as CommitmentSourceType),
+    enabled: Boolean(sourceType) && sourceType !== "MANUAL",
+    staleTime: 30_000,
+  })
+}
+
+export function useCommitmentReferenceOptions() {
+  return useQuery({
+    queryKey: ["commitments", "references"],
+    queryFn: getCommitmentReferenceOptions,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+export function useCreateManualCommitmentMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: createManualCommitment,
+    onSuccess: (commitment) => {
+      invalidateCommitmentQueries(queryClient, commitment?.id)
+    },
   })
 }
 
