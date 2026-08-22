@@ -357,8 +357,18 @@ class OLQuotationInvestmentFundOptionSerializer(serializers.Serializer):
 
 
 class OLQuotationInvestmentFundAllocationInputSerializer(serializers.Serializer):
-    plan_config_id = serializers.UUIDField()
-    fund_id = serializers.UUIDField()
+    plan_config_id = serializers.UUIDField(
+        error_messages={
+            "required": "Select the selected plan configuration that this fund allocation belongs to.",
+            "invalid": "The fund allocation must reference a valid selected plan configuration.",
+        },
+    )
+    fund_id = serializers.UUIDField(
+        error_messages={
+            "required": "Select an investment fund for this allocation.",
+            "invalid": "Select a valid investment fund from the available options.",
+        },
+    )
     allocation_percent = serializers.DecimalField(
         max_digits=7,
         decimal_places=4,

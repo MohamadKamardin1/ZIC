@@ -1597,6 +1597,27 @@ class OLQuotationAPITests(TestCase):
         )
         self.assertEqual(response.status_code, 400, response.data)
         self.assertIn("100", str(response.data))
+        self.assertIn("TERM-20 — Twenty Year Term", str(response.data))
+        self.assertNotIn(draft["plan_config_id"], str(response.data))
+
+    def test_investment_funds_requires_plan_configuration_with_instruction(self):
+        first, _ = self.create_investment_funds()
+        draft = self.prepare_investment_fund_quotation()
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/investment-funds/",
+            {
+                "allocations": [
+                    {
+                        "fund_id": str(first.pk),
+                        "allocation_percent": "100.0000",
+                    }
+                ]
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("selected plan configuration", str(response.data).lower())
+        self.assertIn("belongs to", str(response.data).lower())
 
     def test_investment_funds_reject_inactive_fund(self):
         _, inactive = self.create_investment_funds(inactive=True)

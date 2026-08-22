@@ -112,6 +112,7 @@ let riderScenario = false
 let financialScenario = false
 let finalizeBlocked = false
 let planSelectionError = false
+let latestFundPayload: Record<string, unknown> | null = null
 
 const configuration = {
   id: "config-1",
@@ -146,6 +147,7 @@ beforeEach(() => {
   financialScenario = false
   finalizeBlocked = false
   planSelectionError = false
+  latestFundPayload = null
   requestMock.mockImplementation(async (path: string, options?: RequestInit) => {
     const draftResponse = financialScenario && finalizeBlocked ? { ...quotation, wizard_step_completion: { "1_personal_details": true, "2_plan_and_sub_products": true, "3_member_coverage": true, "4_installments": true, "5_investment_funds": true, "6_riders_and_benefits": true, "7_financial_details": true } } : quotation
     if (path === "/api/v1/ol-quotations/quotations/" && options?.method === "POST") return draftResponse
@@ -265,8 +267,12 @@ beforeEach(() => {
       available_payment_modes: ["ANNUAL", "MONTHLY"],
       rate_rows: templateRows,
     }
+    if (path.endsWith("/investment-funds/") && options?.method === "POST") {
+      latestFundPayload = JSON.parse(String(options.body ?? "{}")) as Record<string, unknown>
+      return { quotation_id: "quote-1", wizard_step_complete: true }
+    }
     if (path.endsWith("/investment-funds/") && !options?.method) return investmentFundScenario ? {
-      plan_rows: [{ plan_configuration_id: "config-1", plan_code: "TERM-20", plan_name: "Investment-linked Plan", investment_linked: true, status: "READY_TO_CONFIGURE", allocation_total: "60.0000", allocations: [{ plan_config_id: "config-1", fund_id: "fund-1", allocation_percent: "60.0000", allocated_amount: null, fund_name: "Balanced Growth", fund_code: "FUND-1" }], can_configure: true }],
+      plan_rows: [{ plan_configuration_id: "config-1", plan_code: "TERM-20", plan_name: "Investment-linked Plan", investment_linked: true, status: "READY_TO_CONFIGURE", allocation_total: "60.0000", allocations: [{ plan_configuration_id: "config-1", fund_id: "fund-1", allocation_percent: "60.0000", allocated_amount: null, fund_name: "Balanced Growth", fund_code: "FUND-1" }], can_configure: true }],
       requires_allocation: true,
       not_applicable: false,
       wizard_complete: false,
@@ -572,6 +578,24 @@ describe("OL quotation wizard", () => {
     const dialog = await screen.findByRole("dialog")
     expect(await within(dialog).findByLabelText("Installment 1 description")).toHaveValue("Maturity Payout")
     expect(within(dialog).getByLabelText("Installment 1 rate")).toHaveValue(100)
+  })
+
+  it("normalizes existing backend allocation rows before saving the required plan configuration", async () => {
+    investmentFundScenario = true
+    await reachMemberCoverageStep()
+    fireEvent.click(screen.getByRole("button", { name: "Investment Funds" }))
+    expect(await screen.findByText("Investment-linked Plan")).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText("Allocation percentage 1"), { target: { value: "100" } })
+    fireEvent.click(screen.getByRole("button", { name: /Next/ }))
+
+    await waitFor(() => expect(latestFundPayload).not.toBeNull())
+    const submitted = (latestFundPayload?.allocations as Array<Record<string, unknown>>)[0]
+    expect(submitted).toEqual(expect.objectContaining({
+      plan_config_id: "config-1",
+      fund_id: "fund-1",
+      allocation_percent: "100",
+    }))
+    expect(submitted).not.toHaveProperty("plan_configuration_id")
   })
 
   it("shows the Investment Funds allocation error when a plan total is not 100%", async () => {

@@ -1186,7 +1186,7 @@ class QuotationService:
         for row in rows:
             config_id = str(row["plan_config_id"])
             if config_id not in config_by_id:
-                raise QuotationServiceError({"allocations": "Every allocation must reference an applicable selected plan configuration."})
+                raise QuotationServiceError({"plan_config_id": "Choose an applicable selected plan configuration for every investment-fund allocation before saving."})
             fund_id = str(row["fund_id"])
             key = (config_id, fund_id)
             if key in seen:
@@ -1202,7 +1202,10 @@ class QuotationService:
         for config_id, config_rows in grouped.items():
             total = sum((row["allocation_percent"] for row in config_rows), Decimal("0"))
             if total != Decimal("100"):
-                raise QuotationServiceError({"allocations": f"Allocations for plan configuration {config_id} must sum exactly to 100."})
+                config = config_by_id[config_id]
+                plan = config.plan
+                plan_label = f"{plan.code} — {plan.name}" if plan else config.sub_product_code or "the selected plan"
+                raise QuotationServiceError({"allocations": f"Allocations for {plan_label} currently total {total}%. Set the fund percentages for this plan to exactly 100% before saving."})
 
         effective_funds = QuotationService._investment_fund_effective_queryset(locked.quote_date or timezone.localdate())
         created = []
