@@ -46,6 +46,7 @@ import { QuickCreateModal, type QuickCreateOption } from "../../components/ui/Qu
 import { SmartSelect, type SmartOption } from "../../components/ui/SmartSelect"
 
 const QUOTATION_PREFIX = "/api/v1/ol-quotations/quotations/"
+const QUOTATION_CHILD_PREFIX = "/api/v1/ol-quotations/"
 const PLAN_SEARCH_ENDPOINT = "/api/v1/ol/plans/search/"
 const LOCATION_MASTER_ENDPOINT = "/api/v1/onboarding/locations/"
 const LOCAL_DRAFT_KEY = "zic.ol-quotation.resume"
@@ -137,6 +138,9 @@ type Quotation = {
   address?: string | null
   wizard_step_completion?: Record<string, boolean>
   plan_configurations?: PlanConfiguration[]
+  installment_configurations?: Array<{ id?: string; is_selected?: boolean }>
+  payment_detail?: PaymentDetail | null
+  underwriting_detail?: UnderwritingDetail | null
 }
 
 type PersonalForm = {
@@ -150,6 +154,42 @@ type PersonalForm = {
   location_id: string
   agent_id: string
   address: string
+}
+
+type PaymentDetail = {
+  id?: string
+  payment_method?: string | null
+  account_reference?: string | null
+  payment_reference?: string | null
+  amount?: string | number | null
+  currency?: string | null
+}
+
+type UnderwritingDetail = {
+  id?: string
+  medical_required?: boolean
+  financial_underwriting_required?: boolean
+  risk_class?: string | null
+  health_answers?: Record<string, unknown>
+  medical_requirements?: unknown[]
+  declarations?: Record<string, unknown>
+  notes?: string | null
+}
+
+type PaymentForm = {
+  payment_method: string
+  account_reference: string
+  payment_reference: string
+  amount: string
+}
+
+type UnderwritingForm = {
+  medical_required: boolean
+  financial_underwriting_required: boolean
+  risk_class: string
+  health_answers: string
+  declarations_confirmed: boolean
+  notes: string
 }
 
 type PlanConstraints = {
@@ -446,6 +486,7 @@ type ApiPayload = {
   premium_factors?: Choice[]
   constraints?: PlanConstraints | null
   plan_features?: PlanOptions["plan_features"]
+  steps?: Record<string, boolean>
   principal_member?: MemberRow | null
   members?: MemberRow[]
   additional_members?: MemberRow[]
@@ -641,6 +682,56 @@ function draftConfiguration(plan: PlanCard, sectionNumber: number, options?: Pla
     premium_waiver: false,
     estimated_bonus_rate: "0",
     is_selected: true,
+  }
+}
+
+function hasPaymentPrerequisite(detail?: PaymentDetail | null): boolean {
+  return Boolean(detail?.payment_method)
+}
+
+function hasUnderwritingPrerequisite(detail?: UnderwritingDetail | null): boolean {
+  return Boolean(detail?.health_answers && Object.keys(detail.health_answers).length > 0 && detail.declarations?.confirmed === true)
+}
+
+function finalizationStepForKey(key: string): number {
+  const normalized = key.replace(/^errors\./, "")
+  if (normalized === "installments" || normalized.startsWith("installment")) return 3
+  if (normalized.includes("fund")) return 4
+  if (normalized.includes("rider")) return 5
+  if (normalized.includes("payment") || normalized.includes("underwriting") || normalized.includes("financial")) return 6
+  if (normalized.includes("member")) return 2
+  if (normalized.includes("plan") || normalized.includes("product")) return 1
+  if (normalized.includes("personal") || normalized.includes("identity") || normalized.includes("location") || normalized.includes("agent")) return 0
+  return 6
+}
+
+function initialPaymentForm(quotation?: Pick<Quotation, "payment_detail">): PaymentForm {
+  const detail = quotation?.payment_detail
+  return {
+    payment_method: String(detail?.payment_method ?? ""),
+    account_reference: String(detail?.account_reference ?? ""),
+    payment_reference: String(detail?.payment_reference ?? ""),
+    amount: detail?.amount == null ? "" : String(detail.amount),
+  }
+}
+
+function underwritingAnswersText(answers?: Record<string, unknown>): string {
+  if (!answers || Object.keys(answers).length === 0) return ""
+  return Object.entries(answers).map(([key, value]) => {
+    const display = value !== null && typeof value === "object" ? JSON.stringify(value) : String(value ?? "")
+    return `${key}: ${display}`
+  }).join("\n")
+}
+
+function initialUnderwritingForm(quotation?: Pick<Quotation, "underwriting_detail">): UnderwritingForm {
+  const detail = quotation?.underwriting_detail
+  return {
+    medical_required: Boolean(detail?.medical_required),
+    financial_underwriting_required: Boolean(detail?.financial_underwriting_required),
+    risk_class: String(detail?.risk_class ?? "STANDARD"),
+    health_answers: underwritingAnswersText(detail?.health_answers),
+    declarations_confirmed: Boolean(detail?.declarations && Object.keys(detail.declarations).length > 0),
+    notes: String(detail?.notes ?? ""),
   }
 }
 
@@ -851,6 +942,19 @@ function RidersBenefitsStep({ state, optionsByPlan, errors, onSave }: { state: R
   return <div className="surface-card overflow-hidden"><StepHeader eyebrow="Step 6 of 7" title="Riders & Benefits" description="Attach applicable riders and configure benefits. Premium previews are produced by the backend rating engine." /><div className="space-y-5 p-5">{state?.requires_configuration === false && <InfoBanner title="No rider configuration required">The selected plans do not require additional rider configuration.</InfoBanner>}{(state?.plan_rows ?? []).map((row) => <RiderPlanEditor key={row.plan_configuration_id} row={row} options={optionsByPlan[row.plan_configuration_id] ?? null} errors={errors} onSave={onSave} />)}</div></div>
 }
 
+function FinancialPrerequisites({ paymentDetail, underwritingDetail, paymentErrors, underwritingErrors, saving, onSavePayment, onSaveUnderwriting }: { paymentDetail?: PaymentDetail | null; underwritingDetail?: UnderwritingDetail | null; paymentErrors: ApiFieldErrors; underwritingErrors: ApiFieldErrors; saving: boolean; onSavePayment: (form: PaymentForm) => Promise<boolean>; onSaveUnderwriting: (form: UnderwritingForm) => Promise<boolean> }) {
+  const [payment, setPayment] = useState<PaymentForm>(() => initialPaymentForm({ payment_detail: paymentDetail }))
+  const [underwriting, setUnderwriting] = useState<UnderwritingForm>(() => initialUnderwritingForm({ underwriting_detail: underwritingDetail }))
+  useEffect(() => setPayment(initialPaymentForm({ payment_detail: paymentDetail })), [paymentDetail])
+  useEffect(() => setUnderwriting(initialUnderwritingForm({ underwriting_detail: underwritingDetail })), [underwritingDetail])
+  const updatePayment = (field: keyof PaymentForm, value: string) => setPayment((current) => ({ ...current, [field]: value }))
+  const updateUnderwriting = (field: keyof UnderwritingForm, value: string | boolean) => setUnderwriting((current) => ({ ...current, [field]: value }))
+  return <div className="grid gap-4 xl:grid-cols-2">
+    <section className="surface-card overflow-hidden"><div className="border-b bg-[var(--muted)]/35 px-5 py-4"><h3 className="font-bold">Payment Details</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Capture how the quotation premium will be paid. Save this section before finalizing.</p></div><div className="space-y-4 p-5"><SmartSelect entity="payment-modes" label="Payment Method" name="quotation_payment_method" required value={payment.payment_method} error={fieldError(paymentErrors, "payment_method")} onChange={(value) => updatePayment("payment_method", value)} placeholder="Search and select payment method" /><FormGrid columns={2}><TextInput label="Account Reference" name="account_reference" value={payment.account_reference} error={fieldError(paymentErrors, "account_reference")} onChange={(event) => updatePayment("account_reference", event.target.value)} placeholder="Optional account or mobile number" /><TextInput label="Payment Reference" name="payment_reference" value={payment.payment_reference} error={fieldError(paymentErrors, "payment_reference")} onChange={(event) => updatePayment("payment_reference", event.target.value)} placeholder="Optional receipt/reference number" /><DecimalInput label="Amount" name="payment_amount" value={payment.amount} error={fieldError(paymentErrors, "amount")} onChange={(event) => updatePayment("amount", event.target.value)} /><ReadOnlyField label="Currency" value={paymentDetail?.currency ?? "TZS"} /></FormGrid>{Object.values(paymentErrors).flat().map((message) => <p key={message} className="text-sm font-semibold text-[var(--destructive)]" role="alert">{message}</p>)}<div className="flex justify-end"><button type="button" className="button-primary" disabled={saving} onClick={() => void onSavePayment(payment)}><Save size={15} aria-hidden="true" />{saving ? "Saving…" : paymentDetail ? "Update payment details" : "Save payment details"}</button></div></div></section>
+    <section className="surface-card overflow-hidden"><div className="border-b bg-[var(--muted)]/35 px-5 py-4"><h3 className="font-bold">Underwriting Answers</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Record the customer declarations and underwriting assessment before finalization.</p></div><div className="space-y-4 p-5"><div className="grid gap-3 rounded-[10px] border bg-[var(--muted)]/25 p-4 md:grid-cols-2"><Toggle label="Medical underwriting required" checked={underwriting.medical_required} onChange={(checked) => updateUnderwriting("medical_required", checked)} hint="Enable when the configured product requires medical evidence." /><Toggle label="Financial underwriting required" checked={underwriting.financial_underwriting_required} onChange={(checked) => updateUnderwriting("financial_underwriting_required", checked)} hint="Enable when additional financial evidence is required." /></div><FormGrid columns={2}><TextInput label="Risk Class" name="underwriting_risk_class" required value={underwriting.risk_class} error={fieldError(underwritingErrors, "risk_class")} onChange={(event) => updateUnderwriting("risk_class", event.target.value)} placeholder="For example, STANDARD" /><TextareaInput label="Underwriting Answers" name="underwriting_answers" required value={underwriting.health_answers} error={fieldError(underwritingErrors, "health_answers")} onChange={(event) => updateUnderwriting("health_answers", event.target.value)} placeholder="Record the applicant answers, for example: occupation: Teacher; health declaration: No known condition." /></FormGrid><Toggle label="Declarations reviewed" checked={underwriting.declarations_confirmed} onChange={(checked) => updateUnderwriting("declarations_confirmed", checked)} hint="Confirm that the entered answers were reviewed with the applicant." /><TextareaInput label="Underwriting Notes" name="underwriting_notes" value={underwriting.notes} error={fieldError(underwritingErrors, "notes")} onChange={(event) => updateUnderwriting("notes", event.target.value)} placeholder="Optional underwriting notes" />{Object.values(underwritingErrors).flat().map((message) => <p key={message} className="text-sm font-semibold text-[var(--destructive)]" role="alert">{message}</p>)}<div className="flex justify-end"><button type="button" className="button-primary" disabled={saving} onClick={() => void onSaveUnderwriting(underwriting)}><Save size={15} aria-hidden="true" />{saving ? "Saving…" : underwritingDetail ? "Update underwriting answers" : "Save underwriting answers"}</button></div></div></section>
+  </div>
+}
+
 function FinancialDetailsStep({ summary, loading, calculating, onCalculate }: { summary: FinancialDetails | null; loading: boolean; calculating: boolean; onCalculate: () => Promise<boolean> }) {
   const currency = summary?.currency ?? "TZS"
   const cards = [{ label: "Base Premium", value: summary?.base_premium }, { label: "Rider Premiums", value: summary?.total_rider_premium }, { label: "Loadings", value: summary?.total_loading }, { label: "Discounts", value: summary?.total_discount }, { label: "Taxes", value: summary?.total_tax }, { label: "Total Premium", value: summary?.total_premium }]
@@ -860,8 +964,9 @@ function FinancialDetailsStep({ summary, loading, calculating, onCalculate }: { 
 function ReviewFinalize({ completedSteps, invalidSteps, errors, onJump, onFinalize, disabled }: { completedSteps: Set<number>; invalidSteps: Set<number>; errors: Record<string, unknown>; onJump: (step: number) => void; onFinalize: () => Promise<boolean>; disabled: boolean }) {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const checklist = steps.map((step, index) => ({ ...step, index, complete: completedSteps.has(index) }))
-  const errorEntries = Object.entries(errors)
-  return <div className="surface-card overflow-hidden"><div className="border-b bg-[var(--muted)]/35 px-5 py-4"><h3 className="text-lg font-bold">Review & Finalize</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Confirm that every required wizard step is complete before finalizing this quotation.</p></div><div className="space-y-5 p-5"><div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">{checklist.map((item) => <button type="button" key={item.id} className={`flex items-center gap-3 rounded-[10px] border p-3 text-left ${item.complete ? "border-[var(--success)]/50" : "border-[var(--border)]"}`} onClick={() => onJump(item.index)}><span className={item.complete ? "text-[var(--success)]" : "text-[var(--muted-foreground)]"}>{item.complete ? <Check size={17} aria-hidden="true" /> : <CircleAlert size={17} aria-hidden="true" />}</span><span className="text-sm font-semibold">{item.label}</span></button>)}</div>{invalidSteps.size > 0 && <div className="rounded-[10px] border border-[var(--destructive)]/40 bg-[var(--destructive)]/5 p-4"><p className="font-bold text-[var(--destructive)]">Please resolve the following steps:</p><ul className="mt-2 space-y-1 text-sm">{Array.from(invalidSteps).map((step) => <li key={step}><button type="button" className="underline" onClick={() => onJump(step)}>Go to {steps[step]?.label ?? "step"}</button></li>)}</ul></div>}{errorEntries.length > 0 && <div className="rounded-[10px] border border-[var(--destructive)]/40 p-4" role="alert"><p className="font-bold text-[var(--destructive)]">Finalize validation errors</p><ul className="mt-2 space-y-1 text-sm">{errorEntries.map(([key, value]) => <li key={key}><button type="button" className="mr-2 underline" onClick={() => onJump(key === "financial_details" ? 6 : Number(key) || 0)}>Review</button>{Array.isArray(value) ? value.join(", ") : String(value)}</li>)}</ul></div>}<div className="flex justify-end"><button type="button" className="button-primary" disabled={disabled} onClick={() => setConfirmOpen(true)}><Check size={15} aria-hidden="true" />Finalize quotation</button></div></div><Modal open={confirmOpen} title="Finalize quotation" description="Finalizing locks the current quotation version for downstream printing and conversion." onClose={() => setConfirmOpen(false)} footer={<><button type="button" className="button-secondary" onClick={() => setConfirmOpen(false)}>Cancel</button><button type="button" className="button-primary" onClick={() => void onFinalize().then((ok) => { if (ok) setConfirmOpen(false) })}>Confirm finalize</button></>}><p className="text-sm text-[var(--muted-foreground)]">Are you sure you want to finalize this quotation?</p></Modal></div>
+      const errorEntries = Object.entries(errors).filter(([key]) => !["detail", "errors"].includes(key))
+
+  return <div className="surface-card overflow-hidden"><div className="border-b bg-[var(--muted)]/35 px-5 py-4"><h3 className="text-lg font-bold">Review & Finalize</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Confirm that every required wizard step is complete before finalizing this quotation.</p></div><div className="space-y-5 p-5"><div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">{checklist.map((item) => <button type="button" key={item.id} className={`flex items-center gap-3 rounded-[10px] border p-3 text-left ${item.complete ? "border-[var(--success)]/50" : "border-[var(--border)]"}`} onClick={() => onJump(item.index)}><span className={item.complete ? "text-[var(--success)]" : "text-[var(--muted-foreground)]"}>{item.complete ? <Check size={17} aria-hidden="true" /> : <CircleAlert size={17} aria-hidden="true" />}</span><span className="text-sm font-semibold">{item.label}</span></button>)}</div>{invalidSteps.size > 0 && <div className="rounded-[10px] border border-[var(--destructive)]/40 bg-[var(--destructive)]/5 p-4"><p className="font-bold text-[var(--destructive)]">Please resolve the following steps:</p><ul className="mt-2 space-y-1 text-sm">{Array.from(invalidSteps).map((step) => <li key={step}><button type="button" className="underline" onClick={() => onJump(step)}>Go to {steps[step]?.label ?? "step"}</button></li>)}</ul></div>}{errorEntries.length > 0 && <div className="rounded-[10px] border border-[var(--destructive)]/40 p-4" role="alert"><p className="font-bold text-[var(--destructive)]">Finalize validation errors</p><ul className="mt-2 space-y-1 text-sm">{errorEntries.map(([key, value]) => <li key={key}><button type="button" className="mr-2 underline" onClick={() => onJump(finalizationStepForKey(key))}>Review</button>{Array.isArray(value) ? value.join(", ") : String(value)}</li>)}</ul></div>}<div className="flex justify-end"><button type="button" className="button-primary" disabled={disabled} onClick={() => setConfirmOpen(true)}><Check size={15} aria-hidden="true" />Finalize quotation</button></div></div><Modal open={confirmOpen} title="Finalize quotation" description="Finalizing locks the current quotation version for downstream printing and conversion." onClose={() => setConfirmOpen(false)} footer={<><button type="button" className="button-secondary" onClick={() => setConfirmOpen(false)}>Cancel</button><button type="button" className="button-primary" onClick={() => void onFinalize().then((ok) => { if (ok) setConfirmOpen(false) })}>Confirm finalize</button></>}><p className="text-sm text-[var(--muted-foreground)]">Are you sure you want to finalize this quotation?</p></Modal></div>
 }
 
 function FutureStep({ step, index }: { step: string; index: number }) {
@@ -904,6 +1009,10 @@ export default function OLQuotationWizard() {
   const [riderSelections, setRiderSelections] = useState<Record<string, RiderSelection[]>>({})
   const [riderErrors, setRiderErrors] = useState<ApiFieldErrors>({})
   const [financialSummary, setFinancialSummary] = useState<FinancialDetails | null>(null)
+  const [paymentDetail, setPaymentDetail] = useState<PaymentDetail | null>(null)
+  const [underwritingDetail, setUnderwritingDetail] = useState<UnderwritingDetail | null>(null)
+  const [paymentErrors, setPaymentErrors] = useState<ApiFieldErrors>({})
+  const [underwritingErrors, setUnderwritingErrors] = useState<ApiFieldErrors>({})
   const [financialLoading, setFinancialLoading] = useState(false)
   const [calculating, setCalculating] = useState(false)
   const [finalizeErrors, setFinalizeErrors] = useState<Record<string, unknown>>({})
@@ -920,8 +1029,14 @@ export default function OLQuotationWizard() {
     setPersonal(initialPersonal(payload))
     const configs = payload.plan_configurations ?? []
     setConfigurations(configs)
+    setPaymentDetail(payload.payment_detail ?? null)
+    setUnderwritingDetail(payload.underwriting_detail ?? null)
     setSelectedPlanIds(configs.filter((config) => config.is_selected !== false).map((config) => configurationPlanId(config)).filter((value): value is string => Boolean(value)))
-    const completion = payload.wizard_step_completion ?? {}
+    const completion = { ...(payload.wizard_step_completion ?? {}) }
+    if (payload.installment_configurations) completion["4_installments"] = payload.installment_configurations.some((item) => item.is_selected !== false)
+    if (payload.payment_detail !== undefined || payload.underwriting_detail !== undefined) {
+      completion["7_financial_details"] = Boolean(completion["7_financial_details"]) && hasPaymentPrerequisite(payload.payment_detail) && hasUnderwritingPrerequisite(payload.underwriting_detail)
+    }
     const completionKeys = ["1_personal_details", "2_plan_and_sub_products", "3_member_coverage", "4_installments", "5_investment_funds", "6_riders_and_benefits", "7_financial_details"]
     setCompletedSteps(new Set(completionKeys.map((key, index) => completion[key] ? index : -1).filter((value) => value >= 0)))
   }, [])
@@ -1221,14 +1336,105 @@ export default function OLQuotationWizard() {
     } finally { setFinancialLoading(false) }
   }, [quotationId, toast])
 
+  const loadWizardSummary = useCallback(async () => {
+    if (!quotationId) return
+    try {
+      const payload = await requestNormalized<ApiPayload>(`${QUOTATION_PREFIX}${quotationId}/wizard-summary/`)
+      const summarySteps = (payload.steps ?? {}) as Record<string, boolean>
+      setCompletedSteps((current) => {
+        const next = new Set(current)
+        const stepMap: Array<[string, number]> = [["1_product_plan", 1], ["2_members", 2], ["3_installments", 3], ["4_funds", 4], ["5_riders", 5]]
+        for (const [key, index] of stepMap) {
+          if (summarySteps[key]) next.add(index)
+          else next.delete(index)
+        }
+        return next
+      })
+    } catch (error) {
+      toast({ tone: "danger", title: "Unable to refresh quotation completion", message: parseApiError(error).message })
+    }
+  }, [quotationId, toast])
+
+  const savePaymentDetails = useCallback(async (form: PaymentForm) => {
+    if (!quotationId) return false
+    if (!form.payment_method.trim()) {
+      setPaymentErrors({ payment_method: ["Select a payment method before saving Payment Details."] })
+      setInvalidSteps((current) => new Set(current).add(6))
+      return false
+    }
+    setSaving(true)
+    setPaymentErrors({})
+    try {
+      const id = paymentDetail?.id
+      const payload = await requestNormalized<PaymentDetail>(`${QUOTATION_CHILD_PREFIX}payment-details/${id ? `${id}/` : ""}`, {
+        method: id ? "PATCH" : "POST",
+        body: JSON.stringify({ quotation: quotationId, payment_method: form.payment_method, account_reference: form.account_reference, payment_reference: form.payment_reference, amount: form.amount === "" ? null : form.amount, currency: quotation?.currency ?? "TZS" }),
+      })
+      setPaymentDetail(payload)
+      setQuotation((current) => current ? { ...current, payment_detail: payload } : current)
+      if (hasUnderwritingPrerequisite(underwritingDetail) && Boolean(financialSummary && !financialSummary.recalculation_required)) {
+        setCompletedSteps((current) => new Set(current).add(6))
+        setInvalidSteps((current) => { const next = new Set(current); next.delete(6); return next })
+      }
+      toast({ tone: "success", title: id ? "Payment details updated" : "Payment details saved" })
+      return true
+    } catch (error) {
+      const parsed = parseApiError(error)
+      setPaymentErrors(parsed.fieldErrors)
+      setInvalidSteps((current) => new Set(current).add(6))
+      toast({ tone: "danger", title: "Payment details need attention", message: parsed.message })
+      return false
+    } finally { setSaving(false) }
+  }, [financialSummary, paymentDetail?.id, quotation?.currency, quotationId, toast, underwritingDetail])
+
+  const saveUnderwritingDetails = useCallback(async (form: UnderwritingForm) => {
+    if (!quotationId) return false
+    const errors: ApiFieldErrors = {}
+    if (!form.risk_class.trim()) errors.risk_class = ["Enter the underwriting risk class before saving."]
+    if (!form.health_answers.trim()) errors.health_answers = ["Enter at least one underwriting answer before saving."]
+    if (!form.declarations_confirmed) errors.declarations = ["Confirm that the underwriting declarations were reviewed before saving."]
+    if (Object.keys(errors).length) {
+      setUnderwritingErrors(errors)
+      setInvalidSteps((current) => new Set(current).add(6))
+      return false
+    }
+    setSaving(true)
+    setUnderwritingErrors({})
+    try {
+      const id = underwritingDetail?.id
+      const payload = await requestNormalized<UnderwritingDetail>(`${QUOTATION_CHILD_PREFIX}underwriting/${id ? `${id}/` : ""}`, {
+        method: id ? "PATCH" : "POST",
+        body: JSON.stringify({ quotation: quotationId, medical_required: form.medical_required, financial_underwriting_required: form.financial_underwriting_required, risk_class: form.risk_class.trim(), health_answers: { summary: form.health_answers.trim() }, medical_requirements: [], declarations: { confirmed: true }, notes: form.notes }),
+      })
+      setUnderwritingDetail(payload)
+      setQuotation((current) => current ? { ...current, underwriting_detail: payload } : current)
+      if (hasPaymentPrerequisite(paymentDetail) && Boolean(financialSummary && !financialSummary.recalculation_required)) {
+        setCompletedSteps((current) => new Set(current).add(6))
+        setInvalidSteps((current) => { const next = new Set(current); next.delete(6); return next })
+      }
+      toast({ tone: "success", title: id ? "Underwriting answers updated" : "Underwriting answers saved" })
+      return true
+    } catch (error) {
+      const parsed = parseApiError(error)
+      setUnderwritingErrors(parsed.fieldErrors)
+      setInvalidSteps((current) => new Set(current).add(6))
+      toast({ tone: "danger", title: "Underwriting answers need attention", message: parsed.message })
+      return false
+    } finally { setSaving(false) }
+  }, [financialSummary, paymentDetail, quotationId, toast, underwritingDetail?.id])
+
   const calculateFinancials = useCallback(async () => {
     if (!quotationId) return false
     setCalculating(true)
     try {
       const payload = await requestNormalized<FinancialDetails>(`${QUOTATION_PREFIX}${quotationId}/calculate/`, { method: "POST", body: JSON.stringify({}) })
       setFinancialSummary(payload)
-      setCompletedSteps((current) => new Set(current).add(6))
-      setInvalidSteps((current) => { const next = new Set(current); next.delete(6); return next })
+      if (hasPaymentPrerequisite(paymentDetail) && hasUnderwritingPrerequisite(underwritingDetail)) {
+        setCompletedSteps((current) => new Set(current).add(6))
+        setInvalidSteps((current) => { const next = new Set(current); next.delete(6); return next })
+      } else {
+        setInvalidSteps((current) => new Set(current).add(6))
+      }
       toast({ tone: "success", title: "Quotation calculated" })
       return true
     } catch (error) {
@@ -1303,8 +1509,11 @@ export default function OLQuotationWizard() {
     if (activeStep === 3) void loadInstallments()
     if (activeStep === 4) void loadInvestmentFunds()
     if (activeStep === 5) void loadRiders()
-    if (activeStep === 6) void loadFinancialSummary()
-  }, [activeStep, loadFinancialSummary, loadInstallments, loadInvestmentFunds, loadMemberCoverage, loadRiders, quotationId])
+    if (activeStep === 6) {
+      void loadFinancialSummary()
+      void loadWizardSummary()
+    }
+  }, [activeStep, loadFinancialSummary, loadInstallments, loadInvestmentFunds, loadMemberCoverage, loadRiders, loadWizardSummary, quotationId])
 
   const saveMember = useCallback(async (member: MemberForm, memberId?: string) => {
     if (!quotationId) return false
@@ -1451,7 +1660,7 @@ export default function OLQuotationWizard() {
 
   const validateAndNavigate = async (target: number) => {
     if (target > activeStep) {
-      const valid = activeStep === 0 ? await savePersonal() : activeStep === 1 ? await savePlans() : activeStep === 4 ? await saveFunds() : activeStep === 5 ? (riderState?.requires_configuration === false || completedSteps.has(5)) : activeStep === 6 ? Boolean(financialSummary && !financialSummary.recalculation_required) : true
+      const valid = activeStep === 0 ? await savePersonal() : activeStep === 1 ? await savePlans() : activeStep === 3 ? Boolean(installmentState?.rows.some((row) => row.status === "CONFIGURED")) : activeStep === 4 ? await saveFunds() : activeStep === 5 ? (riderState?.requires_configuration === false || completedSteps.has(5)) : activeStep === 6 ? Boolean(financialSummary && !financialSummary.recalculation_required && hasPaymentPrerequisite(paymentDetail) && hasUnderwritingPrerequisite(underwritingDetail)) : true
       if (!valid) {
         setInvalidSteps((current) => new Set(current).add(activeStep))
         return
@@ -1462,6 +1671,7 @@ export default function OLQuotationWizard() {
   }
 
   const selectStep = (target: number) => { void validateAndNavigate(target) }
+  const financialPrerequisitesComplete = hasPaymentPrerequisite(paymentDetail) && hasUnderwritingPrerequisite(underwritingDetail)
 
   const selectedPlanCount = selectedPlanIds.length
   const selectedPlanLabel = selectedPlanCount === 0 ? "No products selected" : `${selectedPlanCount} ${selectedPlanCount === 1 ? "Plan" : "Plans"}`
@@ -1492,7 +1702,7 @@ export default function OLQuotationWizard() {
       {currentStep === "installments" && <InstallmentsStep rows={installmentState?.rows ?? []} loading={!installmentState} selectedPlan={selectedInstallmentPlan} template={installmentTemplate} templateLoading={installmentTemplateLoading} saving={saving} errors={installmentErrors} onConfigure={(plan) => void loadInstallmentTemplate(plan)} onCloseModal={() => { setInstallmentModalOpen(false); setSelectedInstallmentPlan(null) }} onSave={saveInstallment} modalOpen={installmentModalOpen} />}
       {currentStep === "funds" && <InvestmentFundsStep quotation={quotation} state={fundState} optionsByPlan={fundOptions} allocations={fundAllocations} errors={fundErrors} onChange={(planConfigId, rows) => setFundAllocations((current) => ({ ...current, [planConfigId]: rows }))} onSave={saveFunds} />}
       {currentStep === "riders" && <RidersBenefitsStep state={riderState} optionsByPlan={riderOptions} errors={riderErrors} onSave={saveRiders} />}
-      {currentStep === "financial" && <div className="space-y-4"><FinancialDetailsStep summary={financialSummary} loading={financialLoading} calculating={calculating} onCalculate={calculateFinancials} /><ReviewFinalize completedSteps={completedSteps} invalidSteps={invalidSteps} errors={finalizeErrors} onJump={(step) => setActiveStep(step)} onFinalize={finalizeQuotation} disabled={completedSteps.size < steps.length || !financialSummary || Boolean(financialSummary.recalculation_required) || quotation.status === "FINALIZED"} /></div>}
+      {currentStep === "financial" && <div className="space-y-4"><FinancialDetailsStep summary={financialSummary} loading={financialLoading} calculating={calculating} onCalculate={calculateFinancials} /><FinancialPrerequisites paymentDetail={paymentDetail} underwritingDetail={underwritingDetail} paymentErrors={paymentErrors} underwritingErrors={underwritingErrors} saving={saving} onSavePayment={savePaymentDetails} onSaveUnderwriting={saveUnderwritingDetails} /><ReviewFinalize completedSteps={completedSteps} invalidSteps={invalidSteps} errors={finalizeErrors} onJump={(step) => setActiveStep(step)} onFinalize={finalizeQuotation} disabled={completedSteps.size < steps.length || !financialSummary || Boolean(financialSummary.recalculation_required) || !financialPrerequisitesComplete || quotation.status === "FINALIZED"} /></div>}
     </main></div>
     <footer className="surface-card flex flex-wrap items-center justify-between gap-3 px-5 py-4"><button type="button" className="button-secondary" onClick={() => { localStorage.removeItem(LOCAL_DRAFT_KEY); sessionStorage.removeItem(ACTIVE_DRAFT_KEY); navigate("/ordinary-life/quotations") }}><X size={15} aria-hidden="true" />Cancel</button><div className="flex gap-2"><button type="button" className="button-secondary" disabled={activeStep === 0 || saving} onClick={() => setActiveStep((current) => Math.max(0, current - 1))}><ChevronLeft size={15} aria-hidden="true" />Previous</button><button type="button" className="button-primary" disabled={saving} onClick={() => void validateAndNavigate(activeStep + 1)}>{saving ? <LoaderCircle className="animate-spin" size={15} aria-hidden="true" /> : null}{activeStep === steps.length - 1 ? "Review & Finalize" : "Next"}<ChevronRight size={15} aria-hidden="true" /></button></div></footer>
   </div>

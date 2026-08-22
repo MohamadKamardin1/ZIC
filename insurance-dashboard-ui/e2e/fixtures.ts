@@ -42,6 +42,8 @@ export const quotation = {
   fund_allocations: [],
   rider_selections: [],
   benefits: [],
+  payment_detail: { id: "payment-1", payment_method: "BANK_TRANSFER", account_reference: "", payment_reference: "", amount: "12000.00", currency: "TZS" },
+  underwriting_detail: { id: "underwriting-1", medical_required: false, financial_underwriting_required: false, risk_class: "STANDARD", health_answers: { summary: "No known medical condition." }, medical_requirements: [], declarations: { confirmed: true }, notes: "" },
 }
 
 export const financial = {
@@ -81,6 +83,7 @@ export async function mockQuotationApi(page: Page, overrides: Partial<typeof quo
     let response: unknown = {}
 
     if (path.endsWith("/versions/")) response = { versions }
+    else if (path.endsWith("/wizard-summary/")) response = { steps: { "1_product_plan": true, "2_members": true, "3_installments": true, "4_funds": true, "5_riders": true, "6_payment": Boolean(currentQuotation.payment_detail), "7_underwriting": Boolean(currentQuotation.underwriting_detail) } }
     else if (path.endsWith("/documents/")) response = documents
     else if (path.endsWith("/partner-verification/")) response = { partner_exists: false, compliant: currentQuotation.partner_verified === true, missing_fields: ["first_name", "surname"] }
     else if (path.endsWith("/financial-details/")) response = financial
@@ -224,6 +227,7 @@ export async function mockDropdownQuickCreateApi(page: Page) {
     else if (path.endsWith("/riders/") && method === "GET") response = { state: { plan_rows: [{ plan_configuration_id: "config-e2e", plan_code: "E2E-DROPDOWN", plan_name: "E2E Dropdown Product", riders: riderCreated ? [{ rider_id: "rider-e2e", rider_display: "Family Protection Rider (E2E)", rider_sum_assured: "100000", rider_term_years: 20, benefit_basis: "FIXED", benefit_value: "100000", benefits: benefitCreated ? [{ beneficial_type_id: "benefit-e2e", benefit_type_display: "Death Benefit (E2E)", benefit_basis: "FIXED", benefit_value: "100000" }] : [] }] : [] }], available_benefit_types: benefitCreated ? [{ value: "benefit-e2e", label: "Death Benefit (E2E)" }] : [], requires_configuration: true, wizard_complete: riderCreated && benefitCreated } }
     else if (path.includes("/riders/options/")) response = { riders: riderCreated ? [{ value: "rider-e2e", label: "Family Protection Rider (E2E)" }] : [], benefit_types: benefitCreated ? [{ value: "benefit-e2e", label: "Death Benefit (E2E)" }] : [] }
     else if (path.endsWith("/riders/") && method === "POST") { riderCreated = true; benefitCreated = true; response = { status: "CONFIGURED" } }
+    else if (path.endsWith("/wizard-summary/")) response = { steps: { "1_product_plan": productCreated, "2_members": memberCreated, "3_installments": installmentConfigured, "4_funds": fundCreated, "5_riders": riderCreated && benefitCreated, "6_payment": Boolean(currentQuotation.payment_detail), "7_underwriting": Boolean(currentQuotation.underwriting_detail) } }
     else if (path.endsWith("/financial-details/") || path.endsWith("/calculate/")) response = financial
     else if (path.endsWith("/finalize/") && method === "POST") { currentQuotation = { ...currentQuotation, status: "FINALIZED" }; response = currentQuotation }
     else response = currentQuotation

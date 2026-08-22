@@ -208,8 +208,16 @@ class QuotationService:
         riders_or_benefits = not quotation.rider_selections.filter(is_selected=True).exists() and not quotation.benefits.filter(is_selected=True).exists()
         if quotation.rider_selections.filter(is_selected=True).exists() or quotation.benefits.filter(is_selected=True).exists():
             riders_or_benefits = True
-        payment = hasattr(quotation, "payment_detail")
-        underwriting = hasattr(quotation, "underwriting_detail")
+        payment_detail = getattr(quotation, "payment_detail", None)
+        underwriting_detail = getattr(quotation, "underwriting_detail", None)
+        payment = bool(payment_detail and payment_detail.payment_method)
+        underwriting = bool(
+            underwriting_detail
+            and isinstance(underwriting_detail.health_answers, dict)
+            and underwriting_detail.health_answers
+            and isinstance(underwriting_detail.declarations, dict)
+            and underwriting_detail.declarations.get("confirmed") is True
+        )
         personal_details = bool(
             quotation.quote_name
             or quotation.identity_type
@@ -317,7 +325,7 @@ class QuotationService:
         elif not quotation.members.filter(member_type="LIFE_ASSURED").exists():
             errors["life_assured"] = "At least one life assured member is required."
         if not quotation.installment_configurations.filter(is_selected=True).exists():
-            errors["installments"] = "At least one selected installment configuration is required."
+            errors["installments"] = "Open the Installments step, configure and save at least one selected installment schedule before finalizing."
         if quotation.fund_allocations.filter(is_selected=True).exists():
             total_allocated = quotation.fund_allocations.filter(is_selected=True).aggregate(
                 total=models.Sum("allocation_percentage")
@@ -331,11 +339,13 @@ class QuotationService:
             if beneficiary_total != Decimal("100"):
                 errors["beneficiaries"] = "Beneficiary percentages must total exactly 100."
         underwriting = getattr(quotation, "underwriting_detail", None)
-        if underwriting is None:
-            errors["underwriting"] = "Underwriting answers must be captured before finalization."
+        if underwriting is None or not isinstance(underwriting.health_answers, dict) or not underwriting.health_answers:
+            errors["underwriting"] = "Open Financial Details, enter at least one underwriting answer, and save the underwriting section before finalizing."
+        elif not isinstance(underwriting.declarations, dict) or underwriting.declarations.get("confirmed") is not True:
+            errors["underwriting"] = "Review the underwriting declarations with the applicant, confirm them, and save the underwriting section before finalizing."
         payment = getattr(quotation, "payment_detail", None)
-        if payment is None:
-            errors["payment_detail"] = "Payment details must be captured before finalization."
+        if payment is None or not payment.payment_method:
+            errors["payment_detail"] = "Open Financial Details, select a payment method, and save Payment Details before finalizing."
         if errors:
             raise QuotationServiceError({"detail": "Quotation wizard is incomplete.", "errors": errors})
         financial_state = QuotationService.financial_summary_state(quotation)

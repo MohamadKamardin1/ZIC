@@ -279,7 +279,8 @@ class OLQuotationAPITests(TestCase):
                 "medical_required": False,
                 "financial_underwriting_required": False,
                 "risk_class": "STANDARD",
-                "answers": {"occupation": "Engineer"},
+                "health_answers": {"occupation": "Engineer"},
+                "declarations": {"confirmed": True},
             },
             **headers,
         )
@@ -321,6 +322,29 @@ class OLQuotationAPITests(TestCase):
         self.assertTrue(response.data["data"]["steps"]["3_installments"])
         self.assertTrue(response.data["data"]["steps"]["6_payment"])
         self.assertTrue(response.data["data"]["steps"]["7_underwriting"])
+
+    def test_finalize_reports_actionable_missing_finalization_prerequisites(self):
+        draft = self.create_draft()
+        self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/personal-details/",
+            self.personal_details_payload(identity_number="ID-OLQ-MISSING-PREREQUISITES"),
+            format="json",
+        )
+        self.populate_wizard(draft["id"])
+        quotation = OLQuotation.objects.get(pk=draft["id"])
+        quotation.installment_configurations.all().delete()
+        quotation.payment_detail.delete()
+        quotation.underwriting_detail.delete()
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/finalize/",
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        errors = response.data["error"]["details"]["errors"]
+        self.assertIn("Open the Installments step", errors["installments"])
+        self.assertIn("Open Financial Details", errors["underwriting"])
+        self.assertIn("Open Financial Details", errors["payment_detail"])
 
     def test_finalize_rejects_incomplete_wizard(self):
         draft = self.create_draft()

@@ -53,6 +53,8 @@ const quotation = {
   expiry_date: "2026-09-18",
   wizard_step_completion: {},
   plan_configurations: [],
+  payment_detail: { id: "payment-1", payment_method: "BANK_TRANSFER", account_reference: "", payment_reference: "", amount: "12500.00", currency: "TZS" },
+  underwriting_detail: { id: "underwriting-1", medical_required: false, financial_underwriting_required: false, risk_class: "STANDARD", health_answers: { summary: "No known medical condition." }, medical_requirements: [], declarations: { confirmed: true }, notes: "" },
 }
 
 const plans = [
@@ -196,7 +198,7 @@ beforeEach(() => {
         "premium-factors": [{ value: "NONE", label: "None" }],
         "member-relations": [{ value: "CHILD", label: "Child" }, { value: "SPOUSE", label: "Spouse" }],
         "cover-types": [{ value: "DEPENDENT", label: "Dependent Cover" }],
-        "payment-modes": [{ value: "ANNUAL", label: "Annual" }, { value: "MONTHLY", label: "Monthly" }],
+        "payment-modes": [{ value: "BANK_TRANSFER", label: "Bank transfer" }, { value: "ANNUAL", label: "Annual" }, { value: "MONTHLY", label: "Monthly" }],
         "benefit-types": [{ value: "DEATH", label: "Death Benefit" }],
         "investment-funds": [{ value: "fund-1", label: "FUND-1 — Balanced Growth" }],
         "investment-fund-types": [{ value: "BALANCED", label: "Balanced" }],
@@ -286,6 +288,9 @@ beforeEach(() => {
     if (path.includes("/riders/options/")) return riderScenario ? { plan_configuration_id: "config-1", quotation_age: 36, quotation_currency: "TZS", riders: [{ id: "rider-1", code: "PA-01", name: "Personal Accident", rider_category: "ACCIDENT", benefit_type: "LUMP_SUM", calculation_basis: "FIXED", min_age: 18, max_age: 65, min_term: 1, max_term: 20, min_sum_assured: "1000", max_sum_assured: "1000000", waiting_period_days: 30, allows_standalone: true, requires_underwriting: false, product_id: "product-1", plan_id: "plan-1", selectable: true, synchronized_option: "PA" }], benefit_types: [{ value: "DEATH", label: "Death Benefit" }] } : { plan_configuration_id: "config-1", quotation_age: 36, quotation_currency: "TZS", riders: [], benefit_types: [] }
     if (path.endsWith("/riders/") && !options?.method) return riderScenario ? { state: { plan_rows: [{ plan_configuration_id: "config-1", plan_code: "TERM-20", plan_name: "Twenty Year Term", personal_accident: true, premium_waiver: false, riders: [], benefits: [], can_configure: true }], available_benefit_types: [{ value: "DEATH", label: "Death Benefit" }], requires_configuration: true, wizard_complete: false } } : { state: { plan_rows: [], available_benefit_types: [], requires_configuration: false, wizard_complete: true } }
     if (path.endsWith("/riders/") && options?.method === "POST") return { quotation_id: "quote-1", state: { plan_rows: [{ plan_configuration_id: "config-1", plan_code: "TERM-20", plan_name: "Twenty Year Term", personal_accident: true, premium_waiver: false, riders: [{ rider_id: "rider-1", rider_code: "PA-01", rider_name: "Personal Accident", rider_sum_assured: "100000", rider_term_years: 20, waiting_period_days: 30, benefit_basis: "FIXED", benefit_value: "100000", benefits: [] }] }], available_benefit_types: [], requires_configuration: true, wizard_complete: true }, wizard_step_complete: true }
+    if (path.includes("/wizard-summary/")) return { steps: { "1_product_plan": true, "2_members": true, "3_installments": true, "4_funds": true, "5_riders": true, "6_payment": true, "7_underwriting": true } }
+    if (path.includes("/payment-details/") && options?.method === "PATCH") return { ...quotation.payment_detail, ...JSON.parse(String(options.body ?? "{}")) }
+    if (path.includes("/underwriting/") && options?.method === "PATCH") return { ...quotation.underwriting_detail, ...JSON.parse(String(options.body ?? "{}")) }
     if (path.includes("/financial-details/")) return financialScenario ? { quotation_id: "quote-1", recalculation_required: false, summary: { quotation_id: "quote-1", total_sum_assured: "100000", total_premium: "12000", total_rider_premium: "1500", total_benefit_premium: "0", base_premium: "10000", total_loading: "500", total_discount: "0", total_tax: "0", installment_charge: "0", estimated_maturity_value: "250000", currency: "TZS", calculated_at: "2026-08-19T10:00:00Z", projections: [{ policy_year: 1, premiums_paid: "12000", estimated_bonus: "500", surrender_value: "2000", paid_up_value: "4000", estimated_maturity_value: "250000" }], installment_payouts: [{ sequence: 1, payout_date: "2046-08-19", description: "Maturity payout", rate_percent: "100", payout_amount: "250000" }] } } : { quotation_id: "quote-1", recalculation_required: true, summary: null }
     if (path.endsWith("/calculate/") && options?.method === "POST") return { quotation_id: "quote-1", total_sum_assured: "100000", total_premium: riderScenario ? "13500" : "12000", total_rider_premium: riderScenario ? "3000" : "1500", total_benefit_premium: "0", base_premium: "10000", total_loading: "500", total_discount: "0", total_tax: "0", installment_charge: "0", estimated_maturity_value: "250000", currency: "TZS", calculated_at: "2026-08-19T10:00:00Z", recalculation_required: false, projections: [{ policy_year: 1, premiums_paid: "13500", estimated_bonus: "500", surrender_value: "2000", paid_up_value: "4000", estimated_maturity_value: "250000" }], installment_payouts: [{ sequence: 1, payout_date: "2046-08-19", description: "Maturity payout", rate_percent: "100", payout_amount: "250000" }] }
     if (path.endsWith("/finalize/") && options?.method === "POST") { if (finalizeBlocked) throw new MockApiClientError("Complete all required steps before finalizing.", { riders: ["Riders & Benefits is incomplete."], financial_details: ["Calculate financial details before finalizing."] }); return { quotation: { ...quotation, status: "FINALIZED" }, status: "FINALIZED" } }
@@ -686,6 +691,22 @@ describe("OL quotation wizard", () => {
     expect(await screen.findByText("Go to Financial Details")).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Go to Financial Details" }))
     expect(screen.getAllByRole("button", { name: "Financial Details" }).some((button) => button.getAttribute("aria-current") === "step")).toBe(true)
+  })
+
+  it("saves payment details and underwriting answers from Financial Details", async () => {
+    financialScenario = true
+    await reachMemberCoverageStep()
+    fireEvent.click(screen.getByRole("button", { name: "Financial Details" }))
+    expect(await screen.findByRole("heading", { name: "Payment Details" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Underwriting Answers" })).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText(/Underwriting Answers/), { target: { value: "health declaration: no known condition" } })
+    fireEvent.click(screen.getByRole("button", { name: "Update payment details" }))
+    await waitFor(() => expect(requestMock.mock.calls.some(([path, options]) => String(path).includes("payment-details/") && options?.method === "PATCH")).toBe(true))
+    fireEvent.click(screen.getByRole("button", { name: "Update underwriting answers" }))
+    await waitFor(() => expect(requestMock.mock.calls.some(([path, options]) => String(path).includes("underwriting/") && options?.method === "PATCH")).toBe(true))
+    const underwritingRequest = requestMock.mock.calls.find(([path, options]) => String(path).includes("underwriting/") && options?.method === "PATCH")
+    expect(String(underwritingRequest?.[1]?.body)).toContain('"health_answers":{"summary":"health declaration: no known condition"}')
+    expect(String(underwritingRequest?.[1]?.body)).toContain('"declarations":{"confirmed":true}')
   })
 
   it("shows backend finalize errors with jump-to-step links", async () => {

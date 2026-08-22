@@ -920,18 +920,19 @@ class OLQuotationViewSet(QuotationScopedViewSet):
     @action(detail=True, methods=["get"], url_path="wizard-summary")
     def wizard_summary(self, request, pk=None):
         quotation = self.get_object()
+        completion = QuotationService.wizard_completion(quotation)
         return _response(
             {
                 "quotation_id": quotation.pk,
                 "quote_number": quotation.quote_number,
                 "steps": {
-                    "1_product_plan": quotation.products.filter(is_selected=True).exists() or quotation.plan_configurations.filter(is_selected=True).exists(),
-                    "2_members": quotation.members.exists(),
-                    "3_installments": quotation.installment_configurations.exists(),
-                    "4_funds": quotation.fund_allocations.exists(),
-                    "5_riders": quotation.rider_selections.exists(),
-                    "6_payment": hasattr(quotation, "payment_detail"),
-                    "7_underwriting": hasattr(quotation, "underwriting_detail"),
+                    "1_product_plan": completion["2_plan_and_sub_products"],
+                    "2_members": completion["3_member_coverage"],
+                    "3_installments": completion["4_installments"],
+                    "4_funds": completion["5_investment_funds"],
+                    "5_riders": completion["6_riders_and_benefits"],
+                    "6_payment": completion["payment_details"],
+                    "7_underwriting": completion["underwriting"],
                 },
                 "status": quotation.status,
             },
