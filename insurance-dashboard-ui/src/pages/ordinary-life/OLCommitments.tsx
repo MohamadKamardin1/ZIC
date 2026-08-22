@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useQueryClient } from "@tanstack/react-query"
-import { FilePlus2, Workflow } from "lucide-react"
+import { FilePlus2, Upload, Workflow } from "lucide-react"
 import { useAccess } from "../../lib/access"
 import type { TableQuery } from "../../lib/apiClient"
 import { DataTable, normalizeTableResponse, type TableFetcher } from "../../components/ui/DataTable"
@@ -12,13 +12,14 @@ import { useToast } from "../../components/ui/Toast"
 import { ErrorCoach } from "../../components/commitments/ErrorCoach"
 import { GenerateCommitmentsModal } from "../../components/commitments/GenerateCommitmentsModal"
 import { ManualCommitmentModal } from "../../components/commitments/ManualCommitmentModal"
+import { ImportCommitmentsModal } from "../../components/commitments/ImportCommitmentsModal"
+import { CommitmentImportHistory } from "../../components/commitments/CommitmentImportHistory"
 import { CommitmentStatusBadge, commitmentStatusLabel } from "../../components/commitments/CommitmentStatusBadge"
 import { DueDateWarning } from "../../components/commitments/DueDateWarning"
-import { notifyCommitmentSuccess, notifyCommitmentFailure } from "../../lib/commitmentsNotify"
 import { formatMoney, dateLabel, sourceLabel } from "../../lib/commitmentsDisplay"
+import { parseCsv } from "../../lib/csv"
 import { useCommitmentKPIs, useCommitmentOptions } from "../../lib/commitmentsHooks"
 import {
-  importCommitmentRows,
   listCommitments,
   normalizeCommitment,
   type CommitmentListFilters,
@@ -143,10 +144,9 @@ export default function OLCommitments() {
   const [chip, setChip] = useState<ChipKey>(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const [listError, setListError] = useState<unknown>(null)
-  const [importErrors, setImportErrors] = useState<Array<{ row: number; message: string }>>([])
-  const [importing, setImporting] = useState(false)
   const [generateOpen, setGenerateOpen] = useState(false)
   const [manualOpen, setManualOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
 
   const kpisQuery = useCommitmentKPIs()
   const optionsQuery = useCommitmentOptions()
@@ -237,35 +237,6 @@ export default function OLCommitments() {
     })
   }
 
-  const onImportCsv = useCallback(
-    async (file: File) => {
-      setImporting(true)
-      setImportErrors([])
-      try {
-        const records = parseCsv(await file.text())
-        if (records.length === 0) {
-          setImportErrors([{ row: 1, message: "The CSV must contain a header row and at least one data row." }])
-          return
-        }
-        const result = await importCommitmentRows({ rows: records })
-        if (result.imported > 0) {
-          notifyCommitmentSuccess(toast, "Commitments imported", `${result.imported} commitment row(s) created. Refresh the register to review.`)
-          setRefreshKey((value) => value + 1)
-          void queryClient.invalidateQueries({ queryKey: ["commitments", "kpis"] })
-        }
-        if (result.errors?.length) {
-          setImportErrors(result.errors.map((error) => ({ row: error.row, message: error.field_errors ? Object.values(error.field_errors).flat().join(" ") : error.message ?? "Row rejected." })))
-        }
-      } catch (error) {
-        setImportErrors([{ row: 1, message: error instanceof Error ? error.message : "The CSV could not be read." }])
-        notifyCommitmentFailure(toast, error, "Import failed")
-      } finally {
-        setImporting(false)
-      }
-    },
-    [queryClient, toast],
-  )
-
   const actions: RowAction<CommitmentListRow>[] = useMemo(
     () => [
       { key: "view", label: "View", onSelect: (row) => navigate(`/ordinary-life/commitments/${row.id}`) },
@@ -355,7 +326,7 @@ export default function OLCommitments() {
     [kpisQuery.data],
   )
 
-  const empty = !listError && !importErrors.length && Boolean(kpisQuery.data) && Number(kpisQuery.data?.totalDue ?? 0) === 0 && Number(kpisQuery.data?.totalOutstanding ?? 0) === 0
+  const empty = !listError && Boolean(kpisQuery.data) && Number(kpisQuery.data?.totalDue ?? 0) === 0 && Number(kpisQuery.data?.totalOutstanding ?? 0) === 0
 
   return (
     <div className="space-y-5 p-4 md:p-6">
@@ -366,7 +337,11 @@ export default function OLCommitments() {
         stats={stats}
         actions={
           <>
-            <button type="button" className="button-secondary" disabled={importing} onClick={() => setGenerateOpen(true)} title="Run parameter-driven commitment generation">
+            <button type="button" className="button-secondary" onClick={() => setImportOpen(true)} title="Bulk import commitments from a CSV with a dry run">
+              <Upload size={16} aria-hidden="true" />
+              Import CSV
+            </button>
+            <button type="button" className="button-secondary" onClick={() => setGenerateOpen(true)} title="Run parameter-driven commitment generation">
               <Workflow size={16} aria-hidden="true" />
               Generate Commitments
             </button>
@@ -406,17 +381,6 @@ export default function OLCommitments() {
             }}
           />
           {listError ? <ErrorCoach error={listError} onRetry={() => setRefreshKey((value) => value + 1)} title="Commitments could not be loaded" /> : null}
-          {importErrors.length > 0 && (
-            <InfoBanner title={`${importErrors.length} CSV row(s) rejected`}>
-              <ul className="mt-1 list-disc pl-5 text-xs">
-                {importErrors.map((item) => (
-                  <li key={`${item.row}-${item.message}`}>
-                    Row {item.row}: {item.message}
-                  </li>
-                ))}
-              </ul>
-            </InfoBanner>
-          )}
           {empty && (
             <InfoBanner title="No commitments yet">
               <p className="text-sm">
@@ -432,10 +396,10 @@ export default function OLCommitments() {
             actions={actions}
             permissions={[]}
             canAction={canAction}
-            onImportCsv={onImportCsv}
             exportFileName="ol-commitments.csv"
             caption="Ordinary Life commitments register"
           />
+          <CommitmentImportHistory />
         </div>
       </MasterDetailPage>
 
@@ -461,41 +425,18 @@ export default function OLCommitments() {
           navigate(`/ordinary-life/commitments/${commitment.id}`)
         }}
       />
+      <ImportCommitmentsModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onComplete={() => {
+          setImportOpen(false)
+          setRefreshKey((value) => value + 1)
+          void queryClient.invalidateQueries({ queryKey: ["commitments", "kpis"] })
+          void queryClient.invalidateQueries({ queryKey: ["commitments", "imports"] })
+        }}
+      />
     </div>
   )
 }
 
-// ---------------------------------------------------------------------------
-// Minimal CSV parser (RFC-4180-lite) shared by the import flow
-// ---------------------------------------------------------------------------
-
-function parseCsvLine(line: string): string[] {
-  const result: string[] = []
-  let current = ""
-  let quoted = false
-  for (let index = 0; index < line.length; index += 1) {
-    const character = line[index]
-    if (character === '"' && line[index + 1] === '"' && quoted) {
-      current += '"'
-      index += 1
-    } else if (character === '"') {
-      quoted = !quoted
-    } else if (character === "," && !quoted) {
-      result.push(current.trim())
-      current = ""
-    } else {
-      current += character
-    }
-  }
-  result.push(current.trim())
-  return result
-}
-
-export function parseCsv(text: string): Array<Record<string, string>> {
-  const lines = text.split(/\r?\n/).filter((line) => line.trim())
-  if (lines.length < 2) return []
-  const headers = parseCsvLine(lines[0]).map((header) => header.toLowerCase())
-  return lines.slice(1).map((line) => Object.fromEntries(parseCsvLine(line).map((value, index) => [headers[index], value])))
-}
-
-export { formatMoney, dateLabel, sourceLabel }
+export { formatMoney, dateLabel, sourceLabel, parseCsv }

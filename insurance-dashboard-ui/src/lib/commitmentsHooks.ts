@@ -24,8 +24,11 @@ import {
   getCommitmentSources,
   importCommitmentRows,
   listCommitments,
+  getCommitmentImport,
+  listCommitmentImports,
   normalizeCommitment,
   normalizeDetail,
+  normalizeImportHistory,
   normalizePaginated,
   processOverdueCommitments,
 } from "./commitments"
@@ -114,10 +117,28 @@ export function useGenerateCommitmentsPreviewMutation() {
 export function useImportCommitmentsMutation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: importCommitmentRows,
+    mutationFn: ({ rows, dryRun = false }: { rows: Record<string, unknown>[]; dryRun?: boolean }) =>
+      importCommitmentRows({ rows }, { dryRun }),
     onSuccess: (result) => {
-      if (result.imported > 0) invalidateCommitmentQueries(queryClient)
+      if (result.imported > 0 || result.created > 0) invalidateCommitmentQueries(queryClient)
+      void queryClient.invalidateQueries({ queryKey: ["commitments", "imports"] })
     },
+  })
+}
+
+export function useCommitmentImports() {
+  return useQuery({
+    queryKey: ["commitments", "imports"],
+    queryFn: async () => normalizeImportHistory(await listCommitmentImports()),
+    staleTime: 30_000,
+  })
+}
+
+export function useCommitmentImportDetail(id?: string | null) {
+  return useQuery({
+    queryKey: ["commitments", "imports", "detail", id ?? "none"],
+    queryFn: () => (id ? getCommitmentImport(id) : null),
+    enabled: Boolean(id),
   })
 }
 

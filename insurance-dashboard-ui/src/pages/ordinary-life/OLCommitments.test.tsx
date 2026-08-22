@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest"
 import OLCommitments, { rowActionEnabled } from "./OLCommitments"
 import type { CommitmentRecord } from "../../lib/commitments"
 
@@ -76,6 +76,9 @@ const rowB: Record<string, unknown> = {
   lapseDate: "2026-09-24",
   allowedActions: ["view"],
 }
+
+const originalCreateObjectURL = URL.createObjectURL
+const originalRevokeObjectURL = URL.revokeObjectURL
 
 function renderPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -215,11 +218,16 @@ describe("Commitments list — filters, chips, search, export", () => {
   })
 })
 
+afterEach(() => {
+  Object.assign(URL, { createObjectURL: originalCreateObjectURL, revokeObjectURL: originalRevokeObjectURL })
+})
+
 describe("Commitments list — error state", () => {
   it("renders the ErrorCoach when the list request fails", async () => {
     requestMock.mockImplementation(async (path: string) => {
       if (path.includes("/kpis/")) return KPI_PAYLOAD
       if (path.includes("/options/")) return OPTIONS_PAYLOAD
+      if (path.includes("/imports/")) return { results: [] }
       throw { error_code: "PARAMETER_MISSING", message: "OL Grace Period is not configured.", resolution_steps: ["Open OL Parameters > Policy Setup > OL Grace Period."] }
     })
     renderPage()

@@ -391,14 +391,115 @@ export function generateCommitments(payload: GenerationPayload): Promise<{ creat
   })
 }
 
-export function importCommitmentRows(payload: { rows: Record<string, unknown>[] }): Promise<{
+export interface ImportRowError {
+  row: number
+  field_errors?: Record<string, string[]>
+  message?: string
+}
+
+export interface ImportRunResult {
+  dry_run: boolean
   imported: number
-  errors: Array<{ row: number; field_errors?: Record<string, string[]>; message?: string }>
-}> {
-  return request(`${COMMITMENTS_API_PREFIX}/commitments/import/`, {
+  created: number
+  errors: ImportRowError[]
+}
+
+export interface ImportHistoryRecord {
+  id: string
+  fileName: string
+  uploadedByName?: string
+  createdAt: string
+  okCount: number
+  errorCount: number
+  createdCount: number
+  status: string
+}
+
+export interface ImportDetail {
+  errors: ImportRowError[]
+  okCount: number
+  errorCount: number
+}
+
+export function importCommitmentRows(
+  payload: { rows: Record<string, unknown>[] },
+  options: { dryRun?: boolean } = {},
+): Promise<ImportRunResult> {
+  const query = options.dryRun ? "?dry_run=true" : ""
+  return request<ImportRunResult>(`${COMMITMENTS_API_PREFIX}/commitments/import/${query}`, {
     method: "POST",
     body: JSON.stringify(payload),
   })
+}
+
+export function listCommitmentImports(): Promise<{ results: ImportHistoryRecord[] }> {
+  return request(`${COMMITMENTS_API_PREFIX}/imports/`)
+}
+
+export function getCommitmentImport(id: string): Promise<ImportDetail> {
+  return request(`${COMMITMENTS_API_PREFIX}/imports/${id}/`)
+}
+
+export const COMMITMENT_IMPORT_TEMPLATE_COLUMNS = [
+  "source_type",
+  "source_reference",
+  "partner",
+  "product",
+  "plan",
+  "currency",
+  "installment_number",
+  "installment_count",
+  "due_date",
+  "premium_amount",
+  "payment_mode",
+  "reason",
+]
+
+export function commitmentImportTemplate(): string {
+  const header = COMMITMENT_IMPORT_TEMPLATE_COLUMNS.join(",")
+  const sampleRow = [
+    "POLICY",
+    "POL-2026-0001",
+    "Zanzibar Trading Co.",
+    "Family Protection",
+    "Standard",
+    "TZS",
+    "1",
+    "12",
+    "2026-09-01",
+    "50000.00",
+    "CASH",
+    "Imported renewal commitment",
+  ].join(",")
+  return `${header}\n${sampleRow}\n`
+}
+
+export function normalizeImportHistory(payload: unknown): ImportHistoryRecord[] {
+  if (Array.isArray(payload)) {
+    return payload.map((entry) => normalizeImportRecord(entry)).filter((item): item is ImportHistoryRecord => Boolean(item))
+  }
+  if (payload && typeof payload === "object") {
+    const record = payload as Record<string, unknown>
+    const results = Array.isArray(record.results) ? record.results : Array.isArray(record.items) ? record.items : []
+    return results.map((entry) => normalizeImportRecord(entry)).filter((item): item is ImportHistoryRecord => Boolean(item))
+  }
+  return []
+}
+
+function normalizeImportRecord(value: unknown): ImportHistoryRecord | null {
+  if (!value || typeof value !== "object") return null
+  const row = value as Record<string, unknown>
+  if (!row.id) return null
+  return {
+    id: String(row.id),
+    fileName: String(row.file_name ?? row.fileName ?? "Commitment import"),
+    uploadedByName: String(row.uploaded_by_name ?? row.uploadedByName ?? ""),
+    createdAt: String(row.created_at ?? row.createdAt ?? ""),
+    okCount: Number(row.ok_count ?? row.okCount ?? 0),
+    errorCount: Number(row.error_count ?? row.errorCount ?? 0),
+    createdCount: Number(row.created_count ?? row.createdCount ?? 0),
+    status: String(row.status ?? "COMPLETED"),
+  }
 }
 
 export function processOverdueCommitments(): Promise<{ processed: number; overdue: number; notified: number }> {
