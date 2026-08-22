@@ -5,7 +5,7 @@
 - [x] Prompt 3 — Commitment Generation Wizard and Manual Creation
 - [x] Prompt 4 — Commitment Bulk Import with Row Error Handling
 - [x] Prompt 5 — Commitment Detail Page with Tabs and Actions
-- [ ] Prompt 6 — Commitment Payment and Reversal Modals
+- [x] Prompt 6 — Commitment Payment and Reversal Modals
 - [ ] Prompt 7 — [pending prompt text]
 - [ ] Prompt 8 — [pending prompt text]
 - [ ] Prompt 9 — [pending prompt text]
