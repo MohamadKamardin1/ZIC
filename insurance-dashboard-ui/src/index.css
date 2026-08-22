@@ -120,6 +120,137 @@ textarea:focus-visible {
   box-shadow: 0 12px 28px color-mix(in srgb, var(--section-to) 18%, transparent);
 }
 
+/* Screenshot-aligned Ordinary Life quotation creation surfaces. */
+.ol-quote-page {
+  --ol-blue-from: #4aa7df;
+  --ol-blue-to: #2775c4;
+  --ol-indigo: #6865d8;
+  --ol-panel-border: #e4e8ef;
+  background: #f4f6f9;
+}
+
+.ol-quote-hero {
+  border-radius: 12px;
+  background: linear-gradient(110deg, var(--ol-blue-from) 0%, #3d94d2 42%, var(--ol-blue-to) 100%);
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(36, 112, 183, 0.18);
+}
+
+.ol-quote-hero-icon {
+  display: inline-flex;
+  height: 42px;
+  width: 42px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+.ol-quote-summary {
+  min-width: 132px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.12);
+  text-align: center;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.ol-quote-summary > * {
+  display: block;
+  padding: 0.55rem 0.85rem;
+}
+
+.ol-quote-summary button {
+  width: 100%;
+  border-top: 1px solid rgba(255, 255, 255, 0.13);
+  color: #fff;
+  transition: background-color 160ms ease;
+}
+
+.ol-quote-summary button:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.ol-quote-plan-panel > header,
+.ol-quote-section-bar {
+  background: linear-gradient(110deg, var(--ol-blue-from) 0%, var(--ol-blue-to) 100%);
+  color: #fff;
+}
+
+.ol-quote-plan-panel > header {
+  border-radius: 11px 11px 0 0;
+}
+
+.ol-quote-section-bar {
+  border-radius: 10px 10px 0 0;
+}
+
+.ol-quote-tabs {
+  border: 1px solid var(--ol-panel-border);
+  background: #fff;
+}
+
+.ol-quote-tab {
+  border-bottom: 2px solid transparent;
+  color: #8b8eab;
+  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease;
+}
+
+.ol-quote-tab:hover {
+  background: #f6f7fb;
+  color: #5c5e82;
+}
+
+.ol-quote-tab[data-active="true"] {
+  border-bottom-color: var(--ol-indigo);
+  color: #55529d;
+  background: #fbfbff;
+}
+
+.ol-quote-tab-icon {
+  color: #a1a4bd;
+}
+
+.ol-quote-tab[data-active="true"] .ol-quote-tab-icon {
+  color: var(--ol-indigo);
+}
+
+.ol-quote-readonly {
+  background: #f1f2f4;
+  color: #a4a6ad;
+}
+
+.ol-quote-cancel {
+  border-color: #efb9bd;
+  color: #d36c74;
+}
+
+.ol-quote-cancel:hover {
+  border-color: #df8f96;
+  background: #fff7f7;
+}
+
+.ol-quote-primary {
+  background: var(--ol-indigo);
+  box-shadow: 0 5px 14px rgba(104, 101, 216, 0.22);
+}
+
+.ol-quote-primary:hover {
+  background: #5a57c9;
+}
+
+@media (max-width: 767px) {
+  .ol-quote-page {
+    padding-inline: 0.75rem;
+  }
+
+  .ol-quote-summary {
+    min-width: 108px;
+  }
+}
+
 .button-primary {
   display: inline-flex;
   min-height: 40px;
