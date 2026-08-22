@@ -7,6 +7,7 @@ import { DueDateWarning, dueDateWarning } from "../../components/commitments/Due
 import { ErrorCoach } from "../../components/commitments/ErrorCoach"
 import { RecordPaymentModal } from "../../components/commitments/RecordPaymentModal"
 import { ReverseAllocationModal } from "../../components/commitments/ReverseAllocationModal"
+import { LifecycleActionModal, LIFECYCLE_ACTIONS, type LifecycleAction } from "../../components/commitments/LifecycleActionModal"
 import { StatusBadge, type StatusTone } from "../../components/ui/StatusBadge"
 import { useToast } from "../../components/ui/Toast"
 import { formatMoney, sourceLabel } from "../../lib/commitmentsDisplay"
@@ -60,6 +61,7 @@ export function CommitmentDetailPage() {
   const [tab, setTab] = useState<CommitmentDetailTab>("overview")
   const [paymentOpen, setPaymentOpen] = useState(false)
   const [reverseTarget, setReverseTarget] = useState<CommitmentAllocation | null>(null)
+  const [lifecycleAction, setLifecycleAction] = useState<LifecycleAction | null>(null)
 
   if (!id) return null
 
@@ -116,6 +118,10 @@ export function CommitmentDetailPage() {
         return
       }
       toast({ tone: "info", title: "Nothing to reverse", message: "No reversible allocation exists for this commitment." })
+      return
+    }
+    if ((LIFECYCLE_ACTIONS as readonly string[]).includes(action)) {
+      setLifecycleAction(action as LifecycleAction)
       return
     }
     navigate(`/ordinary-life/commitments/${encodeURIComponent(id)}?action=${encodeURIComponent(action)}`)
@@ -339,6 +345,17 @@ export function CommitmentDetailPage() {
           }}
         />
       ) : null}
+      <LifecycleActionModal
+        open={Boolean(lifecycleAction)}
+        onClose={() => setLifecycleAction(null)}
+        commitmentId={id}
+        action={lifecycleAction}
+        commitment={d}
+        onSuccess={() => {
+          setLifecycleAction(null)
+          void detail.refetch()
+        }}
+      />
     </div>
   )
 }
