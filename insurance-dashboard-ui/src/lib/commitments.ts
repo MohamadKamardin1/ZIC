@@ -110,6 +110,17 @@ export type CommitmentRecord = {
 export type CommitmentDetail = CommitmentRecord & {
   allocations: CommitmentAllocation[]
   notificationLogs: CommitmentNotificationLog[]
+  statusHistory?: CommitmentHistoryEntry[]
+  graceDays?: number
+}
+
+export interface CommitmentHistoryEntry {
+  fromStatus?: string
+  toStatus?: string
+  actorName?: string
+  createdAt?: string
+  reason?: string
+  sourceChannel?: string
 }
 
 export interface CommitmentKPIs {
@@ -278,7 +289,26 @@ export function normalizeDetail(payload: unknown): CommitmentDetail {
       status: String(row.status ?? ""),
     }
   })
-  return { ...commitment, allocations, notificationLogs }
+  const rawHistory = record.statusHistory ?? record.status_history ?? record.events
+  const statusHistory = (Array.isArray(rawHistory) ? rawHistory : []).map<CommitmentHistoryEntry>((entry) => {
+    const row = (entry ?? {}) as Record<string, unknown>
+    return {
+      fromStatus: String(row.fromStatus ?? row.from_status ?? ""),
+      toStatus: String(row.toStatus ?? row.to_status ?? ""),
+      actorName: String(row.actorName ?? row.actor_name ?? row.changedBy ?? row.changed_by ?? ""),
+      createdAt: String(row.createdAt ?? row.created_at ?? ""),
+      reason: String(row.reason ?? ""),
+      sourceChannel: String(row.sourceChannel ?? row.source_channel ?? ""),
+    }
+  })
+  const graceDays = Number(record.graceDays ?? record.grace_days ?? undefined)
+  return {
+    ...commitment,
+    allocations,
+    notificationLogs,
+    statusHistory: statusHistory.length ? statusHistory : undefined,
+    graceDays: Number.isFinite(graceDays) ? graceDays : undefined,
+  }
 }
 
 export function buildCommitmentQuery(filters: CommitmentListFilters = {}): string {

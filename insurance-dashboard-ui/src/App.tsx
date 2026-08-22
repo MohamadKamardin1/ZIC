@@ -59,6 +59,7 @@ const OLQuotations = lazy(() => import("./pages/ordinary-life/OLQuotations"))
 const OLQuotationDetail = lazy(() => import("./pages/ordinary-life/OLQuotationDetail"))
 const OLQuotationWizard = lazy(() => import("./pages/ordinary-life/OLQuotationWizard"))
 import OLCommitments from "./pages/ordinary-life/OLCommitments"
+import CommitmentDetailPage from "./pages/ordinary-life/CommitmentDetail"
 import OLProposals from "./pages/ordinary-life/OLProposals"
 import OLPolicies from "./pages/ordinary-life/OLPolicies"
 import OLLoans from "./pages/ordinary-life/OLLoans"
@@ -175,6 +176,16 @@ export default function App() {
             <RequirePermission permission="ol_commitments.view">
               <AccessGate>
                 <OLCommitments />
+              </AccessGate>
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="ordinary-life/commitments/:id"
+          element={
+            <RequirePermission permission="ol_commitments.view">
+              <AccessGate>
+                <CommitmentDetailPage />
               </AccessGate>
             </RequirePermission>
           }
