@@ -2,7 +2,7 @@
 
 - [x] Prompt 1 — Commitments UI Foundation and Error Coach Kit
 - [x] Prompt 2 — Commitments List Page
-- [ ] Prompt 3 — Commitment Generation Wizard and Manual Creation
+- [x] Prompt 3 — Commitment Generation Wizard and Manual Creation
 - [ ] Prompt 4 — [pending prompt text]
 - [ ] Prompt 5 — [pending prompt text]
 - [ ] Prompt 6 — [pending prompt text]
