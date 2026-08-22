@@ -3,7 +3,7 @@
 - [x] Prompt 1 — Commitments UI Foundation and Error Coach Kit
 - [x] Prompt 2 — Commitments List Page
 - [x] Prompt 3 — Commitment Generation Wizard and Manual Creation
-- [ ] Prompt 4 — Commitment Bulk Import with Row Error Handling
+- [x] Prompt 4 — Commitment Bulk Import with Row Error Handling
 - [ ] Prompt 5 — [pending prompt text]
 - [ ] Prompt 6 — [pending prompt text]
 - [ ] Prompt 7 — [pending prompt text]
