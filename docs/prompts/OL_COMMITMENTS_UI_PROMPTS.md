@@ -1,6 +1,6 @@
 # OL COMMITMENTS UI — PROMPT SERIES (10 prompts)
 
-- [ ] Prompt 1 — Commitments UI Foundation and Error Coach Kit
+- [x] Prompt 1 — Commitments UI Foundation and Error Coach Kit
 - [ ] Prompt 2 — [pending prompt text]
 - [ ] Prompt 3 — [pending prompt text]
 - [ ] Prompt 4 — [pending prompt text]
