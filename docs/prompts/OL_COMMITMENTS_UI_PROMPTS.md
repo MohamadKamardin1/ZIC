@@ -7,7 +7,7 @@
 - [x] Prompt 5 — Commitment Detail Page with Tabs and Actions
 - [x] Prompt 6 — Commitment Payment and Reversal Modals
 - [x] Prompt 7 — Commitment Lifecycle Action Modals
-- [ ] Prompt 8 — Overdue Processing and Notification Center UI
+- [x] Prompt 8 — Overdue Processing and Notification Center UI
 - [ ] Prompt 9 — [pending prompt text]
 - [ ] Prompt 10 — [pending prompt text]
 
