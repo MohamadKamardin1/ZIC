@@ -6,7 +6,7 @@
 - [x] Prompt 4 — Commitment Bulk Import with Row Error Handling
 - [x] Prompt 5 — Commitment Detail Page with Tabs and Actions
 - [x] Prompt 6 — Commitment Payment and Reversal Modals
-- [ ] Prompt 7 — [pending prompt text]
+- [ ] Prompt 7 — Commitment Lifecycle Action Modals
 - [ ] Prompt 8 — [pending prompt text]
 - [ ] Prompt 9 — [pending prompt text]
 - [ ] Prompt 10 — [pending prompt text]
@@ -190,6 +190,38 @@ TESTS:
 
 GIT:
 - commit: "feat(web): commitment payment and reversal modals"
+- push; tick checkbox
+
+FINAL OUTPUT: modal behaviors, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 7/10 — Commitment Lifecycle Action Modals
+
+```text
+You are a senior frontend engineer. Continue the ZIC Commitments UI. Execute ONLY Prompt 7.
+
+MANDATORY RULES:
+- Reasons mandatory; invalid transitions must teach.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. Modals for Suspend, Reactivate, Waive, Cancel, Reschedule:
+   - Suspend/Cancel: ReasonField + danger confirm
+   - Waive: ReasonField + approval-required banner explaining the approval hook
+   - Reschedule: new due date with hint text showing parameter limits (grace/lapse rules), reason
+2. Invalid transition responses render ErrorCoach listing allowed transitions from resolution_steps.
+3. Buttons appear only when allowed; after success, status badge and history update with toast hint.
+
+TESTS:
+- each modal validation
+- invalid transition ErrorCoach shows allowed transitions
+- waive approval banner visible
+- reschedule limit hint from parameters
+
+GIT:
+- commit: "feat(web): commitment lifecycle action modals"
 - push; tick checkbox
 
 FINAL OUTPUT: modal behaviors, tests, commit hash, pushed branch.
