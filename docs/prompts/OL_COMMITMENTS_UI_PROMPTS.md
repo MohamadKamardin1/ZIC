@@ -3,7 +3,7 @@
 - [x] Prompt 1 — Commitments UI Foundation and Error Coach Kit
 - [x] Prompt 2 — Commitments List Page
 - [x] Prompt 3 — Commitment Generation Wizard and Manual Creation
-- [ ] Prompt 4 — [pending prompt text]
+- [ ] Prompt 4 — Commitment Bulk Import with Row Error Handling
 - [ ] Prompt 5 — [pending prompt text]
 - [ ] Prompt 6 — [pending prompt text]
 - [ ] Prompt 7 — [pending prompt text]
@@ -91,6 +91,37 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: page behavior, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 4/10 — Commitment Bulk Import with Row Error Handling
+
+```text
+You are a senior frontend engineer. Continue the ZIC Commitments UI. Execute ONLY Prompt 4.
+
+MANDATORY RULES:
+- Imports must be safe, explainable, and reprocessable.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. Import modal: CSV template download, file upload, dry-run mode default.
+2. Dry-run results table: row #, status (OK/ERROR), field-level error messages with resolution hints.
+3. "Fix and reprocess" guidance panel; commit mode enabled only when zero blocking errors or when explicitly confirming partial import if supported.
+4. Import history list: file name, uploaded by, date, counts (ok/error/created), status badge; view errors per import.
+5. All import failures rendered through ErrorCoach taxonomy (IMPORT_ROW_INVALID with row/field detail).
+
+TESTS:
+- template download link
+- dry-run error table rendering
+- commit disabled with blocking errors
+- history list displays counts
+
+GIT:
+- commit: "feat(web): commitment bulk import with row error handling"
+- push; tick checkbox
+
+FINAL OUTPUT: import UX, tests, commit hash, pushed branch.
 ```
 
 ---
