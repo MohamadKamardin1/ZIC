@@ -60,6 +60,7 @@ const OLQuotationDetail = lazy(() => import("./pages/ordinary-life/OLQuotationDe
 const OLQuotationWizard = lazy(() => import("./pages/ordinary-life/OLQuotationWizard"))
 import OLCommitments from "./pages/ordinary-life/OLCommitments"
 import CommitmentDetailPage from "./pages/ordinary-life/CommitmentDetail"
+import PartnerCommitments, { PartnerCommitmentDetail } from "./pages/portal/PartnerCommitments"
 import OLProposals from "./pages/ordinary-life/OLProposals"
 import OLPolicies from "./pages/ordinary-life/OLPolicies"
 import OLLoans from "./pages/ordinary-life/OLLoans"
@@ -200,6 +201,22 @@ export default function App() {
         <Route path="ordinary-life/notes" element={<OLNotes />} />
         <Route path="ordinary-life/approvals" element={<OLApprovals />} />
         <Route path="ordinary-life/audit-history" element={<OLAuditHistory />} />
+        <Route
+          path="portal/commitments"
+          element={
+            <RequirePermission permission="ol_commitments.view">
+              <PartnerCommitments />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="portal/commitments/:id"
+          element={
+            <RequirePermission permission="ol_commitments.view">
+              <PartnerCommitmentDetail />
+            </RequirePermission>
+          }
+        />
         <Route path="group-life/quotations" element={<GLQuotations />} />
         <Route path="group-life/schemes" element={<GLSchemes />} />
         <Route path="group-life/members" element={<GLMembers />} />

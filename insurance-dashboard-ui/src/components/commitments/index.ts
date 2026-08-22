@@ -26,4 +26,6 @@ export type { OverdueProcessingModalProps, OverdueStage } from "./OverdueProcess
 export { OverdueProcessingButton } from "./OverdueProcessingButton"
 export type { OverdueProcessingButtonProps } from "./OverdueProcessingButton"
 export { LapseReviewQueue } from "./LapseReviewQueue"
+export { CommitmentDashboardCards } from "./CommitmentDashboardCards"
+export type { CommitmentDashboardCardsProps } from "./CommitmentDashboardCards"
 export { notifyCommitmentSuccess, notifyCommitmentFailure } from "../../lib/commitmentsNotify"

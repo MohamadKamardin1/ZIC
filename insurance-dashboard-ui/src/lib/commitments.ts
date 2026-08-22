@@ -50,6 +50,7 @@ export interface CommitmentListFilters {
   dueDateTo?: string
   overdueOnly?: boolean
   balanceOnly?: boolean
+  approvalRequired?: boolean
 }
 
 export interface CommitmentAllocation {
@@ -128,6 +129,7 @@ export interface CommitmentKPIs {
   totalOutstanding: string
   overdueCount: number
   collectedInPeriod: string
+  approvalsPending?: number
 }
 
 export interface GenerationPayload {
@@ -328,6 +330,7 @@ export function buildCommitmentQuery(filters: CommitmentListFilters = {}): strin
   set("due_date_to", filters.dueDateTo)
   set("overdue_only", filters.overdueOnly)
   set("balance_only", filters.balanceOnly)
+  set("approval_required", filters.approvalRequired)
   const query = params.toString()
   return query ? `?${query}` : ""
 }
@@ -642,6 +645,18 @@ export function normalizeOverdueNotifications(payload: unknown): OverdueNotifica
       createdAt: String(row.created_at ?? row.createdAt ?? ""),
     }
   })
+}
+
+// ---------------------------------------------------------------------------
+// Partner portal (strictly read-only, partner-scoped on the backend)
+// ---------------------------------------------------------------------------
+
+export function listPortalCommitments(filters: CommitmentListFilters = {}): Promise<Paginated<CommitmentRecord>> {
+  return request<Paginated<CommitmentRecord>>(`${COMMITMENTS_API_PREFIX}/portal/commitments/${buildCommitmentQuery(filters)}`)
+}
+
+export function getPortalCommitment(id: string): Promise<CommitmentDetail> {
+  return request<CommitmentDetail>(`${COMMITMENTS_API_PREFIX}/portal/commitments/${id}/`)
 }
 
 export { type ApiClientError }

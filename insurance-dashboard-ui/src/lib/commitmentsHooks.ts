@@ -12,6 +12,7 @@ import {
   type CommitmentDetail,
   type CommitmentListFilters,
   type CommitmentOptions,
+  type CommitmentRecord,
   type CommitmentSourceType,
   commitmentAction,
   createManualCommitment,
@@ -28,6 +29,8 @@ import {
   getLapseReviewQueue,
   getOverdueNotifications,
   listCommitmentImports,
+  listPortalCommitments,
+  getPortalCommitment,
   normalizeCommitment,
   normalizeDetail,
   normalizeImportHistory,
@@ -159,6 +162,22 @@ export function useOverdueNotifications() {
     queryKey: ["commitments", "notifications", "overdue"],
     queryFn: async () => normalizeOverdueNotifications(await getOverdueNotifications()),
     staleTime: 30_000,
+  })
+}
+
+export function usePortalCommitments(filters: CommitmentListFilters = {}) {
+  return useQuery({
+    queryKey: ["commitments", "portal", "list", filters],
+    queryFn: async () => normalizePaginated<CommitmentRecord>(await listPortalCommitments(filters)),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function usePortalCommitment(id?: string | null) {
+  return useQuery({
+    queryKey: ["commitments", "portal", "detail", id ?? "none"],
+    queryFn: async () => (id ? normalizeDetail(await getPortalCommitment(id)) : ({} as CommitmentDetail)),
+    enabled: Boolean(id),
   })
 }
 

@@ -111,6 +111,7 @@ function mapFilters(filters: Record<string, unknown>): CommitmentListFilters {
     dueDateTo: dueRange(filters.due_date).to,
     overdueOnly: asString(filters.overdue_only) === "true",
     balanceOnly: asString(filters.balance_only) === "true",
+    approvalRequired: asString(filters.approval_required) === "true",
   }
 }
 
