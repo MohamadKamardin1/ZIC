@@ -75,7 +75,7 @@ export interface CommitmentNotificationLog {
   status: string
 }
 
-export interface CommitmentRecord {
+export type CommitmentRecord = {
   id: string
   commitmentNumber: string
   sourceType: CommitmentSourceType
@@ -107,7 +107,7 @@ export interface CommitmentRecord {
   allowedActions?: string[]
 }
 
-export interface CommitmentDetail extends CommitmentRecord {
+export type CommitmentDetail = CommitmentRecord & {
   allocations: CommitmentAllocation[]
   notificationLogs: CommitmentNotificationLog[]
 }
@@ -152,11 +152,11 @@ export function normalizeCommitment(row: Record<string, unknown>): CommitmentRec
     sourceType: String(pick(row, "sourceType", "source_type") ?? "MANUAL") as CommitmentSourceType,
     sourceReference: String(pick(row, "sourceReference", "source_reference") ?? ""),
     partnerId: pick(row, "partner", "partnerId", "partner_id") ? String(pick(row, "partner", "partnerId", "partner_id")) : null,
-    partnerName: String(pick(row, "partnerNameSnapshot", "partner_name_snapshot", "partnerDisplay", "partner_display") ?? ""),
+    partnerName: String(pick(row, "partnerNameSnapshot", "partner_name_snapshot", "partnerName", "partner_name", "partnerDisplay", "partner_display") ?? ""),
     productId: pick(row, "product", "productId", "product_id") ? String(pick(row, "product", "productId", "product_id")) : null,
-    productName: String(pick(row, "productNameSnapshot", "product_name_snapshot", "productDisplay", "product_display") ?? ""),
+    productName: String(pick(row, "productNameSnapshot", "product_name_snapshot", "productName", "product_name", "productDisplay", "product_display") ?? ""),
     planId: pick(row, "plan", "planId", "plan_id") ? String(pick(row, "plan", "planId", "plan_id")) : null,
-    planName: String(pick(row, "planNameSnapshot", "plan_name_snapshot", "planDisplay", "plan_display") ?? ""),
+    planName: String(pick(row, "planNameSnapshot", "plan_name_snapshot", "planName", "plan_name", "planDisplay", "plan_display") ?? ""),
     currency: String(pick(row, "currency") ?? "TZS"),
     premiumFrequency: String(pick(row, "premiumFrequency", "premium_frequency") ?? ""),
     installmentNumber: Number(pick(row, "installmentNumber", "installment_number") ?? 1),
