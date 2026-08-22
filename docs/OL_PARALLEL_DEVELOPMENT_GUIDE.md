@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This guide is the common starting point for seven parallel development chats working on the ZIC Ordinary Life module. The current OL Quotations work remains in its own chat and must not be edited by the seven workstreams described below. The goal is to complete each bounded module professionally while preserving a clean integration path, consistent permissions, parameter-driven behavior, auditability, accessibility, and project continuity.
+This guide is the common starting point for seven parallel development chats working on the ZIC Ordinary Life module. The current OL Quotations work remains exclusively in this chat. It must not be edited by the seven parallel workstreams described below. One separate workstream explicitly owns OL Commitments, in addition to its closely related proposal and operations lifecycle. The goal is to complete each bounded module professionally while preserving a clean integration path, consistent permissions, parameter-driven behavior, auditability, accessibility, and project continuity.
 
 Each chat must work in a separate Git worktree and branch. No chat may edit the same working directory as another chat, and no workstream may push directly to `sultan`.
 
@@ -110,7 +110,7 @@ git worktree add ../ZIC_ol_policy -b feature/ol-policy origin/sultan
 git worktree add ../ZIC_ol_rating -b feature/ol-rating origin/sultan
 git worktree add ../ZIC_ol_rider-agent-loan -b feature/ol-rider-agent-loan origin/sultan
 git worktree add ../ZIC_ol_medical-claim -b feature/ol-medical-claim origin/sultan
-git worktree add ../ZIC_ol-proposals-operations -b feature/ol-proposals-operations origin/sultan
+git worktree add ../ZIC_ol-commitments-proposals-operations -b feature/ol-commitments-proposals-operations origin/sultan
 ```
 
 Each chat must work only in its assigned directory:
@@ -123,7 +123,7 @@ Each chat must work only in its assigned directory:
 | OL Rating | `/home/ubuntu/ZIC_ol_rating` | `feature/ol-rating` | Premium, mortality, bonus, surrender-value, reserve, interest, charge and financial-rating setup |
 | OL Rider/Agent/Loan | `/home/ubuntu/ZIC_ol_rider-agent-loan` | `feature/ol-rider-agent-loan` | Riders, rider rates, commissions, loans and loan interest controls |
 | OL Medical/Claim | `/home/ubuntu/ZIC_ol_medical-claim` | `feature/ol-medical-claim` | Medical underwriting catalogs, facilities, practitioners, claim setup and transitions |
-| OL Proposals/Operations | `/home/ubuntu/ZIC_ol-proposals-operations` | `feature/ol-proposals-operations` | Proposal conversion, proposal lifecycle, approvals, documents and operational integrations |
+| OL Commitments/Proposals/Operations | `/home/ubuntu/ZIC_ol-commitments-proposals-operations` | `feature/ol-commitments-proposals-operations` | Commitment management, proposal conversion/lifecycle, approvals, documents and operational integrations |
 | Current OL Quotations chat | `/home/ubuntu/ZIC_git` | coordinator-controlled | Quotation wizard, finalization, quotation lifecycle and quotation-specific fixes |
 
 Push only to the assigned feature branch:
@@ -430,37 +430,39 @@ Complete backend models/services/APIs/admin/audit/seeds and frontend catalog tab
 
 ---
 
-# Chat 7 — OL Proposals, Conversion, Approvals, Documents, and Operations
+# Chat 7 — OL Commitments, Proposals, Conversion, Approvals, Documents, and Operations
 
 ```text
-You are the senior Django/React engineer responsible only for OL Proposals and quotation-adjacent operational lifecycle behavior after quotation completion.
+You are the senior Django/React engineer responsible only for OL Commitments, OL Proposals, and quotation-adjacent operational lifecycle behavior after quotation completion.
 
 WORKTREE AND BRANCH
-Work only in /home/ubuntu/ZIC_ol-proposals-operations on feature/ol-proposals-operations. Fetch origin/sultan first. Never edit another worktree or push to sultan. Push only with:
-GIT_SSH_COMMAND='ssh -i /home/ubuntu/.ssh/id_ed25519_zic' git push origin HEAD:feature/ol-proposals-operations
+Work only in /home/ubuntu/ZIC_ol-commitments-proposals-operations on feature/ol-commitments-proposals-operations. Fetch origin/sultan first. Never edit another worktree or push to sultan. Push only with:
+GIT_SSH_COMMAND='ssh -i /home/ubuntu/.ssh/id_ed25519_zic' git push origin HEAD:feature/ol-commitments-proposals-operations
 
 MISSION
-Complete the OL proposal and operational lifecycle that consumes finalized quotations, without changing the OL quotation wizard’s plan, installment, funds, rider, financial, or finalization implementation owned by the current quotations chat.
+Complete the OL Commitments module and the OL proposal/operational lifecycle that consumes finalized quotations, without changing the OL quotation wizard’s plan, installment, funds, rider, financial, or finalization implementation owned by the current quotations chat.
 
 SCOPE
-1. Proposal list/work queue with search, filters, pagination, status badges, version and dates, agent/partner display fields, and permission-aware actions.
-2. Conversion handoff from finalized quotation to proposal, including eligibility checks, partner verification/compliance requirements, duplicate prevention, idempotency, and clear errors.
-3. Proposal detail/master-detail page with overview, applicant, plans, members, installments, funds, riders/benefits, financial snapshot, underwriting, documents, versions, approvals, and audit timeline.
-4. Proposal lifecycle statuses, revise/version flow, approval-required routing, approve/reject/return actions, and state-transition validation.
-5. Proposal print/document generation, template/version display, preview, PDF download, and document audit trail.
-6. Operational integrations owned by proposals, including notifications, queues, dashboards, and conversion audit evidence where existing architecture supports them.
+1. OL Commitment setup and work queue: commitment types, statuses, due-date rules, required actions, assignment/ownership, priority, escalation, notification hooks, and links to proposal/policy/partner records. Extend existing commitment entities if present; do not create duplicates.
+2. Commitment lifecycle UI/API with search, filters, pagination, status badges, due dates, overdue handling, completion/cancellation/return transitions, permission-aware actions, audit history, and operational dashboards.
+3. Proposal list/work queue with search, filters, pagination, status badges, version and dates, agent/partner display fields, and permission-aware actions.
+4. Conversion handoff from finalized quotation to proposal, including eligibility checks, partner verification/compliance requirements, duplicate prevention, idempotency, and clear errors.
+5. Proposal detail/master-detail page with overview, applicant, plans, members, installments, funds, riders/benefits, financial snapshot, underwriting, documents, versions, approvals, commitments, and audit timeline.
+6. Proposal lifecycle statuses, revise/version flow, approval-required routing, approve/reject/return actions, and state-transition validation.
+7. Proposal print/document generation, template/version display, preview, PDF download, and document audit trail.
+8. Operational integrations owned by commitments/proposals, including notifications, queues, dashboards, SLA/overdue indicators, and conversion audit evidence where existing architecture supports them.
 
 PERMISSIONS
 Inspect real IAM permissions and separate proposal view/create/update, convert, approve/reject/return, print/download, revise, delete, and audit permissions. Enforce both backend and frontend. A user may view a finalized quotation without necessarily being allowed to convert, approve, or print it.
 
 NON-OWNED AREAS
-Do not rewrite quotation wizard steps, quotation finalization prerequisite forms, rating calculations, product setup, policy parameters, riders/loans, or medical/claims. Consume stable quotation APIs and document any contract gap. Never silently create a proposal when conversion fails; use idempotency and transactions.
+Do not rewrite quotation wizard steps, quotation finalization prerequisite forms, rating calculations, product setup, policy parameters, riders/loans, medical/claims, or quotation-owned conversion behavior. Consume stable quotation APIs and document any contract gap. Never silently create a commitment or proposal when a transition fails; use idempotency and transactions.
 
 DATA INTEGRITY
 Preserve finalized quotation snapshots, version immutability, conversion links, partner verification rules, approval thresholds, document template versions, and audit source/channel. All FK fields need readable display values. Do not expose UUIDs in tables, detail tabs, errors, or generated documents.
 
 DELIVERY
-Complete backend models/services/APIs/admin/permissions/audit and frontend routes, work queue, detail tabs, approval actions, conversion modal, document preview/download, and responsive accessible UI. Add tests for conversion success/blocked paths, duplicate/idempotency behavior, approval transitions, print generation, permissions, audit evidence, version snapshots, and no-UUID rendering. Write docs/parallel/OL_PROPOSALS_OPERATIONS_HANDOFF.md, run focused and full gates, commit, and push feature/ol-proposals-operations.
+Complete backend models/services/APIs/admin/permissions/audit and frontend routes, commitment work queue/detail/lifecycle screens, proposal work queue/detail tabs, approval actions, conversion handoff contract, document preview/download, and responsive accessible UI. Add tests for commitment CRUD and transitions, due/overdue behavior, permissions, audit evidence, conversion success/blocked paths, duplicate/idempotency behavior, approval transitions, print generation, version snapshots, and no-UUID rendering. Write docs/parallel/OL_COMMITMENTS_PROPOSALS_OPERATIONS_HANDOFF.md, run focused and full gates, commit, and push feature/ol-commitments-proposals-operations.
 ```
 
 ## Continuity and handoff requirements
@@ -538,7 +540,7 @@ git merge --no-ff origin/feature/ol-policy
 git merge --no-ff origin/feature/ol-rating
 git merge --no-ff origin/feature/ol-rider-agent-loan
 git merge --no-ff origin/feature/ol-medical-claim
-git merge --no-ff origin/feature/ol-proposals-operations
+git merge --no-ff origin/feature/ol-commitments-proposals-operations
 ```
 
 Resolve conflicts only in the integration worktree. Preserve the most complete implementation, keep migrations ordered, and rerun the full backend/frontend gates after each conflict resolution. Verify that the OL Quotations chat’s APIs and frontend still pass their focused and E2E tests before pushing the final integration result to `sultan`.
