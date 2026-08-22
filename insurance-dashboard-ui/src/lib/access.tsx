@@ -142,6 +142,27 @@ export function AccessGate({ children }: { children: ReactNode }) {
   return <>{children}</>
 }
 
+/**
+ * Gate a screen behind an exact permission code (e.g. ``ol_commitments.view``).
+ * Super admins always pass; the fallback renders {@link AccessDenied}.
+ */
+export function RequirePermission({
+  permission,
+  children,
+  fallback,
+}: {
+  permission: string
+  children: ReactNode
+  fallback?: ReactNode
+}) {
+  const { hasPermission, isSuperAdmin, isLoading } = useAccess()
+  if (isLoading) {
+    return <div className="flex min-h-[52vh] items-center justify-center text-sm text-muted-foreground">Loading access profile…</div>
+  }
+  if (isSuperAdmin || (hasPermission?.(permission) ?? false)) return <>{children}</>
+  return <>{fallback ?? <AccessDenied />}</>
+}
+
 export function defaultAccess(): AccessMetadata {
   return fallbackAccess()
 }

@@ -99,7 +99,7 @@ const NAV: NavItem[] = [
   ] },
   { label: "Ordinary Life", icon: Users, expandable: true, children: [
     { label: "Quotations", icon: FileText, path: "/ordinary-life/quotations" },
-    { label: "Commitments", icon: FileText, path: "/ordinary-life/commitments" },
+    { label: "Commitments", icon: FileText, path: "/ordinary-life/commitments", permission: { module: "ol_commitments", action: "view" } },
     { label: "Proposals", icon: FileText, path: "/ordinary-life/proposals" },
     { label: "Policies", icon: ShieldCheck, path: "/ordinary-life/policies" },
     { label: "Loans", icon: FileText, path: "/ordinary-life/loans" },
@@ -185,14 +185,22 @@ function isParentOfAny(paths: (string | undefined)[], current: string): boolean 
   return paths.some((p) => p && p !== "/" && current.startsWith(p))
 }
 
-function isNavItemVisible(item: SubNavItem | NavItem, canAccess: (moduleKey: string) => boolean): boolean {
+function isNavItemVisible(
+  item: SubNavItem | NavItem,
+  canAccess: (moduleKey: string) => boolean,
+  hasPermission: (permissionCode: string) => boolean,
+): boolean {
+  if (item.permission) {
+    const code = `${item.permission.module}.${item.permission.action}`
+    if (!hasPermission(code)) return false
+  }
   const key = item.path ? routeModuleKey(item.path) : null
   if (key && !canAccess(key)) return false
   if (!item.children?.length) return true
-  return item.children.some((child) => isNavItemVisible(child, canAccess))
+  return item.children.some((child) => isNavItemVisible(child, canAccess, hasPermission))
 }
 
-function SubMenuItem({ item, depth, canAccess }: { item: SubNavItem; depth: number; canAccess: (moduleKey: string) => boolean }) {
+function SubMenuItem({ item, depth, canAccess, hasPermission }: { item: SubNavItem; depth: number; canAccess: (moduleKey: string) => boolean; hasPermission: (permissionCode: string) => boolean }) {
   const location = useLocation()
   const navigate = useNavigate()
   const [open, setOpen] = useState(isParentOfAny((item.children ?? []).map((c) => c.path), location.pathname))
@@ -227,8 +235,8 @@ function SubMenuItem({ item, depth, canAccess }: { item: SubNavItem; depth: numb
       </button>
       {hasChildren && open && (
         <ul className="flex flex-col gap-0.5 pt-0.5">
-          {item.children!.filter((child) => isNavItemVisible(child, canAccess)).map((child) => (
-            <SubMenuItem key={child.label} item={child} depth={depth + 1} canAccess={canAccess} />
+          {item.children!.filter((child) => isNavItemVisible(child, canAccess, hasPermission)).map((child) => (
+            <SubMenuItem key={child.label} item={child} depth={depth + 1} canAccess={canAccess} hasPermission={hasPermission} />
           ))}
         </ul>
       )}
@@ -241,7 +249,8 @@ export function Sidebar({ open }: { open: boolean }) {
   const navigate = useNavigate()
   const { user } = useAuth()
   const { t } = useLanguage()
-  const { canAccess } = useAccess()
+  const { canAccess, hasPermission: hasExactPermission } = useAccess()
+  const hasPermission = (permissionCode: string) => hasExactPermission?.(permissionCode) ?? false
   const [expanded, setExpanded] = useState<string[]>(() => {
     const items: string[] = []
     for (const item of NAV) {
@@ -268,7 +277,7 @@ export function Sidebar({ open }: { open: boolean }) {
     return paths
   }
 
-  const visibleNav = NAV.filter((item) => isNavItemVisible(item, canAccess))
+  const visibleNav = NAV.filter((item) => isNavItemVisible(item, canAccess, hasPermission))
 
   return (
     <aside
@@ -313,8 +322,8 @@ export function Sidebar({ open }: { open: boolean }) {
 
                 {item.children && isExpanded && (
                   <ul className="flex flex-col gap-0.5 pt-0.5">
-                    {item.children.filter((child) => isNavItemVisible(child, canAccess)).map((child) => (
-                      <SubMenuItem key={child.label} item={child} depth={1} canAccess={canAccess} />
+                    {item.children.filter((child) => isNavItemVisible(child, canAccess, hasPermission)).map((child) => (
+                      <SubMenuItem key={child.label} item={child} depth={1} canAccess={canAccess} hasPermission={hasPermission} />
                     ))}
                   </ul>
                 )}

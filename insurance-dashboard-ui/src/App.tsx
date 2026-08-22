@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom"
 import { lazy, Suspense, type ReactNode } from "react"
 import { useAuth } from "./lib/auth"
+import { RequirePermission, AccessGate } from "./lib/access"
 import Login from "./pages/Login"
 import Dashboard from "./pages/Dashboard"
 import DashboardLayout from "./components/layout/DashboardLayout"
@@ -168,7 +169,16 @@ export default function App() {
         <Route path="ordinary-life/quotations/new" element={<OLQuotationWizard />} />
         <Route path="ordinary-life/quotations/:id/edit" element={<OLQuotationDetail />} />
         <Route path="ordinary-life/quotations/:id" element={<OLQuotationDetail />} />
-        <Route path="ordinary-life/commitments" element={<OLCommitments />} />
+        <Route
+          path="ordinary-life/commitments"
+          element={
+            <RequirePermission permission="ol_commitments.view">
+              <AccessGate>
+                <OLCommitments />
+              </AccessGate>
+            </RequirePermission>
+          }
+        />
         <Route path="ordinary-life/proposals" element={<OLProposals />} />
         <Route path="ordinary-life/policies" element={<OLPolicies />} />
         <Route path="ordinary-life/loans" element={<OLLoans />} />
