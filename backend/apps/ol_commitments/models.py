@@ -144,6 +144,7 @@ class OLCommitment(AuditedModel):
     approval_required = models.BooleanField(default=False)
     reason_code = models.CharField(max_length=60, blank=True, default="")
     reason_text = models.TextField(blank=True, default="")
+    lapse_review_flag = models.BooleanField(default=False, db_index=True)
     source_channel = models.CharField(
         max_length=30,
         choices=CommitmentSourceChannel.choices,

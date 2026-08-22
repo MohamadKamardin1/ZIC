@@ -5,7 +5,7 @@ import { useAuth } from "../../lib/auth"
 import { useTheme } from "../../theme/ThemeProvider"
 import { useAI } from "../ai/AIContext"
 import { useLanguage, languageOptions } from "../../lib/language"
-import { listDashboardNotifications, markAllDashboardNotificationsRead, markDashboardNotificationRead, searchDashboard } from "../../lib/api"
+import { listCommitmentOverdueNotifications, listDashboardNotifications, markAllDashboardNotificationsRead, markDashboardNotificationRead, searchDashboard } from "../../lib/api"
 import type { DashboardNotificationRecord, GlobalSearchResult } from "../../lib/types"
 
 interface TopbarProps { onToggleSidebar: () => void }
@@ -42,12 +42,14 @@ export function Topbar({ onToggleSidebar }: TopbarProps) {
   const [languageOpen, setLanguageOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [notifications, setNotifications] = useState<DashboardNotificationRecord[]>([])
+  const [commitmentNotifications, setCommitmentNotifications] = useState<DashboardNotificationRecord[]>([])
   const [notificationLoading, setNotificationLoading] = useState(false)
   const searchRef = useRef<HTMLDivElement>(null)
   const nextTheme = theme === "dark" ? "light" : "dark"
   const d = now.getDate(); const y = now.getFullYear(); const monthAbbr = MONTHS[now.getMonth()]
   const hh = String(now.getHours()).padStart(2, "0"), mm = String(now.getMinutes()).padStart(2, "0"), ss = String(now.getSeconds()).padStart(2, "0")
-  const unreadCount = notifications.filter((notification) => !notification.isRead).length
+  const allNotifications = [...notifications, ...commitmentNotifications]
+  const unreadCount = allNotifications.filter((notification) => !notification.isRead).length
 
   useEffect(() => {
     setSearchOpen(false); setLanguageOpen(false); setNotificationsOpen(false)
@@ -66,8 +68,14 @@ export function Topbar({ onToggleSidebar }: TopbarProps) {
 
   async function loadNotifications() {
     setNotificationLoading(true)
-    try { setNotifications(await listDashboardNotifications()) }
-    catch { setNotifications([]) }
+    try {
+      const [dashboardItems, commitmentItems] = await Promise.all([
+        listDashboardNotifications(),
+        listCommitmentOverdueNotifications().catch(() => [] as DashboardNotificationRecord[]),
+      ])
+      setNotifications(dashboardItems)
+      setCommitmentNotifications(commitmentItems)
+    } catch { setNotifications([]) }
     finally { setNotificationLoading(false) }
   }
 
@@ -84,8 +92,13 @@ export function Topbar({ onToggleSidebar }: TopbarProps) {
   }
 
   async function readNotification(notification: DashboardNotificationRecord) {
+    if (notification.deepLink) {
+      navigate(notification.deepLink)
+      setNotificationsOpen(false)
+      return
+    }
     if (!notification.isRead) {
-      const updated = await markDashboardNotificationRead(notification.id)
+      const updated = await markDashboardNotificationRead(Number(notification.id))
       setNotifications((items) => items.map((item) => item.id === updated.id ? updated : item))
     }
     if (notification.route) navigate(notification.route)
@@ -108,7 +121,7 @@ export function Topbar({ onToggleSidebar }: TopbarProps) {
       </div>
       <IconButton label={t("search")} onClick={() => { setSearchOpen(true); document.querySelector<HTMLInputElement>('input[aria-label="Search ZIC records"]')?.focus() }}><Search className="h-[18px] w-[18px]" /></IconButton>
       <div className="relative"><IconButton label={t("language")} onClick={() => setLanguageOpen((value) => !value)}><Globe className="h-[18px] w-[18px]" /></IconButton>{languageOpen && <div className="absolute right-0 top-11 z-50 w-44 rounded-2xl border border-border bg-card p-1.5 shadow-xl"><p className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{t("language")}</p>{languageOptions.map((option) => <button key={option.value} onClick={() => { setLanguage(option.value); setLanguageOpen(false) }} className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition hover:bg-secondary ${language === option.value ? "bg-primary/10 font-semibold text-primary" : "text-foreground"}`}><span>{option.nativeLabel}</span><span className="text-xs text-muted-foreground">{option.label}</span></button>)}</div>}</div>
-      <div className="relative"><IconButton label={t("notifications")} onClick={() => void openNotifications()}><Bell className="h-[18px] w-[18px]" /></IconButton>{unreadCount > 0 && <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground">{unreadCount > 99 ? "99+" : unreadCount}</span>}{notificationsOpen && <div className="absolute right-0 top-11 z-50 w-[min(22rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-border bg-card shadow-xl"><div className="flex items-center justify-between border-b border-border px-4 py-3"><div><p className="text-sm font-semibold">{t("notifications")}</p><p className="text-xs text-muted-foreground">{unreadCount ? `${unreadCount} unread` : t("noNotifications")}</p></div>{unreadCount > 0 && <button onClick={() => void markAllRead()} className="text-xs font-semibold text-primary hover:underline">{t("markAllRead")}</button>}</div><div className="max-h-80 overflow-y-auto">{notificationLoading ? <div className="flex items-center justify-center py-10 text-sm text-muted-foreground"><LoaderIcon /></div> : notifications.length === 0 ? <p className="px-4 py-10 text-center text-sm text-muted-foreground">{t("noNotifications")}</p> : notifications.slice(0, 6).map((notification) => <button key={notification.id} onClick={() => void readNotification(notification)} className={`flex w-full gap-3 border-b border-border px-4 py-3 text-left transition hover:bg-secondary ${notification.isRead ? "" : "bg-primary/5"}`}><span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${notification.isRead ? "bg-border" : "bg-primary"}`} /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{notification.title}</span><span className="mt-0.5 block line-clamp-2 text-xs text-muted-foreground">{notification.message}</span><span className="mt-1 block text-[10px] text-muted-foreground">{formatRelative(notification.createdAt)}</span></span><ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" /></button>)}</div><button onClick={() => navigate("/notifications")} className="flex w-full items-center justify-center gap-1 px-4 py-3 text-xs font-semibold text-primary hover:bg-primary/5">{t("viewAll")} <ChevronRight className="h-3.5 w-3.5" /></button></div>}</div>
+      <div className="relative"><IconButton label={t("notifications")} onClick={() => void openNotifications()}><Bell className="h-[18px] w-[18px]" /></IconButton>{unreadCount > 0 && <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground">{unreadCount > 99 ? "99+" : unreadCount}</span>}{notificationsOpen && <div className="absolute right-0 top-11 z-50 w-[min(22rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-border bg-card shadow-xl"><div className="flex items-center justify-between border-b border-border px-4 py-3"><div><p className="text-sm font-semibold">{t("notifications")}</p><p className="text-xs text-muted-foreground">{unreadCount ? `${unreadCount} unread` : t("noNotifications")}</p></div>{unreadCount > 0 && <button onClick={() => void markAllRead()} className="text-xs font-semibold text-primary hover:underline">{t("markAllRead")}</button>}</div><div className="max-h-80 overflow-y-auto">{notificationLoading ? <div className="flex items-center justify-center py-10 text-sm text-muted-foreground"><LoaderIcon /></div> : allNotifications.length === 0 ? <p className="px-4 py-10 text-center text-sm text-muted-foreground">{t("noNotifications")}</p> : allNotifications.slice(0, 6).map((notification) => <button key={notification.id} onClick={() => void readNotification(notification)} className={`flex w-full gap-3 border-b border-border px-4 py-3 text-left transition hover:bg-secondary ${notification.isRead ? "" : "bg-primary/5"}`}><span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${notification.isRead ? "bg-border" : "bg-primary"}`} /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{notification.title}</span><span className="mt-0.5 block line-clamp-2 text-xs text-muted-foreground">{notification.message}</span><span className="mt-1 block text-[10px] text-muted-foreground">{formatRelative(notification.createdAt)}</span></span><ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" /></button>)}</div><button onClick={() => navigate("/notifications")} className="flex w-full items-center justify-center gap-1 px-4 py-3 text-xs font-semibold text-primary hover:bg-primary/5">{t("viewAll")} <ChevronRight className="h-3.5 w-3.5" /></button></div>}</div>
       <IconButton label={t("openAssistant")} onClick={() => setPanelOpen(true)}><Sparkles className="h-[18px] w-[18px]" /></IconButton>
       <IconButton label={`Switch to ${nextTheme} mode`} onClick={() => setTheme(nextTheme)}>{theme === "dark" ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}</IconButton>
       <div className="mx-1 hidden h-8 w-px bg-border sm:block" />

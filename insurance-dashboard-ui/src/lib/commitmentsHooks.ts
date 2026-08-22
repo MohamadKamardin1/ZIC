@@ -25,10 +25,14 @@ import {
   importCommitmentRows,
   listCommitments,
   getCommitmentImport,
+  getLapseReviewQueue,
+  getOverdueNotifications,
   listCommitmentImports,
   normalizeCommitment,
   normalizeDetail,
   normalizeImportHistory,
+  normalizeLapseReviewRows,
+  normalizeOverdueNotifications,
   normalizePaginated,
   processOverdueCommitments,
 } from "./commitments"
@@ -139,6 +143,22 @@ export function useCommitmentImportDetail(id?: string | null) {
     queryKey: ["commitments", "imports", "detail", id ?? "none"],
     queryFn: () => (id ? getCommitmentImport(id) : null),
     enabled: Boolean(id),
+  })
+}
+
+export function useLapseReviewQueue() {
+  return useQuery({
+    queryKey: ["commitments", "lapse-review"],
+    queryFn: async () => normalizeLapseReviewRows(await getLapseReviewQueue()),
+    staleTime: 30_000,
+  })
+}
+
+export function useOverdueNotifications() {
+  return useQuery({
+    queryKey: ["commitments", "notifications", "overdue"],
+    queryFn: async () => normalizeOverdueNotifications(await getOverdueNotifications()),
+    staleTime: 30_000,
   })
 }
 

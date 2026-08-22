@@ -14,6 +14,9 @@ import { GenerateCommitmentsModal } from "../../components/commitments/GenerateC
 import { ManualCommitmentModal } from "../../components/commitments/ManualCommitmentModal"
 import { ImportCommitmentsModal } from "../../components/commitments/ImportCommitmentsModal"
 import { CommitmentImportHistory } from "../../components/commitments/CommitmentImportHistory"
+import { OverdueProcessingModal } from "../../components/commitments/OverdueProcessingModal"
+import { OverdueProcessingButton } from "../../components/commitments/OverdueProcessingButton"
+import { LapseReviewQueue } from "../../components/commitments/LapseReviewQueue"
 import { CommitmentStatusBadge, commitmentStatusLabel } from "../../components/commitments/CommitmentStatusBadge"
 import { DueDateWarning } from "../../components/commitments/DueDateWarning"
 import { formatMoney, dateLabel, sourceLabel } from "../../lib/commitmentsDisplay"
@@ -147,6 +150,7 @@ export default function OLCommitments() {
   const [generateOpen, setGenerateOpen] = useState(false)
   const [manualOpen, setManualOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
+  const [overdueOpen, setOverdueOpen] = useState(false)
 
   const kpisQuery = useCommitmentKPIs()
   const optionsQuery = useCommitmentOptions()
@@ -337,6 +341,7 @@ export default function OLCommitments() {
         stats={stats}
         actions={
           <>
+            <OverdueProcessingButton hasPermission={hasPermission("ol_commitments.generate")} onRun={() => setOverdueOpen(true)} />
             <button type="button" className="button-secondary" onClick={() => setImportOpen(true)} title="Bulk import commitments from a CSV with a dry run">
               <Upload size={16} aria-hidden="true" />
               Import CSV
@@ -400,6 +405,7 @@ export default function OLCommitments() {
             caption="Ordinary Life commitments register"
           />
           <CommitmentImportHistory />
+          <LapseReviewQueue />
         </div>
       </MasterDetailPage>
 
@@ -433,6 +439,15 @@ export default function OLCommitments() {
           setRefreshKey((value) => value + 1)
           void queryClient.invalidateQueries({ queryKey: ["commitments", "kpis"] })
           void queryClient.invalidateQueries({ queryKey: ["commitments", "imports"] })
+        }}
+      />
+      <OverdueProcessingModal
+        open={overdueOpen}
+        onClose={() => setOverdueOpen(false)}
+        onComplete={() => {
+          setRefreshKey((value) => value + 1)
+          void queryClient.invalidateQueries({ queryKey: ["commitments", "kpis"] })
+          void queryClient.invalidateQueries({ queryKey: ["commitments", "lapse-review"] })
         }}
       />
     </div>

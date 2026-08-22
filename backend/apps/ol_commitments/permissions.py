@@ -30,6 +30,7 @@ class OLCommitmentPermission:
         "regenerate": GENERATE,
         "record_payment": RECORD_PAYMENT,
         "allocate": RECORD_PAYMENT,
+        "process_overdue": GENERATE,
         "reverse": REVERSE,
         "reverse_allocation": REVERSE,
         "suspend": SUSPEND,

@@ -532,8 +532,16 @@ function normalizeImportRecord(value: unknown): ImportHistoryRecord | null {
   }
 }
 
-export function processOverdueCommitments(): Promise<{ processed: number; overdue: number; notified: number }> {
-  return request(`${COMMITMENTS_API_PREFIX}/commitments/process-overdue/`, { method: "POST" })
+export function processOverdueCommitments(): Promise<OverdueRunResult> {
+  return request<OverdueRunResult>(`${COMMITMENTS_API_PREFIX}/commitments/process-overdue/`, { method: "POST" }).then(normalizeOverdueResult)
+}
+
+export function getLapseReviewQueue(): Promise<{ results: LapseReviewRow[] }> {
+  return request(`${COMMITMENTS_API_PREFIX}/commitments/lapse-review/`)
+}
+
+export function getOverdueNotifications(): Promise<{ results: OverdueNotificationItem[] }> {
+  return request(`${COMMITMENTS_API_PREFIX}/notifications/overdue/`)
 }
 
 export function commitmentAction<T = CommitmentDetail>(
@@ -549,6 +557,91 @@ export function commitmentAction<T = CommitmentDetail>(
 
 export function isCommitmentAction(value: string): value is CommitmentAction {
   return (COMMITMENT_ACTIONS as readonly string[]).includes(value)
+}
+
+// ---------------------------------------------------------------------------
+// Overdue processing / lapse review / overdue notifications
+// ---------------------------------------------------------------------------
+
+export interface OverdueRunResult {
+  processed: number
+  overdue: number
+  notified: number
+  lapseReviews: number
+}
+
+export interface LapseReviewRow {
+  id: string
+  commitmentNumber?: string
+  sourceReference?: string
+  partnerName?: string
+  productName?: string
+  planName?: string
+  policyReference?: string
+  dueDate?: string
+  lapseDate?: string
+  status?: string
+  recommendedAction?: string
+}
+
+export interface OverdueNotificationItem {
+  id: string
+  title: string
+  message: string
+  deepLink?: string
+  createdAt?: string
+}
+
+export function normalizeOverdueResult(payload: unknown): OverdueRunResult {
+  const record = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {}
+  return {
+    processed: Number(record.processed ?? 0),
+    overdue: Number(record.overdue ?? 0),
+    notified: Number(record.notified ?? 0),
+    lapseReviews: Number(record.lapse_reviews ?? record.lapseReviews ?? 0),
+  }
+}
+
+export function normalizeLapseReviewRows(payload: unknown): LapseReviewRow[] {
+  const source = Array.isArray(payload)
+    ? payload
+    : payload && typeof payload === "object" && Array.isArray((payload as { results?: unknown }).results)
+      ? (payload as { results: unknown[] }).results
+      : []
+  return source.map((raw) => {
+    const row = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}
+    return {
+      id: String(row.id ?? ""),
+      commitmentNumber: String(row.commitment_number ?? row.commitmentNumber ?? ""),
+      sourceReference: String(row.source_reference ?? row.sourceReference ?? ""),
+      partnerName: String(row.partner_name ?? row.partnerName ?? ""),
+      productName: String(row.product_name ?? row.productName ?? ""),
+      planName: String(row.plan_name ?? row.planName ?? ""),
+      policyReference: String(row.policy_reference ?? row.policyReference ?? row.source_reference ?? ""),
+      dueDate: String(row.due_date ?? row.dueDate ?? "") || undefined,
+      lapseDate: String(row.lapse_date ?? row.lapseDate ?? "") || undefined,
+      status: String(row.status ?? ""),
+      recommendedAction: String(row.recommended_action ?? row.recommendedAction ?? ""),
+    }
+  })
+}
+
+export function normalizeOverdueNotifications(payload: unknown): OverdueNotificationItem[] {
+  const source = Array.isArray(payload)
+    ? payload
+    : payload && typeof payload === "object" && Array.isArray((payload as { results?: unknown }).results)
+      ? (payload as { results: unknown[] }).results
+      : []
+  return source.map((raw) => {
+    const row = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}
+    return {
+      id: String(row.id ?? ""),
+      title: String(row.title ?? ""),
+      message: String(row.message ?? ""),
+      deepLink: typeof row.deep_link === "string" ? row.deep_link : undefined,
+      createdAt: String(row.created_at ?? row.createdAt ?? ""),
+    }
+  })
 }
 
 export { type ApiClientError }

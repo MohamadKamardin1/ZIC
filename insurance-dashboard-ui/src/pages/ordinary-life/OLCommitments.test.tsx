@@ -103,6 +103,7 @@ beforeEach(() => {
   requestMock.mockImplementation(async (path: string) => {
     if (path.includes("/kpis/")) return KPI_PAYLOAD
     if (path.includes("/options/")) return OPTIONS_PAYLOAD
+    if (path.includes("/lapse-review/")) return { results: [] }
     if (path.includes("/commitments/")) return { results: [rowA, rowB], count: 2 }
     return {}
   })
@@ -228,6 +229,7 @@ describe("Commitments list — error state", () => {
       if (path.includes("/kpis/")) return KPI_PAYLOAD
       if (path.includes("/options/")) return OPTIONS_PAYLOAD
       if (path.includes("/imports/")) return { results: [] }
+      if (path.includes("/lapse-review/")) return { results: [] }
       throw { error_code: "PARAMETER_MISSING", message: "OL Grace Period is not configured.", resolution_steps: ["Open OL Parameters > Policy Setup > OL Grace Period."] }
     })
     renderPage()
