@@ -1,6 +1,7 @@
 from datetime import date, timedelta
 from decimal import Decimal
 
+from django.core.files.storage import default_storage
 from django.core.management import call_command
 from django.test import TestCase
 from rest_framework.test import APIClient
@@ -2401,6 +2402,14 @@ class OLQuotationAPITests(TestCase):
         self.assertEqual(document.template.version, document.template_version)
         self.assertTrue(document.file_reference)
         self.assertTrue(document.html_reference)
+        quotation = OLQuotation.objects.get(pk=draft["id"])
+        self.assertEqual(document.template.version, 2)
+        with default_storage.open(document.html_reference, "rb") as html_file:
+            html = html_file.read().decode("utf-8")
+        for section in ("ORDINARY LIFE QUOTATION", "Personal Details", "Quote Summary", "Quote Configurations", "Member Coverage Details", "Installment Payouts", "Terms and Conditions", "Prepared By:", "Official Stamp"):
+            self.assertIn(section, html)
+        if quotation.rider_selections.filter(is_selected=True).exists():
+            self.assertIn("Additional Benefits", html)
 
     def test_print_requires_print_permission(self):
         draft = self._prepare_finalizable_lifecycle_quotation("ID-OLQ-PRINT-002")

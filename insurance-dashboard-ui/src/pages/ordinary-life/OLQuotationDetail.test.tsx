@@ -159,7 +159,7 @@ describe("OL quotation detail lifecycle", () => {
     await screen.findByText("Q-0001")
     fireEvent.click(screen.getByRole("button", { name: "Versions" }))
 
-    expect(await screen.findByText("Historical snapshots are retained under BR-02.")).toBeInTheDocument()
+    expect(await screen.findByText("Historical quotation snapshots are preserved.")).toBeInTheDocument()
     expect(screen.getByText("Initial quotation")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "View" })).toBeInTheDocument()
   })
@@ -172,5 +172,43 @@ describe("OL quotation detail lifecycle", () => {
     expect(await screen.findByText("OL_QUOTATION")).toBeInTheDocument()
     expect(screen.getByText("Quotation PDF")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Preview" })).toBeInTheDocument()
+  })
+
+  it("matches the screenshot-facing detail tabs and table headings", async () => {
+    render(<OLQuotationDetail />)
+    await screen.findByText("Q-0001")
+
+    fireEvent.click(screen.getByRole("button", { name: "Plans & Sub-Products" }))
+    expect(screen.getByText("Sub-Product")).toBeInTheDocument()
+    expect(screen.getByRole("columnheader", { name: "Total Premium" })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Member Coverage" }))
+    expect(screen.getByText("Coverage %")).toBeInTheDocument()
+    expect(screen.getByText("Basic Premium")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Riders" }))
+    expect(screen.getByText("Rider Benefit")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Projections" }))
+    expect(screen.getByText("Adjusted Basic")).toBeInTheDocument()
+    expect(screen.getByText("Net Premium")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Installment Payouts" }))
+    expect(screen.getByText("Installment Rate")).toBeInTheDocument()
+    expect(screen.getByText("Paid Up Rate")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Quote Versions" }))
+    expect(screen.getByText("Gross Premium")).toBeInTheDocument()
+    expect(screen.getByText("Current View")).toBeInTheDocument()
+  })
+
+  it("uses the quote-specific print preview title", async () => {
+    setupRequestMock("FINALIZED")
+    render(<OLQuotationDetail />)
+    await screen.findByText("Q-0001")
+    fireEvent.click(screen.getByRole("button", { name: "Print Quote" }))
+
+    expect(await screen.findByRole("heading", { name: "Quote Printout Preview - Q-0001-v1 (Asha Family Protection)" })).toBeInTheDocument()
+    expect(screen.getByText("This is a preview. Click download to get the formatted PDF document.")).toBeInTheDocument()
   })
 })

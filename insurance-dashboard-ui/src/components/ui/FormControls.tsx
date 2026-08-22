@@ -59,8 +59,8 @@ export function TextareaInput({ label, name, required, hint, error, readOnly, cl
   return <div className="space-y-1"><FieldLabel label={label} htmlFor={id} required={required} hint={hint} /><textarea {...props} id={id} name={name} readOnly={readOnly} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined} className={`min-h-24 w-full resize-y rounded-[10px] border bg-[var(--card)] px-3 py-2.5 text-sm text-[var(--foreground)] shadow-sm outline-none transition placeholder:text-[var(--muted-foreground)] focus:border-[var(--ring)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--ring)_18%,transparent)] ${readOnly ? "bg-[var(--muted)] text-[var(--muted-foreground)]" : ""} ${className ?? ""}`} /><FieldMessage error={error} id={id} /></div>
 }
 
-export function ReadOnlyField({ label, value, hint, className }: { label: string; value: ReactNode; hint?: string; className?: string }) {
-  return <div className={className}><FieldLabel label={label} hint={hint} /><div className="flex h-10 items-center rounded-[10px] border bg-[var(--muted)] px-3 text-sm font-semibold text-[var(--muted-foreground)]" aria-readonly="true">{value || "—"}</div></div>
+export function ReadOnlyField({ label, value, hint, required, className }: { label: string; value: ReactNode; hint?: string; required?: boolean; className?: string }) {
+  return <div className={className}><FieldLabel label={label} hint={hint} required={required} /><div className="ol-quote-readonly flex h-10 items-center rounded-[10px] border px-3 text-sm font-semibold" aria-readonly="true">{value || "—"}</div></div>
 }
 
 export function Toggle({ label, checked, onChange, disabled, hint }: { label: string; checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean; hint?: string }) {
