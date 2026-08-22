@@ -68,15 +68,13 @@ export function Topbar({ onToggleSidebar }: TopbarProps) {
 
   async function loadNotifications() {
     setNotificationLoading(true)
-    try {
-      const [dashboardItems, commitmentItems] = await Promise.all([
-        listDashboardNotifications(),
-        listCommitmentOverdueNotifications().catch(() => [] as DashboardNotificationRecord[]),
-      ])
-      setNotifications(dashboardItems)
-      setCommitmentNotifications(commitmentItems)
-    } catch { setNotifications([]) }
-    finally { setNotificationLoading(false) }
+    const [dashboardItems, commitmentItems] = await Promise.all([
+      listDashboardNotifications().catch(() => [] as DashboardNotificationRecord[]),
+      listCommitmentOverdueNotifications().catch(() => [] as DashboardNotificationRecord[]),
+    ])
+    setNotifications(dashboardItems)
+    setCommitmentNotifications(commitmentItems)
+    setNotificationLoading(false)
   }
 
   useEffect(() => {

@@ -101,7 +101,7 @@ export function GenerateCommitmentsModal({
   useEffect(() => {
     if (sourceType === "MANUAL" || !sourceId) return
     preview.mutate({ sourceType, sourceId })
-  }, [preview, sourceId, sourceType])
+  }, [preview.mutate, sourceId, sourceType])
 
   const sourceOptions = useMemo(
     () => (sourcesQuery.data?.results ?? []).map(mapOption),
