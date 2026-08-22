@@ -1,6 +1,6 @@
 # OL COMMITMENTS MODULE — PROMPT SERIES (12 prompts)
 
-- [ ] Prompt 1 — Save Prompt Series File + Discovery + Domain Foundation
+- [x] Prompt 1 — Save Prompt Series File + Discovery + Domain Foundation
 - [ ] Prompt 2 — Commitment Generation Engine
 - [ ] Prompt 3 — Lifecycle Actions and Payment Allocation
 - [ ] Prompt 4 — Grace, Overdue, and Notification Processing
