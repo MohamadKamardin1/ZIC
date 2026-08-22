@@ -8,7 +8,7 @@
 - [x] Prompt 6 — Commitment Payment and Reversal Modals
 - [x] Prompt 7 — Commitment Lifecycle Action Modals
 - [x] Prompt 8 — Overdue Processing and Notification Center UI
-- [ ] Prompt 9 — [pending prompt text]
+- [ ] Prompt 9 — Commitments Dashboard KPIs and Portal View
 - [ ] Prompt 10 — [pending prompt text]
 
 > **Note on fidelity:** prompts 2–10 were not included in the pasted series message for this session. They will be appended `EXACTLY as provided` when the user supplies them, then executed strictly one at a time. Prompt 1 below is saved verbatim.
@@ -256,6 +256,39 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: processing UX, endpoint added if any, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 9/10 — Commitments Dashboard KPIs and Portal View
+
+```text
+You are a senior frontend engineer. Continue the ZIC Commitments UI. Execute ONLY Prompt 9.
+
+MANDATORY RULES:
+- Portal view is strictly read-only and partner-scoped.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. Dashboard cards for authorized staff: Overdue Commitments count, Outstanding Premium amount, Approvals Pending (waivers) with deep links to filtered list.
+2. Partner portal route /portal/commitments:
+   - read-only list of own commitments (scoped by linked partner)
+   - read-only detail (overview + allocations only)
+   - no action buttons; info banner: "To make a payment or dispute a commitment, contact your ZIC representative or raise a ticket."
+   - "Raise Ticket" shortcut linking to the tickets module
+3. ErrorCoach on portal fetch failures without leaking internal details.
+
+TESTS:
+- dashboard cards deep links apply filters
+- portal user sees only own commitments
+- portal detail has no actions
+- portal errors are sanitized
+
+GIT:
+- commit: "feat(web): commitments dashboard KPIs and portal view"
+- push; tick checkbox
+
+FINAL OUTPUT: dashboard and portal behavior, tests, commit hash, pushed branch.
 ```
 
 ---
