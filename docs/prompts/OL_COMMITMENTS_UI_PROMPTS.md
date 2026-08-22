@@ -2,7 +2,7 @@
 
 - [x] Prompt 1 — Commitments UI Foundation and Error Coach Kit
 - [x] Prompt 2 — Commitments List Page
-- [ ] Prompt 3 — [pending prompt text]
+- [ ] Prompt 3 — Commitment Generation Wizard and Manual Creation
 - [ ] Prompt 4 — [pending prompt text]
 - [ ] Prompt 5 — [pending prompt text]
 - [ ] Prompt 6 — [pending prompt text]
@@ -91,6 +91,40 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: page behavior, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 3/10 — Commitment Generation Wizard and Manual Creation
+
+```text
+You are a senior frontend engineer. Continue the ZIC Commitments UI. Execute ONLY Prompt 3.
+
+MANDATORY RULES:
+- Generation must preview before creating; duplicates must be teachable.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. "Generate Commitments" modal wizard:
+   - source type select: Proposal (payment-ready), Policy, Manual
+   - SmartSelect with search for the source (proposals/policies), "+" quick-create where permitted
+   - Preview (dry-run) table: installment #, due date, amount, grace date, lapse date, initial status
+   - parameter warnings banner when grace period or status parameters missing, with ErrorCoach deep links
+   - Execute button creating commitments idempotently; duplicate result shows "View existing" link
+2. Manual creation form modal: partner, product/plan, currency, installment #, due date, amount, payment mode SmartSelect, reason.
+3. Success toast with next-step hint and navigation to the new commitment detail.
+
+TESTS:
+- dry-run preview renders schedule
+- missing parameter error shows deep link to OL Parameters screen
+- duplicate flow shows existing link
+- manual form validation inline
+
+GIT:
+- commit: "feat(web): commitment generation wizard and manual creation"
+- push; tick checkbox
+
+FINAL OUTPUT: wizard behavior, tests, commit hash, pushed branch.
 ```
 
 ---
