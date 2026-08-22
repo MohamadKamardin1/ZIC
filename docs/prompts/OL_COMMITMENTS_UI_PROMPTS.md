@@ -5,7 +5,7 @@
 - [x] Prompt 3 — Commitment Generation Wizard and Manual Creation
 - [x] Prompt 4 — Commitment Bulk Import with Row Error Handling
 - [x] Prompt 5 — Commitment Detail Page with Tabs and Actions
-- [ ] Prompt 6 — [pending prompt text]
+- [ ] Prompt 6 — Commitment Payment and Reversal Modals
 - [ ] Prompt 7 — [pending prompt text]
 - [ ] Prompt 8 — [pending prompt text]
 - [ ] Prompt 9 — [pending prompt text]
@@ -157,6 +157,42 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: page structure, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 6/10 — Commitment Payment and Reversal Modals
+
+```text
+You are a senior frontend engineer. Continue the ZIC Commitments UI. Execute ONLY Prompt 6.
+
+MANDATORY RULES:
+- Money actions must be explicit, confirmed, and teachable on failure.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. Record Payment modal:
+   - amount with live balance preview and remaining-after payment
+   - payment mode SmartSelect with "+" quick-create
+   - currency SmartSelect; exchange rate field appears on cross-currency with validation
+   - receipt reference input with source channel display
+   - overpayment attempt returns COMMITMENT_OVERPAYMENT via ErrorCoach with resolution steps
+2. Reverse Allocation modal:
+   - allocation summary, mandatory ReasonField, danger ConfirmDialog
+   - success toast: "Payment reversed. Balance restored."
+3. After success: refetch detail, allocations and history tabs update, audit-visible entries appear.
+
+TESTS:
+- live balance preview math
+- cross-currency exchange rate validation
+- overpayment ErrorCoach rendering
+- reversal requires reason and updates tabs
+
+GIT:
+- commit: "feat(web): commitment payment and reversal modals"
+- push; tick checkbox
+
+FINAL OUTPUT: modal behaviors, tests, commit hash, pushed branch.
 ```
 
 ---
