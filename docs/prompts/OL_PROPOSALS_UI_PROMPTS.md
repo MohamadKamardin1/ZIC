@@ -9,7 +9,7 @@ Kits in use: design system, DataTable, SmartSelect, ErrorCoach, ReasonField, Con
 - [x] Prompt 4 — Proposal Detail Page Shell and Overview
 - [x] Prompt 5 — Enrichment Workspace and Documents Tab
 - [x] Prompt 6 — Beneficiaries Management Tab
-- [ ] Prompt 7 — [pending prompt text]
+- [x] Prompt 7 — Documents Requirements Workspace and Health & Underwriting Tab
 - [ ] Prompt 8 — [pending prompt text]
 - [ ] Prompt 9 — [pending prompt text]
 - [ ] Prompt 10 — [pending prompt text]
@@ -184,3 +184,32 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: table/modal behavior, tests, commit hash, pushed branch.
+
+## Prompt 7/10 — Documents Requirements Workspace and Health & Underwriting Tab
+
+You are a senior frontend engineer. Continue the ZIC Proposals UI. Execute ONLY Prompt 7.
+
+MANDATORY RULES:
+- Mandatory documents visibly block payment readiness; optional ones never do.
+- Underwriting decisions are visible only with permission and an allowed action.
+- All failures surface through ErrorCoach; names and labels never raw codes.
+
+SCOPE:
+1. Documents tab upgrade: requirement checklist resolved for the proposal's product/plan scope (Mandatory/Optional badges, satisfied status per row), blocking banner listing each missing mandatory item with a chip that opens upload preselected to that type.
+2. Upload modal: drag-and-drop or browse file input, preview card with file name and size before saving, document type SmartSelect (preselectable), DMS reference fallback pre-filled from the chosen file; save through POST /documents/.
+3. Health & Underwriting tab: render the questionnaire served by GET /health-questions/ grouped by answer type (boolean select, text, number, date), mandatory markers, category/impact/medical-trigger context; save answers via POST /health-answers/ only for answered items.
+4. Trigger handling: on medical trigger the detail moves to PENDING_UNDERWRITING — show pending banner plus MedicalRequirementRaised explainer card; decision entry point appears only when ol_proposals.enrich is granted AND enrich is an allowed action at PENDING_UNDERWRITING.
+5. Decision modal: Clear/Load/Decline select; loading percent input when Load; notes mandatory for Load and Decline (client-enforced); decline is terminal — rejection banner explains the reason in plain language; clear/load return the proposal to enrichment.
+
+TESTS:
+- Mandatory-missing banner + checklist linkage (optional items excluded)
+- Upload preview before save and payload correctness
+- Answer save triggers status move, banners, and gated decision entry
+- Decision modal gating, notes enforcement, loading percent payload
+- Decline terminal banner
+
+GIT:
+- commit: "feat(web): proposal documents and underwriting UI"
+- push; tick checkbox
+
+FINAL OUTPUT: checklist/banner behavior, questionnaire and decision flows, tests, commit hash, pushed branch.
