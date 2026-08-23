@@ -30,9 +30,10 @@ from ..models import DocumentInstance, DocumentTemplate
 
 
 class DocumentEngineError(Exception):
-    def __init__(self, message: str, status_code: int = 400):
+    def __init__(self, message: str, status_code: int = 400, code: str | None = None):
         super().__init__(message)
         self.status_code = status_code
+        self.code = code or "DOCUMENT_ERROR"
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,8 @@ class DocumentTypeDefinition:
     context_builder: Callable[[Any, dict[str, Any], DocumentTemplate], dict[str, Any]]
     title: str
     variables_schema: dict[str, Any]
+    status: str = "READY"
+    pending_message: str = ""
 
 
 @dataclass(frozen=True)
@@ -58,10 +61,38 @@ class CompanyBranding:
     registration_number: str
     footer_legal_text: str
     accent_colors: dict[str, str]
+    version: int = 0
 
     @classmethod
     def resolve(cls, reference: str = "COMPANY_BRANDING") -> "CompanyBranding":
         prefix = (reference or "COMPANY_BRANDING").strip().upper()
+        from ..models import BrandingConfiguration
+
+        default_colors = {
+            "primary": "#183a91",
+            "accent": "#d94754",
+            "table_header": "#edf1f4",
+        }
+        configured = BrandingConfiguration.objects.filter(code=prefix, is_active=True).order_by("-version").first()
+        if configured is not None:
+            logo_value = configured.logo_file.name if configured.logo_file else ""
+            if logo_value:
+                logo_url = cls._logo_source(logo_value)
+            else:
+                fallback = Path(settings.BASE_DIR) / "apps" / "documents" / "static" / "documents" / "zic_logo.png"
+                logo_url = cls._logo_source(str(fallback)) if fallback.exists() else ""
+            configured_colors = configured.accent_colors if isinstance(configured.accent_colors, dict) else {}
+            return cls(
+                logo_url=logo_url,
+                company_name=configured.company_name,
+                address=configured.address,
+                phone=configured.phone,
+                email=configured.email,
+                registration_number=configured.registration_number,
+                footer_legal_text=configured.footer_legal_text,
+                accent_colors={**default_colors, **configured_colors},
+                version=configured.version,
+            )
 
         def value(suffix: str, default: Any = ""):
             from apps.system_parameters.models import SystemParameter
@@ -129,6 +160,7 @@ class CompanyBranding:
             "registration_number": self.registration_number,
             "footer_legal_text": self.footer_legal_text,
             "accent_colors": self.accent_colors,
+            "version": self.version,
         }
 
 
@@ -287,6 +319,121 @@ def _quotation_projections(source, currency, money):
     return rows
 
 
+def _safe_document_text(value, fallback="-"):
+    """Return a printable label and never leak a bare UUID into a document."""
+    if value is None or value == "":
+        return fallback
+    if isinstance(value, UUID):
+        return fallback
+    try:
+        UUID(str(value))
+    except (TypeError, ValueError, AttributeError):
+        return str(value)
+    return fallback
+
+
+def _proposal_context(source, branding: dict[str, Any], template: DocumentTemplate):
+    quotation = source.quotation
+    context = _quotation_context(quotation, branding, template)
+    if not context.get("plans") and isinstance(source.plans_snapshot, list):
+        context["plans"] = [
+            {
+                "code": _safe_document_text(item.get("code") or item.get("plan_code")) if isinstance(item, dict) else "-",
+                "name": _safe_document_text(item.get("name") or item.get("plan_name")) if isinstance(item, dict) else "-",
+                "description": _safe_document_text(item.get("description")) if isinstance(item, dict) else "-",
+                "policy_term": item.get("term_years") or item.get("policy_term") if isinstance(item, dict) else "-",
+                "payment_period": item.get("payment_period_years") if isinstance(item, dict) else "-",
+                "payment_frequency": item.get("payment_frequency") if isinstance(item, dict) else "-",
+                "quote_basis": item.get("quote_basis") if isinstance(item, dict) else "-",
+                "sum_assured": item.get("sum_assured") or item.get("base_sum_assured") if isinstance(item, dict) else "-",
+                "estimated_maturity_value": item.get("estimated_maturity_value") if isinstance(item, dict) else "-",
+                "badges": item.get("badges", []) if isinstance(item, dict) and isinstance(item.get("badges", []), list) else [],
+            }
+            for item in source.plans_snapshot
+        ]
+    snapshot_financial = source.financial_summary_snapshot if isinstance(source.financial_summary_snapshot, dict) else {}
+    context["financial"].update({
+        key: value for key, value in snapshot_financial.items()
+        if key in {"total_sum_assured", "base_premium", "total_rider_premium", "total_loading", "total_discount", "total_tax", "total_premium", "estimated_maturity_value"}
+        and value not in (None, "")
+    })
+    context["document_title"] = "PROPOSAL SUMMARY"
+    context["proposal"] = {
+        "number": _safe_document_text(source.proposal_number),
+        "status": _safe_document_text(source.get_status_display() if hasattr(source, "get_status_display") else source.status),
+        "quotation_number": _safe_document_text(getattr(quotation, "quote_number", None)),
+        "quotation_version": getattr(quotation, "current_version_number", 1),
+        "created_at": source.created_at,
+        "created_by": DocumentEngine.user_display(source.created_by),
+    }
+    context["underwriting"] = {
+        "status": _safe_document_text(source.status),
+        "note": "Subject to underwriting review and approval requirements.",
+    }
+    return context
+
+
+def _commitment_context(source, branding: dict[str, Any], template: DocumentTemplate):
+    from apps.ol_quotations.services.document_service import QuotationDocumentService
+
+    currency = _safe_document_text(source.currency, "TZS").upper()
+    money = QuotationDocumentService._money
+    partner_name = source.partner_name_snapshot or _safe_document_text(getattr(source, "partner", None))
+    product_name = source.product_name_snapshot or _safe_document_text(getattr(source, "product", None))
+    plan_name = source.plan_name_snapshot or _safe_document_text(getattr(source, "plan", None))
+    allocations = []
+    for allocation in source.allocations.select_related("allocated_by").all():
+        allocations.append(
+            {
+                "receipt_reference": _safe_document_text(allocation.receipt_reference),
+                "amount": money(allocation.amount, currency),
+                "payment_mode": _safe_document_text(allocation.payment_mode),
+                "currency": _safe_document_text(allocation.currency, currency),
+                "exchange_rate": _safe_document_text(allocation.exchange_rate),
+                "allocated_at": allocation.allocated_at,
+                "allocated_by": DocumentEngine.user_display(allocation.allocated_by),
+                "reason": _safe_document_text(allocation.reason),
+            }
+        )
+    return {
+        "document_title": "COMMITMENT STATEMENT",
+        "branding": branding,
+        "template_version": template.version,
+        "status_watermark": "DRAFT" if str(source.status).upper() == "DRAFT" else "",
+        "commitment": {
+            "number": _safe_document_text(source.commitment_number),
+            "source_type": _safe_document_text(source.get_source_type_display() if hasattr(source, "get_source_type_display") else source.source_type),
+            "source_reference": _safe_document_text(source.source_reference),
+            "partner_name": _safe_document_text(partner_name),
+            "product_name": _safe_document_text(product_name),
+            "plan_name": _safe_document_text(plan_name),
+            "currency": currency,
+            "premium_frequency": _safe_document_text(source.premium_frequency),
+            "installment_number": source.installment_number,
+            "installment_count": source.installment_count,
+            "due_date": source.due_date,
+            "grace_date": source.grace_date,
+            "lapse_date": source.lapse_date,
+            "status": _safe_document_text(source.get_status_display() if hasattr(source, "get_status_display") else source.status),
+            "approval_required": "Yes" if source.approval_required else "No",
+            "reason": _safe_document_text(source.reason_text),
+        },
+        "meta": {
+            "commitment_number": _safe_document_text(source.commitment_number),
+            "source_reference": _safe_document_text(source.source_reference),
+            "due_date": source.due_date,
+            "currency": currency,
+        },
+        "financial": {
+            "premium_amount": money(source.premium_amount, currency),
+            "amount_paid": money(source.amount_paid, currency),
+            "amount_waived": money(source.amount_waived, currency),
+            "balance": money(source.balance, currency),
+        },
+        "allocations": allocations,
+    }
+
+
 def _quotation_context(source, branding: dict[str, Any], template: DocumentTemplate):
     from collections import defaultdict
     from types import SimpleNamespace
@@ -437,6 +584,71 @@ DocumentTypeRegistry.register(
     )
 )
 
+DocumentTypeRegistry.register(
+    DocumentTypeDefinition(
+        document_type="PROPOSAL_SUMMARY",
+        source_app_label="ol_proposals",
+        source_model="olproposal",
+        template_code="PROPOSAL_SUMMARY_UNIFIED",
+        layout_template_path="documents/proposal_summary.html",
+        permission="ol_proposals.print",
+        context_builder=_proposal_context,
+        title="Proposal Summary",
+        variables_schema={
+            "proposal": "object",
+            "quote": "object",
+            "prospect": "object",
+            "plans": "array",
+            "financial": "object",
+            "branding": "object",
+        },
+    )
+)
+
+DocumentTypeRegistry.register(
+    DocumentTypeDefinition(
+        document_type="COMMITMENT_STATEMENT",
+        source_app_label="ol_commitments",
+        source_model="olcommitment",
+        template_code="COMMITMENT_STATEMENT_UNIFIED",
+        layout_template_path="documents/commitment_statement.html",
+        permission="ol_commitments.view",
+        context_builder=_commitment_context,
+        title="Commitment Statement",
+        variables_schema={
+            "commitment": "object",
+            "meta": "object",
+            "financial": "object",
+            "allocations": "array",
+            "branding": "object",
+        },
+    )
+)
+
+for _pending_document_type, _pending_title in (
+    ("RECEIPT", "Receipt"),
+    ("POLICY_CONTRACT", "Policy Contract"),
+    ("DISCHARGE_VOUCHER", "Discharge Voucher"),
+    ("COMMISSION_STATEMENT", "Commission Statement"),
+    ("DEBIT_NOTE", "Debit Note"),
+    ("PREMIUM_STATEMENT", "Premium Statement"),
+):
+    DocumentTypeRegistry.register(
+        DocumentTypeDefinition(
+            document_type=_pending_document_type,
+            source_app_label="documents",
+            source_model="pending",
+            template_code=f"{_pending_document_type}_PENDING",
+            layout_template_path="documents/pending.html",
+            permission="documents.render",
+            context_builder=lambda source, branding, template: {},
+            title=_pending_title,
+            variables_schema={},
+            status="TEMPLATE_PENDING",
+            pending_message=f"The {_pending_title} template is not configured yet. Contact System Parameters to activate an approved template.",
+        )
+    )
+
 
 class DocumentEngine:
     TICKET_PURPOSE = "zic.documents.download.v1"
@@ -453,6 +665,16 @@ class DocumentEngine:
             from apps.ol_quotations.permissions import has_quotation_permission
 
             return has_quotation_permission(actor, "print")
+        if permission_code == "ol_proposals.print":
+            # Proposals inherit the quotation hand-off access contract until a
+            # dedicated proposal permission catalog is introduced.
+            from apps.ol_quotations.permissions import has_quotation_permission
+
+            return has_quotation_permission(actor, "print")
+        if permission_code == "ol_commitments.view":
+            from apps.ol_commitments.permissions import has_ol_commitment_permission
+
+            return has_ol_commitment_permission(actor, "view")
         if hasattr(actor, "has_permission") and actor.has_permission(permission_code):
             return True
         if "." in permission_code and hasattr(actor, "has_module_permission"):
@@ -476,6 +698,9 @@ class DocumentEngine:
         if getattr(actor, "is_superuser", False):
             return True
         partner_id = getattr(source, "partner_id", None)
+        if partner_id is None:
+            quotation = getattr(source, "quotation", None)
+            partner_id = getattr(quotation, "partner_id", None) if quotation is not None else None
         if partner_id is None:
             return True
         if hasattr(actor, "can_access_partner"):
@@ -575,6 +800,12 @@ class DocumentEngine:
     @classmethod
     def render(cls, *, document_type, object_id, actor, request=None) -> DocumentInstance:
         definition = DocumentTypeRegistry.get(document_type)
+        if definition.status == "TEMPLATE_PENDING":
+            raise DocumentEngineError(
+                definition.pending_message or f"{definition.title} template is not configured.",
+                status_code=409,
+                code="TEMPLATE_PENDING",
+            )
         source = cls.resolve_source(definition, object_id)
         cls.ensure_access(actor, definition, source)
         template = cls.template_for(definition)
@@ -629,6 +860,7 @@ class DocumentEngine:
                 "template_version": template.version,
                 "variables": definition.variables_schema,
                 "branding_config_reference": template.branding_config_reference,
+                "branding_version": branding.get("version", 0),
             },
         )
         AuditService.log_action(

@@ -75,6 +75,54 @@ class DocumentTemplate(models.Model):
             raise ValidationError(errors)
 
 
+class BrandingConfiguration(models.Model):
+    """Versioned company identity used by every shared document template."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    code = models.CharField(max_length=120, default="COMPANY_BRANDING", db_index=True)
+    version = models.PositiveIntegerField(default=1)
+    logo_file = models.FileField(upload_to="documents/branding/", null=True, blank=True)
+    company_name = models.CharField(max_length=255, default="Zanzibar Insurance Corporation")
+    address = models.TextField(blank=True, default="")
+    phone = models.CharField(max_length=80, blank=True, default="")
+    email = models.EmailField(blank=True, default="")
+    registration_number = models.CharField(max_length=120, blank=True, default="")
+    footer_legal_text = models.TextField(blank=True, default="This document is system generated.")
+    accent_colors = models.JSONField(default=dict, blank=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_branding_configurations",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["code", "-version"]
+        constraints = [
+            models.UniqueConstraint(fields=["code", "version"], name="documents_branding_code_version_uq"),
+        ]
+        indexes = [models.Index(fields=["code", "is_active", "version"], name="documents_branding_active_idx")]
+
+    def __str__(self):
+        return f"{self.company_name} v{self.version}"
+
+    def clean(self):
+        errors = {}
+        self.code = (self.code or "COMPANY_BRANDING").strip().upper()
+        self.company_name = (self.company_name or "").strip()
+        if not self.company_name:
+            errors["company_name"] = "Company name is required."
+        if not isinstance(self.accent_colors, dict):
+            errors["accent_colors"] = "Accent colors must be a JSON object."
+        if self.version < 1:
+            errors["version"] = "Branding version must be at least 1."
+        if errors:
+            raise ValidationError(errors)
+
+
 class DocumentInstance(models.Model):
     """An immutable render result linked to its source transaction and template."""
 

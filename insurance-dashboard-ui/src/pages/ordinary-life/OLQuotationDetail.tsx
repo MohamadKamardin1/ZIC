@@ -24,8 +24,7 @@ import { ConfirmModal, Drawer, InfoBanner, Modal } from "../../components/ui/Ove
 import { StatusBadge, type StatusTone } from "../../components/ui/StatusBadge"
 import { SmartSelect } from "../../components/ui/SmartSelect"
 import { useToast } from "../../components/ui/Toast"
-import { ErrorCoach } from "../../components/ErrorCoach"
-import { AuthenticatedDocumentError, fetchAuthenticatedDocument, openAuthenticatedDocument, revokeAuthenticatedDocument } from "../../lib/documentClient"
+import { DocumentInstancesPanel } from "../../components/documents/DocumentInstancesPanel"
 import { renderFk, sanitizeForDisplay } from "../../lib/display"
 
 const API_PREFIX = "/api/v1/ol-quotations/quotations/"
@@ -92,18 +91,6 @@ type PartnerVerification = {
   partner_display_name?: string | null
   partner_verified?: boolean
   application_id?: string | null
-}
-
-type DocumentRow = RecordValue & {
-  id?: string
-  source_version_number?: number | null
-  template_code?: string | null
-  template_version?: string | number | null
-  document_type?: string | null
-  status?: string | null
-  generated_at?: string | null
-  pdf_url?: string | null
-  html_url?: string | null
 }
 
 type FinancialDetails = RecordValue & {
@@ -333,15 +320,11 @@ export default function OLQuotationDetail() {
   const [financial, setFinancial] = useState<FinancialDetails | null>(null)
   const [partner, setPartner] = useState<PartnerVerification | null>(null)
   const [versions, setVersions] = useState<VersionRow[]>([])
-  const [documents, setDocuments] = useState<DocumentRow[]>([])
   const [activeTab, setActiveTab] = useState<DetailTab>("overview")
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
   const [selectedVersion, setSelectedVersion] = useState<RecordValue | null>(null)
-  const [printDocument, setPrintDocument] = useState<DocumentRow | null>(null)
-  const [printPreviewUrl, setPrintPreviewUrl] = useState<string | null>(null)
-  const [documentError, setDocumentError] = useState<AuthenticatedDocumentError | null>(null)
   const [partnerOpen, setPartnerOpen] = useState(false)
   const [partnerForm, setPartnerForm] = useState<PartnerForm>({ first_name: "", surname: "", other_name: "", email: "", mobile_number: "", gender: "", date_of_birth: "", identification_type: "", identification_number: "", nationality: "", occupation: "" })
   const [partnerErrors, setPartnerErrors] = useState<string[]>([])
@@ -368,10 +351,9 @@ export default function OLQuotationDetail() {
 
   const loadLifecycleData = useCallback(async (baseOverride?: QuotationDetail | null) => {
     if (!id) return
-    const [summaryResult, versionsResult, documentsResult, partnerResult, financialResult, membersResult, installmentsResult, fundsResult, ridersResult] = await Promise.allSettled([
+    const [summaryResult, versionsResult, partnerResult, financialResult, membersResult, installmentsResult, fundsResult, ridersResult] = await Promise.allSettled([
       request<RecordValue>(`${API_PREFIX}${id}/wizard-summary/`),
       request<RecordValue>(`${API_PREFIX}${id}/versions/`),
-      request<unknown>(`${API_PREFIX}${id}/documents/`),
       request<PartnerVerification>(`${API_PREFIX}${id}/partner-verification/`),
       request<FinancialDetails>(`${API_PREFIX}${id}/financial-details/`),
       request<RecordValue>(`${API_PREFIX}${id}/members/`),
@@ -380,7 +362,6 @@ export default function OLQuotationDetail() {
       request<RecordValue>(`${API_PREFIX}${id}/riders/`),
     ])
     if (versionsResult.status === "fulfilled") setVersions(responseRows(versionsResult.value, "versions") as VersionRow[])
-    if (documentsResult.status === "fulfilled") setDocuments(responseRows(documentsResult.value) as DocumentRow[])
     if (partnerResult.status === "fulfilled") setPartner(partnerResult.value)
     if (financialResult.status === "fulfilled") setFinancial(financialResult.value)
     const stageResults = {
@@ -437,54 +418,6 @@ export default function OLQuotationDetail() {
       await loadLifecycleData()
     } catch (error) { setPartnerErrors(errorMessages(error)) } finally { setBusy(false) }
   }, [id, loadDetail, loadLifecycleData, partnerForm, toast])
-
-  const presentDocumentError = useCallback((error: unknown) => {
-    const status = error && typeof error === "object" && typeof (error as { status?: unknown }).status === "number" ? (error as { status: number }).status : undefined
-    const authError = error instanceof AuthenticatedDocumentError
-      ? error
-      : status === 401
-        ? new AuthenticatedDocumentError("Session expired — sign in again", { status, requiresLogin: true })
-        : new AuthenticatedDocumentError(error instanceof Error ? error.message : "The document could not be opened. Please try again.")
-    setDocumentError(authError)
-    toast({ tone: "danger", title: authError.requiresLogin ? "Session expired — sign in again" : "Unable to open document", message: authError.message })
-  }, [toast])
-
-  useEffect(() => () => revokeAuthenticatedDocument(printPreviewUrl ? { objectUrl: printPreviewUrl } : null), [printPreviewUrl])
-
-  const loadDocumentPreview = useCallback(async (document: DocumentRow) => {
-    setDocumentError(null)
-    setPrintDocument(document)
-    setPrintPreviewUrl(null)
-    const previewUrl = document.html_url
-      ? (await fetchAuthenticatedDocument(document.html_url, "html")).objectUrl
-      : null
-    setPrintPreviewUrl(previewUrl)
-  }, [])
-
-  const generatePrint = useCallback(async () => {
-    if (!id) return
-    setBusy(true)
-    setDocumentError(null)
-    try {
-      const document = await request<DocumentRow>(`${API_PREFIX}${id}/print/`, { method: "POST", body: JSON.stringify({ preview: true }) })
-      await loadDocumentPreview(document)
-      setDocuments((current) => [document, ...current.filter((row) => row.id !== document.id)])
-    } catch (error) { presentDocumentError(error) } finally { setBusy(false) }
-  }, [id, loadDocumentPreview, presentDocumentError])
-
-  const downloadDocument = useCallback(async (document: DocumentRow) => {
-    if (!document.pdf_url) return
-    setBusy(true)
-    setDocumentError(null)
-    try {
-      await openAuthenticatedDocument(document.pdf_url, { kind: "pdf", mode: "download", filename: `${document.template_code ?? "quotation"}.pdf` })
-    } catch (error) { presentDocumentError(error) } finally { setBusy(false) }
-  }, [presentDocumentError])
-
-  const downloadPrint = useCallback(async () => {
-    if (!printDocument) return
-    await downloadDocument(printDocument)
-  }, [downloadDocument, printDocument])
 
   const finalize = useCallback(async () => {
     if (!id) return
@@ -564,24 +497,26 @@ export default function OLQuotationDetail() {
   const totalPremium = summary?.total_premium ?? quotation.total_premium
   const sumAssured = summary?.total_sum_assured ?? quotation.total_sum_assured
   const visibleTabs: Array<{ id: DetailTab; label: string }> = [
+    { id: "overview", label: "Overview" },
     { id: "plans", label: "Plans & Sub-Products" },
     { id: "members", label: "Member Coverage" },
     { id: "riders", label: "Riders" },
     { id: "financials", label: "Projections" },
     { id: "installments", label: "Installment Payouts" },
     { id: "versions", label: "Quote Versions" },
+    { id: "documents", label: "Documents" },
   ]
 
   return <div className="ol-detail-page space-y-4 p-3 sm:p-4 md:p-5">
     <section className="ol-detail-header surface-card overflow-hidden">
       <div className="flex flex-wrap items-start justify-between gap-4 px-5 py-4">
         <div className="flex min-w-0 items-start gap-3"><span className="ol-detail-doc-icon"><FileText size={20} aria-hidden="true" /></span><div className="min-w-0"><h1 className="truncate text-2xl font-bold tracking-tight">{prospectName}</h1><div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--muted-foreground)]"><span>{quotation.quote_number ?? displayQuoteNumber}</span><span className="text-[var(--muted-foreground)]">-v{quotation.current_version_number ?? 1}</span><StatusBadge value="Latest" tone="success" /><StatusBadge value={status === "CONVERTED" ? "Converted" : "Not Converted"} tone={status === "CONVERTED" ? "info" : "neutral"} /><span className="inline-flex items-center gap-1"><FileText size={12} aria-hidden="true" />{dateLabel(quotation.quote_date)}</span></div></div></div>
-        <div className="flex flex-wrap justify-end gap-2"><button type="button" className="button-secondary" onClick={() => navigate("/ordinary-life/quotations")}><ArrowLeft size={15} aria-hidden="true" />Back to Quote Listing</button>{status === "DRAFT" && isAllowed("ol_quotations.update") && <button type="button" className="button-secondary" onClick={() => navigate(`/ordinary-life/quotations/${id}/edit`)}><Pencil size={15} aria-hidden="true" />Edit</button>}{canConvert && <button type="button" className="button-secondary border-emerald-300 text-emerald-700" onClick={() => { setConvertErrors([]); setConvertOpen(true) }}><FileCheck2 size={15} aria-hidden="true" />Convert to Proposal</button>}{canPrint && <button type="button" className="button-secondary border-sky-300 text-sky-700" onClick={() => void generatePrint()} disabled={busy}><Download size={15} aria-hidden="true" />Print Quote</button>}</div>
+        <div className="flex flex-wrap justify-end gap-2"><button type="button" className="button-secondary" onClick={() => navigate("/ordinary-life/quotations")}><ArrowLeft size={15} aria-hidden="true" />Back to Quote Listing</button>{status === "DRAFT" && isAllowed("ol_quotations.update") && <button type="button" className="button-secondary" onClick={() => navigate(`/ordinary-life/quotations/${id}/edit`)}><Pencil size={15} aria-hidden="true" />Edit</button>}{canConvert && <button type="button" className="button-secondary border-emerald-300 text-emerald-700" onClick={() => { setConvertErrors([]); setConvertOpen(true) }}><FileCheck2 size={15} aria-hidden="true" />Convert to Proposal</button>}{canPrint && <button type="button" className="button-secondary border-sky-300 text-sky-700" onClick={() => setActiveTab("documents")} disabled={busy}><Download size={15} aria-hidden="true" />Print Quote</button>}
+</div>
       </div>
       <div className="grid gap-3 border-t px-4 py-4 sm:grid-cols-2 xl:grid-cols-4"><article className="ol-detail-kpi ol-detail-kpi-green"><span className="ol-detail-kpi-icon">▰</span><strong>{moneyLabel(sumAssured, currency)}</strong><small>Total Sum Assured</small></article><article className="ol-detail-kpi ol-detail-kpi-blue"><span className="ol-detail-kpi-icon">▣</span><strong>{moneyLabel(basicPremium, currency)}</strong><small>Total Basic Premium</small></article><article className="ol-detail-kpi ol-detail-kpi-purple"><span className="ol-detail-kpi-icon">＋</span><strong>{moneyLabel(riderPremium, currency)}</strong><small>Total Rider Premium</small></article><article className="ol-detail-kpi ol-detail-kpi-amber"><span className="ol-detail-kpi-icon">◈</span><strong>{moneyLabel(totalPremium, currency)}</strong><small>Total Premium</small></article></div><div className="flex justify-end px-5 pb-3"><button type="button" className="text-xs font-semibold text-[var(--muted-foreground)] underline underline-offset-2" onClick={() => setActiveTab("overview")}>More Details</button></div>
     </section>
     <nav className="ol-detail-tabs surface-card flex gap-1 overflow-x-auto p-1" aria-label="Quotation detail tabs">{visibleTabs.map((tab) => <button type="button" key={tab.id} onClick={() => setActiveTab(tab.id)} className={`whitespace-nowrap rounded-[8px] px-4 py-2.5 text-sm font-semibold transition ${activeTab === tab.id ? "bg-white text-[var(--foreground)] shadow-sm dark:bg-[var(--muted)]" : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)]"}`} aria-current={activeTab === tab.id ? "page" : undefined}>{tab.label}</button>)}</nav>
-    <div className="sr-only" aria-hidden="false">{tabs.filter((tab) => ["overview", "plans", "members", "installments", "funds", "riders", "financials", "versions", "documents"].includes(tab.id)).map((tab) => <button type="button" key={`compat-${tab.id}`} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}</div>
     <section className="space-y-4">{quotation.approval_required && <div className="flex items-start gap-3 rounded-[10px] border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="alert"><CircleAlert className="mt-0.5 shrink-0" size={18} aria-hidden="true" /><div><p className="font-bold">Approval required</p><p className="mt-1">{stringValue(quotation.approval_reason, "This quotation requires approval before downstream conversion.")}</p></div></div>}      {partner && partner.compliant && quotation.partner_verified === true && <div className="flex flex-wrap items-center gap-3 rounded-[10px] border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-950" role="status"><ShieldCheck className="shrink-0" size={18} aria-hidden="true" /><div><p className="font-bold">Partner verified</p><p className="mt-1">{linkedPartnerName || "The compliant partner is linked to this quotation."}{partner.partner_number ? ` · ${partner.partner_number}` : ""}</p></div></div>}{partner && (!partner.compliant || quotation.partner_verified !== true) && <InfoBanner title="Partner verification pending"><div className="flex flex-wrap items-center justify-between gap-3"><span>{partner.partner_exists ? "A matching partner exists but is not compliant." : "No compliant partner is linked to this quotation."}{partner.missing_fields?.length ? ` Missing: ${partner.missing_fields.join(", ")}.` : " Complete the required KYC fields, save the partner, then verify again before conversion."}</span><button type="button" className="button-primary" onClick={openPartner}><UserRound size={16} aria-hidden="true" />Complete partner</button></div></InfoBanner>}
 
       {activeTab === "overview" && <div className="space-y-4"><StepChecklist completion={completion} onJump={jumpTo} /><div className="grid gap-4 lg:grid-cols-2"><section className="surface-card p-4"><h2 className="mb-3 font-bold">Quotation summary</h2><dl className="grid gap-3 sm:grid-cols-2">{[["Quote name", quotation.quote_name], ["Quote date", dateLabel(quotation.quote_date)], ["Currency", renderFk(quotation.currency, quotation.currency_display)], ["Identity type", renderFk(quotation.identity_type, quotation.identity_type_display)], ["Identity number", quotation.identity_number], ["Date of birth", dateLabel(quotation.date_of_birth)], ["Age at quote", quotation.age_at_quote], ["Gender", renderFk(quotation.gender, quotation.gender_display)], ["Smoker status", renderFk(quotation.smoker_status, quotation.smoker_status_display)], ["Location", renderFk(quotation.location, quotation.location_display)], ["Agent", renderFk(quotation.agent_partner, quotation.agent_display)], ["Partner", linkedPartnerName], ["Address", quotation.address]].map(([label, value]) => <div key={String(label)}><dt className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--muted-foreground)]">{label}</dt><dd className="mt-1 text-sm font-semibold">{stringValue(value)}</dd></div>)}</dl></section><section className="surface-card p-4"><h2 className="mb-3 font-bold">Review actions</h2><div className="space-y-3">{canFinalize && <button type="button" className="button-primary w-full justify-center" onClick={() => { setFinalizeErrors([]); setFinalizeOpen(true) }}><Check size={16} aria-hidden="true" />Finalize quotation</button>}{canConvert && <button type="button" className="button-secondary w-full justify-center" onClick={() => { setConvertErrors([]); setConvertOpen(true) }}><ChevronRight size={16} aria-hidden="true" />Convert to proposal</button>}<button type="button" className="button-secondary w-full justify-center" onClick={() => setVersionsOpen(true)}><History size={16} aria-hidden="true" />View versions</button></div></section></div></div>}
@@ -592,15 +527,10 @@ export default function OLQuotationDetail() {
       {activeTab === "riders" && <RidersTab rows={listValue(quotation.rider_selections)} benefits={listValue(quotation.benefits)} currency={currency} />}
       {activeTab === "financials" && <ProjectionsTab financial={financial} summary={summary} projections={projections} currency={currency} recalculationRequired={Boolean(financial?.recalculation_required)} onCalculate={async () => { if (!id) return; setBusy(true); try { const response = await request<FinancialDetails>(`${API_PREFIX}${id}/calculate/`, { method: "POST", body: JSON.stringify({}) }); setFinancial(response); toast({ tone: "success", title: "Financial details recalculated" }); await loadDetail() } catch (error) { toast({ tone: "danger", title: "Calculation failed", message: error instanceof Error ? error.message : "The rating engine rejected the calculation." }) } finally { setBusy(false) } }} busy={busy} />}
       {activeTab === "versions" && <VersionsTab versions={versions} onOpenDrawer={() => setVersionsOpen(true)} onView={(version) => void loadVersion(version)} />}
-      {activeTab === "documents" && <DocumentsTab rows={documents} onPreview={(document) => { void loadDocumentPreview(document) }} onDownload={(document) => { void downloadDocument(document) }} onGenerate={() => void generatePrint()} busy={busy} />}
+      {activeTab === "documents" && id && <DocumentInstancesPanel sourceType="ol_quotations.olquotation" objectId={id} documentType="OL_QUOTATION" title="Quotation documents" renderLabel="Generate quotation PDF" />}
     </section>
 
     <Drawer open={versionsOpen} title="Quotation versions" description="Review historical snapshots or revise from the current finalized version." onClose={() => setVersionsOpen(false)} width="max-w-2xl"><div className="space-y-3">{versions.length === 0 ? <TableEmpty message="No versions are available." /> : versions.map((version) => <article key={String(version.id ?? version.version_number)} className="rounded-[10px] border p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-bold">Version {stringValue(version.version_number)}</p><p className="mt-1 text-xs text-[var(--muted-foreground)]">{dateLabel(version.created_at)} · {renderFk(version.created_by, version.created_by_display, "System")}</p><p className="mt-2 text-sm">{stringValue(version.change_reason, "No change reason recorded.")}</p></div><StatusBadge value={String(version.status ?? "Superseded")} tone={String(version.status).toUpperCase() === "CURRENT" ? "success" : "neutral"} /></div><div className="mt-3 flex gap-2"><button type="button" className="button-secondary" onClick={() => void loadVersion(Number(version.version_number))}><Eye size={15} aria-hidden="true" />Switch view</button>{hasRevision && <button type="button" className="button-secondary" onClick={() => void runRevision()}><Pencil size={15} aria-hidden="true" />Open revise</button>}</div></article>)}</div>{selectedVersion && <div className="mt-5 rounded-[10px] border bg-[var(--muted)]/35 p-4"><div className="mb-2 flex items-center justify-between"><h3 className="font-bold">Version {stringValue(selectedVersion.version_number)} snapshot</h3><button type="button" aria-label="Close version snapshot" className="rounded-md p-1 hover:bg-[var(--secondary)]" onClick={() => setSelectedVersion(null)}><X size={16} aria-hidden="true" /></button></div><pre className="max-h-80 overflow-auto whitespace-pre-wrap text-xs leading-5">{JSON.stringify(sanitizeForDisplay(selectedVersion.snapshot ?? selectedVersion), null, 2)}</pre></div>}</Drawer>
-
-    <Modal open={Boolean(printDocument)} title={`Quote Printout Preview - ${displayQuoteNumber} (${prospectName})`} onClose={() => { setPrintDocument(null); setPrintPreviewUrl(null); setDocumentError(null) }} size="xl" footer={<><span className="mr-auto text-xs text-[var(--muted-foreground)]">This is a preview. Click download to get the formatted PDF document.</span><button type="button" className="button-secondary" onClick={() => { setPrintDocument(null); setPrintPreviewUrl(null); setDocumentError(null) }}>Close</button>{printDocument?.pdf_url && <button type="button" className="button-primary" onClick={() => void downloadPrint()} disabled={busy}><Download size={16} aria-hidden="true" />{busy ? "Preparing…" : "Download"}</button>}</>}>
-      <div className="space-y-3">{documentError && <ErrorCoach title={documentError.requiresLogin ? "Session expired — sign in again" : "Document action needs attention"} message={documentError.message} loginUrl={documentError.requiresLogin ? documentError.loginUrl : undefined} onDismiss={() => setDocumentError(null)} />}</div>
-      <div className="ol-print-preview-frame">{printPreviewUrl ? <iframe title="Quotation document preview" src={printPreviewUrl} className="h-[68vh] w-full border-0 bg-white" sandbox="allow-same-origin" /> : <div className="space-y-3 p-4"><InfoBanner title="Preview generated">The document was generated successfully, but an HTML preview was not returned.</InfoBanner><dl className="grid gap-3 sm:grid-cols-2"><div><dt className="text-xs font-bold uppercase text-[var(--muted-foreground)]">Template</dt><dd>{stringValue(printDocument?.template_code)}</dd></div><div><dt className="text-xs font-bold uppercase text-[var(--muted-foreground)]">Template version</dt><dd>{stringValue(printDocument?.template_version)}</dd></div></dl></div>}</div>
-    </Modal>
 
     <Modal open={partnerOpen} title="Complete partner verification" description="Complete the missing compliant-partner fields before conversion." onClose={() => { if (!busy) setPartnerOpen(false) }} footer={<><button type="button" className="button-secondary" onClick={() => setPartnerOpen(false)} disabled={busy}>Cancel</button><button type="button" className="button-primary" onClick={() => void completePartner()} disabled={busy}>{busy ? "Saving…" : "Save and verify"}</button></>}>
       {partnerErrors.length > 0 && <div className="mb-4 space-y-1 rounded-[10px] border border-red-200 bg-red-50 p-3 text-sm text-red-900" role="alert">{partnerErrors.map((error) => <p key={error}>{error}</p>)}</div>}
@@ -667,8 +597,5 @@ function VersionsTab({ versions, onOpenDrawer, onView }: { versions: VersionRow[
   return <div className="surface-card overflow-hidden"><div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3"><div><h2 className="font-bold">Quote Versions</h2><p className="text-xs text-[var(--muted-foreground)]">Historical quotation snapshots are preserved.</p></div><button type="button" className="button-secondary" onClick={onOpenDrawer}><History size={15} aria-hidden="true" />Open versions drawer</button></div><DetailTableToolbar label="quote versions" /><div className="overflow-x-auto"><table className="w-full min-w-[980px] text-left text-sm"><caption className="sr-only">Quote versions</caption><thead className="bg-[var(--muted)]/35 text-xs uppercase tracking-[0.08em] text-[var(--muted-foreground)]"><tr><th className="px-4 py-3">Version</th><th className="px-4 py-3">Quote Number</th><th className="px-4 py-3">Sum Assured</th><th className="px-4 py-3">Gross Premium</th><th className="px-4 py-3">Created Date</th><th className="px-4 py-3">Created By</th><th className="px-4 py-3">Actions</th></tr></thead><tbody className="divide-y divide-[var(--border)]">{versions.map((version, index) => { const current = String(version.status ?? "").toUpperCase() === "CURRENT"; return <tr key={String(version.id ?? index)}><Td><span className="rounded-[6px] bg-emerald-100 px-2 py-1 text-xs font-extrabold text-emerald-700">v{stringValue(version.version_number, "1")}</span>{current ? <span className="ml-2 text-amber-500" aria-label="Current version">★</span> : null}{current ? <span className="ml-1 text-xs text-[var(--muted-foreground)]">(Current)</span> : null}<span className="sr-only">{cell(version, "change_reason")}</span></Td><Td className="font-semibold text-[var(--primary)]">{cell(version, "quote_number")}</Td><Td>{moneyLabel(version.sum_assured ?? version.total_sum_assured)}</Td><Td className="font-semibold text-[var(--primary)]">{moneyLabel(version.gross_premium ?? version.total_premium)}</Td><Td>{dateLabel(version.created_at)}</Td><Td>{cell(version, "created_by", "created_by_name")}</Td><Td>{current ? <button type="button" className="button-secondary text-xs" aria-label="View" onClick={() => onView(Number(version.version_number))}>Current View</button> : <button type="button" className="button-secondary" onClick={() => onView(Number(version.version_number))}><Eye size={14} aria-hidden="true" />View</button>}</Td></tr>})}</tbody></table></div><DetailTableFooter /></div>
 }
 
-function DocumentsTab({ rows, onPreview, onDownload, onGenerate, busy }: { rows: DocumentRow[]; onPreview: (row: DocumentRow) => void; onDownload: (row: DocumentRow) => void; onGenerate: () => void; busy: boolean }) {
-  return <div className="space-y-4"><div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-bold">Generated documents</h2><p className="text-sm text-[var(--muted-foreground)]">Each printout retains its source quotation version and template version.</p></div><button type="button" className="button-primary" onClick={onGenerate} disabled={busy}><FileText size={16} aria-hidden="true" />{busy ? "Generating…" : "Generate printout"}</button></div>{rows.length === 0 ? <TableEmpty message="No generated printouts are available." /> : <DataTableShell caption="Quotation documents"><TableHead><Th>Document</Th><Th>Source version</Th><Th>Template</Th><Th>Template version</Th><Th>Status</Th><Th>Generated at</Th><Th>Action</Th></TableHead><tbody>{rows.map((row, index) => <tr key={String(row.id ?? index)}><Td>{cell(row, "document_type", "mime_type")}</Td><Td>{cell(row, "source_version_number")}</Td><Td>{cell(row, "template_code")}</Td><Td>{cell(row, "template_version")}</Td><Td><StatusBadge value={String(row.status ?? "Generated")} tone="success" /></Td><Td>{dateLabel(row.generated_at)}</Td><Td><div className="flex gap-2"><button type="button" className="button-secondary" onClick={() => onPreview(row)}><Eye size={15} aria-hidden="true" />Preview</button>{row.pdf_url && <button type="button" className="button-secondary" onClick={() => onDownload(row)} disabled={busy}><Download size={15} aria-hidden="true" />PDF</button>}</div></Td></tr>)}</tbody></DataTableShell>}</div>
-}
 
 export { default as OLQuotationWizard } from "./OLQuotationWizard"

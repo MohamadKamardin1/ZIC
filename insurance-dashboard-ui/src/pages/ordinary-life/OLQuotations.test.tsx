@@ -2,14 +2,13 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import OLQuotations from "./OLQuotations"
 
-const { requestMock, navigateMock, openDocumentMock } = vi.hoisted(() => ({ requestMock: vi.fn(), navigateMock: vi.fn(), openDocumentMock: vi.fn() }))
+const { requestMock, navigateMock } = vi.hoisted(() => ({ requestMock: vi.fn(), navigateMock: vi.fn() }))
 
 vi.mock("../../lib/documentClient", () => ({
   AuthenticatedDocumentError: class AuthenticatedDocumentError extends Error {
     requiresLogin = false
     loginUrl = "/login"
   },
-  openAuthenticatedDocument: openDocumentMock,
 }))
 
 vi.mock("../../lib/apiClient", () => ({
@@ -107,10 +106,8 @@ const finalizedRow = {
 beforeEach(() => {
   requestMock.mockReset()
   navigateMock.mockReset()
-  openDocumentMock.mockReset()
-  openDocumentMock.mockResolvedValue({ objectUrl: "blob:quotation" })
   requestMock.mockImplementation(async (path: string) => {
-    if (path.includes("/print/")) return { pdf_url: "/api/v1/ol-quotations/documents/document-1/download/" }
+    if (path.startsWith("/api/v1/documents/render/")) return { signed_download_url: "/api/v1/documents/instances/document-1/download/?ticket=signed-ticket" }
     if (path.includes("/summary/")) return { total: 4, drafts: 1, finalized: 1, converted: 1, expired: 1 }
     if (path.startsWith("/api/v1/ol/quotations/quotations/")) return { results: [draftRow, finalizedRow], count: 25, page: 1, page_size: 20 }
     return {}
@@ -171,7 +168,7 @@ describe("OL Quotations list", () => {
     })
   })
 
-  it("opens print documents through authenticated retrieval from the work queue", async () => {
+  it("renders print documents and opens only the signed ticket from the work queue", async () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null)
     render(<OLQuotations />)
     await screen.findByText("Q-0001")
@@ -180,12 +177,9 @@ describe("OL Quotations list", () => {
     fireEvent.click(within(rows[2]).getByRole("button", { name: "Actions for row 2" }))
     fireEvent.click(screen.getByRole("button", { name: "Print" }))
 
-    await waitFor(() => expect(openDocumentMock).toHaveBeenCalledWith("/api/v1/ol-quotations/documents/document-1/download/", {
-      kind: "pdf",
-      mode: "preview",
-      filename: "Q-0002.pdf",
-    }))
-    expect(openSpy).not.toHaveBeenCalledWith(expect.stringContaining("/api/"), expect.anything(), expect.anything())
+    await waitFor(() => expect(requestMock).toHaveBeenCalledWith("/api/v1/documents/render/OL_QUOTATION/finalized-1/", { method: "POST", body: JSON.stringify({}) }))
+    expect(openSpy).toHaveBeenCalledWith("/api/v1/documents/instances/document-1/download/?ticket=signed-ticket", "_blank", "noopener,noreferrer")
+    expect(openSpy.mock.calls.some(([url]) => String(url).includes("/api/") && !String(url).includes("ticket="))).toBe(false)
   })
 
   it("navigates to create and view routes", async () => {

@@ -1,0 +1,79 @@
+{% extends "documents/base_print.html" %}
+
+{% block document_content %}
+  <p class="small muted">ORDINARY LIFE PROPOSAL SUMMARY</p>
+  <section class="meta-grid">
+    <div class="meta-cell"><span class="meta-label">Proposal number</span><span class="meta-value">{{ proposal.number }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Status</span><span class="meta-value">{{ proposal.status }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Quotation</span><span class="meta-value">{{ proposal.quotation_number }} · v{{ proposal.quotation_version }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Created</span><span class="meta-value">{{ proposal.created_at|date:'Y-m-d H:i' }}</span></div>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title">Prospect and quotation details</h2>
+    <div class="two-column">
+      <div class="column"><dl class="kv">
+        <div class="kv-row"><dt>Name</dt><dd>{{ prospect.name }}</dd></div>
+        <div class="kv-row"><dt>Identity</dt><dd>{{ prospect.identity_type }} · {{ prospect.identity_number }}</dd></div>
+        <div class="kv-row"><dt>Date of birth</dt><dd>{{ prospect.date_of_birth }}</dd></div>
+        <div class="kv-row"><dt>Age / gender</dt><dd>{{ prospect.age_at_quote }} years · {{ prospect.gender }}</dd></div>
+      </dl></div>
+      <div class="column"><dl class="kv">
+        <div class="kv-row"><dt>Smoker status</dt><dd>{{ prospect.smoker_status }}</dd></div>
+        <div class="kv-row"><dt>Location</dt><dd>{{ prospect.location }}</dd></div>
+        <div class="kv-row"><dt>Address</dt><dd>{{ prospect.address }}</dd></div>
+        <div class="kv-row"><dt>Agent</dt><dd>{{ agent.name }}{% if agent.code and agent.code != '-' %} · {{ agent.code }}{% endif %}</dd></div>
+      </dl></div>
+    </div>
+  </section>
+
+  {% if plans %}
+    <section class="section">
+      <h2 class="section-title">Proposed plans</h2>
+      <table class="data">
+        <thead><tr><th>Plan code</th><th>Plan name</th><th>Type / badges</th><th>Term</th><th>Payment period</th><th>Frequency</th><th class="numeric">Sum assured</th><th class="numeric">Maturity value</th></tr></thead>
+        <tbody>{% for plan in plans %}<tr>
+          <td>{{ plan.code }}</td><td>{{ plan.name }}<br><span class="small muted">{{ plan.description }}</span></td><td>{{ plan.plan_type }}{% for badge in plan.badges %} · {{ badge }}{% endfor %}</td><td>{{ plan.policy_term }} years</td><td>{{ plan.payment_period }} years</td><td>{{ plan.payment_frequency }}</td><td class="numeric">{{ plan.sum_assured }}</td><td class="numeric">{{ plan.estimated_maturity_value }}</td>
+        </tr>{% endfor %}</tbody>
+      </table>
+    </section>
+  {% endif %}
+
+  <section class="section">
+    <h2 class="section-title">Underwriting and approval</h2>
+    <div class="meta-grid">
+      <div class="meta-cell"><span class="meta-label">Proposal status</span><span class="meta-value">{{ proposal.status }}</span></div>
+      <div class="meta-cell"><span class="meta-label">Underwriting status</span><span class="meta-value">{{ underwriting.status }}</span></div>
+      <div class="meta-cell"><span class="meta-label">Prepared by</span><span class="meta-value">{{ proposal.created_by }}</span></div>
+      <div class="meta-cell"><span class="meta-label">Review note</span><span class="meta-value">{{ underwriting.note }}</span></div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title">Financial summary</h2>
+    <table class="data summary-box"><tbody>
+      <tr><td>Total sum assured</td><td class="numeric">{{ financial.total_sum_assured|default:'-' }}</td></tr>
+      <tr><td>Base premium</td><td class="numeric">{{ financial.base_premium|default:'-' }}</td></tr>
+      <tr><td>Rider premium</td><td class="numeric">{{ financial.total_rider_premium|default:'-' }}</td></tr>
+      <tr><td>Loadings</td><td class="numeric">{{ financial.total_loading|default:'-' }}</td></tr>
+      <tr><td>Discounts</td><td class="numeric">{{ financial.total_discount|default:'-' }}</td></tr>
+      <tr><td>Taxes</td><td class="numeric">{{ financial.total_tax|default:'-' }}</td></tr>
+      <tr><td>Total premium</td><td class="numeric"><strong>{{ financial.total_premium|default:'-' }}</strong></td></tr>
+      <tr><td>Estimated maturity value</td><td class="numeric">{{ financial.estimated_maturity_value|default:'-' }}</td></tr>
+    </tbody></table>
+  </section>
+
+  <section class="terms">
+    <h2 class="section-title">Proposal terms and disclaimer</h2>
+    <p>This proposal summary is prepared from the linked quotation and remains subject to underwriting review, policy terms, exclusions, and approval requirements.</p>
+    <p class="muted small">This document does not constitute an offer or a contract of insurance. The final policy contract and approved terms will prevail.</p>
+  </section>
+{% endblock %}
+
+{% block signature_block %}
+  <footer class="signature-block">
+    <div class="signature-party"><strong>Customer</strong><div class="signature-line"></div><div>{{ prospect.name }}</div><div class="small muted">Signature &amp; Date</div></div>
+    <div class="signature-party"><strong>Agent / Intermediary</strong><div class="signature-line"></div><div>{{ agent.name }}{% if agent.code and agent.code != '-' %} · {{ agent.code }}{% endif %}</div><div class="small muted">Signature &amp; Date</div></div>
+    <div class="signature-party"><strong>Company Representative</strong><div class="signature-line"></div><div>{{ branding.company_name }}</div><div>Prepared By: {{ generated_by_name|default:proposal.created_by }}</div><div class="small muted">Signature &amp; Date · Official Stamp</div></div>
+  </footer>
+{% endblock %}

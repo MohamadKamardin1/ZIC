@@ -12,7 +12,7 @@ from django.test import TestCase
 from pypdf import PdfReader
 from rest_framework.test import APIClient
 
-from apps.documents.models import DocumentInstance, DocumentTemplate
+from apps.documents.models import BrandingConfiguration, DocumentInstance, DocumentTemplate
 from apps.governance.models import AuditLog
 from apps.documents.services.engine import DocumentEngine
 from apps.ol_parameters.models import (
@@ -22,6 +22,8 @@ from apps.ol_parameters.models import (
     OLProduct as ParameterProduct,
     OLRiderSetup,
 )
+from apps.ol_commitments.models import OLCommitment
+from apps.ol_proposals.models import OLProposal
 from apps.ol_quotations.models import (
     OLQuotation,
     OLQuotationBenefit,
@@ -518,3 +520,164 @@ class UnifiedDocumentEngineAPITests(TestCase):
     def test_template_variables_schema_rejects_missing_required_context(self):
         with self.assertRaisesRegex(Exception, "missing variables: plans"):
             DocumentEngine._validate_context({"quote": {}}, {"quote": "object", "plans": "array"})
+
+    def test_proposal_summary_renders_required_blocks_without_uuid_values(self):
+        self._prepare_complete_quotation(plan_count=2)
+        proposal = OLProposal.objects.create(
+            quotation=self.quotation,
+            proposal_number="OL-PROP-UNIFIED-001",
+            status="ACTIVE",
+            prospect_snapshot={
+                "name": "Asha Ali",
+                "identity_type": "National ID",
+                "identity_number": "NIDA-900101-001",
+            },
+            plans_snapshot=[{"code": "EDU-01", "name": "Elimu Bora Plan 1"}],
+            financial_summary_snapshot={"total_premium": "52500.00"},
+            created_by=self.admin,
+        )
+        response = self.client.post(
+            f"/api/v1/documents/render/PROPOSAL_SUMMARY/{proposal.pk}/",
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        data = response.data["data"]
+        instance, reader, text = self._rendered_pdf_text(data)
+        for expected in (
+            "PROPOSAL SUMMARY",
+            "OL-PROP-UNIFIED-001",
+            "Prospect and quotation details",
+            "Proposed plans",
+            "EDU-01",
+            "Underwriting and approval",
+            "Financial summary",
+            "does not constitute an offer",
+            "Customer",
+            "Company Representative",
+        ):
+            self.assertIn(expected, text, expected)
+        self.assertNotRegex(text, r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
+        self.assertEqual(instance.metadata["branding_version"], 0)
+        self.assertGreaterEqual(len(reader.pages), 1)
+
+    def test_commitment_statement_renders_required_blocks_without_uuid_values(self):
+        commitment = OLCommitment.objects.create(
+            commitment_number="OL-CMT-UNIFIED-001",
+            source_type="MANUAL",
+            source_reference="MANUAL-REFERENCE-001",
+            partner=self.partner,
+            partner_name_snapshot="Asha Ali",
+            product_name_snapshot="ZIC Education Product",
+            plan_name_snapshot="Elimu Bora Plan",
+            currency="TZS",
+            premium_frequency="ANNUAL",
+            installment_number=1,
+            installment_count=12,
+            due_date=date.today() + timedelta(days=30),
+            premium_amount=Decimal("50000.00"),
+            amount_paid=Decimal("10000.00"),
+            amount_waived=Decimal("0.00"),
+            status="DUE",
+            created_by=self.admin,
+            updated_by=self.admin,
+        )
+        response = self.client.post(
+            f"/api/v1/documents/render/COMMITMENT_STATEMENT/{commitment.pk}/",
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        instance, reader, text = self._rendered_pdf_text(response.data["data"])
+        for expected in (
+            "COMMITMENT STATEMENT",
+            "OL-CMT-UNIFIED-001",
+            "Commitment details",
+            "Asha Ali",
+            "ZIC Education Product",
+            "Elimu Bora Plan",
+            "Payment summary",
+            "Premium amount",
+            "Outstanding balance",
+            "Statement notes",
+            "Finance Officer",
+            "Company Representative",
+        ):
+            self.assertIn(expected, text, expected)
+        self.assertNotRegex(text, r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
+        self.assertGreaterEqual(len(reader.pages), 1)
+
+    def test_future_document_types_return_machine_readable_pending_error(self):
+        for document_type in (
+            "RECEIPT",
+            "POLICY_CONTRACT",
+            "DISCHARGE_VOUCHER",
+            "COMMISSION_STATEMENT",
+            "DEBIT_NOTE",
+            "PREMIUM_STATEMENT",
+        ):
+            response = self.client.post(
+                f"/api/v1/documents/render/{document_type}/00000000-0000-0000-0000-000000000000/",
+                {},
+                format="json",
+            )
+            self.assertEqual(response.status_code, 409, (document_type, response.data))
+            self.assertEqual(response.data["code"], "TEMPLATE_PENDING")
+            self.assertIn("System Parameters", response.data["message"])
+
+    def test_branding_update_versions_audits_and_is_used_by_next_render(self):
+        first = self.client.post(
+            "/api/v1/documents/branding/",
+            {
+                "company_name": "ZIC Branded Version One",
+                "address": "Version One Address",
+                "accent_colors": '{"primary":"#101010"}',
+            },
+            format="multipart",
+        )
+        self.assertEqual(first.status_code, 201, first.data)
+        self.assertEqual(first.data["data"]["version"], 1)
+        first_render = self.render_document()
+        first_instance = DocumentInstance.objects.get(pk=first_render["id"])
+        self.assertEqual(first_instance.metadata["branding_version"], 1)
+        with default_storage.open(first_instance.preview_reference, "rb") as handle:
+            self.assertIn(b"ZIC Branded Version One", handle.read())
+
+        second = self.client.post(
+            "/api/v1/documents/branding/",
+            {
+                "company_name": "ZIC Branded Version Two",
+                "address": "Version Two Address",
+                "accent_colors": '{"accent":"#202020"}',
+            },
+            format="multipart",
+        )
+        self.assertEqual(second.status_code, 201, second.data)
+        self.assertEqual(second.data["data"]["version"], 2)
+        self.assertFalse(BrandingConfiguration.objects.get(code="COMPANY_BRANDING", version=1).is_active)
+        self.assertTrue(BrandingConfiguration.objects.get(code="COMPANY_BRANDING", version=2).is_active)
+        self.assertTrue(AuditLog.objects.filter(action="BRANDING_VERSION_CREATED").exists())
+        self.assertTrue(AuditLog.objects.filter(action="BRANDING_VERSION_RETIRED").exists())
+        second_render = self.render_document()
+        second_instance = DocumentInstance.objects.get(pk=second_render["id"])
+        self.assertEqual(second_instance.metadata["branding_version"], 2)
+        with default_storage.open(second_instance.preview_reference, "rb") as handle:
+            html = handle.read().decode("utf-8")
+        self.assertIn("ZIC Branded Version Two", html)
+        self.assertIn("Version Two Address", html)
+        self.assertEqual(second_instance.template_version, 1)
+
+    def test_branding_get_returns_effective_version_and_history(self):
+        BrandingConfiguration.objects.create(
+            code="COMPANY_BRANDING",
+            version=9,
+            company_name="ZIC Existing Branding",
+            accent_colors={"primary": "#abcdef"},
+            is_active=True,
+            created_by=self.admin,
+        )
+        response = self.client.get("/api/v1/documents/branding/")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["data"]["version"], 9)
+        self.assertEqual(response.data["data"]["company_name"], "ZIC Existing Branding")
+        self.assertEqual(response.data["data"]["accent_colors"]["primary"], "#abcdef")

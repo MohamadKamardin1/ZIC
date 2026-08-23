@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import DocumentInstance, DocumentTemplate
+from .models import BrandingConfiguration, DocumentInstance, DocumentTemplate
 
 
 @admin.register(DocumentTemplate)
@@ -18,6 +18,24 @@ class DocumentTemplateAdmin(admin.ModelAdmin):
     search_fields = ["code", "name", "document_type", "layout_template_path"]
     ordering = ["document_type", "code", "-version"]
     readonly_fields = ["created_at", "updated_at"]
+
+
+@admin.register(BrandingConfiguration)
+class BrandingConfigurationAdmin(admin.ModelAdmin):
+    list_display = ["code", "company_name", "version", "is_active", "created_by", "created_at"]
+    list_filter = ["code", "is_active", "created_at"]
+    search_fields = ["code", "company_name", "registration_number", "email"]
+    ordering = ["code", "-version"]
+    readonly_fields = [
+        "code", "version", "logo_file", "company_name", "address", "phone", "email",
+        "registration_number", "footer_legal_text", "accent_colors", "is_active", "created_by", "created_at",
+    ]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(DocumentInstance)

@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom"
 import { FilePlus2 } from "lucide-react"
 import { buildTableQuery, request, type TableQuery } from "../../lib/apiClient"
 import { ErrorCoach } from "../../components/ErrorCoach"
-import { AuthenticatedDocumentError, openAuthenticatedDocument } from "../../lib/documentClient"
+import { AuthenticatedDocumentError } from "../../lib/documentClient"
 import { useAccess } from "../../lib/access"
 import { DataTable, normalizeTableResponse } from "../../components/ui/DataTable"
 import { FilterBar, type FilterValues } from "../../components/ui/FilterBar"
@@ -228,10 +228,12 @@ export default function OLQuotations() {
     setBusy(true)
     setDocumentError(null)
     try {
-      const document = await request<Record<string, unknown>>(actionPath(row, "print", "/print/"), { method: "POST", body: JSON.stringify({ preview: false }) })
-      const pdfUrl = document.pdf_url ?? document.pdfUrl
-      if (typeof pdfUrl !== "string" || !pdfUrl) throw new Error("The server did not return a PDF document URL.")
-      await openAuthenticatedDocument(pdfUrl, { kind: "pdf", mode: "preview", filename: `${row.quote_number || "quotation"}.pdf` })
+      const document = await request<Record<string, unknown>>(`/api/v1/documents/render/OL_QUOTATION/${encodeURIComponent(row.id)}/`, { method: "POST", body: JSON.stringify({}) })
+      const signedUrl = document.signed_download_url ?? document.signedDownloadUrl
+      if (typeof signedUrl !== "string" || !signedUrl.includes("ticket=")) throw new Error("The server did not return a signed PDF ticket.")
+      // The list action only navigates to the short-lived signed ticket returned
+      // by the unified engine; protected API URLs are never passed to a window.
+      window.open(signedUrl, "_blank", "noopener,noreferrer")
     } catch (error) {
       const status = error && typeof error === "object" && typeof (error as { status?: unknown }).status === "number" ? (error as { status: number }).status : undefined
       const authError = error instanceof AuthenticatedDocumentError

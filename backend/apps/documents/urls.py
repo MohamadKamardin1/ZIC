@@ -4,12 +4,14 @@ from .views import (
     DocumentInstanceListView,
     DocumentRenderView,
     DocumentDownloadView,
+    BrandingConfigurationView,
 )
 
 
 app_name = "documents"
 
 urlpatterns = [
+    path("branding/", BrandingConfigurationView.as_view(), name="branding"),
     path("render/<str:document_type>/<str:object_id>/", DocumentRenderView.as_view(), name="render"),
     path("instances/", DocumentInstanceListView.as_view(), name="instances"),
     path("instances/<uuid:pk>/download/", DocumentDownloadView.as_view(), name="download"),

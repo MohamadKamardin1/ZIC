@@ -100,17 +100,17 @@ const financial = {
 }
 
 const versions = { versions: [{ id: "version-1", version_number: 1, status: "CURRENT", created_by: "Superuser", created_at: "2026-08-19T10:00:00Z", change_reason: "Initial quotation" }] }
-const documents = [{ id: "document-1", source_version_number: 1, template_code: "OL_QUOTATION", template_version: "3", document_type: "Quotation PDF", status: "GENERATED", generated_at: "2026-08-19T10:05:00Z", pdf_url: "/media/quotation.pdf", html_url: "/media/quotation.html" }]
+const unifiedDocuments = { count: 1, page: 1, page_size: 50, results: [{ id: "document-1", document_type: "OL_QUOTATION", template_name: "Ordinary Life Quotation", template_version: 1, generated_by_display: "Superuser", generated_at: "2026-08-19T10:05:00Z", page_count: 2, signed_download_url: "/api/v1/documents/instances/document-1/download/?ticket=signed-ticket" }] }
 
 function setupRequestMock(status = "DRAFT") {
   requestMock.mockImplementation(async (path: string, options?: RequestInit) => {
     if (path === "/api/v1/ol-quotations/quotations/quote-1/" && options?.method === undefined) return { ...quotation, status }
     if (path.endsWith("/versions/")) return versions
-    if (path.endsWith("/documents/")) return documents
+    if (path.startsWith("/api/v1/documents/instances/?")) return unifiedDocuments
+    if (path.startsWith("/api/v1/documents/render/") && options?.method === "POST") return unifiedDocuments.results[0]
     if (path.endsWith("/partner-verification/")) return { partner_exists: false, compliant: false, missing_fields: ["first_name", "surname"] }
     if (path.endsWith("/financial-details/")) return financial
     if (path.endsWith("/finalize/") && options?.method === "POST") return { ...quotation, status: "FINALIZED" }
-    if (path.endsWith("/print/") && options?.method === "POST") return documents[0]
     if (path.endsWith("/convert-to-proposal/") && options?.method === "POST") return { quotation: { ...quotation, status: "CONVERTED" }, proposal_id: "proposal-1" }
     return {}
   })
@@ -133,7 +133,7 @@ describe("OL quotation detail lifecycle", () => {
 
     expect(await screen.findByText("Q-0001")).toBeInTheDocument()
     expect(screen.getAllByText("Asha Family Protection").length).toBeGreaterThanOrEqual(1)
-    for (const label of ["Overview", "Plans", "Members", "Installments", "Funds", "Riders & Benefits", "Financials", "Versions", "Documents"]) {
+    for (const label of ["Plans & Sub-Products", "Member Coverage", "Riders", "Projections", "Installment Payouts", "Quote Versions", "Documents"]) {
       expect(screen.getByRole("button", { name: label })).toBeInTheDocument()
     }
   })
@@ -174,7 +174,8 @@ describe("OL quotation detail lifecycle", () => {
     render(<OLQuotationDetail />
     )
     await screen.findByText("Q-0001")
-    fireEvent.click(screen.getByRole("button", { name: "Versions" }))
+    fireEvent.click(screen.getByRole("button", { name: "Quote Versions" })
+)
 
     expect(await screen.findByText("Historical quotation snapshots are preserved.")).toBeInTheDocument()
     expect(screen.getByText("Initial quotation")).toBeInTheDocument()
@@ -186,9 +187,10 @@ describe("OL quotation detail lifecycle", () => {
     await screen.findByText("Q-0001")
     fireEvent.click(screen.getByRole("button", { name: "Documents" }))
 
-    expect(await screen.findByText("OL_QUOTATION")).toBeInTheDocument()
-    expect(screen.getByText("Quotation PDF")).toBeInTheDocument()
+    expect(await screen.findByText("Ordinary Life Quotation")).toBeInTheDocument()
+    expect(screen.getByText("Superuser")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Preview" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Open in new tab" })).toBeInTheDocument()
   })
 
   it("matches the screenshot-facing detail tabs and table headings", async () => {
@@ -219,16 +221,14 @@ describe("OL quotation detail lifecycle", () => {
     expect(screen.getByText("Current View")).toBeInTheDocument()
   })
 
-  it("uses the quote-specific print preview title", async () => {
-    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null)
+  it("routes the quote print action to the authenticated documents tab", async () => {
     setupRequestMock("FINALIZED")
     render(<OLQuotationDetail />)
     await screen.findByText("Q-0001")
     fireEvent.click(screen.getByRole("button", { name: "Print Quote" }))
 
-    expect(await screen.findByRole("heading", { name: "Quote Printout Preview - Q-0001-v1 (Asha Family Protection)" })).toBeInTheDocument()
-    expect(screen.getByText("This is a preview. Click download to get the formatted PDF document.")).toBeInTheDocument()
-    expect(fetchDocumentMock).toHaveBeenCalledWith("/media/quotation.html", "html")
-    expect(openSpy).not.toHaveBeenCalledWith(expect.stringContaining("/api/"), expect.anything(), expect.anything())
+    expect(await screen.findByRole("heading", { name: "Quotation documents" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Generate quotation PDF" })).toBeInTheDocument()
+    expect(fetchDocumentMock).not.toHaveBeenCalled()
   })
 })

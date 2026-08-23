@@ -156,6 +156,7 @@ const NAV: NavItem[] = [
         ],
       },
       { label: "Reinsurance Parameters", icon: ShieldCheck, path: "/system-parameters/reinsurance" },
+      { label: "Document Branding", icon: FileText, path: "/system-parameters/documents/branding" },
     ],
   },
   {

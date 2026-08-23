@@ -1,0 +1,64 @@
+{% extends "documents/base_print.html" %}
+
+{% block document_content %}
+  <p class="small muted">ORDINARY LIFE COMMITMENT STATEMENT</p>
+  <section class="meta-grid">
+    <div class="meta-cell"><span class="meta-label">Commitment number</span><span class="meta-value">{{ commitment.number }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Status</span><span class="meta-value">{{ commitment.status }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Source</span><span class="meta-value">{{ commitment.source_type }} · {{ commitment.source_reference }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Due date</span><span class="meta-value">{{ commitment.due_date|date:'Y-m-d' }}</span></div>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title">Commitment details</h2>
+    <div class="two-column">
+      <div class="column"><dl class="kv">
+        <div class="kv-row"><dt>Policyholder / partner</dt><dd>{{ commitment.partner_name }}</dd></div>
+        <div class="kv-row"><dt>Product</dt><dd>{{ commitment.product_name }}</dd></div>
+        <div class="kv-row"><dt>Plan</dt><dd>{{ commitment.plan_name }}</dd></div>
+        <div class="kv-row"><dt>Currency</dt><dd>{{ commitment.currency }}</dd></div>
+      </dl></div>
+      <div class="column"><dl class="kv">
+        <div class="kv-row"><dt>Premium frequency</dt><dd>{{ commitment.premium_frequency }}</dd></div>
+        <div class="kv-row"><dt>Installment</dt><dd>{{ commitment.installment_number }} of {{ commitment.installment_count }}</dd></div>
+        <div class="kv-row"><dt>Grace date</dt><dd>{{ commitment.grace_date|date:'Y-m-d'|default:'-' }}</dd></div>
+        <div class="kv-row"><dt>Lapse date</dt><dd>{{ commitment.lapse_date|date:'Y-m-d'|default:'-' }}</dd></div>
+      </dl></div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title">Payment summary</h2>
+    <table class="data summary-box"><tbody>
+      <tr><td>Premium amount</td><td class="numeric">{{ financial.premium_amount }}</td></tr>
+      <tr><td>Amount paid</td><td class="numeric">{{ financial.amount_paid }}</td></tr>
+      <tr><td>Amount waived</td><td class="numeric">{{ financial.amount_waived }}</td></tr>
+      <tr><td>Outstanding balance</td><td class="numeric"><strong>{{ financial.balance }}</strong></td></tr>
+    </tbody></table>
+    <p class="small muted">Approval required: {{ commitment.approval_required }}{% if commitment.reason %} · {{ commitment.reason }}{% endif %}</p>
+  </section>
+
+  {% if allocations %}
+    <section class="section">
+      <h2 class="section-title">Payment allocations</h2>
+      <table class="data">
+        <thead><tr><th>Receipt reference</th><th>Payment mode</th><th>Currency</th><th class="numeric">Amount</th><th class="numeric">Exchange rate</th><th>Allocated at</th><th>Allocated by</th></tr></thead>
+        <tbody>{% for allocation in allocations %}<tr><td>{{ allocation.receipt_reference }}</td><td>{{ allocation.payment_mode|default:'-' }}</td><td>{{ allocation.currency }}</td><td class="numeric">{{ allocation.amount }}</td><td class="numeric">{{ allocation.exchange_rate }}</td><td>{{ allocation.allocated_at|date:'Y-m-d H:i' }}</td><td>{{ allocation.allocated_by }}</td></tr>{% endfor %}</tbody>
+      </table>
+    </section>
+  {% endif %}
+
+  <section class="terms">
+    <h2 class="section-title">Statement notes</h2>
+    <p>This statement reflects the commitment and payment allocations recorded in the ZIC Ordinary Life finance ledger as at the generation timestamp.</p>
+    <p class="muted small">Amounts are subject to reconciliation, approved reversals, applicable policy terms, and the official ZIC ledger. This statement does not constitute a policy contract or an offer.</p>
+  </section>
+{% endblock %}
+
+{% block signature_block %}
+  <footer class="signature-block">
+    <div class="signature-party"><strong>Customer / Partner</strong><div class="signature-line"></div><div>{{ commitment.partner_name }}</div><div class="small muted">Signature &amp; Date</div></div>
+    <div class="signature-party"><strong>Finance Officer</strong><div class="signature-line"></div><div>{{ branding.company_name }}</div><div class="small muted">Signature &amp; Date</div></div>
+    <div class="signature-party"><strong>Company Representative</strong><div class="signature-line"></div><div>{{ branding.company_name }}</div><div>Prepared By: {{ generated_by_name|default:'ZIC Document Services' }}</div><div class="small muted">Signature &amp; Date · Official Stamp</div></div>
+  </footer>
+{% endblock %}

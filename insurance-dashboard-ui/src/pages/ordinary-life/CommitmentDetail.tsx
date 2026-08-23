@@ -10,16 +10,18 @@ import { ReverseAllocationModal } from "../../components/commitments/ReverseAllo
 import { LifecycleActionModal, LIFECYCLE_ACTIONS, type LifecycleAction } from "../../components/commitments/LifecycleActionModal"
 import { StatusBadge, type StatusTone } from "../../components/ui/StatusBadge"
 import { useToast } from "../../components/ui/Toast"
+import { DocumentInstancesPanel } from "../../components/documents/DocumentInstancesPanel"
 import { formatMoney, sourceLabel } from "../../lib/commitmentsDisplay"
 import type { CommitmentAllocation, CommitmentHistoryEntry } from "../../lib/commitments"
 
-export type CommitmentDetailTab = "overview" | "allocations" | "history" | "notifications"
+export type CommitmentDetailTab = "overview" | "allocations" | "history" | "notifications" | "documents"
 
 const TABS: Array<{ id: CommitmentDetailTab; label: string }> = [
   { id: "overview", label: "Overview" },
   { id: "allocations", label: "Allocations" },
   { id: "history", label: "History" },
   { id: "notifications", label: "Notifications" },
+  { id: "documents", label: "Documents" },
 ]
 
 const ACTION_LABELS: Record<string, string> = {
@@ -295,6 +297,8 @@ export function CommitmentDetailPage() {
           )}
         </section>
       )}
+
+      {tab === "documents" && <DocumentInstancesPanel sourceType="ol_commitments.olcommitment" objectId={id} documentType="COMMITMENT_STATEMENT" title="Commitment documents" renderLabel="Generate commitment PDF" />}
 
       {tab === "notifications" && (
         <section className="surface-card overflow-hidden">

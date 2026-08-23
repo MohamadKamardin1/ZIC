@@ -127,7 +127,7 @@ export interface ApiRequestOptions extends RequestInit {
 export async function request<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const headers = new Headers(options.headers)
   headers.set("Accept", "application/json")
-  if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json")
+  if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) headers.set("Content-Type", "application/json")
   const correlationId = options.correlationId ?? createCorrelationId()
   headers.set("X-Correlation-ID", correlationId)
 

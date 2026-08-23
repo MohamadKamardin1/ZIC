@@ -34,6 +34,7 @@ import PartnerSchedules from "./pages/system-parameters/PartnerSchedules"
 import UserParameters from "./pages/system-parameters/UserParameters"
 import PasswordPolicy from "./pages/system-parameters/PasswordPolicy"
 import ReinsuranceParameters from "./pages/system-parameters/ReinsuranceParameters"
+import DocumentBranding from "./pages/system-parameters/DocumentBranding"
 import PermissionGroups from "./pages/user-management/PermissionGroups"
 import Permissions from "./pages/user-management/Permissions"
 import UserGroups from "./pages/user-management/UserGroups"
@@ -146,6 +147,7 @@ export default function App() {
         <Route path="system-parameters/users" element={<UserParameters />} />
         <Route path="system-parameters/users/password-policy" element={<PasswordPolicy />} />
         <Route path="system-parameters/reinsurance" element={<ReinsuranceParameters />} />
+        <Route path="system-parameters/documents/branding" element={<RequirePermission permission="system_parameters.manage"><DocumentBranding /></RequirePermission>} />
         <Route path="user-management/permission-groups" element={<PermissionGroups />} />
         <Route path="user-management/permissions" element={<Permissions />} />
         <Route path="user-management/user-groups" element={<UserGroups />} />
