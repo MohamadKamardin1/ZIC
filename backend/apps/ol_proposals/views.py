@@ -350,6 +350,47 @@ class ProposalUnderwritingDecisionView(APIView):
         return Response({"data": OLProposalDetailSerializer(proposal).data})
 
 
+class MustMarkPaymentReadyPermission(IsAuthenticated):
+    def has_permission(self, request, view):
+        if not super().has_permission(request, view):
+            return False
+        return has_ol_proposal_permission(request.user, "mark_payment_ready")
+
+
+class ProposalPaymentReadinessView(APIView):
+    """GET /api/v1/ol-proposals/proposals/{id}/payment-readiness/ — read-only checklist."""
+
+    permission_classes = [MustViewProposalsPermission]
+
+    def get(self, request, proposal_id):
+        from apps.ol_proposals.services.payment_readiness_service import evaluate_payment_ready
+
+        proposal = _get_proposal(proposal_id)
+        return Response({"data": evaluate_payment_ready(proposal)})
+
+
+class ProposalMarkPaymentReadyView(APIView):
+    """POST /api/v1/ol-proposals/proposals/{id}/mark-payment-ready/"""
+
+    permission_classes = [MustMarkPaymentReadyPermission]
+
+    def post(self, request, proposal_id):
+        from apps.ol_proposals.services.payment_readiness_service import mark_payment_ready
+
+        proposal = _get_proposal(proposal_id)
+        result = mark_payment_ready(
+            proposal=proposal,
+            actor=request.user,
+            request=request,
+            source_channel="API",
+            reason=request.data.get("reason") or "",
+        )
+        proposal.refresh_from_db()
+        payload = OLProposalBaseSerializer(proposal).data
+        payload["payment_readiness"] = result
+        return Response({"data": payload})
+
+
 class ProposalListView(APIView):
     """GET /api/v1/ol-proposals/ — paginated proposal list (names, never UUIDs)."""
 

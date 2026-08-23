@@ -11,6 +11,8 @@ from apps.ol_proposals.views import (
     ProposalHealthAnswersView,
     ProposalHealthQuestionsView,
     ProposalListView,
+    ProposalMarkPaymentReadyView,
+    ProposalPaymentReadinessView,
     ProposalUnderwritingDecisionView,
 )
 
@@ -24,6 +26,8 @@ urlpatterns = [
     path("proposals/<uuid:proposal_id>/health-questions/", ProposalHealthQuestionsView.as_view(), name="ol-proposals-health-questions"),
     path("proposals/<uuid:proposal_id>/health-answers/", ProposalHealthAnswersView.as_view(), name="ol-proposals-health-answers"),
     path("proposals/<uuid:proposal_id>/underwriting-decision/", ProposalUnderwritingDecisionView.as_view(), name="ol-proposals-underwriting-decision"),
+    path("proposals/<uuid:proposal_id>/payment-readiness/", ProposalPaymentReadinessView.as_view(), name="ol-proposals-payment-readiness"),
+    path("proposals/<uuid:proposal_id>/mark-payment-ready/", ProposalMarkPaymentReadyView.as_view(), name="ol-proposals-mark-payment-ready"),
     path("proposals/<uuid:proposal_id>/beneficiaries/", ProposalBeneficiaryCollectionView.as_view(), name="ol-proposals-beneficiaries"),
     path("proposals/<uuid:proposal_id>/beneficiaries/<uuid:beneficiary_id>/", ProposalBeneficiaryItemView.as_view(), name="ol-proposals-beneficiary-item"),
 ]

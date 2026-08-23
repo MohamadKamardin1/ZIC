@@ -52,8 +52,19 @@ def emit_enriched(proposal, *, actor=None, from_status="", to_status="", reason=
     return emit_proposal_event(PROPOSAL_ENRICHED, proposal, actor=actor, from_status=from_status, to_status=to_status or proposal.status, reason=reason, source_channel=source_channel)
 
 
-def emit_payment_ready(proposal, *, actor=None, from_status="", reason="", source_channel=None):
-    return emit_proposal_event(PROPOSAL_PAYMENT_READY, proposal, actor=actor, from_status=from_status, to_status=proposal.status, reason=reason, source_channel=source_channel)
+def emit_payment_ready(proposal, *, actor=None, from_status="", reason="", source_channel=None, metadata=None, payload_extra=None):
+    payload_extra_payload = dict(payload_extra or {})
+    payload_extra_payload["metadata"] = metadata or {}
+    return emit_proposal_event(
+        PROPOSAL_PAYMENT_READY,
+        proposal,
+        actor=actor,
+        from_status=from_status,
+        to_status=proposal.status,
+        reason=reason,
+        source_channel=source_channel,
+        payload_extra=payload_extra_payload,
+    )
 
 
 def emit_converted(proposal, *, actor=None, from_status="", reason="", source_channel=None, metadata=None):
