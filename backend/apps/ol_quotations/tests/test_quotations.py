@@ -2961,7 +2961,7 @@ class OLPrintTicketAPITests(OLQuotationAPITests):
         self.assertIn("expired", response.content.decode().lower())
 
     def test_all_registered_print_routes_have_authentication_and_permission_classes(self):
-        from django.urls import URLPattern, URLResolver, get_resolver
+        from django.urls import URLPattern, URLResolver, get_resolver, reverse
         from rest_framework.settings import api_settings
 
         def patterns(items):
@@ -2972,6 +2972,16 @@ class OLPrintTicketAPITests(OLQuotationAPITests):
                     route = str(item.pattern)
                     if "print" in route.lower():
                         yield item
+
+        document_id = "11111111-1111-4111-8111-111111111111"
+        self.assertEqual(
+            reverse("v1:ol-quotation-document-download", kwargs={"pk": document_id}),
+            f"/api/v1/ol-quotations/documents/{document_id}/download/",
+        )
+        self.assertEqual(
+            reverse("v1:ol-quotation-document-html", kwargs={"pk": document_id}),
+            f"/api/v1/ol-quotations/documents/{document_id}/html/",
+        )
 
         routes = list(patterns(get_resolver().url_patterns))
         self.assertTrue(routes)

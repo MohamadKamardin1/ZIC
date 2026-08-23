@@ -21,7 +21,7 @@ This file preserves the five sequential workstreams from the supplied print-flow
    - keep Bearer auth as primary; ticket is supplementary and audited
    - ensure every print endpoint across all modules uses the same permission + auth pattern; add a test that fails if any future print route is registered without authentication classes
 
-## [ ] Prompt 4 — Verify URL naming and document the contract
+## [x] Prompt 4 — Verify URL naming and document the contract
 
 5. Verify URL naming consistency (no accidental duplicate prefixes) and document the final print URL contract.
 

@@ -149,10 +149,23 @@ Finalization can set `approval_required=true` when configured thresholds are exc
 
 | Method | Endpoint | Permission | Behavior |
 |---|---|---|---|
-| `POST` | `/quotations/{id}/print/` | Print | Generate and persist HTML/PDF quotation output. |
-| `GET` | `/quotations/{id}/documents/` | View | List generated documents with source quotation/version and template provenance. |
+| `POST` | `/api/v1/ol-quotations/quotations/{id}/print/` | Print | Generate and persist HTML/PDF quotation output and issue short-lived signed document URLs. |
+| `GET` | `/api/v1/ol-quotations/quotations/{id}/print/?preview=true` | Print | Generate an explicitly requested preview using the same permission and storage rules. |
+| `GET` | `/api/v1/ol-quotations/quotations/{id}/documents/` | View | List generated documents with source quotation/version, template provenance, and short-lived signed URLs. |
+| `GET` | `/api/v1/ol-quotations/documents/{document_id}/download/` | Print or valid ticket | Stream the protected PDF document. Bearer authentication is the primary path; a valid signed ticket is supplementary. |
+| `GET` | `/api/v1/ol-quotations/documents/{document_id}/html/` | Print or valid ticket | Stream the protected HTML document with the same authorization and ticket rules. |
 
-Print generation stores `OLQuotationDocument` with the source quotation, immutable source version, print template/version, actor, timestamp, MIME type, and file references. Draft preview requires explicit `preview=true`; expired quotations are never printable.
+The quotation URL namespace is canonicalized to `/api/v1/ol-quotations/`. The compatibility mount `/api/v1/ol/quotations/` remains available and resolves the same quotation and document routes; clients should emit and store only the canonical `/api/v1/ol-quotations/` paths. There is no additional `/quotations/quotations/` prefix in a document URL: the canonical protected path is `/api/v1/ol-quotations/documents/{document_id}/download/` or `/html/`.
+
+Print generation stores `OLQuotationDocument` with the source quotation, immutable source version, print template/version, actor, timestamp, MIME type, and private storage references. Storage references are never returned to API clients. Draft preview requires explicit `preview=true`; expired quotations are never printable. The response retains the `pdf_url` and `html_url` field names for frontend compatibility and additionally returns `signed_download_url`, `signed_preview_url` when available, and the corresponding ISO-8601 expiry fields `download_url_expires_at` and `preview_url_expires_at`.
+
+### Signed document ticket contract
+
+Each issued URL contains a `ticket` query parameter. The ticket is a Django HMAC-backed timestamp signature using the application secret and a dedicated document-download salt. It is valid for **300 seconds (5 minutes)** and is single-purpose. Its signed payload binds the ticket version and purpose to the document UUID, quotation UUID, issuing user UUID, and requested `pdf` or `html` format. Tickets are not long-lived bearer credentials and are not persisted as files or database records.
+
+A ticket request may omit `Authorization`, which supports a safe new-tab or mobile share flow. On every use the backend verifies the signature and timestamp, confirms the ticket format and resource identifiers, verifies that the ticket owner is still active, rechecks `ol_quotations.print`, and rechecks visible-partner quotation scope. If an authenticated Bearer user also supplies a ticket, the authenticated user must be the ticket owner. Tampered, expired, cross-format, out-of-scope, or no-longer-authorized tickets return HTTP `403`. A request without both a valid ticket and Bearer authentication returns HTTP `401` with a Bearer challenge.
+
+The protected stream uses `Content-Disposition: inline`, `Cache-Control: private, no-store, max-age=0`, `Pragma: no-cache`, and `X-Content-Type-Options: nosniff`. PDF responses use `application/pdf`; HTML responses use `text/html; charset=utf-8`. Frontend print and download call sites must fetch these URLs through the authenticated blob document client rather than assigning an API URL to `window.open`, an iframe, or an anchor `href`.
 
 ## Partner verification and completion
 

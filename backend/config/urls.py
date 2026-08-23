@@ -37,8 +37,8 @@ api_v1_patterns = [
     path('ol/options/<str:entity>/quick-create/', OLOptionQuickCreateView.as_view(), name='ol-option-quick-create-root'),
     path('ol/options/<str:entity>/', OLOptionRegistryView.as_view(), name='ol-option-registry-root'),
     path('ol-commitments/', include('apps.ol_commitments.urls')),
-    path('ol-quotations/', include('apps.ol_quotations.urls')),
     path('ol/quotations/', include('apps.ol_quotations.urls')),
+    path('ol-quotations/', include('apps.ol_quotations.urls')),
     path('group-credit/', include('apps.group_credit.urls')),
     path('front-office/', include('apps.front_office.urls')),
 ]
