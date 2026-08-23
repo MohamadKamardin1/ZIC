@@ -54,6 +54,7 @@ def make_ready_proposal(number="OLP-2026-PR1"):
         bank_name="NMB",
         bank_account_name="Farida Mwangi",
         bank_account_number="1234567890",
+        financial_summary_snapshot={"total_premium": "50000.00"},
     )
     proposal.save()
     OLProposalBeneficiary.objects.create(

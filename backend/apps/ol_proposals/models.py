@@ -105,6 +105,14 @@ class OLProposal(models.Model):
 
     payment_ready = models.BooleanField(default=False, db_index=True)
     payment_ready_at = models.DateTimeField(null=True, blank=True)
+    first_premium_commitment = models.ForeignKey(
+        "ol_commitments.OLCommitment",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="proposal_first_premiums",
+        help_text="Linked first-premium commitment (source_type=PROPOSAL, installment 1).",
+    )
     underwriting_status = models.CharField(
         max_length=40, choices=UnderwritingStatus.choices, default=UnderwritingStatus.PENDING, db_index=True
     )

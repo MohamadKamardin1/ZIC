@@ -183,11 +183,11 @@ def mark_payment_ready(*, proposal, actor=None, request=None, source_channel="AP
     """Transition a fully-complete proposal to payment readiness.
 
     All-pass runs ENRICHMENT → PAYMENT_READY → AWAITING_FIRST_PREMIUM once,
-    stamps ``payment_ready``/``payment_ready_at``, emits a single
-    ``ProposalPaymentReady`` event (consumed by the commitments listener to
-    create the first-premium commitment), and audits the full checklist
-    snapshot. Re-evaluation on an already-ready proposal is idempotent: it
-    returns the current state without re-emitting the event.
+    stamps ``payment_ready``/``payment_ready_at``, links the first-premium
+    commitment (source_type=PROPOSAL, installment 1), emits a single
+    ``ProposalPaymentReady`` event consumed by the receipts module, and audits
+    the full checklist snapshot. Re-evaluation on an already-ready proposal is
+    idempotent: it returns the current state without re-emitting the event.
     """
     if proposal.status in ("CONVERTED", "CANCELLED", "EXPIRED"):
         raise ProposalError(
@@ -218,6 +218,12 @@ def mark_payment_ready(*, proposal, actor=None, request=None, source_channel="AP
         proposal.status = "AWAITING_FIRST_PREMIUM"
         proposal.save()
 
+        from apps.ol_proposals.services.first_premium_service import link_first_premium_commitment
+
+        link_first_premium_commitment(
+            proposal=proposal, actor=actor, request=request, source_channel=source_channel
+        )
+
         after = AuditService.snapshot(proposal)
         after["checklist"] = result
         AuditService.log_action(
@@ -237,6 +243,11 @@ def mark_payment_ready(*, proposal, actor=None, request=None, source_channel="AP
             from_status=before.get("status") or proposal.status,
             reason=reason or "Payment readiness evaluation passed.",
             source_channel=source_channel,
-            metadata={"checklist": [item["key"] for item in result["items"] if item["passed"]]},
+            metadata={
+                "checklist": [item["key"] for item in result["items"] if item["passed"]],
+                "first_premium_commitment": proposal.first_premium_commitment.commitment_number
+                if proposal.first_premium_commitment_id
+                else None,
+            },
         )
     return {**result, "already_ready": False}

@@ -391,6 +391,18 @@ class ProposalMarkPaymentReadyView(APIView):
         return Response({"data": payload})
 
 
+class ProposalFirstPremiumStatusView(APIView):
+    """GET /api/v1/ol-proposals/proposals/{id}/first-premium/ — read-only payment status."""
+
+    permission_classes = [MustViewProposalsPermission]
+
+    def get(self, request, proposal_id):
+        from apps.ol_proposals.services.first_premium_service import first_premium_status
+
+        proposal = _get_proposal(proposal_id)
+        return Response({"data": first_premium_status(proposal)})
+
+
 class ProposalListView(APIView):
     """GET /api/v1/ol-proposals/ — paginated proposal list (names, never UUIDs)."""
 
