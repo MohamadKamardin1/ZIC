@@ -756,6 +756,29 @@ describe("OL quotation wizard", () => {
     expect(screen.getAllByRole("button", { name: "Review" }).length).toBeGreaterThan(0)
   })
 
+  it("clears a stale Riders & Benefits finalize warning after rider setup is saved", async () => {
+    finalizeBlocked = true
+    financialScenario = true
+    riderScenario = true
+    await reachMemberCoverageStep()
+    fireEvent.click(screen.getByRole("button", { name: "Financial Details" }))
+    await screen.findByRole("heading", { name: "Review & Finalize" })
+    fireEvent.click(screen.getByRole("button", { name: /Calculate|Recalculate/ }))
+    await waitFor(() => expect(screen.getByRole("button", { name: "Finalize quotation" })).not.toBeDisabled())
+    fireEvent.click(screen.getByRole("button", { name: "Finalize quotation" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm finalize" }))
+    expect(await screen.findByText("Go to Riders & Benefits")).toBeInTheDocument()
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Riders & Benefits" })[0])
+    expect(await screen.findByText("Applicable Riders")).toBeInTheDocument()
+    fireEvent.click(await screen.findByRole("button", { name: /PA-01/ }))
+    fireEvent.change(screen.getByLabelText(/Rider Sum Assured \/ Amount/), { target: { value: "100000" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save rider configuration" }))
+
+    await waitFor(() => expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: "Rider configuration saved" })))
+    await waitFor(() => expect(screen.queryByText("Go to Riders & Benefits")).not.toBeInTheDocument())
+  })
+
   it("shows backend plan configuration errors inline", async () => {
     renderWizard()
     await screen.findByLabelText(/Quote Name/)

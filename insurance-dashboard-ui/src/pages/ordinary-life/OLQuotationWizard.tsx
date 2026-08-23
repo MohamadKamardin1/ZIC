@@ -706,6 +706,10 @@ function hasUnderwritingPrerequisite(detail?: UnderwritingDetail | null): boolea
   return Boolean(detail?.health_answers && Object.keys(detail.health_answers).length > 0 && detail.declarations?.confirmed === true)
 }
 
+function clearFinalizeErrorsForStep(errors: Record<string, unknown>, step: number): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(errors).filter(([key]) => finalizationStepForKey(key) !== step))
+}
+
 function finalizationStepForKey(key: string): number {
   const normalized = key.replace(/^errors\./, "")
   if (normalized === "installments" || normalized.startsWith("installment")) return 3
@@ -1287,6 +1291,8 @@ export default function OLQuotationWizard() {
       await requestNormalized(`${QUOTATION_PREFIX}${quotationId}/installments/${selectedInstallmentPlan.plan_configuration_id}/configure/`, { method: "POST", body: JSON.stringify(payload) })
       await loadInstallments()
       setCompletedSteps((current) => new Set(current).add(3))
+      setInvalidSteps((current) => { const next = new Set(current); next.delete(3); return next })
+      setFinalizeErrors((current) => clearFinalizeErrorsForStep(current, 3))
       toast({ tone: "success", title: "Installments configured" })
       return true
     } catch (error) {
@@ -1377,6 +1383,8 @@ export default function OLQuotationWizard() {
       setRiderSelections(nextSelections)
       await loadRiders()
       setCompletedSteps((current) => new Set(current).add(5))
+      setInvalidSteps((current) => { const next = new Set(current); next.delete(5); return next })
+      setFinalizeErrors((current) => clearFinalizeErrorsForStep(current, 5))
       toast({ tone: "success", title: "Rider configuration saved" })
       return true
     } catch (error) {
@@ -1404,13 +1412,23 @@ export default function OLQuotationWizard() {
     try {
       const payload = await requestNormalized<ApiPayload>(`${QUOTATION_PREFIX}${quotationId}/wizard-summary/`)
       const summarySteps = (payload.steps ?? {}) as Record<string, boolean>
+      const stepMap: Array<[string, number]> = [["1_product_plan", 1], ["2_members", 2], ["3_installments", 3], ["4_funds", 4], ["5_riders", 5]]
       setCompletedSteps((current) => {
         const next = new Set(current)
-        const stepMap: Array<[string, number]> = [["1_product_plan", 1], ["2_members", 2], ["3_installments", 3], ["4_funds", 4], ["5_riders", 5]]
         for (const [key, index] of stepMap) {
           if (summarySteps[key]) next.add(index)
           else next.delete(index)
         }
+        return next
+      })
+      setInvalidSteps((current) => {
+        const next = new Set(current)
+        for (const [key, index] of stepMap) if (summarySteps[key]) next.delete(index)
+        return next
+      })
+      setFinalizeErrors((current) => {
+        let next = current
+        for (const [key, index] of stepMap) if (summarySteps[key]) next = clearFinalizeErrorsForStep(next, index)
         return next
       })
     } catch (error) {
@@ -1596,6 +1614,8 @@ export default function OLQuotationWizard() {
       await requestNormalized(`${QUOTATION_PREFIX}${quotationId}/investment-funds/`, { method: "POST", body: JSON.stringify({ allocations }) })
       await loadInvestmentFunds()
       setCompletedSteps((current) => new Set(current).add(4))
+      setInvalidSteps((current) => { const next = new Set(current); next.delete(4); return next })
+      setFinalizeErrors((current) => clearFinalizeErrorsForStep(current, 4))
       toast({ tone: "success", title: "Investment fund allocations saved" })
       return true
     } catch (error) {
@@ -1627,6 +1647,8 @@ export default function OLQuotationWizard() {
       await requestNormalized(path, { method: memberId ? "PATCH" : "POST", body: JSON.stringify(member) })
       await loadMemberCoverage()
       setCompletedSteps((current) => new Set(current).add(2))
+      setInvalidSteps((current) => { const next = new Set(current); next.delete(2); return next })
+      setFinalizeErrors((current) => clearFinalizeErrorsForStep(current, 2))
       toast({ tone: "success", title: memberId ? "Member updated" : "Member added" })
       return true
     } catch (error) {
@@ -1769,6 +1791,7 @@ export default function OLQuotationWizard() {
         return
       }
       setCompletedSteps((current) => new Set(current).add(activeStep))
+      setInvalidSteps((current) => { const next = new Set(current); next.delete(activeStep); return next })
     }
     setActiveStep(Math.min(Math.max(target, 0), steps.length - 1))
   }
