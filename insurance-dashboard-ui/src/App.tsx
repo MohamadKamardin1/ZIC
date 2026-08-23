@@ -191,7 +191,11 @@ export default function App() {
             </RequirePermission>
           }
         />
-        <Route path="ordinary-life/proposals" element={<OLProposals />} />
+        <Route path="ordinary-life/proposals" element={
+          <RequirePermission permission="ol_proposals.view">
+            <OLProposals />
+          </RequirePermission>
+        } />
         <Route path="ordinary-life/policies" element={<OLPolicies />} />
         <Route path="ordinary-life/loans" element={<OLLoans />} />
         <Route path="ordinary-life/withdrawals" element={<OLWithdrawals />} />
