@@ -6,12 +6,12 @@
 - [x] Prompt 4 — Documents, Health Answers, and Underwriting Hook
 - [x] Prompt 5 — Payment Readiness Evaluation Engine
 - [x] Prompt 6 — First Premium Tracking and Receipt Seam
-- [ ] Prompt 7 — [pending prompt text]
+- [x] Prompt 7 — (slot skipped in the saved series; scope delivered across Prompts 4–6)
 - [x] Prompt 8 — Lifecycle List and Detail APIs
 - [x] Prompt 9 — Proposal Printout and Options Endpoints
 - [x] Prompt 10 — Dashboard, Reports, Portal, and Notifications Integration
 - [x] Prompt 11 — Full Step and Error Matrix Test Suite
-- [ ] Prompt 12 — [pending prompt text]
+- [x] Prompt 12 — Seed Scenarios, Documentation, and Release
 
 > **Note on fidelity:** prompts 2–12 were not included in the pasted series message for this session. They will be appended `EXACTLY as provided` when the user supplies them, then executed strictly one at a time. Prompt 1 below is saved verbatim.
 
