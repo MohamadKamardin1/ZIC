@@ -118,6 +118,7 @@ class QuotationDocumentService:
   </tr>{% empty %}<tr><td colspan="9" class="muted">No plan configurations recorded.</td></tr>{% endfor %}<tr class="total"><td colspan="5">TOTALS</td><td class="num">{{ financial.total_sum_assured }}</td><td class="num">{{ financial.base_premium }}</td><td class="num">{{ financial.total_rider_premium }}</td><td class="num">{{ financial.total_premium }}</td></tr></tbody></table></div>
 
   {% if riders %}<div class="block"><div class="subheading">Additional Benefits</div><table class="data"><thead><tr><th>Rider</th><th>Plan</th><th>Sub Product</th><th class="num">Rider Benefit ({{ quote.currency }})</th><th class="num">Benefit Ratio (%)</th></tr></thead><tbody>{% for rider in riders %}<tr><td>{{ rider.name|default:rider.code }}</td><td>{{ rider.plan_name|default:"-" }}</td><td>{{ rider.sub_product|default:"-" }}</td><td class="num">{{ rider.rider_sum_assured }}</td><td class="num">{{ rider.benefit_ratio|default:rider.benefit_value|default:"-" }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+  {% if benefits %}<div class="block"><div class="subheading">Configured Benefit Details</div><table class="data"><thead><tr><th>Benefit Type</th><th>Plan</th><th>Basis</th><th class="num">Value ({{ quote.currency }})</th><th class="num">Loading</th><th class="num">Discount</th><th class="num">Maximum Cap ({{ quote.currency }})</th></tr></thead><tbody>{% for benefit in benefits %}<tr><td>{{ benefit.name|default:benefit.benefit_type|default:"-" }}</td><td>{{ benefit.plan_name|default:"-" }}</td><td>{{ benefit.basis|default:"-" }}</td><td class="num">{{ benefit.value|default:benefit.sum_assured|default:"-" }}</td><td class="num">{{ benefit.loading|default:"-" }}</td><td class="num">{{ benefit.discount|default:"-" }}</td><td class="num">{{ benefit.maximum_cap|default:"-" }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
 
   {% if members %}<div class="block"><div class="subheading">Member Coverage Details</div>{% for member in members %}<div class="plan-heading">{{ member.plan_name|default:"Quotation coverage" }}</div><table class="data"><thead><tr><th>Member Name</th><th>Age</th><th>Gender</th><th>Coverage %</th><th class="num">Sum Assured ({{ quote.currency }})</th><th class="num">Basic Premium ({{ quote.currency }})</th><th class="num">Rider Premium ({{ quote.currency }})</th><th class="num">Total Premium ({{ quote.currency }})</th></tr></thead><tbody><tr><td>{{ member.name }}{% if member.is_principal %} (Principal){% endif %}</td><td>{{ member.age }}</td><td>{{ member.gender }}</td><td>{{ member.coverage_percent }}%</td><td class="num">{{ member.sum_assured }}</td><td class="num">{{ member.basic_premium }}</td><td class="num">{{ member.rider_premium }}</td><td class="num">{{ member.total_premium }}</td></tr></tbody></table>{% endfor %}</div>{% endif %}
 
@@ -269,6 +270,20 @@ class QuotationDocumentService:
     @classmethod
     def _installment_context(cls, quotation):
         schedules = []
+        try:
+            summary = quotation.financial_summary
+        except Exception:
+            summary = None
+        maturity_value = getattr(summary, "estimated_maturity_value", None)
+        if maturity_value is None:
+            maturity_value = sum(
+                (config.estimated_maturity_value or Decimal("0") for config in quotation.plan_configurations.filter(is_selected=True)),
+                Decimal("0"),
+            )
+        saved_payouts = {}
+        raw_payouts = getattr(summary, "installment_payouts", None) if summary else None
+        if isinstance(raw_payouts, list):
+            saved_payouts = {str(item.get("sequence")): item for item in raw_payouts if isinstance(item, dict)}
         for config in quotation.installment_configurations.filter(is_selected=True).select_related("plan_configuration__plan"):
             plan = config.plan_configuration.plan if config.plan_configuration_id and config.plan_configuration.plan_id else None
             rows = []
@@ -282,13 +297,20 @@ class QuotationDocumentService:
                     import calendar
                     day = min(payout_date.day, calendar.monthrange(year, month)[1])
                     payout_date = payout_date.replace(year=year, month=month, day=day)
+                saved_payout = saved_payouts.get(str(row.sequence), {})
+                payout_amount = saved_payout.get("payout_amount")
+                if payout_amount in (None, ""):
+                    if row.charge and row.charge > 0:
+                        payout_amount = row.charge
+                    else:
+                        payout_amount = (maturity_value or Decimal("0")) * row.rate_percent / Decimal("100")
                 rows.append({
                     "sequence": row.sequence,
                     "description": row.description or row.notes,
                     "payout_date": cls._display(payout_date),
                     "rate_percent": cls._display(row.rate_percent),
                     "paid_up_rate": cls._display(row.paid_up_rate),
-                    "payout_amount": cls._money(row.charge or row.rate, config.currency or quotation.currency),
+                    "payout_amount": cls._money(payout_amount, config.currency or quotation.currency),
                 })
             schedules.append({
                 "plan_code": cls._display(getattr(plan, "code", None), "PLAN"),
@@ -311,6 +333,24 @@ class QuotationDocumentService:
             "ANNUALLY": 12,
             "ANNUAL": 12,
         }.get((frequency or "").upper(), 12)
+
+    @classmethod
+    def _benefit_context(cls, quotation):
+        rows = []
+        for benefit in quotation.benefits.filter(is_selected=True).select_related("beneficial_type", "plan_configuration__plan"):
+            rows.append({
+                "code": cls._display(benefit.code),
+                "name": cls._display(getattr(benefit.beneficial_type, "name", None) or benefit.name or benefit.code),
+                "benefit_type": cls._display(getattr(benefit.beneficial_type, "code", None) or benefit.benefit_type),
+                "basis": cls._display(benefit.basis),
+                "value": cls._money(benefit.value, quotation.currency),
+                "sum_assured": cls._money(benefit.sum_assured, quotation.currency),
+                "loading": cls._display(benefit.loading),
+                "discount": cls._display(benefit.discount),
+                "maximum_cap": cls._money(benefit.maximum_cap, quotation.currency),
+                "plan_name": cls._display(getattr(getattr(benefit.plan_configuration, "plan", None), "name", None)),
+            })
+        return rows
 
     @classmethod
     def build_context(cls, quotation, template):
@@ -358,7 +398,7 @@ class QuotationDocumentService:
             "agent": {"name": cls._display_name(agent, "Not assigned")},
             "plans": cls._plan_context(quotation),
             "riders": cls._rider_context(quotation),
-            "benefits": [],
+            "benefits": cls._benefit_context(quotation),
             "installments": cls._installment_context(quotation),
             "financial": {
                 "total_sum_assured": cls._money(getattr(summary, "total_sum_assured", quotation.total_sum_assured), quotation.currency),

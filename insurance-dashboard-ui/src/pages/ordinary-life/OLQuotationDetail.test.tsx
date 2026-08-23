@@ -115,7 +115,7 @@ describe("OL quotation detail lifecycle", () => {
     render(<OLQuotationDetail />)
 
     expect(await screen.findByText("Q-0001")).toBeInTheDocument()
-    expect(screen.getByText("Asha Family Protection")).toBeInTheDocument()
+    expect(screen.getAllByText("Asha Family Protection").length).toBeGreaterThanOrEqual(1)
     for (const label of ["Overview", "Plans", "Members", "Installments", "Funds", "Riders & Benefits", "Financials", "Versions", "Documents"]) {
       expect(screen.getByRole("button", { name: label })).toBeInTheDocument()
     }

@@ -846,7 +846,10 @@ class OLQuotationViewSet(QuotationScopedViewSet):
                 "quotation_id": str(result["quotation"].pk),
                 "partner_id": str(result["partner"].pk),
                 "partner_number": result["partner"].partner_number,
+                "partner_display_name": result["partner"].display_name,
                 "partner_verified": result["partner_verified"],
+                "compliant": result["partner_verified"],
+                "missing_fields": [],
                 "application_id": str(result["application"].pk),
             },
             "Partner completed and linked to quotation.",
@@ -920,11 +923,12 @@ class OLQuotationViewSet(QuotationScopedViewSet):
     @action(detail=True, methods=["get"], url_path="wizard-summary")
     def wizard_summary(self, request, pk=None):
         quotation = self.get_object()
-        completion = QuotationService.wizard_completion(quotation)
+        completion = QuotationService.completion_payload(quotation)
         return _response(
             {
                 "quotation_id": quotation.pk,
                 "quote_number": quotation.quote_number,
+                "completion": completion,
                 "steps": {
                     "1_product_plan": completion["2_plan_and_sub_products"],
                     "2_members": completion["3_member_coverage"],
