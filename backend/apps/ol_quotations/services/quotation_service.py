@@ -68,6 +68,24 @@ class QuotationService:
         return user if user and not getattr(user, "is_anonymous", False) else None
 
     @staticmethod
+    def require_editable_draft(quotation, action):
+        """Reject mutations on locked quotations with a recovery instruction."""
+        status = QuotationService.effective_status(quotation)
+        if status == QuotationStatus.DRAFT:
+            return
+        if status == QuotationStatus.FINALIZED:
+            message = (
+                f"This quotation is finalized and read-only. Use Revise to create a new editable version before {action}."
+            )
+        elif status == QuotationStatus.EXPIRED:
+            message = (
+                f"This quotation is expired and cannot be changed. Create a new quotation before {action}."
+            )
+        else:
+            message = f"This quotation is {status.lower()} and cannot be changed. Only draft quotations can {action}."
+        raise QuotationServiceError({"status": message})
+
+    @staticmethod
     def default_currency():
         value = ConfigurationService.get_str_parameter("DEFAULT_CURRENCY", "TZS")
         value = (value or "TZS").strip().upper()
@@ -186,6 +204,21 @@ class QuotationService:
         return False
 
     @staticmethod
+    def _rider_configuration_required(plan_configuration):
+        rules = dict(plan_configuration.coverage_rules or {})
+        product_rules = dict(getattr(plan_configuration.product_version, "servicing_rules", {}) or {})
+        return bool(
+            rules.get("riders_required")
+            or rules.get("rider_configuration_required")
+            or rules.get("benefits_required")
+            or rules.get("benefit_configuration_required")
+            or product_rules.get("riders_required")
+            or product_rules.get("rider_configuration_required")
+            or product_rules.get("benefits_required")
+            or product_rules.get("benefit_configuration_required")
+        )
+
+    @staticmethod
     def wizard_completion(quotation):
         selected_plan = (
             quotation.plan_configurations.filter(is_selected=True).exists()
@@ -205,9 +238,18 @@ class QuotationService:
                 funds.filter(plan_configuration=config).aggregate(total=models.Sum("allocation_percentage"))["total"] == Decimal("100")
                 for config in applicable_plan_configs
             )
-        riders_or_benefits = not quotation.rider_selections.filter(is_selected=True).exists() and not quotation.benefits.filter(is_selected=True).exists()
-        if quotation.rider_selections.filter(is_selected=True).exists() or quotation.benefits.filter(is_selected=True).exists():
-            riders_or_benefits = True
+        required_rider_configs = [
+            config
+            for config in quotation.plan_configurations.filter(is_selected=True).select_related("product_version")
+            if QuotationService._rider_configuration_required(config)
+        ]
+        riders_or_benefits = True
+        if required_rider_configs:
+            riders_or_benefits = all(
+                quotation.rider_selections.filter(is_selected=True, plan_configuration=config).exists()
+                or quotation.benefits.filter(is_selected=True, plan_configuration=config).exists()
+                for config in required_rider_configs
+            )
         payment_detail = getattr(quotation, "payment_detail", None)
         underwriting_detail = getattr(quotation, "underwriting_detail", None)
         payment = bool(payment_detail and payment_detail.payment_method)
@@ -346,6 +388,19 @@ class QuotationService:
         payment = getattr(quotation, "payment_detail", None)
         if payment is None or not payment.payment_method:
             errors["payment_detail"] = "Open Financial Details, select a payment method, and save Payment Details before finalizing."
+        required_rider_configs = [
+            config
+            for config in quotation.plan_configurations.filter(is_selected=True).select_related("product_version")
+            if QuotationService._rider_configuration_required(config)
+        ]
+        missing_rider_configs = [
+            config
+            for config in required_rider_configs
+            if not quotation.rider_selections.filter(is_selected=True, plan_configuration=config).exists()
+            and not quotation.benefits.filter(is_selected=True, plan_configuration=config).exists()
+        ]
+        if missing_rider_configs:
+            errors["riders"] = "Open Riders & Benefits and configure at least one rider or benefit for every selected plan that requires it."
         if errors:
             raise QuotationServiceError({"detail": "Quotation wizard is incomplete.", "errors": errors})
         financial_state = QuotationService.financial_summary_state(quotation)
@@ -408,8 +463,7 @@ class QuotationService:
     @transaction.atomic
     def update_personal_details(*, quotation, actor, validated_data, request=None):
         locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
-        if locked.status != QuotationStatus.DRAFT:
-            raise QuotationServiceError("Only draft quotations can be updated.")
+        QuotationService.require_editable_draft(locked, "update this quotation")
 
         payload = dict(validated_data)
         duplicate_warning = bool(payload.pop("_duplicate_active_quotation_warning", False))
@@ -1200,8 +1254,7 @@ class QuotationService:
     @transaction.atomic
     def configure_investment_funds(*, quotation, actor, validated_data, request=None):
         locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
-        if locked.status != QuotationStatus.DRAFT:
-            raise QuotationServiceError({"status": "Only draft quotations can configure investment funds."})
+        QuotationService.require_editable_draft(locked, "configure investment funds")
         selected = list(locked.plan_configurations.filter(is_selected=True).select_related("product_version__product", "plan").select_for_update())
         applicable = [config for config in selected if QuotationService._plan_requires_investment_funds(config, locked)]
         before_state = [
@@ -1416,13 +1469,15 @@ class QuotationService:
                 "plan_name": configuration.plan.name if configuration.plan else configuration.product_version.name,
                 "riders": [QuotationService._rider_selection_snapshot(row) for row in selected],
                 "benefits": [QuotationService._benefit_snapshot(row) for row in benefits if row.plan_configuration_id == configuration.pk],
-                "status": "CONFIGURED" if selected or any(row.plan_configuration_id == configuration.pk for row in benefits) else "READY_TO_CONFIGURE",
+                "requires_configuration": QuotationService._rider_configuration_required(configuration),
+                "status": "CONFIGURED" if selected or any(row.plan_configuration_id == configuration.pk for row in benefits) else ("READY_TO_CONFIGURE" if QuotationService._rider_configuration_required(configuration) else "NOT_REQUIRED"),
             })
+        requires_configuration = any(row["requires_configuration"] for row in plan_rows)
         return {
             "plan_rows": plan_rows,
             "available_benefit_types": QuotationService._benefit_type_options(),
-            "requires_configuration": bool(plan_rows),
-            "wizard_complete": bool((quotation.wizard_step_completion or {}).get("6_riders_and_benefits")),
+            "requires_configuration": requires_configuration,
+            "wizard_complete": bool((quotation.wizard_step_completion or {}).get("6_riders_and_benefits")) if requires_configuration else True,
         }
 
     @staticmethod
@@ -1462,8 +1517,7 @@ class QuotationService:
     @transaction.atomic
     def configure_riders(*, quotation, actor, validated_data, request=None):
         locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
-        if locked.status != QuotationStatus.DRAFT:
-            raise QuotationServiceError({"quotation": "Only draft quotations can configure riders and benefits."})
+        QuotationService.require_editable_draft(locked, "configure riders and benefits")
         before = {
             "riders": [QuotationService._rider_selection_snapshot(row) for row in locked.rider_selections.filter(is_selected=True).select_related("rider", "beneficial_type", "plan_configuration")],
             "benefits": [QuotationService._benefit_snapshot(row) for row in locked.benefits.filter(is_selected=True).select_related("beneficial_type", "rider_selection", "plan_configuration")],
@@ -1705,8 +1759,7 @@ class QuotationService:
     @transaction.atomic
     def configure_installments(*, quotation, plan_config_id, actor, validated_data, request=None):
         locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
-        if locked.status != QuotationStatus.DRAFT:
-            raise QuotationServiceError({"status": "Only draft quotations can configure installments."})
+        QuotationService.require_editable_draft(locked, "configure installments")
         plan_config = QuotationService._installment_plan_context(
             quotation=locked,
             plan_config_id=plan_config_id,
@@ -1830,8 +1883,7 @@ class QuotationService:
     @transaction.atomic
     def select_plans(*, quotation, actor, selections, request=None):
         locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
-        if locked.status != QuotationStatus.DRAFT:
-            raise QuotationServiceError("Only draft quotations can be updated.")
+        QuotationService.require_editable_draft(locked, "update this quotation")
         if not selections:
             raise QuotationServiceError({"plans": "At least one plan must be selected."})
 
@@ -1950,8 +2002,7 @@ class QuotationService:
     @transaction.atomic
     def update_plan_configuration(*, quotation, configuration_id, actor, payload, request=None):
         locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
-        if locked.status != QuotationStatus.DRAFT:
-            raise QuotationServiceError("Only draft quotations can be updated.")
+        QuotationService.require_editable_draft(locked, "update this quotation")
         try:
             configuration = locked.plan_configurations.select_for_update().select_related("product_version__product", "plan").get(pk=configuration_id)
         except (OLQuotationPlanConfiguration.DoesNotExist, ValueError, TypeError):
@@ -2245,8 +2296,7 @@ class QuotationService:
     @transaction.atomic
     def add_member(*, quotation, actor, payload, request=None):
         locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
-        if locked.status != QuotationStatus.DRAFT:
-            raise QuotationServiceError("Only draft quotations can be updated.")
+        QuotationService.require_editable_draft(locked, "update this quotation")
         principal = QuotationService._sync_principal_member(quotation=locked, actor=actor, request=request)
         validated = QuotationService._validate_additional_member(quotation=locked, payload=payload)
         member = OLQuotationMember(
@@ -2290,8 +2340,7 @@ class QuotationService:
     @transaction.atomic
     def update_member(*, quotation, member_id, actor, payload, request=None):
         locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
-        if locked.status != QuotationStatus.DRAFT:
-            raise QuotationServiceError("Only draft quotations can be updated.")
+        QuotationService.require_editable_draft(locked, "update this quotation")
         try:
             member = locked.members.select_for_update().get(pk=member_id)
         except (OLQuotationMember.DoesNotExist, ValueError, TypeError):
@@ -2344,8 +2393,7 @@ class QuotationService:
     @transaction.atomic
     def remove_member(*, quotation, member_id, actor, request=None):
         locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
-        if locked.status != QuotationStatus.DRAFT:
-            raise QuotationServiceError("Only draft quotations can be updated.")
+        QuotationService.require_editable_draft(locked, "update this quotation")
         try:
             member = locked.members.select_for_update().get(pk=member_id)
         except (OLQuotationMember.DoesNotExist, ValueError, TypeError):
@@ -2376,8 +2424,7 @@ class QuotationService:
     @transaction.atomic
     def update_draft(*, quotation, actor, validated_data, request=None):
         locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
-        if locked.status != QuotationStatus.DRAFT:
-            raise QuotationServiceError("Only draft quotations can be updated.")
+        QuotationService.require_editable_draft(locked, "update this quotation")
         before = QuotationService.snapshot(locked)
         for field, value in validated_data.items():
             setattr(locked, field, value)
@@ -2883,8 +2930,7 @@ class QuotationService:
     @transaction.atomic
     def delete_draft(*, quotation, actor, request=None):
         locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
-        if locked.status != QuotationStatus.DRAFT:
-            raise QuotationServiceError("Only draft quotations can be deleted.")
+        QuotationService.require_editable_draft(locked, "delete this quotation")
         before = QuotationService.snapshot(locked)
         AuditService.log_delete(
             instance=locked,

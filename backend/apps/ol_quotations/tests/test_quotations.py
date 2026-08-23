@@ -346,6 +346,7 @@ class OLQuotationAPITests(TestCase):
         self.assertIn("Open the Installments step", errors["installments"])
         self.assertIn("Open Financial Details", errors["underwriting"])
         self.assertIn("Open Financial Details", errors["payment_detail"])
+        self.assertEqual(OLQuotation.objects.get(pk=draft["id"]).status, QuotationStatus.DRAFT)
 
     def test_finalize_rejects_incomplete_wizard(self):
         draft = self.create_draft()
@@ -2041,7 +2042,22 @@ class OLQuotationAPITests(TestCase):
         response = self.client.get(f"/api/v1/ol-quotations/quotations/{draft['id']}/riders/")
         self.assertEqual(response.status_code, 200, response.data)
         self.assertTrue(response.data["data"]["wizard_complete"])
-        self.assertEqual(response.data["data"]["plan_rows"][0]["status"], "READY_TO_CONFIGURE")
+        self.assertFalse(response.data["data"]["requires_configuration"])
+        self.assertEqual(response.data["data"]["plan_rows"][0]["status"], "NOT_REQUIRED")
+
+    def test_finalized_rider_update_explains_how_to_revise(self):
+        rider = self.create_quotation_rider(code="RIDER-FINALIZED-LOCK")
+        draft = self.prepare_rider_quotation()
+        quotation = OLQuotation.objects.get(pk=draft["id"])
+        quotation.status = QuotationStatus.FINALIZED
+        quotation.save(update_fields=["status", "updated_at"])
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/riders/",
+            {"selections": [{"rider_id": str(rider.pk), "plan_config_id": draft["plan_config_id"], "rider_sum_assured": "1000.00"}]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("Use Revise", str(response.data))
 
     def test_standalone_rule_rejects_unscoped_rider_selection(self):
         rider = self.create_quotation_rider(code="RIDER-NO-STANDALONE", allows_standalone=False)

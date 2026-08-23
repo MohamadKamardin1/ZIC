@@ -113,6 +113,7 @@ let investmentFundScenario = false
 let riderScenario = false
 let financialScenario = false
 let finalizeBlocked = false
+let finalizedScenario = false
 let planSelectionError = false
 let latestFundPayload: Record<string, unknown> | null = null
 let latestRiderPayload: Record<string, unknown> | null = null
@@ -150,11 +151,12 @@ beforeEach(() => {
   riderScenario = false
   financialScenario = false
   finalizeBlocked = false
+  finalizedScenario = false
   planSelectionError = false
   latestFundPayload = null
   latestRiderPayload = null
   requestMock.mockImplementation(async (path: string, options?: RequestInit) => {
-    const draftResponse = financialScenario && finalizeBlocked ? { ...quotation, wizard_step_completion: { "1_personal_details": true, "2_plan_and_sub_products": true, "3_member_coverage": true, "4_installments": true, "5_investment_funds": true, "6_riders_and_benefits": true, "7_financial_details": true } } : quotation
+    const draftResponse = finalizedScenario ? { ...quotation, status: "FINALIZED", wizard_step_completion: { "1_personal_details": true, "2_plan_and_sub_products": true, "3_member_coverage": true, "4_installments": true, "5_investment_funds": true, "6_riders_and_benefits": true, "7_financial_details": true } } : financialScenario && finalizeBlocked ? { ...quotation, wizard_step_completion: { "1_personal_details": true, "2_plan_and_sub_products": true, "3_member_coverage": true, "4_installments": true, "5_investment_funds": true, "6_riders_and_benefits": true, "7_financial_details": true } } : quotation
     if (path === "/api/v1/ol-quotations/quotations/" && options?.method === "POST") return draftResponse
     if (path === "/api/v1/ol-quotations/quotations/quote-1/") return draftResponse
     if (path.includes("/personal-details-options/")) return {
@@ -297,6 +299,7 @@ beforeEach(() => {
     if (path.includes("/underwriting/") && options?.method === "PATCH") return { ...quotation.underwriting_detail, ...JSON.parse(String(options.body ?? "{}")) }
     if (path.includes("/financial-details/")) return financialScenario ? { quotation_id: "quote-1", recalculation_required: false, summary: { quotation_id: "quote-1", total_sum_assured: "100000", total_premium: "12000", total_rider_premium: "1500", total_benefit_premium: "0", base_premium: "10000", total_loading: "500", total_discount: "0", total_tax: "0", installment_charge: "0", estimated_maturity_value: "250000", currency: "TZS", calculated_at: "2026-08-19T10:00:00Z", projections: [{ policy_year: 1, premiums_paid: "12000", estimated_bonus: "500", surrender_value: "2000", paid_up_value: "4000", estimated_maturity_value: "250000" }], installment_payouts: [{ sequence: 1, payout_date: "2046-08-19", description: "Maturity payout", rate_percent: "100", payout_amount: "250000" }] } } : { quotation_id: "quote-1", recalculation_required: true, summary: null }
     if (path.endsWith("/calculate/") && options?.method === "POST") return { quotation_id: "quote-1", total_sum_assured: "100000", total_premium: riderScenario ? "13500" : "12000", total_rider_premium: riderScenario ? "3000" : "1500", total_benefit_premium: "0", base_premium: "10000", total_loading: "500", total_discount: "0", total_tax: "0", installment_charge: "0", estimated_maturity_value: "250000", currency: "TZS", calculated_at: "2026-08-19T10:00:00Z", recalculation_required: false, projections: [{ policy_year: 1, premiums_paid: "13500", estimated_bonus: "500", surrender_value: "2000", paid_up_value: "4000", estimated_maturity_value: "250000" }], installment_payouts: [{ sequence: 1, payout_date: "2046-08-19", description: "Maturity payout", rate_percent: "100", payout_amount: "250000" }] }
+    if (path.endsWith("/revise/") && options?.method === "POST") { finalizedScenario = false; return { ...quotation, status: "DRAFT", wizard_step_completion: {} } }
     if (path.endsWith("/finalize/") && options?.method === "POST") { if (finalizeBlocked) throw new MockApiClientError("Complete all required steps before finalizing.", { riders: ["Riders & Benefits is incomplete."], financial_details: ["Calculate financial details before finalizing."] }); return { quotation: { ...quotation, status: "FINALIZED" }, status: "FINALIZED" } }
     if (path.includes("/personal-details/") && options?.method === "POST") return { ...quotation, quote_name: "Asha quote" }
     if (path.endsWith("/plans/") && options?.method === "POST") {
@@ -314,6 +317,23 @@ function renderWizard() {
 }
 
 describe("OL quotation wizard", () => {
+  it("shows finalized quotations as read-only and enables editing through Revise", async () => {
+    finalizedScenario = true
+    renderWizard()
+    expect(await screen.findByText("This quotation is read-only. Create a revision to change any wizard step.")).toBeInTheDocument()
+    const reviseButton = screen.getByRole("button", { name: "Revise to edit" })
+    expect(reviseButton).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Next/ })).toBeDisabled()
+
+    fireEvent.click(reviseButton)
+    const dialog = await screen.findByRole("dialog")
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revise and edit" }))
+
+    await waitFor(() => expect(requestMock.mock.calls.some(([path, options]) => String(path).endsWith("/revise/") && options?.method === "POST")).toBe(true))
+    await waitFor(() => expect(screen.queryByText("This quotation is read-only. Create a revision to change any wizard step.")).not.toBeInTheDocument())
+    expect(screen.getByRole("button", { name: /Next/ })).not.toBeDisabled()
+  })
+
   it("blocks navigation when Personal Details is invalid", async () => {
     renderWizard()
     expect(await screen.findByRole("heading", { name: "Personal Details" })).toBeInTheDocument()
