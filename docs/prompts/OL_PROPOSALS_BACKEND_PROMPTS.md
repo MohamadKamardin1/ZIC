@@ -7,7 +7,7 @@
 - [x] Prompt 5 — Payment Readiness Evaluation Engine
 - [x] Prompt 6 — First Premium Tracking and Receipt Seam
 - [ ] Prompt 7 — [pending prompt text]
-- [ ] Prompt 8 — [pending prompt text]
+- [ ] Prompt 8 — Lifecycle List and Detail APIs
 - [ ] Prompt 9 — [pending prompt text]
 - [ ] Prompt 10 — [pending prompt text]
 - [ ] Prompt 11 — [pending prompt text]
@@ -236,6 +236,39 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: guard logic, endpoints, seam contract, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 8/12 — Lifecycle List and Detail APIs
+
+```text
+You are a senior Django insurance engineer. Continue the ZIC OL Proposals backend. Execute ONLY Prompt 8.
+
+MANDATORY RULES:
+- Table-first; names never UUIDs; actions state+permission aware.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. List endpoint columns: proposal_number, policyholder name, agent, employer if any, product/plan summary, total premium, currency, status badge, payment_ready, first_premium_posted, expiry_date, created_at, allowed actions.
+2. Filters: status, product, agent, employer presence, expiry window, payment_ready, first_premium_posted; search by number/policyholder/identity.
+3. KPI endpoint: total proposals, awaiting underwriting, payment ready, awaiting first premium, converted in period, expiring soon.
+4. Detail endpoint: header data, enrichment sections, beneficiaries, documents, health/underwriting, checklist state, first premium status, versions of source quotation, allowed actions.
+5. Lifecycle actions: cancel (reason mandatory), reactivate-from-expiry only via documented parameter-driven rule if allowed; transitions enforced from OL Proposal Status parameters; invalid transitions return PROPOSAL_INVALID_TRANSITION listing allowed transitions.
+6. Expiry batch command marking expired proposals with system audit; idempotent.
+7. CSV export respecting filters.
+
+TESTS:
+- list columns/filters/KPIs
+- cancel requires reason and audits
+- invalid transition teachable error
+- expiry batch idempotent
+
+GIT:
+- commit: "feat(ol-proposals): implement lifecycle list and detail APIs"
+- push; tick checkbox
+
+FINAL OUTPUT: endpoint contract, KPI rules, lifecycle rules, tests, commit hash, pushed branch.
 ```
 
 ---
