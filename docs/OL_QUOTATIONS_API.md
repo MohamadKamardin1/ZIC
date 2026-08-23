@@ -102,7 +102,7 @@ Member age, relation, duplicate identity, coverage basis, waiting period, and be
 | `GET` | `/quotations/{id}/installments/{plan_config_id}/template/` | View | Load effective anticipated-endowment installment rows or return `has_template=false`. |
 | `POST` | `/quotations/{id}/installments/{plan_config_id}/configure/` | Update | Persist annuity period, payment mode, maturity toggles, and ordered rate rows. |
 
-The inherited policy term is server-controlled. Rate percentages must sum exactly to `100`. Paid-up values default from OL Paid-Up Rate when available, and the persisted total installment count is the number of saved rate rows.
+The inherited policy term is server-controlled. Rate percentages must sum exactly to `100`. Paid-up values default from OL Paid-Up Rate when available, and the persisted total installment count is the number of saved rate rows. **Premium frequency and payment mode are separate values:** premium frequency is resolved from the selected product version for rating and template lookup; payment mode is resolved from the active `OL_PAYMENT_MODE_CHOICES` catalog and stored on the installment configuration. Product versions may restrict active methods through `servicing_rules.installment_payment_modes`. The template response returns the effective `available_payment_modes` list, and the frontend filters the Payment Mode selector to that list. Configure premium frequencies under `Ordinary Life Parameters → Product Setup → OL Product`; configure payment methods under `Ordinary Life Parameters → Drop Down Configuration → Payment Modes`; configure the selected quotation’s annuity period, maturity toggles, and payout rows under `Ordinary Life Quotations → Installments → Configure`.
 
 ## Investment Funds
 

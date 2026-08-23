@@ -56,6 +56,14 @@ class ProductVersionAdmin(ValidatingAdmin):
     list_display = ("product", "version_number", "effective_from", "effective_to", "currency", "is_active")
     list_filter = ("is_active", "currency")
     search_fields = ("product__code", "product__name")
+    fieldsets = (
+        ("Product version", {"fields": ("product", "version_number", "currency", "effective_from", "effective_to", "is_active")}),
+        ("Eligibility and premium frequency", {"fields": ("min_entry_age", "max_entry_age", "min_term_years", "max_term_years", "payment_frequencies")}),
+        ("Installment payment methods", {"fields": ("servicing_rules",), "description": "Optional JSON key installment_payment_modes restricts active OL Payment Modes for this product version. Leave it absent to allow all active payment modes."}),
+        ("Underwriting and snapshots", {"fields": ("underwriting_rules", "snapshot", "calculation_approach")}),
+        ("Audit", {"fields": ("created_at", "updated_at")}),
+    )
+    readonly_fields = ("created_at", "updated_at")
 
 
 @admin.register(models.OLPlan)

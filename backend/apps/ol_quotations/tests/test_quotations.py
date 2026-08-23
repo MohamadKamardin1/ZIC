@@ -1377,7 +1377,7 @@ class OLQuotationAPITests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         data = response.data["data"]
         self.assertTrue(data["has_template"])
-        self.assertEqual(data["available_payment_modes"], ["ANNUAL", "MONTHLY"])
+        self.assertEqual(data["available_payment_modes"], ["CASH", "BANK_TRANSFER", "MOBILE_MONEY"])
         self.assertEqual(len(data["rate_rows"]), 1)
         self.assertEqual(data["rate_rows"][0]["sequence"], 1)
         self.assertEqual(data["rate_rows"][0]["rate_percent"], "100.0000")
@@ -1392,7 +1392,7 @@ class OLQuotationAPITests(TestCase):
             endpoint,
             {
                 "annuity_period_years": 5,
-                "payment_mode": "ANNUAL",
+                "payment_mode": "BANK_TRANSFER",
                 "after_maturity_benefits": True,
                 "before_maturity_benefits": False,
                 "rate_rows": [
@@ -1415,9 +1415,30 @@ class OLQuotationAPITests(TestCase):
         self.assertEqual(data["total_number_of_installments"], 2)
         self.assertTrue(data["wizard_step_complete"])
         configuration = data["configuration"]
-        self.assertEqual(configuration["frequency"], "ANNUAL")
+        self.assertEqual(configuration["frequency"], "BANK_TRANSFER")
         self.assertEqual(configuration["annuity_period_years"], 5)
         self.assertEqual(len(configuration["rate_rows"]), 2)
+
+    def test_installment_rejects_premium_frequency_as_payment_mode(self):
+        draft = self.prepare_installment_quotation()
+        endpoint = (
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/installments/"
+            f"{draft['plan_config_id']}/configure/"
+        )
+        response = self.client.post(
+            endpoint,
+            {
+                "annuity_period_years": 5,
+                "payment_mode": "ANNUAL",
+                "rate_rows": [
+                    {"sequence": 1, "description": "Annual frequency is not a payment method", "rate_percent": "100.0000"},
+                ],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("payment mode", str(response.data).lower())
+        self.assertIn("configured", str(response.data).lower())
 
     def test_installment_configure_rejects_rate_sum_not_100(self):
         draft = self.prepare_installment_quotation()
@@ -1429,7 +1450,7 @@ class OLQuotationAPITests(TestCase):
             endpoint,
             {
                 "annuity_period_years": 5,
-                "payment_mode": "ANNUAL",
+                "payment_mode": "BANK_TRANSFER",
                 "rate_rows": [
                     {
                         "sequence": 1,
@@ -1453,7 +1474,7 @@ class OLQuotationAPITests(TestCase):
             endpoint,
             {
                 "annuity_period_years": 25,
-                "payment_mode": "ANNUAL",
+                "payment_mode": "BANK_TRANSFER",
                 "rate_rows": [
                     {
                         "sequence": 1,
@@ -1497,7 +1518,7 @@ class OLQuotationAPITests(TestCase):
             endpoint,
             {
                 "annuity_period_years": 5,
-                "payment_mode": "ANNUAL",
+                "payment_mode": "BANK_TRANSFER",
                 "rate_rows": [
                     {
                         "sequence": 1,
@@ -1522,7 +1543,7 @@ class OLQuotationAPITests(TestCase):
             configure_endpoint,
             {
                 "annuity_period_years": 5,
-                "payment_mode": "MONTHLY",
+                "payment_mode": "MOBILE_MONEY",
                 "rate_rows": [
                     {
                         "sequence": 1,
@@ -1540,7 +1561,7 @@ class OLQuotationAPITests(TestCase):
         self.assertEqual(state_response.status_code, 200, state_response.data)
         row = state_response.data["data"]["rows"][0]
         self.assertEqual(row["status"], "CONFIGURED")
-        self.assertEqual(row["payment_mode"], "MONTHLY")
+        self.assertEqual(row["payment_mode"], "MOBILE_MONEY")
         self.assertEqual(row["total_number_of_installments"], 1)
         self.assertTrue(state_response.data["data"]["wizard_complete"])
 
@@ -2143,7 +2164,7 @@ class OLQuotationAPITests(TestCase):
             f"/api/v1/ol-quotations/quotations/{draft['id']}/installments/{draft['plan_config_id']}/configure/",
             {
                 "annuity_period_years": 5,
-                "payment_mode": "ANNUAL",
+                "payment_mode": "BANK_TRANSFER",
                 "after_maturity_benefits": True,
                 "before_maturity_benefits": False,
                 "rate_rows": [

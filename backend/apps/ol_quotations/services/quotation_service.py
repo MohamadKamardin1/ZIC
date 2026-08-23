@@ -965,13 +965,37 @@ class QuotationService:
 
     @staticmethod
     def _installment_payment_modes(*, quotation, plan_config=None):
+        """Return valid installment payment methods for the selected product scope.
+
+        Premium frequencies (Annual, Monthly, etc.) are configured separately on the
+        product version and drive rating.  Installment configuration instead stores
+        the payment method (Cash, Bank transfer, Mobile money, etc.) from the active
+        OL_PAYMENT_MODE_CHOICES catalog.  A product version may optionally restrict
+        those methods through servicing_rules.installment_payment_modes; when no
+        restriction is present, every active catalog payment method is valid.
+        """
         product_version = plan_config.product_version if plan_config else quotation.product_version
-        modes = list(getattr(product_version, "payment_frequencies", []) or []) if product_version else []
-        if not modes and quotation.product_id:
-            modes = list(getattr(quotation.product, "premium_frequencies", []) or [])
-        if not modes:
-            modes = [item.get("value") for item in ConfigurationService.get_choice_list("OL_PAYMENT_MODE_CHOICES")]
-        return list(dict.fromkeys(str(value).strip().upper() for value in modes if str(value or "").strip()))
+        catalog_modes = [
+            item.get("value")
+            for item in ConfigurationService.get_choice_list("OL_PAYMENT_MODE_CHOICES", active_only=True)
+        ]
+        catalog_modes = list(dict.fromkeys(
+            str(value).strip().upper() for value in catalog_modes if str(value or "").strip()
+        ))
+
+        servicing_rules = dict(getattr(product_version, "servicing_rules", {}) or {}) if product_version else {}
+        configured_modes = servicing_rules.get("installment_payment_modes")
+        if configured_modes is None:
+            configured_modes = servicing_rules.get("payment_modes")
+        if isinstance(configured_modes, (list, tuple)) and configured_modes:
+            configured = list(dict.fromkeys(
+                str(value).strip().upper() for value in configured_modes if str(value or "").strip()
+            ))
+            if catalog_modes:
+                return [value for value in configured if value in catalog_modes]
+            return configured
+
+        return catalog_modes
 
     @staticmethod
     def _effective_parameter_rows(queryset, as_of):
@@ -1594,7 +1618,7 @@ class QuotationService:
                 "plan_code": plan.code if plan else plan_config.sub_product_code or "",
                 "plan_name": plan.name if plan else plan_config.sub_product_code or "",
                 "policy_term_years": policy_term,
-                "payment_mode": configuration.frequency if configuration else plan_config.premium_frequency,
+                "payment_mode": configuration.frequency if configuration else "",
                 "total_number_of_installments": configuration.number_of_installments if configuration else 0,
                 "status": "CONFIGURED" if configuration and configuration.rate_rows.exists() else "READY_TO_CONFIGURE",
                 "can_configure": True,
@@ -1612,7 +1636,8 @@ class QuotationService:
         product = plan_config.product_version.product
         plan = plan_config.plan
         modes = QuotationService._installment_payment_modes(quotation=quotation, plan_config=plan_config)
-        payment_mode = plan_config.premium_frequency if plan_config.premium_frequency in modes else (modes[0] if modes else "")
+        payment_mode = modes[0] if modes else ""
+        premium_frequency = str(plan_config.premium_frequency or "").strip().upper()
         rows = QuotationService._installment_scope_rows(
             model=OLAnticipatedEndowmentInstallmentRate,
             product=product,
@@ -1620,7 +1645,7 @@ class QuotationService:
             as_of=as_of,
             term=plan_config.term_years,
             age=quotation.age_at_quote,
-            frequency=payment_mode,
+            frequency=premium_frequency,
         )
         exact_rows = rows.filter(plan=plan) if plan is not None else rows.none()
         template_rows = list(exact_rows) or list(rows.filter(plan__isnull=True))

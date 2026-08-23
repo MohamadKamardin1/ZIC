@@ -182,7 +182,7 @@ beforeEach(() => {
     }
     if (path.includes("/api/v1/ol/options/member-relations/quick-create/") && options?.method === "POST") return { value: "SIBLING", label: "Sibling" }
     if (path.includes("/api/v1/ol/options/cover-types/quick-create/") && options?.method === "POST") return { value: "DEPENDENT", label: "Dependent Cover" }
-    if (path.includes("/api/v1/ol/options/payment-modes/quick-create/") && options?.method === "POST") return { value: "QUARTERLY", label: "Quarterly" }
+    if (path.includes("/api/v1/ol/options/payment-modes/quick-create/") && options?.method === "POST") return { value: "MOBILE_MONEY", label: "Mobile money" }
     if (path.includes("/api/v1/ol/options/benefit-types/quick-create/") && options?.method === "POST") return { value: "ACCIDENTAL", label: "Accidental Benefit" }
     if (path.includes("/api/v1/ol/options/riders/quick-create/") && options?.method === "POST") return { value: "rider-created", label: "Travel Protection", meta: { code: "TRAVEL-01", name: "Travel Protection", rider_category: "TRAVEL" } }
     if (path.includes("/api/v1/ol/options/investment-fund-types/quick-create/") && options?.method === "POST") return { value: "BALANCED", label: "Balanced" }
@@ -265,8 +265,8 @@ beforeEach(() => {
       has_template: templateRows.length > 0,
       banner: templateRows.length ? "Template rows loaded." : "No templates available. You can still configure installments manually.",
       policy_term_years: 20,
-      payment_mode: "ANNUAL",
-      available_payment_modes: ["ANNUAL", "MONTHLY"],
+      payment_mode: "BANK_TRANSFER",
+      available_payment_modes: ["BANK_TRANSFER", "MOBILE_MONEY", "CASH"],
       rate_rows: templateRows,
     }
     if (path.endsWith("/investment-funds/") && options?.method === "POST") {
@@ -519,12 +519,12 @@ describe("OL quotation wizard", () => {
     const quickCreateDialog = (await screen.findAllByRole("dialog")).at(-1)
     expect(quickCreateDialog).toBeTruthy()
     const fields = await within(quickCreateDialog!).findAllByRole("textbox")
-    fireEvent.change(fields[0], { target: { value: "QUARTERLY" } })
-    fireEvent.change(fields[1], { target: { value: "Quarterly" } })
+    fireEvent.change(fields[0], { target: { value: "MOBILE_MONEY" } })
+    fireEvent.change(fields[1], { target: { value: "Mobile money" } })
     fireEvent.click(within(quickCreateDialog!).getByRole("button", { name: "Create option" }))
     await waitFor(() => expect(requestMock.mock.calls.some(([path, options]) => String(path).includes("payment-modes/quick-create/") && options?.method === "POST")).toBe(true))
 
-    await waitFor(() => expect(document.getElementById("installment_payment_mode")).toHaveTextContent("Quarterly"))
+    await waitFor(() => expect(document.getElementById("installment_payment_mode")).toHaveTextContent("Mobile money"))
   })
 
   it("quick-creates an investment fund with nested fund type and auto-selects it", async () => {
