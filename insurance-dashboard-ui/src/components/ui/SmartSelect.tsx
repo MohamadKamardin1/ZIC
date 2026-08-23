@@ -33,6 +33,7 @@ export type SmartSelectProps = FormFieldProps & {
   multiple?: boolean
   disabled?: boolean
   emptyEntityLabel?: string
+  allowedValues?: string[]
   className?: string
 }
 
@@ -107,6 +108,7 @@ export function SmartSelect({
   multiple = false,
   disabled = false,
   emptyEntityLabel,
+  allowedValues,
   className = "",
 }: SmartSelectProps) {
   const { access } = useAccess()
@@ -137,8 +139,11 @@ export function SmartSelect({
     const merged = new Map<string, SmartOption>()
     remoteOptions.forEach((option) => merged.set(option.value, option))
     createdOptions.forEach((option) => merged.set(option.value, option))
-    return Array.from(merged.values())
-  }, [createdOptions, optionsQuery.data])
+    const allowed = allowedValues?.map((item) => String(item).trim()).filter(Boolean)
+    if (!allowed?.length) return Array.from(merged.values())
+    const allowedSet = new Set(allowed)
+    return Array.from(merged.values()).filter((option) => allowedSet.has(option.value) || createdOptions.some((created) => created.value === option.value))
+  }, [allowedValues, createdOptions, optionsQuery.data])
   const total = getPayloadTotal(optionsQuery.data, options.length)
   const selectedValues = multiple ? values : value ? [value] : []
   const selectedOptions = selectedValues.map((selectedValue) => options.find((option) => option.value === selectedValue)).filter((item): item is SmartOption => Boolean(item))
