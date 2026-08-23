@@ -14,6 +14,9 @@ const {
   enrichMock,
   documentsListMock,
   uploadDocMock,
+  addBeneficiaryMock,
+  updateBeneficiaryMock,
+  deleteBeneficiaryMock,
   requestMock,
 } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
@@ -25,6 +28,9 @@ const {
   enrichMock: vi.fn(),
   documentsListMock: vi.fn(),
   uploadDocMock: vi.fn(),
+  addBeneficiaryMock: vi.fn(),
+  updateBeneficiaryMock: vi.fn(),
+  deleteBeneficiaryMock: vi.fn(),
   requestMock: vi.fn(),
 }))
 
@@ -40,6 +46,9 @@ vi.mock("../../lib/proposals", async (importOriginal) => {
     enrichProposalSection: enrichMock,
     listProposalDocuments: documentsListMock,
     uploadProposalDocument: uploadDocMock,
+    addBeneficiary: addBeneficiaryMock,
+    updateBeneficiary: updateBeneficiaryMock,
+    deleteBeneficiary: deleteBeneficiaryMock,
   }
 })
 
@@ -173,7 +182,28 @@ function detailFixture(overrides: Record<string, unknown> = {}) {
       { id: "benefit-uuid-1", code: "MAT", name: "Maturity Benefit", benefit_type: "MATURITY", sum_assured: "5200000.00", is_selected: true },
     ],
     beneficiaries: [
-      { id: "ben-uuid-1", person_name: "Neema Said", share_percent: "100.00", is_primary: true, is_minor: false },
+      {
+        id: "ben-uuid-1",
+        person_name: "Neema Said",
+        identity_type: "NIN",
+        identity_number: "NIN-8842",
+        beneficial_type_name_snapshot: "Education Benefit",
+        share_percent: "60.00",
+        is_primary: true,
+        is_minor: false,
+      },
+      {
+        id: "ben-uuid-2",
+        person_name: "Baraka Juma",
+        identity_type: "BIRTH_CERTIFICATE",
+        identity_number: "BC-5531",
+        beneficial_type_name_snapshot: "Survivor Benefit",
+        share_percent: "20.00",
+        is_primary: false,
+        is_minor: true,
+        guardian_name: "Halima Juma",
+        guardian_relationship: "Mother",
+      },
     ],
     documents: [
       { id: "doc-uuid-1", document_type: "NATIONAL_ID", document_type_display: "National ID", status: "APPROVED", file_reference: "docs/nid.pdf" },
@@ -246,6 +276,9 @@ beforeEach(() => {
   enrichMock.mockReset()
   documentsListMock.mockReset()
   uploadDocMock.mockReset()
+  addBeneficiaryMock.mockReset()
+  updateBeneficiaryMock.mockReset()
+  deleteBeneficiaryMock.mockReset()
   requestMock.mockReset()
 
   grantedPermissions = [
@@ -269,6 +302,9 @@ beforeEach(() => {
     count: 1,
   })
   uploadDocMock.mockResolvedValue({ document_type: "NATIONAL_ID", status: "UPLOADED" })
+  addBeneficiaryMock.mockResolvedValue({ data: {} })
+  updateBeneficiaryMock.mockResolvedValue({ data: {} })
+  deleteBeneficiaryMock.mockResolvedValue({ data: { deleted: true } })
 
   requestMock.mockImplementation(async (path: string) => {
     if (path.includes("/ol-proposals/options/employers/")) {
@@ -291,6 +327,12 @@ beforeEach(() => {
           count: 2,
         },
       }
+    }
+    if (path.includes("/api/v1/ol/options/identity-types")) {
+      return { items: [{ value: "NIN", label: "National Identification Number" }, { value: "BIRTH_CERTIFICATE", label: "Birth Certificate" }] }
+    }
+    if (path.includes("/api/v1/ol/options/benefit-types")) {
+      return { items: [{ value: "benefit-edu", label: "Education Benefit" }, { value: "benefit-survivor", label: "Survivor Benefit" }] }
     }
     throw new Error(`Unhandled request in test: ${path}`)
   })
@@ -481,5 +523,152 @@ describe("OL Proposal detail page", () => {
         file_reference: "dms://scans/nid.pdf",
       }),
     )
+  })
+
+  it("keeps the share total visible and live while editing a beneficiary", async () => {
+    renderPage()
+    await screen.findByTestId("proposal-detail-header")
+
+    fireEvent.click(within(screen.getByTestId("proposal-tabs")).getByRole("button", { name: "Beneficiaries" }))
+    const panel = await screen.findByTestId("tab-beneficiaries")
+    const headerIndicator = within(panel).getByRole("status")
+    expect(headerIndicator).toHaveAttribute("data-share-total", "under")
+    expect(headerIndicator).toHaveTextContent("allocate 20.00% more")
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Neema Said" }))
+    await screen.findByTestId("beneficiary-form")
+    const indicator = within(screen.getByTestId("beneficiary-form")).getByRole("status")
+
+    // Existing rows hold 20% — dropping Neema to 10% leaves the set under.
+    fireEvent.change(screen.getByLabelText(/Share percent/), { target: { value: "10" } })
+    expect(indicator).toHaveAttribute("data-share-total", "under")
+    expect(indicator).toHaveTextContent("allocate 70.00% more")
+
+    fireEvent.change(screen.getByLabelText(/Share percent/), { target: { value: "90" } })
+    expect(indicator).toHaveAttribute("data-share-total", "over")
+    expect(indicator).toHaveTextContent("reduce 10.00%")
+
+    fireEvent.change(screen.getByLabelText(/Share percent/), { target: { value: "80" } })
+    expect(indicator).toHaveAttribute("data-share-total", "valid")
+    expect(indicator).toHaveTextContent("ready to save")
+  })
+
+  it("blocks an invalid share set with teachable steps, then saves at exactly 100%", async () => {
+    renderPage()
+    await screen.findByTestId("proposal-detail-header")
+
+    fireEvent.click(within(screen.getByTestId("proposal-tabs")).getByRole("button", { name: "Beneficiaries" }))
+    await screen.findByTestId("tab-beneficiaries")
+    fireEvent.click(screen.getByTestId("add-beneficiary"))
+    await screen.findByTestId("beneficiary-form")
+
+    fireEvent.change(screen.getByLabelText(/Full name/), { target: { value: "Neema Backup" } })
+    fireEvent.click(document.getElementById("beneficiary_identity_type") as HTMLElement)
+    fireEvent.click(await screen.findByRole("option", { name: "National Identification Number" }))
+    fireEvent.change(document.getElementById("beneficiary_identity_number") as HTMLInputElement, { target: { value: "NIN-0009" } })
+    fireEvent.change(screen.getByLabelText(/Share percent/), { target: { value: "50" } })
+
+    fireEvent.click(screen.getByTestId("save-beneficiary"))
+
+    expect(await screen.findByTestId("error-coach-code")).toHaveTextContent("PROPOSAL_BENEFICIARY_SHARES_INVALID")
+    expect(screen.getByTestId("error-coach-steps")).toHaveTextContent("total is exactly 100%")
+    expect(addBeneficiaryMock).not.toHaveBeenCalled()
+
+    fireEvent.change(screen.getByLabelText(/Share percent/), { target: { value: "20" } })
+    fireEvent.click(screen.getByTestId("save-beneficiary"))
+
+    await waitFor(() => expect(addBeneficiaryMock).toHaveBeenCalledTimes(1))
+    const [, payload] = addBeneficiaryMock.mock.calls[0]
+    expect(payload.person_name).toBe("Neema Backup")
+    expect(payload.share_percent).toBe("20")
+    expect(payload.is_minor).toBe(false)
+  })
+
+  it("requires a guardian when a beneficiary is marked minor", async () => {
+    renderPage()
+    await screen.findByTestId("proposal-detail-header")
+
+    fireEvent.click(within(screen.getByTestId("proposal-tabs")).getByRole("button", { name: "Beneficiaries" }))
+    await screen.findByTestId("tab-beneficiaries")
+    fireEvent.click(screen.getByTestId("add-beneficiary"))
+    await screen.findByTestId("beneficiary-form")
+
+    fireEvent.change(screen.getByLabelText(/Full name/), { target: { value: "Baby Zuri" } })
+    fireEvent.click(document.getElementById("beneficiary_identity_type") as HTMLElement)
+    fireEvent.click(await screen.findByRole("option", { name: "Birth Certificate" }))
+    fireEvent.change(document.getElementById("beneficiary_identity_number") as HTMLInputElement, { target: { value: "BC-7788" } })
+    fireEvent.change(screen.getByLabelText(/Share percent/), { target: { value: "20" } })
+    fireEvent.click(screen.getByRole("switch", { name: /Minor/ }))
+
+    expect(screen.getByTestId("guardian-fields")).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId("save-beneficiary"))
+
+    expect(await screen.findByText(/A guardian is required for a minor beneficiary/i)).toBeInTheDocument()
+    expect(addBeneficiaryMock).not.toHaveBeenCalled()
+
+    fireEvent.change(screen.getByLabelText(/Guardian full name/), { target: { value: "Halima Juma" } })
+    fireEvent.click(screen.getByTestId("save-beneficiary"))
+
+    await waitFor(() => expect(addBeneficiaryMock).toHaveBeenCalledTimes(1))
+    const [, payload] = addBeneficiaryMock.mock.calls[0]
+    expect(payload.guardian_name).toBe("Halima Juma")
+    expect(payload.is_minor).toBe(true)
+  })
+
+  it("enforces at least one primary beneficiary with a teachable error", async () => {
+    renderPage()
+    await screen.findByTestId("proposal-detail-header")
+
+    fireEvent.click(within(screen.getByTestId("proposal-tabs")).getByRole("button", { name: "Beneficiaries" }))
+    await screen.findByTestId("tab-beneficiaries")
+
+    // Neema is the only primary — unchecking her must be blocked.
+    fireEvent.click(screen.getByRole("button", { name: "Edit Neema Said" }))
+    await screen.findByTestId("beneficiary-form")
+    fireEvent.click(screen.getByRole("switch", { name: /Primary beneficiary/ }))
+    fireEvent.change(screen.getByLabelText(/Share percent/), { target: { value: "80" } })
+    fireEvent.click(screen.getByTestId("save-beneficiary"))
+
+    expect(await screen.findByTestId("error-coach-code")).toHaveTextContent("PROPOSAL_BENEFICIARY_SHARES_INVALID")
+    expect(screen.getByTestId("error-coach-steps")).toHaveTextContent("Mark one beneficiary as primary.")
+    expect(updateBeneficiaryMock).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole("switch", { name: /Primary beneficiary/ }))
+    fireEvent.click(screen.getByTestId("save-beneficiary"))
+    await waitFor(() => expect(updateBeneficiaryMock).toHaveBeenCalledTimes(1))
+  })
+
+  it("flags a duplicate identity inline before submitting", async () => {
+    renderPage()
+    await screen.findByTestId("proposal-detail-header")
+
+    fireEvent.click(within(screen.getByTestId("proposal-tabs")).getByRole("button", { name: "Beneficiaries" }))
+    await screen.findByTestId("tab-beneficiaries")
+    fireEvent.click(screen.getByTestId("add-beneficiary"))
+    await screen.findByTestId("beneficiary-form")
+
+    fireEvent.change(screen.getByLabelText(/Full name/), { target: { value: "Duplicate Dan" } })
+    fireEvent.click(document.getElementById("beneficiary_identity_type") as HTMLElement)
+    fireEvent.click(await screen.findByRole("option", { name: "National Identification Number" }))
+    fireEvent.change(document.getElementById("beneficiary_identity_number") as HTMLInputElement, { target: { value: "nin-8842" } })
+    fireEvent.change(screen.getByLabelText(/Share percent/), { target: { value: "20" } })
+    fireEvent.click(screen.getByTestId("save-beneficiary"))
+
+    expect(await screen.findByText(/already exists on this proposal/i)).toBeInTheDocument()
+    expect(addBeneficiaryMock).not.toHaveBeenCalled()
+  })
+
+  it("removes a beneficiary through the confirm dialog", async () => {
+    renderPage()
+    await screen.findByTestId("proposal-detail-header")
+
+    fireEvent.click(within(screen.getByTestId("proposal-tabs")).getByRole("button", { name: "Beneficiaries" }))
+    await screen.findByTestId("tab-beneficiaries")
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove Baraka Juma" }))
+    expect(await screen.findByText(/The remaining shares must still total 100%/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }))
+
+    await waitFor(() => expect(deleteBeneficiaryMock).toHaveBeenCalledWith("prop-uuid-0001", "ben-uuid-2"))
   })
 })

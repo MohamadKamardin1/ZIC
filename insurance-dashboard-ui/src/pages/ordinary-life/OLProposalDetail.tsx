@@ -22,7 +22,6 @@ import {
   Printer,
   ScrollText,
   ShieldCheck,
-  Users,
   XCircle,
 } from "lucide-react"
 import { ErrorCoach } from "../../components/commitments/ErrorCoach"
@@ -44,11 +43,13 @@ import { TextInput } from "../../components/ui/FormControls"
 import { SmartSelect } from "../../components/ui/SmartSelect"
 import { useToast } from "../../components/ui/Toast"
 import OLEnrichmentModal from "./OLEnrichmentModal"
+import { OLBeneficiariesPanel } from "./OLBeneficiaries"
 
-type TabId = "overview" | "documents" | "source" | "history"
+type TabId = "overview" | "beneficiaries" | "documents" | "source" | "history"
 
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: "overview", label: "Overview" },
+  { id: "beneficiaries", label: "Beneficiaries" },
   { id: "documents", label: "Documents" },
   { id: "source", label: "Quotation Source" },
   { id: "history", label: "History" },
@@ -517,26 +518,6 @@ export default function OLProposalDetail() {
                 />
               </section>
 
-              {detail.beneficiaries.length > 0 && (
-                <section className="surface-card p-4">
-                  <h2 className="mb-3 flex items-center gap-2 font-bold">
-                    <Users size={16} aria-hidden="true" />
-                    Beneficiaries
-                  </h2>
-                  <ul className="divide-y">
-                    {detail.beneficiaries.map((row) => (
-                      <li key={row.personName + row.sharePercent} className="flex items-center justify-between py-2 text-sm">
-                        <span className="font-semibold">
-                          {row.personName}
-                          {row.isPrimary ? " · Primary" : ""}
-                        </span>
-                        <span className="font-bold tabular-nums">{row.sharePercent}%</span>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
-
               <section className="surface-card p-4">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <h2 className="flex items-center gap-2 font-bold">
@@ -597,6 +578,8 @@ export default function OLProposalDetail() {
               </section>
             </div>
           )}
+
+          {activeTab === "beneficiaries" && <OLBeneficiariesPanel detail={detail} canEnrich={canAct("enrich")} />}
 
           {activeTab === "documents" && (
             <DocumentsPanel detail={detail} onActionError={setActionError} />

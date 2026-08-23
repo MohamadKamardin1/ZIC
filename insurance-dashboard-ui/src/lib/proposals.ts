@@ -72,6 +72,9 @@ export interface BeneficiaryRecord {
   isMinor?: boolean
   identityType?: string
   identityNumber?: string
+  beneficialTypeName?: string
+  guardianName?: string
+  guardianRelationship?: string
 }
 
 export interface ProposalAllocationRow {
@@ -550,6 +553,9 @@ export function normalizeProposalDetail(raw: unknown): ProposalDetail {
       isMinor: bool(item, "is_minor"),
       identityType: str(item, "identity_type"),
       identityNumber: str(item, "identity_number"),
+      beneficialTypeName: str(item, "beneficial_type_name_snapshot"),
+      guardianName: str(item, "guardian_name"),
+      guardianRelationship: str(item, "guardian_relationship"),
     })),
     documents: rowsOf(record, "documents").map((item) => ({
       id: str(item, "id") ?? "",

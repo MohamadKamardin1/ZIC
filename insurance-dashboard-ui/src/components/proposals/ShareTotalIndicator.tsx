@@ -28,7 +28,7 @@ export function ShareTotalIndicator({
   const state = shareTotal(total)
   const valid = state === "valid"
   const Icon = valid ? CheckCircle2 : XCircle
-  const toneClass = valid ? "text-[var(--success)]" : state === "under" ? "text-[var(--warning)]" : "text-[var(--destructive)]"
+  const toneClass = valid ? "text-[var(--success)]" : "text-[var(--destructive)]"
 
   return (
     <span
