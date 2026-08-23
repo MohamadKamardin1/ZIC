@@ -2,7 +2,7 @@
 
 - [x] Prompt 1 — Save Prompt Series + Discovery + Proposal Domain Foundation
 - [x] Prompt 2 — Quotation to Proposal Conversion
-- [ ] Prompt 3 — [pending prompt text]
+- [ ] Prompt 3 — Enrichment and Beneficiaries
 - [ ] Prompt 4 — [pending prompt text]
 - [ ] Prompt 5 — [pending prompt text]
 - [ ] Prompt 6 — [pending prompt text]
@@ -94,6 +94,43 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: service contract, endpoint, refactor notes, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 3/12 — Enrichment and Beneficiaries
+
+```text
+You are a senior Django insurance engineer. Continue the ZIC OL Proposals backend. Execute ONLY Prompt 3.
+
+MANDATORY RULES:
+- Enrichment covers details not captured at quote stage per specification 6.1.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. Enrichment endpoints (PATCH sections):
+   - employer: corporate partner SmartSelect-compatible options; employment reference, payroll deduction flag
+   - intermediary: agent/broker partner reference and commission-relevant channel
+   - declarations: PEP flag, AML flag, existing policies count, occupation risk note, free-text declarations
+   - policyholder bank details for maturity/claims payouts (bank, account name, number masked in responses)
+2. Beneficiaries CRUD:
+   - add/update/remove beneficiaries with beneficial type parameter options
+   - validation: at least one primary; share percentages sum exactly 100; minor requires guardian; duplicate identity prevention
+   - errors return PROPOSAL_BENEFICIARY_SHARES_INVALID with resolution steps
+3. Enrichment completeness service computing missing required sections for payment-ready.
+4. Emit ProposalEnriched events; audit every section change with before/after.
+
+TESTS:
+- employer/intermediary linkage validation
+- declarations save and mask bank account
+- beneficiary share math and guardian rule
+- completeness service lists missing sections
+
+GIT:
+- commit: "feat(ol-proposals): implement enrichment and beneficiaries"
+- push; tick checkbox
+
+FINAL OUTPUT: endpoints, validation rules, tests, commit hash, pushed branch.
 ```
 
 ---
