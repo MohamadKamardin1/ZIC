@@ -160,6 +160,104 @@ class OLProposalBaseSerializer(serializers.ModelSerializer):
         )
 
 
+class OLProposalListSerializer(serializers.ModelSerializer):
+    policyholder = serializers.SerializerMethodField()
+    agent = serializers.SerializerMethodField()
+    employer = serializers.SerializerMethodField()
+    product = serializers.SerializerMethodField()
+    plan = serializers.SerializerMethodField()
+    total_premium = serializers.SerializerMethodField()
+    status_badge = serializers.SerializerMethodField()
+    first_premium_posted = serializers.SerializerMethodField()
+    allowed_actions = serializers.SerializerMethodField()
+
+    def _selected_config(self, obj):
+        configs = list(obj.plan_configs.all())
+        return configs[0] if configs else None
+
+    def get_policyholder(self, obj):
+        return obj.partner_name_snapshot or "-"
+
+    def get_agent(self, obj):
+        return obj.agent_name_snapshot or "-"
+
+    def get_employer(self, obj):
+        return obj.employer_name_snapshot or "-"
+
+    def get_product(self, obj):
+        config = self._selected_config(obj)
+        product = getattr(getattr(config, "product_version", None), "product", None) if config else None
+        if product is None:
+            return "-"
+        code = (getattr(product, "code", "") or "").strip()
+        name = (getattr(product, "name", "") or "").strip()
+        return f"{code} - {name}".strip() or "-"
+
+    def get_plan(self, obj):
+        config = self._selected_config(obj)
+        plan = getattr(config, "plan", None) if config else None
+        if plan is None:
+            return "-"
+        return (config.plan_name_snapshot or getattr(plan, "name", "") or getattr(plan, "code", "") or "-").strip()
+
+    def get_total_premium(self, obj):
+        snapshot = obj.financial_summary_snapshot or {}
+        value = snapshot.get("total_premium")
+        if value is None:
+            config = self._selected_config(obj)
+            value = config.premium_amount if config and config.premium_amount is not None else None
+        return str(value) if value is not None else ""
+
+    def get_status_badge(self, obj):
+        names = self.context.setdefault("_status_names", {})
+        if not names:
+            from apps.ol_parameters.models import OLProposalStatus
+
+            names.update(
+                {
+                    row.code.upper(): row.name
+                    for row in OLProposalStatus.objects.filter(applies_to__iexact="PROPOSAL", is_active=True)
+                }
+            )
+        return {"code": obj.status, "name": names.get((obj.status or "").upper(), obj.status)}
+
+    def get_first_premium_posted(self, obj):
+        commitment = obj.first_premium_commitment
+        if commitment is None:
+            return False
+        posted = (commitment.status or "").strip().upper() == "COMPLETED"
+        paid = (commitment.amount_paid or 0) + (commitment.amount_waived or 0)
+        return bool(posted and paid >= (commitment.premium_amount or 0))
+
+    def get_allowed_actions(self, obj):
+        from apps.ol_proposals.services.lifecycle_service import allowed_actions
+
+        request = self.context.get("request")
+        actor = request.user if request else None
+        return allowed_actions(obj, actor=actor)
+
+    class Meta:
+        model = OLProposal
+        fields = (
+            "id",
+            "proposal_number",
+            "policyholder",
+            "agent",
+            "employer",
+            "product",
+            "plan",
+            "total_premium",
+            "currency",
+            "status",
+            "status_badge",
+            "payment_ready",
+            "first_premium_posted",
+            "expiry_date",
+            "created_at",
+            "allowed_actions",
+        )
+
+
 class OLProposalDetailSerializer(OLProposalBaseSerializer):
     plan_configs = OLProposalPlanConfigSerializer(many=True, read_only=True)
     members = OLProposalMemberSerializer(many=True, read_only=True)

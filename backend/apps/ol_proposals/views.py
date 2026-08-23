@@ -404,27 +404,23 @@ class ProposalFirstPremiumStatusView(APIView):
 
 
 class ProposalListView(APIView):
-    """GET /api/v1/ol-proposals/ — paginated proposal list (names, never UUIDs)."""
+    """GET /api/v1/ol-proposals/proposals/ — table-first paginated proposal list.
+
+    Columns and filters documented in Prompt 8; names, never UUIDs.
+    """
 
     permission_classes = [MustViewProposalsPermission]
 
     def get(self, request):
-        queryset = OLProposal.objects.select_related("quotation", "partner", "agent_partner", "employer_partner")
-        status = request.query_params.get("status")
-        if status:
-            queryset = queryset.filter(status__iexact=status)
-        search = request.query_params.get("search")
-        if search:
-            from django.db.models import Q
+        from apps.ol_proposals.serializers import OLProposalListSerializer
+        from apps.ol_proposals.services.listing_service import (
+            apply_list_filters,
+            base_list_queryset,
+            order_queryset,
+        )
 
-            queryset = queryset.filter(
-                Q(proposal_number__icontains=search)
-                | Q(partner_name_snapshot__icontains=search)
-                | Q(agent_name_snapshot__icontains=search)
-                | Q(quotation__quote_number__icontains=search)
-            )
-        ordering = request.query_params.get("ordering", "-created_at")
-        queryset = queryset.order_by(ordering, "-created_at")
+        queryset = apply_list_filters(base_list_queryset(), request.query_params)
+        queryset = order_queryset(queryset, request.query_params.get("ordering"))
 
         page = max(1, int(request.query_params.get("page", 1)))
         page_size = min(100, max(1, int(request.query_params.get("page_size", 20))))
@@ -435,7 +431,7 @@ class ProposalListView(APIView):
         return Response(
             {
                 "data": {
-                    "results": OLProposalBaseSerializer(rows, many=True).data,
+                    "results": OLProposalListSerializer(rows, many=True, context={"request": request}).data,
                     "count": total,
                     "page": page,
                     "page_size": page_size,
@@ -446,12 +442,127 @@ class ProposalListView(APIView):
         )
 
 
+class ProposalKpisView(APIView):
+    """GET /api/v1/ol-proposals/proposals/kpis/ — register key performance indicators."""
+
+    permission_classes = [MustViewProposalsPermission]
+
+    def get(self, request):
+        from apps.ol_proposals.services.listing_service import proposal_kpis
+
+        return Response(
+            {
+                "data": proposal_kpis(
+                    period_from=request.query_params.get("period_from"),
+                    period_to=request.query_params.get("period_to"),
+                    expiring_soon_days=request.query_params.get("expiring_soon_days"),
+                )
+            }
+        )
+
+
+class ProposalExportView(APIView):
+    """GET /api/v1/ol-proposals/proposals/export/ — CSV export respecting list filters."""
+
+    permission_classes = [MustViewProposalsPermission]
+
+    def get(self, request):
+        import csv
+
+        from django.http import HttpResponse
+
+        from apps.ol_proposals.serializers import OLProposalListSerializer
+        from apps.ol_proposals.services.listing_service import (
+            apply_list_filters,
+            base_list_queryset,
+            iter_csv_rows,
+            order_queryset,
+        )
+
+        queryset = apply_list_filters(base_list_queryset(), request.query_params)
+        queryset = order_queryset(queryset, request.query_params.get("ordering"))
+        rows = OLProposalListSerializer(queryset[:5000], many=True, context={"request": request}).data
+
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="ol-proposals.csv"'
+        writer = csv.writer(response)
+        writer.writerow(
+            [
+                "proposal_number",
+                "policyholder",
+                "agent",
+                "employer",
+                "product",
+                "plan",
+                "total_premium",
+                "currency",
+                "status",
+                "payment_ready",
+                "first_premium_posted",
+                "expiry_date",
+                "created_at",
+            ]
+        )
+        writer.writerows(iter_csv_rows(rows))
+        return response
+
+
+class MustCancelProposalPermission(IsAuthenticated):
+    def has_permission(self, request, view):
+        if not super().has_permission(request, view):
+            return False
+        return has_ol_proposal_permission(request.user, "cancel")
+
+
+class ProposalCancelView(APIView):
+    """POST /api/v1/ol-proposals/proposals/{id}/cancel/ — reason mandatory, audited."""
+
+    permission_classes = [MustCancelProposalPermission]
+
+    def post(self, request, proposal_id):
+        from apps.ol_proposals.services.lifecycle_service import cancel_proposal
+
+        proposal = _get_proposal(proposal_id)
+        cancel_proposal(
+            proposal=proposal,
+            actor=request.user,
+            request=request,
+            reason=request.data.get("reason") or "",
+            source_channel="API",
+        )
+        proposal.refresh_from_db()
+        return Response({"data": OLProposalDetailSerializer(proposal).data})
+
+
+class ProposalReactivateView(APIView):
+    """POST /api/v1/ol-proposals/proposals/{id}/reactivate/ — parameter-gated from expiry."""
+
+    permission_classes = [MustEnrichProposalPermission]
+
+    def post(self, request, proposal_id):
+        from apps.ol_proposals.services.lifecycle_service import reactivate_proposal
+
+        proposal = _get_proposal(proposal_id)
+        reactivate_proposal(
+            proposal=proposal,
+            actor=request.user,
+            request=request,
+            reason=request.data.get("reason") or "",
+            source_channel="API",
+        )
+        proposal.refresh_from_db()
+        return Response({"data": OLProposalDetailSerializer(proposal).data})
+
+
 class ProposalDetailView(APIView):
     """GET /api/v1/ol-proposals/{id}/ — proposal detail with carried children."""
 
     permission_classes = [MustViewProposalsPermission]
 
     def get(self, request, proposal_id):
+        from apps.ol_proposals.services.lifecycle_service import allowed_actions
+        from apps.ol_proposals.services.payment_readiness_service import evaluate_payment_ready
+
         proposal = (
             OLProposal.objects.select_related("quotation", "partner", "agent_partner", "employer_partner", "converted_policy")
             .prefetch_related(
@@ -469,12 +580,23 @@ class ProposalDetailView(APIView):
             .first()
         )
         if not proposal:
-            from apps.ol_proposals.errors import ProposalError
-
             raise ProposalError(
                 "The proposal could not be found.",
                 error_code="PROPOSAL_NOT_FOUND",
                 status_code=404,
                 resolution_steps=["Verify the proposal number.", "Check the proposal register filters."],
             )
-        return Response({"data": OLProposalDetailSerializer(proposal).data})
+        payload = OLProposalDetailSerializer(proposal).data
+        payload["completeness"] = missing_sections_for(proposal)
+        payload["checklist"] = evaluate_payment_ready(proposal)
+        payload["quotation_versions"] = [
+            {
+                "version_number": item.version_number,
+                "status": item.status,
+                "change_reason": item.change_reason,
+                "created_at": item.created_at.isoformat() if item.created_at else None,
+            }
+            for item in proposal.quotation.versions.order_by("-version_number")
+        ]
+        payload["allowed_actions"] = allowed_actions(proposal, actor=request.user)
+        return Response({"data": payload})

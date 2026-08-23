@@ -28,6 +28,7 @@ class OLProposalPermission:
         "documents": UPLOAD_DOCUMENTS,
         "mark_payment_ready": MARK_PAYMENT_READY,
         "payment_ready": MARK_PAYMENT_READY,
+        "reactivate": ENRICH,
         "convert": CONVERT,
         "cancel": CANCEL,
         "print": PRINT,
