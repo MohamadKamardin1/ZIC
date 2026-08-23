@@ -8,7 +8,7 @@ Kits in use: design system, DataTable, SmartSelect, ErrorCoach, ReasonField, Con
 - [x] Prompt 3 — Convert Quotation Modal: Search, Versions, and Partner Verification
 - [x] Prompt 4 — Proposal Detail Page Shell and Overview
 - [x] Prompt 5 — Enrichment Workspace and Documents Tab
-- [ ] Prompt 6 — [pending prompt text]
+- [x] Prompt 6 — Beneficiaries Management Tab
 - [ ] Prompt 7 — [pending prompt text]
 - [ ] Prompt 8 — [pending prompt text]
 - [ ] Prompt 9 — [pending prompt text]
@@ -156,3 +156,31 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: modal behavior, documents tab behavior, tests, commit hash, pushed branch.
+
+## Prompt 6/10 — Beneficiaries Management Tab
+
+You are a senior frontend engineer. Continue the ZIC Proposals UI. Execute ONLY Prompt 6.
+
+MANDATORY RULES:
+- Share math must be visible and teachable.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. Beneficiaries tab: table with name, identity type/number, beneficial type badge, share %, primary star, minor badge with guardian, actions edit/remove.
+2. Add/Edit modal: full name, identity type SmartSelect, identity number, beneficial type SmartSelect with '+', share percent, primary toggle, minor toggle revealing guardian fields; live ShareTotalIndicator over the projected set — green at 100, red otherwise.
+3. Errors: PROPOSAL_BENEFICIARY_SHARES_INVALID via ErrorCoach listing exact fix steps; duplicate identity inline error; minor without guardian inline error.
+4. Remove via confirm dialog; at least one primary enforced with a teachable error.
+
+TESTS:
+- Share indicator behavior (under/over/valid live)
+- 100-sum validation success and failure
+- Minor guardian rule
+- Primary enforcement
+- Duplicate identity inline
+- Remove through confirm dialog
+
+GIT:
+- commit: "feat(web): proposal beneficiaries management UI"
+- push; tick checkbox
+
+FINAL OUTPUT: table/modal behavior, tests, commit hash, pushed branch.
