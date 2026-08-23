@@ -4,7 +4,7 @@
 - [x] Prompt 2 — Quotation to Proposal Conversion
 - [x] Prompt 3 — Enrichment and Beneficiaries
 - [x] Prompt 4 — Documents, Health Answers, and Underwriting Hook
-- [ ] Prompt 5 — [pending prompt text]
+- [ ] Prompt 5 — Payment Readiness Evaluation Engine
 - [ ] Prompt 6 — [pending prompt text]
 - [ ] Prompt 7 — [pending prompt text]
 - [ ] Prompt 8 — [pending prompt text]
@@ -165,6 +165,45 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: config model, endpoints, trigger logic, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 5/12 — Payment Readiness Evaluation Engine
+
+```text
+You are a senior Django insurance engineer. Continue the ZIC OL Proposals backend. Execute ONLY Prompt 5.
+
+MANDATORY RULES:
+- The checklist must be teachable: every failed item returns code + resolution steps.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. Implement evaluate_payment_ready service computing checklist items:
+   - partner_verified
+   - enrichment_complete
+   - beneficiaries_valid
+   - mandatory_documents_complete
+   - underwriting_cleared_or_not_required
+   - not_expired
+   - quotation_version_current
+2. POST /api/v1/ol-proposals/{id}/mark-payment-ready/:
+   - all pass: status PAYMENT_READY then AWAITING_FIRST_PREMIUM, set payment_ready_at, emit ProposalPaymentReady (commitments listener creates first premium commitment)
+   - any fail: 409 with structured error listing failed checklist items, each with error_code, message, resolution_steps, and deep_link to the fixing screen
+3. GET checklist endpoint for UI rendering of current pass/fail state.
+4. Re-evaluation allowed; status changes audited with full checklist snapshot.
+
+TESTS:
+- each failing item produces correct teachable error and deep link
+- success path emits event exactly once per transition
+- checklist endpoint matches service result
+- audit snapshot stored
+
+GIT:
+- commit: "feat(ol-proposals): implement payment ready evaluation engine"
+- push; tick checkbox
+
+FINAL OUTPUT: checklist contract, endpoints, event flow, tests, commit hash, pushed branch.
 ```
 
 ---
