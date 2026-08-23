@@ -119,6 +119,20 @@ class OLProposal(models.Model):
 
     reason_code = models.CharField(max_length=60, blank=True, default="")
     reason_text = models.TextField(blank=True, default="")
+
+    # --- Enrichment (details not captured at quote stage) ---
+    employment_reference = models.CharField(max_length=120, blank=True, default="")
+    payroll_deduction = models.BooleanField(default=False)
+    intermediary_channel = models.CharField(max_length=40, blank=True, default="")
+    declaration_pep_flag = models.BooleanField(null=True, blank=True)
+    declaration_aml_flag = models.BooleanField(null=True, blank=True)
+    existing_policies_count = models.PositiveIntegerField(null=True, blank=True)
+    occupation_risk_note = models.TextField(blank=True, default="")
+    declarations_free_text = models.JSONField(default=dict, blank=True)
+    bank_name = models.CharField(max_length=160, blank=True, default="")
+    bank_account_name = models.CharField(max_length=200, blank=True, default="")
+    bank_account_number = models.CharField(max_length=80, blank=True, default="")
+
     source_channel = models.CharField(
         max_length=30, choices=ProposalSourceChannel.choices, default=ProposalSourceChannel.WEB
     )
@@ -214,6 +228,20 @@ class OLProposal(models.Model):
                 "Configure it under OL Parameters > Policy Setup > OL Proposal Statuses."
             )
         self.status = status
+
+        if self.employer_partner_id and self.partner_id and self.employer_partner_id == self.partner_id:
+            errors["employer_partner"] = "The employer cannot be the same partner as the policyholder."
+        if self.agent_partner_id and self.partner_id and self.agent_partner_id == self.partner_id:
+            errors["agent_partner"] = "The intermediary cannot be the same partner as the policyholder."
+        if self.agent_partner_id and not (self.intermediary_channel or "").strip():
+            errors["intermediary_channel"] = (
+                "A commission-relevant channel is required when an intermediary is selected."
+            )
+        if self.intermediary_channel:
+            self.intermediary_channel = self.intermediary_channel.strip().upper()
+
+        if not isinstance(self.declarations_free_text, dict):
+            errors["declarations_free_text"] = "Declarations must be a JSON object."
 
         if self.pk:
             share_error = beneficiary_shares_error(self)
@@ -481,6 +509,15 @@ class OLProposalBeneficiary(models.Model):
 
     def __str__(self):
         return f"{self.proposal.proposal_number}:{self.person_name}"
+
+    def clean(self):
+        errors = {}
+        if self.is_minor and not (self.guardian_name or "").strip():
+            errors["guardian_name"] = "A guardian is required for a minor beneficiary."
+        if not (self.person_name or "").strip():
+            errors["person_name"] = "Beneficiary name is required."
+        if errors:
+            raise ValidationError(errors)
 
 
 class OLProposalDocument(models.Model):

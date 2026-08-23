@@ -95,6 +95,12 @@ class OLProposalHealthAnswerSerializer(serializers.ModelSerializer):
 
 class OLProposalBaseSerializer(serializers.ModelSerializer):
     quotation_number = serializers.CharField(source="quotation.quote_number", read_only=True)
+    bank_account_number = serializers.SerializerMethodField()
+
+    def get_bank_account_number(self, obj):
+        from apps.ol_proposals.services.enrichment_service import mask_account_number
+
+        return mask_account_number(obj.bank_account_number)
 
     class Meta:
         model = OLProposal
@@ -121,6 +127,17 @@ class OLProposalBaseSerializer(serializers.ModelSerializer):
             "reason_code",
             "reason_text",
             "source_channel",
+            "employment_reference",
+            "payroll_deduction",
+            "intermediary_channel",
+            "declaration_pep_flag",
+            "declaration_aml_flag",
+            "existing_policies_count",
+            "occupation_risk_note",
+            "declarations_free_text",
+            "bank_name",
+            "bank_account_name",
+            "bank_account_number",
             "created_at",
             "updated_at",
         )
