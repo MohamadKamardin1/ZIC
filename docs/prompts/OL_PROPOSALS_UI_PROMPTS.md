@@ -3,7 +3,7 @@
 Backend reference: `docs/prompts/OL_PROPOSALS_BACKEND_PROMPTS.md` (complete), `docs/OL_PROPOSALS_API.md`.
 Kits in use: design system, DataTable, SmartSelect, ErrorCoach, ReasonField, ConfirmDialog.
 
-- [ ] Prompt 1 — Proposals UI Foundation and Readiness Primitives
+- [x] Prompt 1 — Proposals UI Foundation and Readiness Primitives
 - [ ] Prompt 2 — [pending prompt text]
 - [ ] Prompt 3 — [pending prompt text]
 - [ ] Prompt 4 — [pending prompt text]
