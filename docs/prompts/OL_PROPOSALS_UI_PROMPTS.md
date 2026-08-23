@@ -6,7 +6,7 @@ Kits in use: design system, DataTable, SmartSelect, ErrorCoach, ReasonField, Con
 - [x] Prompt 1 — Proposals UI Foundation and Readiness Primitives
 - [x] Prompt 2 — Proposals List Page with KPIs and Filters
 - [x] Prompt 3 — Convert Quotation Modal: Search, Versions, and Partner Verification
-- [ ] Prompt 4 — [pending prompt text]
+- [x] Prompt 4 — Proposal Detail Page Shell and Overview
 - [ ] Prompt 5 — [pending prompt text]
 - [ ] Prompt 6 — [pending prompt text]
 - [ ] Prompt 7 — [pending prompt text]
@@ -97,3 +97,33 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: modal behavior, tests, commit hash, pushed branch.
+
+## Prompt 4/10 — Proposal Detail Page Shell and Overview
+
+You are a senior frontend engineer. Continue the ZIC Proposals UI. Execute ONLY Prompt 4.
+
+MANDATORY RULES:
+- Master-detail pattern; right-side readiness panel always visible.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. Header: proposal number, policyholder name, product/plan, status badge, currency, expiry with ExpiryWarning, payment_ready and first_premium_posted ticks, agent and employer names.
+2. Right-side ReadinessChecklist panel rendering live checklist state with pass/fail icons, resolution text, and deep links; Mark Payment Ready button below it (permission-gated).
+3. Tabs:
+   - Overview: personal details, quotation reference with version switcher (read-only snapshot view), financial summary snapshot, declarations summary, reasons for cancel when present
+   - Quotation Source: read-only carried data (plans, members, installments, funds, riders, benefits)
+   - History: status timeline with actor, timestamp, previous/new state, reason, source channel
+4. Action bar from allowed actions: Enrich, Beneficiaries, Documents, Underwriting, Mark Payment Ready, Convert to Policy, Cancel, Print.
+5. Fetch failures render ErrorCoach.
+
+TESTS:
+- tabs render from detail payload
+- version switcher shows prior quotation snapshot
+- checklist panel matches backend state
+- no UUIDs rendered
+
+GIT:
+- commit: "feat(web): proposal detail page shell and overview"
+- push; tick checkbox
+
+FINAL OUTPUT: page structure, tests, commit hash, pushed branch.
