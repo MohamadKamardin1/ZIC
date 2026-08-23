@@ -28,6 +28,7 @@ api_v1_patterns = [
     path('dashboard/', include('apps.dashboard.urls')),
     path('system-parameters/', include('apps.system_parameters.urls')),
     path('governance/', include('apps.governance.urls')),
+    path('documents/', include('apps.documents.urls')),
     path('ai/', include('apps.ai_assistant.urls')),
     path('group-life/', include('apps.group_life.urls')),
     path('ordinary-life/', include('apps.ordinary_life.urls')),

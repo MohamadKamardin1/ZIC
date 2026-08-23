@@ -67,6 +67,7 @@ INSTALLED_APPS = [
     'apps.partner_onboarding',
     'apps.dashboard',
     'apps.common',
+    'apps.documents.apps.DocumentsConfig',
     'apps.system_parameters',
     'apps.ai_assistant',
     'apps.governance',

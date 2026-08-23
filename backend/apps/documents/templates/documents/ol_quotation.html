@@ -1,0 +1,97 @@
+{% extends "documents/base_print.html" %}
+
+{% block document_content %}
+  <section class="meta-grid">
+    <div class="meta-cell"><span class="meta-label">Quote number</span><span class="meta-value">{{ quote.quote_number }}-v{{ quote.version_number }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Quote date</span><span class="meta-value">{{ quote.quote_date }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Currency</span><span class="meta-value">{{ quote.currency }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Status</span><span class="meta-value">{{ quote.status }}</span></div>
+  </section>
+
+  <section class="section two-column">
+    <div class="column">
+      <h2 class="section-title">Personal Details</h2>
+      <dl class="kv">
+        <div class="kv-row"><dt>Name</dt><dd>{{ prospect.name }}</dd></div>
+        <div class="kv-row"><dt>Identity</dt><dd>{{ prospect.identity_type }} — {{ prospect.identity_number }}</dd></div>
+        <div class="kv-row"><dt>Date of birth</dt><dd>{{ prospect.date_of_birth }}</dd></div>
+        <div class="kv-row"><dt>Age at quote</dt><dd>{{ prospect.age_at_quote }}</dd></div>
+        <div class="kv-row"><dt>Gender</dt><dd>{{ prospect.gender }}</dd></div>
+        <div class="kv-row"><dt>Location</dt><dd>{{ prospect.location }}</dd></div>
+        <div class="kv-row"><dt>Address</dt><dd>{{ prospect.address }}</dd></div>
+      </dl>
+    </div>
+    <div class="column">
+      <h2 class="section-title">Quote Summary</h2>
+      <dl class="kv">
+        <div class="kv-row"><dt>Quote name</dt><dd>{{ quote.quote_name }}</dd></div>
+        <div class="kv-row"><dt>Agent</dt><dd>{{ agent.name }}</dd></div>
+        <div class="kv-row"><dt>Valid until</dt><dd>{{ quote.expiry_date }}</dd></div>
+        <div class="kv-row"><dt>Basic premium</dt><dd>{{ financial.base_premium }}</dd></div>
+        <div class="kv-row"><dt>Rider premium</dt><dd>{{ financial.total_rider_premium }}</dd></div>
+        <div class="kv-row"><dt>Total premium</dt><dd>{{ financial.total_premium }}</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title">Quote Configurations</h2>
+    <table class="data">
+      <thead><tr><th>Plan</th><th>Frequency</th><th>Term</th><th>Payment period</th><th class="numeric">Sum assured</th><th class="numeric">Premium</th></tr></thead>
+      <tbody>
+        {% for plan in plans %}
+          <tr><td><strong>{{ plan.name|default:plan.code }}</strong><br><span class="muted small">{{ plan.code }}</span></td><td>{{ plan.premium_frequency }}</td><td>{{ plan.term_years }} years</td><td>{{ plan.payment_period_years }} years</td><td class="numeric">{{ plan.base_sum_assured }}</td><td class="numeric">{{ plan.premium_amount }}</td></tr>
+        {% empty %}<tr><td colspan="6" class="muted">No plan configurations recorded.</td></tr>{% endfor %}
+        <tr class="total"><td colspan="4">Total</td><td class="numeric">{{ financial.total_sum_assured }}</td><td class="numeric">{{ financial.total_premium }}</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  {% if riders %}
+    <section class="section">
+      <h2 class="section-title">Additional benefits</h2>
+      <table class="data"><thead><tr><th>Rider</th><th>Basis</th><th class="numeric">Benefit</th><th>Waiting period</th></tr></thead><tbody>
+        {% for rider in riders %}<tr><td>{{ rider.name|default:rider.code }}</td><td>{{ rider.benefit_basis }}</td><td class="numeric">{{ rider.rider_sum_assured }}</td><td>{{ rider.waiting_period_days|default:'-' }}</td></tr>{% endfor %}
+      </tbody></table>
+    </section>
+  {% endif %}
+
+  {% if members %}
+    <section class="section">
+      <h2 class="section-title">Member Coverage Details</h2>
+      <table class="data"><thead><tr><th>Member</th><th>Role</th><th>Age</th><th>Gender</th><th class="numeric">Sum assured</th></tr></thead><tbody>
+        {% for member in members %}<tr><td>{{ member.name }}</td><td>{% if member.is_principal %}Principal{% else %}Additional member{% endif %}</td><td>{{ member.age }}</td><td>{{ member.gender }}</td><td class="numeric">{{ member.sum_assured }}</td></tr>{% endfor %}
+      </tbody></table>
+    </section>
+  {% endif %}
+
+  {% if installments %}
+    <section class="section">
+      <h2 class="section-title">Installment Payouts</h2>
+      {% for schedule in installments %}
+        <p class="small"><strong>{{ schedule.plan_code }}</strong> — {{ schedule.number_of_installments }} installments; annuity period {{ schedule.annuity_period_years }} years.</p>
+        <table class="data"><thead><tr><th>#</th><th>Description</th><th class="numeric">Rate</th><th class="numeric">Payout</th></tr></thead><tbody>
+          {% for row in schedule.rows %}<tr><td>{{ row.sequence }}</td><td>{{ row.description }}</td><td class="numeric">{{ row.rate_percent }}%</td><td class="numeric">{{ row.payout_amount }}</td></tr>{% empty %}<tr><td colspan="4" class="muted">No payout rows configured.</td></tr>{% endfor %}
+        </tbody></table>
+      {% endfor %}
+    </section>
+  {% endif %}
+
+  <section class="section">
+    <h2 class="section-title">Financial Summary</h2>
+    <table class="data"><tbody>
+      <tr><td>Base premium</td><td class="numeric">{{ financial.base_premium }}</td></tr>
+      <tr><td>Rider premium</td><td class="numeric">{{ financial.total_rider_premium }}</td></tr>
+      <tr><td>Loadings</td><td class="numeric">{{ financial.total_loading }}</td></tr>
+      <tr><td>Discounts</td><td class="numeric">{{ financial.total_discount }}</td></tr>
+      <tr><td>Taxes</td><td class="numeric">{{ financial.total_tax }}</td></tr>
+      <tr class="total"><td>Total premium</td><td class="numeric">{{ financial.total_premium }}</td></tr>
+      <tr class="total"><td>Estimated maturity value</td><td class="numeric">{{ financial.estimated_maturity_value }}</td></tr>
+    </tbody></table>
+  </section>
+
+  <section class="section small muted">
+    <h2 class="section-title">Terms and Conditions</h2>
+    <p>This quotation is based on information supplied at the time of calculation and remains subject to underwriting, policy terms, exclusions, and payment of the required premium. This document is not a contract of insurance.</p>
+  </section>
+{% endblock %}

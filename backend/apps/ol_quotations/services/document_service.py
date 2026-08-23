@@ -1,11 +1,7 @@
 from datetime import date
 from decimal import Decimal
 
-from django.core.files.base import ContentFile
-from django.core.files.storage import default_storage
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.template import Context, Template, TemplateDoesNotExist
-from django.template.loader import render_to_string
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
@@ -21,6 +17,7 @@ from apps.ol_quotations.models import (
 )
 from .quotation_service import QuotationService
 from .print_ticket_service import PrintTicketService
+from apps.documents.services.engine import DocumentEngine
 
 
 class QuotationDocumentService:
@@ -415,25 +412,6 @@ class QuotationDocumentService:
         return context
 
     @classmethod
-    def _render_html(cls, template, context):
-        try:
-            return Template(template.template_html).render(Context(context))
-        except Exception as exc:
-            raise ValidationError({"template": f"Quotation print template could not be rendered: {exc}"}) from exc
-
-    @staticmethod
-    def _render_pdf(html):
-        try:
-            from weasyprint import HTML
-            return HTML(string=html).write_pdf()
-        except Exception as exc:
-            raise ValidationError({"pdf": f"Quotation PDF could not be rendered: {exc}"}) from exc
-
-    @staticmethod
-    def _save_content(path, content, content_type=None):
-        return default_storage.save(path, ContentFile(content, name=path))
-
-    @classmethod
     def generate(cls, *, quotation, actor, request=None, template_code=None, preview=False):
         effective_status = QuotationService.effective_status(quotation)
         if effective_status == QuotationStatus.EXPIRED:
@@ -454,30 +432,30 @@ class QuotationDocumentService:
                 created_by=QuotationService.actor(actor),
                 updated_by=QuotationService.actor(actor),
             )
-        context = cls.build_context(quotation, template)
-        html = cls._render_html(template, context)
-        pdf = cls._render_pdf(html)
-        timestamp = timezone.now().strftime("%Y%m%d%H%M%S")
-        prefix = f"ol_quotations/{quotation.quote_number}/v{quotation.current_version_number}/{timestamp}"
-        html_reference = cls._save_content(f"{prefix}.html", html.encode("utf-8"))
-        file_reference = cls._save_content(f"{prefix}.pdf", pdf)
+        unified_instance = DocumentEngine.render(
+            document_type="OL_QUOTATION",
+            object_id=quotation.pk,
+            actor=actor,
+            request=request,
+        )
         document = OLQuotationDocument.objects.create(
             quotation=quotation,
             source_version=source_version,
             template=template,
             template_version=template.version,
             document_type=cls.DOCUMENT_TYPE,
-            file_reference=file_reference,
-            html_reference=html_reference,
-            mime_type="application/pdf",
+            file_reference=unified_instance.file_reference,
+            html_reference=unified_instance.preview_reference,
+            mime_type=unified_instance.mime_type,
             status="GENERATED",
             generated_by=QuotationService.actor(actor),
-            generated_at=timezone.now(),
+            generated_at=unified_instance.generated_at,
             metadata={
                 "preview": bool(preview),
                 "quotation_version_number": quotation.current_version_number,
                 "template_code": template.code,
                 "template_version": template.version,
+                "unified_document_instance_id": str(unified_instance.pk),
                 "variables": [
                     "quote", "prospect", "plans", "riders", "benefits", "installments", "financial", "agent", "company",
                 ],
