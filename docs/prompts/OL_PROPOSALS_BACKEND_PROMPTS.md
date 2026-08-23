@@ -10,7 +10,7 @@
 - [x] Prompt 8 — Lifecycle List and Detail APIs
 - [x] Prompt 9 — Proposal Printout and Options Endpoints
 - [x] Prompt 10 — Dashboard, Reports, Portal, and Notifications Integration
-- [ ] Prompt 11 — Full Step and Error Matrix Test Suite
+- [x] Prompt 11 — Full Step and Error Matrix Test Suite
 - [ ] Prompt 12 — [pending prompt text]
 
 > **Note on fidelity:** prompts 2–12 were not included in the pasted series message for this session. They will be appended `EXACTLY as provided` when the user supplies them, then executed strictly one at a time. Prompt 1 below is saved verbatim.
