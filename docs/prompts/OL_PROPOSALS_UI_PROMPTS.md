@@ -5,7 +5,7 @@ Kits in use: design system, DataTable, SmartSelect, ErrorCoach, ReasonField, Con
 
 - [x] Prompt 1 — Proposals UI Foundation and Readiness Primitives
 - [x] Prompt 2 — Proposals List Page with KPIs and Filters
-- [ ] Prompt 3 — [pending prompt text]
+- [x] Prompt 3 — Convert Quotation Modal: Search, Versions, and Partner Verification
 - [ ] Prompt 4 — [pending prompt text]
 - [ ] Prompt 5 — [pending prompt text]
 - [ ] Prompt 6 — [pending prompt text]
@@ -69,3 +69,31 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: page behavior, tests, commit hash, pushed branch.
+
+## Prompt 3/10 — Convert Quotation Modal: Search, Versions, and Partner Verification
+
+You are a senior frontend engineer. Continue the ZIC Proposals UI. Execute ONLY Prompt 3 from the saved series file.
+
+MANDATORY RULES:
+- BR-01 failures must be teachable with deep links to the quotation partner-verification flow.
+- Commit and push; tick checkbox.
+
+SCOPE (upgrade the Convert Quotation modal):
+1. Replace the raw reference input with a searchable SmartSelect over finalized quotations: quote number, quotation name, policyholder, partner-verified badge, and version.
+2. When a quotation has multiple versions, offer a version selector defaulting to the current version.
+3. Show a compact summary preview card of the selected quotation: plans, premium, currency.
+4. Submitting creates the proposal from the selected quotation + version. On success show "Proposal created" toast and navigate to the proposal detail page.
+5. If the backend rejects with PROPOSAL_PARTNER_NOT_VERIFIED, render an ErrorCoach with a deep link into that quotation's partner verification flow (quotation detail).
+6. If the backend responds duplicate/already_converted, show an informational banner with a link to view the existing proposal instead of treating it as an error.
+
+TESTS:
+- Quotation options show verified badges
+- Unverified partner error renders deep link and navigates
+- Duplicate shows existing link
+- Success navigation works
+
+GIT:
+- commit: "feat(web): quotation to proposal conversion modal"
+- push; tick checkbox
+
+FINAL OUTPUT: modal behavior, tests, commit hash, pushed branch.
