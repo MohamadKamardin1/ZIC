@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { useQueryClient } from "@tanstack/react-query"
-import { CheckCircle2, Download, FilePlus2, Minus } from "lucide-react"
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query"
+import { CheckCircle2, Download, FilePlus2, Minus, Search, ShieldAlert, ShieldCheck } from "lucide-react"
 import { useAccess } from "../../lib/access"
 import type { TableQuery } from "../../lib/apiClient"
 import { DataTable, normalizeTableResponse, type TableFetcher } from "../../components/ui/DataTable"
@@ -17,9 +17,12 @@ import { useProposalKPIs, useProposalOptions } from "../../lib/proposalsHooks"
 import {
   createProposalFromQuotation,
   exportProposalsCsv,
+  listFinalizedQuotations,
   listProposals,
+  listQuotationVersions,
   normalizeProposalListItem,
   printProposal,
+  type QuotationOption,
   type ProposalListItem,
   type ProposalListParams,
   type RegisterKPIs,
@@ -226,27 +229,184 @@ interface ConvertQuotationModalProps {
   onCreated: (proposalId: string, proposalNumber: string) => void
 }
 
+function VerifiedBadge({ verified, testId }: { verified: boolean; testId?: string }) {
+  return (
+    <span
+      data-testid={testId}
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${
+        verified
+          ? "bg-[var(--success)]/12 text-[var(--success)]"
+          : "bg-[var(--destructive)]/12 text-[var(--destructive)]"
+      }`}
+    >
+      {verified ? <ShieldCheck size={12} aria-hidden="true" /> : <ShieldAlert size={12} aria-hidden="true" />}
+      {verified ? "Verified" : "Unverified"}
+    </span>
+  )
+}
+
+function QuotationPicker({
+  options,
+  loading,
+  selected,
+  onSelect,
+}: {
+  options: QuotationOption[]
+  loading: boolean
+  selected: QuotationOption | null
+  onSelect: (option: QuotationOption) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState("")
+
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    if (!needle) return options
+    return options.filter((option) =>
+      `${option.quoteNumber} ${option.quoteName} ${option.policyholder}`.toLowerCase().includes(needle),
+    )
+  }, [options, query])
+
+  return (
+    <div className="relative space-y-1">
+      <span className="text-sm font-semibold">Finalized quotation</span>
+      <button
+        type="button"
+        data-testid="quotation-picker-trigger"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        className="flex h-10 w-full items-center justify-between rounded-[10px] border bg-[var(--card)] px-3 text-left text-sm outline-none focus:border-[var(--ring)]"
+      >
+        <span className={selected ? "text-[var(--foreground)]" : "text-[var(--muted-foreground)]"}>
+          {selected ? `${selected.quoteNumber} — ${selected.quoteName || selected.policyholder}` : "Search finalized quotations…"}
+        </span>
+        <Search size={15} aria-hidden="true" />
+      </button>
+      {open && (
+        <div
+          role="listbox"
+          aria-label="Finalized quotations"
+          className="absolute z-[70] mt-1 w-full overflow-hidden rounded-[10px] border bg-[var(--popover)] p-1 shadow-lg"
+        >
+          <input
+            data-testid="quotation-picker-search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search by number, name, or policyholder…"
+            aria-label="Search finalized quotations"
+            className="h-9 w-full border-b bg-transparent px-2 text-sm outline-none"
+          />
+          <div className="max-h-56 overflow-auto py-1">
+            {loading && <p className="px-2 py-3 text-center text-xs text-[var(--muted-foreground)]">Loading quotations…</p>}
+            {!loading && filtered.length === 0 && (
+              <p className="px-2 py-3 text-center text-xs text-[var(--muted-foreground)]">
+                No finalized quotations match. Finalize a quotation first.
+              </p>
+            )}
+            {!loading &&
+              filtered.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  role="option"
+                  aria-selected={selected?.id === option.id}
+                  data-testid={`quotation-option-${option.id}`}
+                  className={`flex w-full items-start justify-between gap-2 rounded-md px-2 py-2 text-left text-sm transition hover:bg-[var(--secondary)] ${
+                    selected?.id === option.id ? "bg-[var(--secondary)]" : ""
+                  }`}
+                  onClick={() => {
+                    onSelect(option)
+                    setOpen(false)
+                    setQuery("")
+                  }}
+                >
+                  <span className="min-w-0">
+                    <span className="block font-semibold">
+                      {option.quoteNumber} — {option.quoteName || option.policyholder}
+                    </span>
+                    <span className="block truncate text-xs text-[var(--muted-foreground)]">
+                      {option.policyholder || "—"}
+                    </span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    <VerifiedBadge verified={option.partnerVerified} testId={`quotation-badge-${option.id}`} />
+                    <span className="rounded-full border border-[var(--border)] px-1.5 py-0.5 text-[11px] font-bold text-[var(--muted-foreground)]">
+                      v{option.version}
+                    </span>
+                  </span>
+                </button>
+              ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+interface ConversionErrorState {
+  kind: "br01" | "generic"
+  error: unknown
+  quotationId?: string
+}
+
 function ConvertQuotationModal({ open, onClose, onCreated }: ConvertQuotationModalProps) {
-  const [reference, setReference] = useState("")
+  const navigate = useNavigate()
+  const [selected, setSelected] = useState<QuotationOption | null>(null)
+  const [versionNumber, setVersionNumber] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
-  const [errorText, setErrorText] = useState<string | null>(null)
+  const [errorState, setErrorState] = useState<ConversionErrorState | null>(null)
+  const [duplicate, setDuplicate] = useState<{ id: string; proposalNumber: string } | null>(null)
+
+  const optionsQuery = useQuery({
+    queryKey: ["proposals", "conversion-options"],
+    queryFn: () => listFinalizedQuotations(),
+    enabled: open,
+    placeholderData: keepPreviousData,
+  })
+  const versionsQuery = useQuery({
+    queryKey: ["proposals", "conversion-versions", selected?.id ?? "none"],
+    queryFn: () => listQuotationVersions(String(selected!.id)),
+    enabled: open && Boolean(selected),
+  })
 
   if (!open) return null
 
+  const options = optionsQuery.data ?? []
+  const versionsResult = versionsQuery.data
+  const versions = versionsResult?.versions ?? []
+  const currentVersion = versionsResult?.currentVersionNumber ?? selected?.version ?? null
+  const effectiveVersion = versionNumber ?? currentVersion
+
+  const selectQuotation = (option: QuotationOption) => {
+    setSelected(option)
+    setVersionNumber(null)
+    setErrorState(null)
+    setDuplicate(null)
+  }
+
   const submit = async () => {
-    if (!reference.trim() || busy) return
+    if (!selected || busy) return
     setBusy(true)
-    setErrorText(null)
+    setErrorState(null)
+    setDuplicate(null)
     try {
-      const payload = (await createProposalFromQuotation(reference.trim())) as Record<string, unknown>
-      const data = (payload?.data ?? payload) as Record<string, unknown>
-      const proposal = (data.proposal ?? data) as Record<string, unknown>
-      onCreated(String(proposal.id ?? ""), String(proposal.proposal_number ?? ""))
+      const payload = (await createProposalFromQuotation(selected.id, effectiveVersion ?? undefined)) as Record<string, unknown>
+      const proposal = (payload.proposal ?? payload) as Record<string, unknown>
+      const id = String(proposal.id ?? "")
+      const number = String(proposal.proposal_number ?? "")
+      if (payload.duplicate === true || payload.already_converted === true) {
+        setDuplicate({ id, proposalNumber: number })
+        return
+      }
+      onCreated(id, number)
     } catch (caught) {
-      const details = (caught as { details?: Record<string, unknown> }).details
-      const steps = Array.isArray(details?.resolution_steps) ? (details.resolution_steps as unknown[]).map(String) : []
-      const message = caught instanceof Error ? caught.message : "The quotation could not be converted."
-      setErrorText(steps.length > 0 ? `${message} ${steps.join(" ")}` : message)
+      const apiError = caught as { code?: string }
+      setErrorState(
+        apiError.code === "PROPOSAL_PARTNER_NOT_VERIFIED"
+          ? { kind: "br01", error: caught, quotationId: selected.id }
+          : { kind: "generic", error: caught },
+      )
     } finally {
       setBusy(false)
     }
@@ -256,7 +416,7 @@ function ConvertQuotationModal({ open, onClose, onCreated }: ConvertQuotationMod
     <Modal
       open={open}
       title="Create proposal from quotation"
-      description="Convert an approved quotation into a draft proposal."
+      description="Convert a finalized quotation into a draft proposal."
       onClose={onClose}
       footer={
         <>
@@ -267,7 +427,7 @@ function ConvertQuotationModal({ open, onClose, onCreated }: ConvertQuotationMod
             type="button"
             className="button-primary"
             data-testid="convert-quotation-submit"
-            disabled={busy || !reference.trim()}
+            disabled={busy || !selected}
             onClick={() => void submit()}
           >
             Create Proposal
@@ -275,25 +435,112 @@ function ConvertQuotationModal({ open, onClose, onCreated }: ConvertQuotationMod
         </>
       }
     >
-      <div className="space-y-3">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-semibold">Quotation number or ID</span>
-          <input
-            data-testid="convert-quotation-input"
-            value={reference}
-            onChange={(event) => setReference(event.target.value)}
-            placeholder="e.g. QT-2026-000123"
-            className="h-10 rounded-[10px] border bg-[var(--card)] px-3 text-sm outline-none focus:border-[var(--ring)]"
+      <div className="space-y-4">
+        <p data-testid="convert-quotation-helper" className="text-xs leading-5 text-[var(--muted-foreground)]">
+          The quotation must be finalized and the prospect verified as a compliant partner (BR-01).
+        </p>
+
+        <QuotationPicker options={options} loading={optionsQuery.isLoading} selected={selected} onSelect={selectQuotation} />
+
+        {versions.length > 1 && (
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-semibold">Version</span>
+            <select
+              data-testid="quotation-version-select"
+              value={String(effectiveVersion ?? "")}
+              onChange={(event) => setVersionNumber(Number(event.target.value))}
+              className="h-10 rounded-[10px] border bg-[var(--card)] px-3 text-sm outline-none focus:border-[var(--ring)]"
+            >
+              {[...versions]
+                .sort((a, b) => b.versionNumber - a.versionNumber)
+                .map((row) => (
+                  <option key={row.versionNumber} value={String(row.versionNumber)}>
+                    Version {row.versionNumber}
+                    {row.versionNumber === currentVersion ? " (current)" : ""}
+                  </option>
+                ))}
+            </select>
+          </label>
+        )}
+
+        {selected && (
+          <div data-testid="quotation-summary" className="rounded-[10px] border bg-[var(--muted)]/30 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-bold">{selected.quoteNumber}</p>
+              <VerifiedBadge verified={selected.partnerVerified} testId="quotation-summary-badge" />
+            </div>
+            <dl className="mt-2 grid grid-cols-2 gap-2 text-xs">
+              <div>
+                <dt className="font-bold uppercase tracking-[0.08em] text-[var(--muted-foreground)]">Policyholder</dt>
+                <dd className="mt-0.5 font-semibold">{selected.policyholder || "—"}</dd>
+              </div>
+              <div>
+                <dt className="font-bold uppercase tracking-[0.08em] text-[var(--muted-foreground)]">Plans</dt>
+                <dd className="mt-0.5 font-semibold">{selected.plansSummary || "—"}</dd>
+              </div>
+              <div>
+                <dt className="font-bold uppercase tracking-[0.08em] text-[var(--muted-foreground)]">Total premium</dt>
+                <dd className="mt-0.5 font-semibold tabular-nums">{formatMoney(selected.totalPremium, selected.currency)}</dd>
+              </div>
+              <div>
+                <dt className="font-bold uppercase tracking-[0.08em] text-[var(--muted-foreground)]">Currency</dt>
+                <dd className="mt-0.5 font-semibold">{selected.currency || "—"}</dd>
+              </div>
+            </dl>
+          </div>
+        )}
+
+        {duplicate && (
+          <InfoBanner title="Already converted">
+            <p className="text-sm">
+              This quotation already produced proposal{" "}
+              <strong>{duplicate.proposalNumber || duplicate.id}</strong>. Converting again is safe — the existing proposal is
+              returned unchanged.
+            </p>
+            <button
+              type="button"
+              className="button-secondary mt-2"
+              data-testid="view-existing-proposal"
+              onClick={() => navigateToProposal(duplicate.id)}
+            >
+              View existing proposal
+            </button>
+          </InfoBanner>
+        )}
+
+        {errorState?.kind === "br01" && (
+          <div className="space-y-2">
+            <ErrorCoach error={errorState.error} title="Partner not verified (BR-01)" />
+            <button
+              type="button"
+              className="button-secondary"
+              data-testid="br01-deep-link"
+              onClick={() => navigateToQuotation(errorState.quotationId)}
+            >
+              Open quotation partner verification
+            </button>
+          </div>
+        )}
+
+        {errorState?.kind === "generic" && (
+          <ErrorCoach
+            error={errorState.error}
+            title="The quotation could not be converted"
+            onRetry={() => setErrorState(null)}
           />
-        </label>
-        {errorText && (
-          <p data-testid="convert-quotation-error" className="text-sm font-semibold text-[var(--destructive)]">
-            {errorText}
-          </p>
         )}
       </div>
     </Modal>
   )
+
+  function navigateToProposal(id: string) {
+    navigate(`/ordinary-life/proposals/${id}`)
+  }
+
+  function navigateToQuotation(id?: string) {
+    if (!id) return
+    navigate(`/ordinary-life/quotations/${id}`)
+  }
 }
 
 export default function OLProposals() {
@@ -697,7 +944,7 @@ export default function OLProposals() {
         onClose={() => setConvertOpen(false)}
         onCreated={(id, number) => {
           setConvertOpen(false)
-          toast({ title: `Proposal ${number || "created"}`, message: "Draft proposal created from the quotation.", tone: "success" })
+          toast({ title: "Proposal created", message: `Draft proposal ${number || ""} created from the quotation.`.trim(), tone: "success" })
           void queryClient.invalidateQueries({ queryKey: ["proposals"] })
           if (id) navigate(`/ordinary-life/proposals/${id}`)
         }}

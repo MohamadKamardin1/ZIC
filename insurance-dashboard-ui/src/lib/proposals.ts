@@ -11,6 +11,7 @@ import { buildTableQuery, request, type TableQuery } from "./apiClient"
 
 const BASE = "/api/v1/ol-proposals"
 const CREATE_BASE = "/api/v1/ol/proposals"
+const QUOTATIONS_BASE = "/api/v1/ol/quotations/quotations"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -427,8 +428,78 @@ export async function getProposal(id: string) {
   return request<unknown>(`${BASE}/proposals/${id}/`)
 }
 
-export async function createProposalFromQuotation(quotationId: string) {
-  return request<unknown>(`${CREATE_BASE}/from-quotation/${quotationId}/`, { method: "POST" })
+export async function createProposalFromQuotation(quotationId: string, version?: number) {
+  const query = version != null ? `?version=${version}` : ""
+  return request<unknown>(`${CREATE_BASE}/from-quotation/${quotationId}/${query}`, { method: "POST" })
+}
+
+// ---------------------------------------------------------------------------
+// Finalized quotations (conversion source)
+// ---------------------------------------------------------------------------
+
+export interface QuotationOption {
+  id: string
+  quoteNumber: string
+  quoteName: string
+  policyholder: string
+  partnerVerified: boolean
+  version: number
+  plansSummary?: string
+  totalPremium?: number | null
+  currency?: string
+}
+
+export function normalizeQuotationOption(raw: unknown): QuotationOption {
+  const record = asRecord(raw)
+  const actions = asRecord(record.row_actions).convert_to_proposal as Record<string, unknown> | undefined
+  return {
+    id: str(record, "id") ?? "",
+    quoteNumber: str(record, "quote_number", "quoteNumber") ?? "—",
+    quoteName: str(record, "quote_name", "quoteName") ?? "",
+    policyholder: str(record, "prospect_name", "prospectName") ?? "",
+    // The list payload signals BR-01 readiness via the convert row action.
+    partnerVerified:
+      actions?.state_allowed === true || bool(record, "partner_verified") || bool(record, "compliant"),
+    version: num(record, "version", "current_version_number") ?? 1,
+    plansSummary: str(record, "plans_summary", "plansSummary"),
+    totalPremium: num(record, "total_premium", "totalPremium"),
+    currency: str(record, "currency"),
+  }
+}
+
+export async function listFinalizedQuotations(search = ""): Promise<QuotationOption[]> {
+  const payload = await request<unknown>(
+    `${QUOTATIONS_BASE}/${buildTableQuery({ pageSize: 50, search: search || undefined, filters: { status: "FINALIZED" } })}`,
+  )
+  return normalizePaginated(payload, normalizeQuotationOption).results
+}
+
+export interface QuotationVersionRow {
+  versionNumber: number
+  createdAt?: string | null
+  createdBy?: string
+}
+
+export interface QuotationVersionsResult {
+  currentVersionNumber: number | null
+  versions: QuotationVersionRow[]
+}
+
+export async function listQuotationVersions(quotationId: string): Promise<QuotationVersionsResult> {
+  const payload = await request<unknown>(`${QUOTATIONS_BASE}/${quotationId}/versions/`)
+  const record = asRecord(payload)
+  const rows = Array.isArray(record.versions) ? record.versions : []
+  return {
+    currentVersionNumber: num(record, "current_version_number"),
+    versions: rows.map((row) => {
+      const item = asRecord(row)
+      return {
+        versionNumber: num(item, "version_number", "version") ?? 0,
+        createdAt: str(item, "created_at") ?? null,
+        createdBy: str(item, "created_by_display", "created_by"),
+      }
+    }),
+  }
 }
 
 export async function enrichProposalSection(id: string, section: string, data: Record<string, unknown>) {

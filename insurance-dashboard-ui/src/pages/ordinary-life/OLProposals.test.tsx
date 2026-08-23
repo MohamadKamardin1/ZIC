@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { ApiClientError } from "../../lib/apiClient"
+import type { QuotationOption } from "../../lib/proposals"
 import OLProposals, { proposalRowActionEnabled } from "./OLProposals"
 
 const {
@@ -11,6 +13,8 @@ const {
   exportCsvMock,
   printMock,
   createFromQuotationMock,
+  listFinalizedQuotationsMock,
+  listQuotationVersionsMock,
 } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
   listProposalsMock: vi.fn(),
@@ -19,6 +23,8 @@ const {
   exportCsvMock: vi.fn(),
   printMock: vi.fn(),
   createFromQuotationMock: vi.fn(),
+  listFinalizedQuotationsMock: vi.fn(),
+  listQuotationVersionsMock: vi.fn(),
 }))
 
 vi.mock("../../lib/proposals", async (importOriginal) => {
@@ -31,6 +37,8 @@ vi.mock("../../lib/proposals", async (importOriginal) => {
     exportProposalsCsv: exportCsvMock,
     printProposal: printMock,
     createProposalFromQuotation: createFromQuotationMock,
+    listFinalizedQuotations: listFinalizedQuotationsMock,
+    listQuotationVersions: listQuotationVersionsMock,
   }
 })
 
@@ -80,6 +88,21 @@ function rowFixture(overrides: Record<string, unknown> = {}) {
   }
 }
 
+function quotationFixture(overrides: Partial<QuotationOption> = {}): QuotationOption {
+  return {
+    id: "q-1",
+    quoteNumber: "QT-2026-000101",
+    quoteName: "Family Protection Bundle",
+    policyholder: "Zanzibar Ports Ltd",
+    partnerVerified: true,
+    version: 3,
+    plansSummary: "OL001 + OL004",
+    totalPremium: 1250.5,
+    currency: "TZS",
+    ...overrides,
+  }
+}
+
 function renderPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
@@ -97,6 +120,8 @@ beforeEach(() => {
   exportCsvMock.mockReset()
   printMock.mockReset()
   createFromQuotationMock.mockReset()
+  listFinalizedQuotationsMock.mockReset()
+  listQuotationVersionsMock.mockReset()
 
   grantedPermissions = [
     "ol_proposals.view",
@@ -140,6 +165,16 @@ beforeEach(() => {
     return { kind, results: [] }
   })
   listProposalsMock.mockResolvedValue({ results: [rowFixture()], count: 1, page: 1, page_size: 20 })
+
+  listFinalizedQuotationsMock.mockResolvedValue([quotationFixture()])
+  listQuotationVersionsMock.mockImplementation(async (id: string) => ({
+    currentVersionNumber: 3,
+    versions: [
+      { versionNumber: 3, createdBy: "Asha Underwriter" },
+      { versionNumber: 2, createdBy: "Asha Underwriter" },
+    ],
+  }))
+  createFromQuotationMock.mockResolvedValue({ id: "prop-new", proposal_number: "OLP-2026-000042", created: true })
 })
 
 describe("OL Proposals register", () => {
@@ -263,5 +298,130 @@ describe("proposalRowActionEnabled", () => {
   it("falls back to permissions when the backend sends no allowed_actions", () => {
     expect(proposalRowActionEnabled("print", { allowedActions: [] }, false, hasPermission)).toBe(false)
     expect(proposalRowActionEnabled("print", { allowedActions: [] }, true, hasPermission)).toBe(true)
+  })
+})
+
+describe("Convert quotation modal", () => {
+  async function openModal() {
+    renderPage()
+    fireEvent.click(await screen.findByTestId("convert-quotation-button"))
+    await screen.findByTestId("quotation-picker-trigger")
+  }
+
+  it("lists finalized quotations with verified badges and version chips", async () => {
+    listFinalizedQuotationsMock.mockResolvedValue([
+      quotationFixture(),
+      quotationFixture({
+        id: "q-2",
+        quoteNumber: "QT-2026-000102",
+        policyholder: "Mama Ntilie Foods",
+        partnerVerified: false,
+        version: 1,
+      }),
+    ])
+
+    await openModal()
+    fireEvent.click(screen.getByTestId("quotation-picker-trigger"))
+
+    const verifiedOption = await screen.findByTestId("quotation-option-q-1")
+    expect(screen.getByTestId("quotation-badge-q-1")).toHaveTextContent("Verified")
+    expect(screen.getByTestId("quotation-badge-q-2")).toHaveTextContent("Unverified")
+    expect(verifiedOption).toHaveTextContent("v3")
+  })
+
+  it("derives the verified badge from the convert row action", async () => {
+    const { normalizeQuotationOption } = await import("../../lib/proposals")
+
+    const allowed = normalizeQuotationOption(
+      quotationFixture({
+        row_actions: { convert_to_proposal: { state_allowed: true } },
+      } as unknown as Partial<QuotationOption>),
+    )
+    const blocked = normalizeQuotationOption(
+      quotationFixture({
+        partnerVerified: undefined as unknown as boolean,
+        row_actions: { convert_to_proposal: { state_allowed: false } },
+      } as unknown as Partial<QuotationOption>),
+    )
+
+    expect(allowed.partnerVerified).toBe(true)
+    expect(blocked.partnerVerified).toBe(false)
+  })
+
+  it("previews the selection, defaults the current version, and navigates to the created proposal", async () => {
+    await openModal()
+    fireEvent.click(screen.getByTestId("quotation-picker-trigger"))
+    fireEvent.click(await screen.findByTestId("quotation-option-q-1"))
+
+    const summary = await screen.findByTestId("quotation-summary")
+    expect(summary).toHaveTextContent("Zanzibar Ports Ltd")
+    expect(summary).toHaveTextContent("OL001 + OL004")
+    expect(summary).toHaveTextContent(/1,250\.50/)
+
+    const versionSelect = (await screen.findByTestId("quotation-version-select")) as HTMLSelectElement
+    expect(versionSelect.value).toBe("3")
+
+    fireEvent.click(screen.getByTestId("convert-quotation-submit"))
+    await waitFor(() => expect(createFromQuotationMock).toHaveBeenCalledWith("q-1", 3))
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/ordinary-life/proposals/prop-new"))
+  })
+
+  it("sends the chosen version when the operator overrides it", async () => {
+    await openModal()
+    fireEvent.click(screen.getByTestId("quotation-picker-trigger"))
+    fireEvent.click(await screen.findByTestId("quotation-option-q-1"))
+
+    fireEvent.change(await screen.findByTestId("quotation-version-select"), { target: { value: "2" } })
+    fireEvent.click(screen.getByTestId("convert-quotation-submit"))
+
+    await waitFor(() => expect(createFromQuotationMock).toHaveBeenCalledWith("q-1", 2))
+  })
+
+  it("renders the BR-01 coach with a deep link to the quotation partner verification", async () => {
+    createFromQuotationMock.mockRejectedValue(
+      new ApiClientError({
+        status: 422,
+        code: "PROPOSAL_PARTNER_NOT_VERIFIED",
+        message: "Zanzibar Ports Ltd is not partner-verified for this quotation.",
+        fieldErrors: {},
+        details: {
+          resolution_steps: ["Verify the partner under Partner Onboarding.", "Re-run the preference after verification."],
+        },
+      }),
+    )
+
+    await openModal()
+    fireEvent.click(screen.getByTestId("quotation-picker-trigger"))
+    fireEvent.click(await screen.findByTestId("quotation-option-q-1"))
+    fireEvent.click(screen.getByTestId("convert-quotation-submit"))
+
+    expect(await screen.findByTestId("error-coach-code")).toHaveTextContent("PROPOSAL_PARTNER_NOT_VERIFIED")
+    expect(screen.getByTestId("error-coach-message")).toHaveTextContent(/not partner-verified/)
+    expect(screen.getByTestId("error-coach-steps")).toHaveTextContent("Verify the partner under Partner Onboarding.")
+
+    navigateMock.mockClear()
+    fireEvent.click(screen.getByTestId("br01-deep-link"))
+    expect(navigateMock).toHaveBeenCalledWith("/ordinary-life/quotations/q-1")
+  })
+
+  it("shows a link to the existing proposal when the quotation was already converted", async () => {
+    createFromQuotationMock.mockResolvedValue({
+      id: "prop-existing",
+      proposal_number: "OLP-2026-000009",
+      duplicate: true,
+      already_converted: true,
+    })
+
+    await openModal()
+    fireEvent.click(screen.getByTestId("quotation-picker-trigger"))
+    fireEvent.click(await screen.findByTestId("quotation-option-q-1"))
+    fireEvent.click(screen.getByTestId("convert-quotation-submit"))
+
+    const link = await screen.findByTestId("view-existing-proposal")
+    expect(link).toHaveTextContent("View existing proposal")
+    expect(navigateMock).not.toHaveBeenCalled()
+
+    fireEvent.click(link)
+    expect(navigateMock).toHaveBeenCalledWith("/ordinary-life/proposals/prop-existing")
   })
 })
