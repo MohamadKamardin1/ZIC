@@ -1,6 +1,6 @@
 # OL Proposals — Design Document
 
-Status: **Foundation (Prompt 1 of 12)**
+Status: **As-built — series complete (Prompts 1–12)**
 Module: Ordinary Life > OL Proposals
 Canonical parameter source: `apps.ol_parameters` (OL Policy Setup / OL Proposal Status catalog)
 Companion prompts: `docs/prompts/OL_PROPOSALS_BACKEND_PROMPTS.md`
@@ -144,3 +144,56 @@ All rendered through the shared structured error handler (`apps.core.exceptions`
 - `GET /api/v1/ol-proposals/` — paginated proposal list (display names, never UUIDs).
 - `GET /api/v1/ol-proposals/{id}/` — proposal detail with carried children.
 Both gated by `ol_proposals.view`; the full action surface (Prompt 3+) extends this module.
+---
+
+## 9. As-Built Notes (Prompts 2–12)
+
+### 9.1 Services (all in `apps/ol_proposals/services/`)
+
+| Service | Responsibility |
+| --- | --- |
+| `conversion_service` | Quotation → proposal handoff; idempotent on quotation; carries plan snapshot, members, beneficiaries; audits `CONVERT_QUOTATION_TO_PROPOSAL`. |
+| `enrichment_service` | Sectioned enrichment (declarations, bank details) + beneficiary add/update/replace with 100%-share, duplicate, and minor-guardian rules. |
+| `document_service` | Parameter-driven mandatory document catalog; upload/verify lifecycle; audits `PROPOSAL_DOCUMENT_UPLOAD`. |
+| `health_service` | Applicable questionnaire resolution (global/product/plan scope); answer capture; medical-trigger detection → `PENDING_UNDERWRITING`. |
+| `underwriting_service` | `clear` / `load` / `decline` decisions; decline requires reason; loading recorded via `reason_code=MEDICAL_LOADING`. |
+| `payment_readiness_service` | Seven-item checklist (read-only evaluate + enforcing mark-ready); single-shot ENRICHMENT→AWAITING_FIRST_PREMIUM path; links first-premium commitment. |
+| `first_premium_service` | Commitment creation/linking (`source_type=PROPOSAL`), posted-status checks for BR-03. |
+| `policy_conversion_service` | BR-03 gated policy issuance; idempotent; mirrors the proposal into legacy ordinary_life aggregates (client/quotation/proposal stubs) because `OLPolicy.proposal` FK targets legacy tables; emits `ProposalConverted`; audits `CONVERT_TO_POLICY`. |
+| `lifecycle_service` | Catalog-validated transitions, cancel-with-reason, manual/batch expiry. |
+| `audit_consistency` | Terminal-state invariant: every state-changing audit row must exist before a terminal status is written; raises `PROPOSAL_AUDIT_INCONSISTENT` otherwise. |
+| `notification_service` | De-duplicated notification log keyed (proposal, event, dispatch date, channel, recipient). |
+| `listing_service`, `dashboard_kpi_service`, `reporting_service` | List/detail assembly, KPI tiles, reporting dataset/CSV export. |
+| `print_service` | Proposal pack rendering (WeasyPrint optional at runtime; tests mock `_render_pdf`). |
+| `parameter_resolver` | Status catalog, document requirements, expiry rules — all parameter-sourced. |
+
+### 9.2 Policy issuance and the legacy mirror
+
+The existing `ordinary_life.OLPolicy` model keeps its FK to the **legacy**
+`ordinary_life.OLProposal` aggregate. Converting an `ol_proposals.OLProposal` therefore
+creates a deterministic compatibility chain
+(`OLClient ← OLQuotation ← OLProposal`) keyed by partner number / quote number /
+quotation One-To-One, then issues the policy against that mirror. The new proposal links
+the issued policy back via `converted_policy`. Legacy `issue_policy` flows are untouched.
+
+### 9.3 Enforcement evidence
+
+- **BR-01** (parameterized statuses): every transition validates against
+  `OLProposalStatus.allowed_transitions`; violations raise `PROPOSAL_INVALID_TRANSITION`
+  listing allowed states.
+- **BR-03** (no policy without settled first premium): `convert_proposal_to_policy` calls
+  `ensure_first_premium_posted`; unsettled premium → `PROPOSAL_FIRST_PREMIUM_NOT_POSTED`.
+  Proof payloads: `docs/evidence/ol_proposals_error_proofs.json`.
+
+### 9.4 Test suite
+
+97 tests across 14 modules (`apps/ol_proposals/tests/`), including
+`test_qa_matrix.py`: happy-path integration, full error matrix (every structured code
+triggered through its real service path), permission matrix, idempotency seams,
+audit-evidence consistency, and staff/portal E2E API flows. Suite green with
+`--reuse-db --nomigrations`; `makemigrations --check` clean.
+
+### 9.5 Seeds
+
+`python manage.py seed_ol_proposal_scenarios` — nine proposals covering all paths plus five
+caught-failure proofs stored as JSON evidence. Idempotent; safe to re-run.
