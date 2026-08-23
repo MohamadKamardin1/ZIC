@@ -115,6 +115,8 @@ let financialScenario = false
 let finalizeBlocked = false
 let planSelectionError = false
 let latestFundPayload: Record<string, unknown> | null = null
+let latestRiderPayload: Record<string, unknown> | null = null
+const benefitTypeUuid = "11111111-1111-4111-8111-111111111111"
 
 const configuration = {
   id: "config-1",
@@ -150,6 +152,7 @@ beforeEach(() => {
   finalizeBlocked = false
   planSelectionError = false
   latestFundPayload = null
+  latestRiderPayload = null
   requestMock.mockImplementation(async (path: string, options?: RequestInit) => {
     const draftResponse = financialScenario && finalizeBlocked ? { ...quotation, wizard_step_completion: { "1_personal_details": true, "2_plan_and_sub_products": true, "3_member_coverage": true, "4_installments": true, "5_investment_funds": true, "6_riders_and_benefits": true, "7_financial_details": true } } : quotation
     if (path === "/api/v1/ol-quotations/quotations/" && options?.method === "POST") return draftResponse
@@ -183,7 +186,7 @@ beforeEach(() => {
     if (path.includes("/api/v1/ol/options/member-relations/quick-create/") && options?.method === "POST") return { value: "SIBLING", label: "Sibling" }
     if (path.includes("/api/v1/ol/options/cover-types/quick-create/") && options?.method === "POST") return { value: "DEPENDENT", label: "Dependent Cover" }
     if (path.includes("/api/v1/ol/options/payment-modes/quick-create/") && options?.method === "POST") return { value: "MOBILE_MONEY", label: "Mobile money" }
-    if (path.includes("/api/v1/ol/options/benefit-types/quick-create/") && options?.method === "POST") return { value: "ACCIDENTAL", label: "Accidental Benefit" }
+    if (path.includes("/api/v1/ol/options/benefit-types/quick-create/") && options?.method === "POST") return { value: benefitTypeUuid, label: "Accidental Benefit", meta: { code: "ACCIDENTAL", name: "Accidental Benefit" } }
     if (path.includes("/api/v1/ol/options/riders/quick-create/") && options?.method === "POST") return { value: "rider-created", label: "Travel Protection", meta: { code: "TRAVEL-01", name: "Travel Protection", rider_category: "TRAVEL" } }
     if (path.includes("/api/v1/ol/options/investment-fund-types/quick-create/") && options?.method === "POST") return { value: "BALANCED", label: "Balanced" }
     if (path.includes("/api/v1/ol/options/investment-funds/quick-create/") && options?.method === "POST") return { value: "fund-created", label: "New Fund", meta: { code: "FUND-NEW", name: "New Fund" } }
@@ -199,7 +202,7 @@ beforeEach(() => {
         "member-relations": [{ value: "CHILD", label: "Child" }, { value: "SPOUSE", label: "Spouse" }],
         "cover-types": [{ value: "DEPENDENT", label: "Dependent Cover" }],
         "payment-modes": [{ value: "BANK_TRANSFER", label: "Bank transfer" }, { value: "ANNUAL", label: "Annual" }, { value: "MONTHLY", label: "Monthly" }],
-        "benefit-types": [{ value: "DEATH", label: "Death Benefit" }],
+        "benefit-types": [{ value: benefitTypeUuid, label: "Death Benefit" }],
         "investment-funds": [{ value: "fund-1", label: "FUND-1 — Balanced Growth" }],
         "investment-fund-types": [{ value: "BALANCED", label: "Balanced" }],
         products: plans.map((plan) => ({ value: plan.plan_id, label: plan.name })),
@@ -285,9 +288,10 @@ beforeEach(() => {
       wizard_complete: true,
     }
     if (path.includes("/investment-funds/options/")) return investmentFundScenario ? { plan_configuration_id: "config-1", not_applicable: false, quotation_currency: "TZS", funds: [{ id: "fund-1", code: "FUND-1", name: "Balanced Growth", fund_type_name: "Balanced", risk_profile: "Moderate", currency: "TZS", valuation_frequency: "DAILY", currency_compatible: true, currency_conversion_allowed: false, selectable: true }] } : { plan_configuration_id: "config-1", not_applicable: true, quotation_currency: "TZS", funds: [] }
-    if (path.includes("/riders/options/")) return riderScenario ? { plan_configuration_id: "config-1", quotation_age: 36, quotation_currency: "TZS", riders: [{ id: "rider-1", code: "PA-01", name: "Personal Accident", rider_category: "ACCIDENT", benefit_type: "LUMP_SUM", calculation_basis: "FIXED", min_age: 18, max_age: 65, min_term: 1, max_term: 20, min_sum_assured: "1000", max_sum_assured: "1000000", waiting_period_days: 30, allows_standalone: true, requires_underwriting: false, product_id: "product-1", plan_id: "plan-1", selectable: true, synchronized_option: "PA" }], benefit_types: [{ value: "DEATH", label: "Death Benefit" }] } : { plan_configuration_id: "config-1", quotation_age: 36, quotation_currency: "TZS", riders: [], benefit_types: [] }
-    if (path.endsWith("/riders/") && !options?.method) return riderScenario ? { state: { plan_rows: [{ plan_configuration_id: "config-1", plan_code: "TERM-20", plan_name: "Twenty Year Term", personal_accident: true, premium_waiver: false, riders: [], benefits: [], can_configure: true }], available_benefit_types: [{ value: "DEATH", label: "Death Benefit" }], requires_configuration: true, wizard_complete: false } } : { state: { plan_rows: [], available_benefit_types: [], requires_configuration: false, wizard_complete: true } }
-    if (path.endsWith("/riders/") && options?.method === "POST") return { quotation_id: "quote-1", state: { plan_rows: [{ plan_configuration_id: "config-1", plan_code: "TERM-20", plan_name: "Twenty Year Term", personal_accident: true, premium_waiver: false, riders: [{ rider_id: "rider-1", rider_code: "PA-01", rider_name: "Personal Accident", rider_sum_assured: "100000", rider_term_years: 20, waiting_period_days: 30, benefit_basis: "FIXED", benefit_value: "100000", benefits: [] }] }], available_benefit_types: [], requires_configuration: true, wizard_complete: true }, wizard_step_complete: true }
+    if (path.includes("/riders/options/")) return riderScenario ? { plan_configuration_id: "config-1", quotation_age: 36, quotation_currency: "TZS", riders: [{ id: "rider-1", code: "PA-01", name: "Personal Accident", rider_category: "ACCIDENT", benefit_type: "LUMP_SUM", calculation_basis: "FIXED", min_age: 18, max_age: 65, min_term: 1, max_term: 20, min_sum_assured: "1000", max_sum_assured: "1000000", waiting_period_days: 30, allows_standalone: true, requires_underwriting: false, product_id: "product-1", plan_id: "plan-1", selectable: true, synchronized_option: "PA" }], benefit_types: [{ value: benefitTypeUuid, label: "Death Benefit", meta: { code: "DEATH", name: "Death Benefit" } }] } : { plan_configuration_id: "config-1", quotation_age: 36, quotation_currency: "TZS", riders: [], benefit_types: [] }
+    if (path.endsWith("/riders/") && !options?.method) return riderScenario ? { state: { plan_rows: [{ plan_configuration_id: "config-1", plan_code: "TERM-20", plan_name: "Twenty Year Term", personal_accident: true, premium_waiver: false, riders: [], benefits: [], can_configure: true }], available_benefit_types: [{ value: benefitTypeUuid, label: "Death Benefit", meta: { code: "DEATH", name: "Death Benefit" } }], requires_configuration: true, wizard_complete: false } } : { state: { plan_rows: [], available_benefit_types: [], requires_configuration: false, wizard_complete: true } }
+    if (path.endsWith("/riders/") && options?.method === "POST") { latestRiderPayload = JSON.parse(String(options.body ?? "{}")) as Record<string, unknown>; return { quotation_id: "quote-1", state: { plan_rows: [{ plan_configuration_id: "config-1", plan_code: "TERM-20", plan_name: "Twenty Year Term", personal_accident: true, premium_waiver: false, riders: [{ rider_id: "rider-1", rider_code: "PA-01", rider_name: "Personal Accident", rider_sum_assured: "100000", rider_term_years: 20, waiting_period_days: 30, benefit_basis: "FIXED", benefit_value: "100000", benefits: [] }] }], available_benefit_types: [], requires_configuration: true, wizard_complete: true }, wizard_step_complete: true }
+    }
     if (path.includes("/wizard-summary/")) return { steps: { "1_product_plan": true, "2_members": true, "3_installments": true, "4_funds": true, "5_riders": true, "6_payment": true, "7_underwriting": true } }
     if (path.includes("/payment-details/") && options?.method === "PATCH") return { ...quotation.payment_detail, ...JSON.parse(String(options.body ?? "{}")) }
     if (path.includes("/underwriting/") && options?.method === "PATCH") return { ...quotation.underwriting_detail, ...JSON.parse(String(options.body ?? "{}")) }
@@ -661,8 +665,17 @@ describe("OL quotation wizard", () => {
     expect(await screen.findByText("Applicable Riders")).toBeInTheDocument()
     fireEvent.click(await screen.findByRole("button", { name: /PA-01/ }))
     fireEvent.change(screen.getByLabelText(/Rider Sum Assured \/ Amount/), { target: { value: "100000" } })
+    const benefitPicker = document.getElementById("benefit_type_0")
+    expect(benefitPicker).toBeTruthy()
+    const benefitControl = benefitPicker!.parentElement?.parentElement
+    expect(benefitControl).toBeTruthy()
+    fireEvent.click(within(benefitControl!).getByRole("button", { name: /^Benefit Type/ }))
+    fireEvent.click(await screen.findByRole("option", { name: "Death Benefit" }))
     fireEvent.click(screen.getByRole("button", { name: "Save rider configuration" }))
     await waitFor(() => expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: "Rider configuration saved" })))
+    const savedSelection = (latestRiderPayload?.selections as Array<Record<string, unknown>> | undefined)?.[0]
+    expect(savedSelection?.beneficial_type_id).toBe(benefitTypeUuid)
+    expect((savedSelection?.benefits as Array<Record<string, unknown>> | undefined)?.[0]?.beneficial_type_id).toBe(benefitTypeUuid)
     fireEvent.click(screen.getByRole("button", { name: "Financial Details" }))
     expect((await screen.findAllByText("TZS 12,000.00")).length).toBeGreaterThan(0)
     fireEvent.click(screen.getByRole("button", { name: "Recalculate" }))

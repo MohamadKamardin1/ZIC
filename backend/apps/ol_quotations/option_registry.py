@@ -304,7 +304,7 @@ CHOICE_PROVIDERS: dict[str, tuple[str, ...]] = {
     "member-relations": ("OL_MEMBER_RELATION_CHOICES",),
     "cover-types": ("OL_COVER_TYPE_CHOICES",),
     "payment-modes": ("OL_PAYMENT_MODE_CHOICES",),
-    "benefit-types": ("OL_BENEFIT_TYPE_CHOICES",),
+    "benefit-type-codes": ("OL_BENEFIT_TYPE_CHOICES",),
     "currencies": ("CURRENCY_CHOICES",),
 }
 
@@ -316,6 +316,9 @@ MODEL_PROVIDERS: dict[str, Callable[[str, int, int], OptionPage]] = {
     "investment-funds": _fund_page,
     "investment-fund-types": _fund_type_page,
     "riders": _rider_page,
+    # `benefit-types` is the public FK option entity used by quotation
+    # benefits and therefore must return OLBeneficialType UUID values.
+    "benefit-types": _benefit_type_page,
     "benefit-types-catalog": _benefit_type_page,
 }
 
@@ -351,6 +354,9 @@ ENTITY_ALIASES = {
     "benefit-type": "benefit-types",
     "benefit_type": "benefit-types",
     "benefit_types": "benefit-types",
+    "benefit-code": "benefit-type-codes",
+    "benefit_type_code": "benefit-type-codes",
+    "benefit_type_codes": "benefit-type-codes",
 }
 
 
@@ -360,7 +366,7 @@ def canonical_entity(entity: str) -> str:
 
 
 def list_entities() -> list[str]:
-    return sorted(set(CHOICE_PROVIDERS) | set(MODEL_PROVIDERS) | {"benefit-types"})
+    return sorted(set(CHOICE_PROVIDERS) | set(MODEL_PROVIDERS))
 
 
 def get_options(entity: str, *, q: str = "", page: int = 1, page_size: int = DEFAULT_PAGE_SIZE) -> tuple[str, OptionPage]:

@@ -13,7 +13,7 @@ export const OPTION_CREATE_PERMISSIONS: Record<string, string> = {
   "investment-funds": "ol_parameters.create",
   "investment-fund-types": "ol_parameters.create",
   riders: "ol_parameters.create",
-  "benefit-types": "system_parameters.manage",
+  "benefit-types": "ol_parameters.create",
   currencies: "system_parameters.manage",
 }
 
@@ -25,7 +25,7 @@ export const OPTION_CHOICE_LIST_CODES: Record<string, string> = {
   "member-relations": "OL_MEMBER_RELATION_CHOICES",
   "cover-types": "OL_COVER_TYPE_CHOICES",
   "payment-modes": "OL_PAYMENT_MODE_CHOICES",
-  "benefit-types": "OL_BENEFIT_TYPE_CHOICES",
+  "benefit-type-codes": "OL_BENEFIT_TYPE_CHOICES",
   currencies: "CURRENCY_CHOICES",
 }
 
@@ -49,7 +49,7 @@ export const OPTION_MANAGE_HREFS: Record<string, string> = {
   "investment-funds": "/ordinary-life/parameters/product-setup",
   "investment-fund-types": "/ordinary-life/parameters/product-setup",
   riders: "/ordinary-life/parameters/rider-setup",
-  "benefit-types": "/ordinary-life/parameters/dropdown-configuration?entity=benefit-types",
+  "benefit-types": "/ordinary-life/parameters/policy-setup?screen=beneficial-types",
   currencies: "/ordinary-life/parameters/dropdown-configuration?entity=currencies",
 }
 
@@ -68,7 +68,7 @@ export const OPTION_PARAMETER_SCREEN_LABELS: Record<string, string> = {
   "investment-funds": "Product Setup",
   "investment-fund-types": "Product Setup",
   riders: "Rider Setup",
-  "benefit-types": "Drop Down Configuration",
+  "benefit-types": "Policy Setup · Beneficial Types",
   currencies: "Drop Down Configuration",
 }
 

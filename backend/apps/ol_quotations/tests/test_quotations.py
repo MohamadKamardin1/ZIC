@@ -1903,6 +1903,27 @@ class OLQuotationAPITests(TestCase):
         self.assertEqual(OLQuotationBenefit.objects.filter(quotation_id=draft["id"]).count(), 1)
         self.assertTrue(AuditEvent.objects.filter(action__icontains="CREATE").exists())
 
+    def test_attach_rider_rejects_benefit_code_in_uuid_field_with_actionable_guidance(self):
+        rider = self.create_quotation_rider(code="RIDER-BENEFIT-CODE")
+        benefit_type = self.create_quotation_benefit_type(code="BENEFIT-CODE")
+        draft = self.prepare_rider_quotation()
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/riders/",
+            {
+                "selections": [{
+                    "rider_id": str(rider.pk),
+                    "plan_config_id": draft["plan_config_id"],
+                    "rider_sum_assured": "1000.00",
+                    "beneficial_type_id": benefit_type.code,
+                    "benefit_basis": "FIXED",
+                    "benefits": [{"beneficial_type_id": benefit_type.code, "basis": "FIXED"}],
+                }],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("Select a configured Benefit Type", str(response.data))
+
     def test_attach_rider_rejects_age_outside_parameter_range(self):
         rider = self.create_quotation_rider(code="RIDER-AGE-INVALID", min_age=40, max_age=50)
         draft = self.prepare_rider_quotation()
