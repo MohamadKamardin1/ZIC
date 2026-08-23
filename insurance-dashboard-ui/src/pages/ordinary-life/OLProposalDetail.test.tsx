@@ -210,6 +210,7 @@ function detailFixture(overrides: Record<string, unknown> = {}) {
     ],
     first_premium: { linked: false, first_premium_posted: false, next_actions: [] },
     allowed_actions: ["view", "enrich", "upload_documents", "mark_payment_ready", "convert", "cancel", "print"],
+    ...overrides,
   }
 }
 
@@ -266,6 +267,78 @@ function renderPage() {
   )
 }
 
+function routeBaseRequests(path: string) {
+  if (path.includes("/ol-proposals/options/employers/")) {
+    return { data: { kind: "employers", results: [{ id: "employer-partner-7", label: "Zanzibar Ports Ltd" }], count: 1 } }
+  }
+  if (path.includes("/ol-proposals/options/intermediaries/")) {
+    return { data: { kind: "intermediaries", results: [{ id: "agent-partner-3", label: "Juma Intermediaries" }], count: 1 } }
+  }
+  if (path.includes("/ol-proposals/options/banks/")) {
+    return { data: { kind: "banks", results: [{ id: "crdb", value: "CRDB Bank PLC", label: "CRDB Bank PLC" }, { id: "nmb", value: "NMB Bank PLC", label: "NMB Bank PLC" }], count: 2 } }
+  }
+  if (path.includes("/ol-proposals/options/document-types/")) {
+    return {
+      data: {
+        kind: "document-types",
+        results: [
+          { id: "NATIONAL_ID", value: "NATIONAL_ID", label: "National ID" },
+          { id: "SIGNATURE", value: "SIGNATURE", label: "Signature specimen" },
+        ],
+        count: 2,
+      },
+    }
+  }
+  if (path.includes("/api/v1/ol/options/identity-types")) {
+    return { items: [{ value: "NIN", label: "National Identification Number" }, { value: "BIRTH_CERTIFICATE", label: "Birth Certificate" }] }
+  }
+  if (path.includes("/api/v1/ol/options/benefit-types")) {
+    return { items: [{ value: "benefit-edu", label: "Education Benefit" }, { value: "benefit-survivor", label: "Survivor Benefit" }] }
+  }
+  if (path.includes("/health-questions/")) {
+    return healthQuestionsFixture()
+  }
+  if (path.includes("/health-answers/")) {
+    return { health_result: { triggered: false, medical_required: false, status: "ENRICHMENT", answered: 1 } }
+  }
+  if (path.includes("/underwriting-decision/")) {
+    return { ok: true }
+  }
+  throw new Error(`Unhandled request in test: ${path}`)
+}
+
+function healthQuestionsFixture() {
+  return {
+    questionnaire: "OL-HQ-2026",
+    results: [
+      {
+        id: "hq-uuid-1",
+        sequence: 1,
+        mandatory: true,
+        trigger_medical_requirement: false,
+        question_id: "hq-cat-1",
+        question_code: "HOSPITALISED_5Y",
+        question_text: "Have you been hospitalised in the last five years?",
+        answer_type: "BOOLEAN",
+        category: "Medical history",
+        underwriting_impact: "NONE",
+      },
+      {
+        id: "hq-uuid-2",
+        sequence: 2,
+        mandatory: false,
+        trigger_medical_requirement: true,
+        question_id: "hq-cat-2",
+        question_code: "HEART_CONDITION",
+        question_text: "Have you ever been diagnosed with a heart condition?",
+        answer_type: "BOOLEAN",
+        category: "Cardiovascular",
+        underwriting_impact: "HIGH",
+      },
+    ],
+  }
+}
+
 beforeEach(() => {
   navigateMock.mockReset()
   getProposalMock.mockReset()
@@ -300,43 +373,27 @@ beforeEach(() => {
       { id: "doc-uuid-1", document_type: "NATIONAL_ID", document_type_display: "National ID", status: "UPLOADED", file_reference: "docs/nid.pdf", mandatory: true },
     ],
     count: 1,
+    requirements: [
+      { code: "PROPOSAL_DOC_ID", name: "National ID", document_type: "NATIONAL_ID", mandatory: true },
+      { code: "PROPOSAL_DOC_SIG", name: "Signature specimen", document_type: "SIGNATURE", mandatory: true },
+      { code: "PROPOSAL_DOC_BANK", name: "Bank statement", document_type: "BANK_STATEMENT", mandatory: false },
+    ],
   })
   uploadDocMock.mockResolvedValue({ document_type: "NATIONAL_ID", status: "UPLOADED" })
   addBeneficiaryMock.mockResolvedValue({ data: {} })
   updateBeneficiaryMock.mockResolvedValue({ data: {} })
   deleteBeneficiaryMock.mockResolvedValue({ data: { deleted: true } })
 
-  requestMock.mockImplementation(async (path: string) => {
-    if (path.includes("/ol-proposals/options/employers/")) {
-      return { data: { kind: "employers", results: [{ id: "employer-partner-7", label: "Zanzibar Ports Ltd" }], count: 1 } }
-    }
-    if (path.includes("/ol-proposals/options/intermediaries/")) {
-      return { data: { kind: "intermediaries", results: [{ id: "agent-partner-3", label: "Juma Intermediaries" }], count: 1 } }
-    }
-    if (path.includes("/ol-proposals/options/banks/")) {
-      return { data: { kind: "banks", results: [{ id: "crdb", value: "CRDB Bank PLC", label: "CRDB Bank PLC" }, { id: "nmb", value: "NMB Bank PLC", label: "NMB Bank PLC" }], count: 2 } }
-    }
-    if (path.includes("/ol-proposals/options/document-types/")) {
-      return {
-        data: {
-          kind: "document-types",
-          results: [
-            { id: "NATIONAL_ID", value: "NATIONAL_ID", label: "National ID" },
-            { id: "SIGNATURE", value: "SIGNATURE", label: "Signature specimen" },
-          ],
-          count: 2,
-        },
-      }
-    }
-    if (path.includes("/api/v1/ol/options/identity-types")) {
-      return { items: [{ value: "NIN", label: "National Identification Number" }, { value: "BIRTH_CERTIFICATE", label: "Birth Certificate" }] }
-    }
-    if (path.includes("/api/v1/ol/options/benefit-types")) {
-      return { items: [{ value: "benefit-edu", label: "Education Benefit" }, { value: "benefit-survivor", label: "Survivor Benefit" }] }
-    }
-    throw new Error(`Unhandled request in test: ${path}`)
-  })
+  requestMock.mockImplementation(routeBaseRequests)
 })
+
+function installRoutes(extra?: (path: string) => unknown) {
+  requestMock.mockImplementation((path: string) => {
+    const overridden = extra?.(path)
+    if (overridden !== undefined) return overridden
+    return routeBaseRequests(path)
+  })
+}
 
 describe("OL Proposal detail page", () => {
   it("renders header and tabs from the detail payload without leaking UUIDs", async () => {
@@ -347,7 +404,7 @@ describe("OL Proposal detail page", () => {
     expect(screen.getByTestId("proposal-detail-header")).toHaveTextContent("Twenty Year Endowment")
 
     const tabsNav = within(screen.getByTestId("proposal-tabs"))
-    for (const tab of ["Overview", "Documents", "Quotation Source", "History"]) {
+    for (const tab of ["Overview", "Beneficiaries", "Health & Underwriting", "Documents", "Quotation Source", "History"]) {
       expect(tabsNav.getByRole("button", { name: tab })).toBeInTheDocument()
     }
 
@@ -502,27 +559,165 @@ describe("OL Proposal detail page", () => {
     expect(enrichMock).not.toHaveBeenCalled()
   })
 
-  it("lists documents on the Documents tab and uploads through the form", async () => {
+  it("flags missing mandatory documents and uploads through the preview modal", async () => {
     renderPage()
     await screen.findByTestId("proposal-detail-header")
 
     fireEvent.click(within(screen.getByTestId("proposal-tabs")).getByRole("button", { name: "Documents" }))
     const panel = await screen.findByTestId("tab-documents")
-    expect(within(panel).getByText("National ID")).toBeInTheDocument()
-    await waitFor(() => expect(screen.getByTestId("documents-counts")).toHaveTextContent("1/1 mandatory uploaded"))
 
-    fireEvent.click(document.getElementById("upload_document_type") as HTMLElement)
-    fireEvent.click(await screen.findByRole("option", { name: "National ID" }))
-    fireEvent.change(screen.getByLabelText(/File reference/), { target: { value: "dms://scans/nid.pdf" } })
+    // Checklist resolves requirement names, badges, and statuses — never raw codes.
+    const nationalRow = await within(panel).findByTestId("requirement-row-NATIONAL_ID")
+    expect(nationalRow).toHaveTextContent("National ID")
+    expect(nationalRow).toHaveTextContent("Mandatory")
+    expect(nationalRow).toHaveTextContent("UPLOADED")
+    await within(panel).findByTestId("requirement-row-SIGNATURE")
+    await within(panel).findByTestId("requirement-row-BANK_STATEMENT")
+    expect(within(panel).getByTestId("requirement-row-SIGNATURE")).toHaveTextContent("Not uploaded")
+    expect(within(panel).getByTestId("requirement-row-BANK_STATEMENT")).toHaveTextContent("Optional")
+    expect(within(panel).getByText("2/3 satisfied")).toBeInTheDocument()
+
+    // Blocking banner lists each missing mandatory item but skips optional ones.
+    const banner = await within(panel).findByTestId("mandatory-documents-banner")
+    expect(banner).toHaveTextContent(/payment readiness is blocked/i)
+    expect(banner).toHaveTextContent("Signature specimen")
+    expect(banner).not.toHaveTextContent("Bank statement")
+
+    // The banner chip opens the upload modal with that type preselected.
+    fireEvent.click(within(banner).getByTestId("missing-document-SIGNATURE"))
+    const typeTrigger = document.getElementById("upload_document_type") as HTMLElement
+    await waitFor(() => expect(typeTrigger).toHaveTextContent("Signature specimen"))
+
+    // Attach a file: preview card shows name and size before saving.
+    const file = new File([new Uint8Array(2048)], "signature-scan.pdf", { type: "application/pdf" })
+    fireEvent.change(screen.getByTestId("document-file-input"), { target: { files: [file] } })
+    const preview = screen.getByTestId("document-preview")
+    expect(preview).toHaveTextContent("signature-scan.pdf")
+    expect(preview).toHaveTextContent("2.0 KB")
+    expect(screen.getByLabelText(/File reference/)).toHaveValue("signature-scan.pdf")
 
     fireEvent.click(screen.getByTestId("upload-document"))
 
     await waitFor(() =>
       expect(uploadDocMock).toHaveBeenCalledWith("prop-uuid-0001", {
-        document_type: "NATIONAL_ID",
-        file_reference: "dms://scans/nid.pdf",
+        document_type: "SIGNATURE",
+        file_reference: "signature-scan.pdf",
       }),
     )
+  })
+
+  it("renders the health questionnaire, saves answers, and surfaces the medical trigger", async () => {
+    installRoutes((path) => {
+      if (path.includes("/health-answers/")) {
+        return { health_result: { triggered: true, medical_required: true, status: "PENDING_UNDERWRITING", answered: 1 } }
+      }
+      return undefined
+    })
+    const pendingDetail = detailFixture({ status: "PENDING_UNDERWRITING", underwriting_status: "PENDING", medical_required: true })
+    getProposalMock.mockResolvedValueOnce(detailFixture()).mockResolvedValue(pendingDetail)
+
+    renderPage()
+    await screen.findByTestId("proposal-detail-header")
+
+    // No decision entry point while enriching — even with ol_proposals.enrich granted.
+    fireEvent.click(within(screen.getByTestId("proposal-tabs")).getByRole("button", { name: "Health & Underwriting" }))
+    const panel = await screen.findByTestId("tab-health")
+    expect(screen.queryByTestId("open-underwriting-decision")).not.toBeInTheDocument()
+
+    // Questionnaire renders by question text with impact context — never raw codes only.
+    const heartQuestion = await within(panel).findByTestId("health-question-hq-cat-2")
+    expect(heartQuestion).toHaveTextContent("Have you ever been diagnosed with a heart condition?")
+    expect(heartQuestion).toHaveTextContent("Triggers medical")
+    expect(heartQuestion).toHaveTextContent("High impact")
+
+    fireEvent.change(document.getElementById("health-answer-hq-cat-2") as HTMLSelectElement, { target: { value: "Yes" } })
+    fireEvent.click(screen.getByTestId("save-health-answers"))
+
+    await waitFor(() =>
+      expect(requestMock).toHaveBeenCalledWith(
+        expect.stringContaining("/health-answers/"),
+        expect.objectContaining({ method: "POST" }),
+      )
+    )
+    const call = requestMock.mock.calls.find(([path]) => String(path).includes("/health-answers/"))
+    const body = JSON.parse(String(call?.[1]?.body ?? "{}"))
+    expect(body.answers).toEqual([{ health_question: "hq-cat-2", answer: "Yes" }])
+
+    // Status moved to pending underwriting after invalidation: banners appear.
+    expect(await screen.findByTestId("underwriting-pending-banner")).toBeInTheDocument()
+    expect(await screen.findByTestId("medical-requirement-card")).toBeInTheDocument()
+    expect(screen.getByTestId("open-underwriting-decision")).toBeInTheDocument()
+  })
+
+  it("requires notes for a load decision and records the loading percentage", async () => {
+    getProposalMock
+      .mockResolvedValueOnce(detailFixture({ status: "PENDING_UNDERWRITING", underwriting_status: "PENDING", medical_required: true }))
+      .mockResolvedValue(detailFixture({ status: "PENDING_UNDERWRITING", underwriting_status: "PENDING", medical_required: true }))
+
+    renderPage()
+    await screen.findByTestId("proposal-detail-header")
+
+    fireEvent.click(within(screen.getByTestId("proposal-tabs")).getByRole("button", { name: "Health & Underwriting" }))
+    fireEvent.click(await screen.findByTestId("open-underwriting-decision"))
+
+    const decisionSelect = document.getElementById("underwriting_decision") as HTMLSelectElement
+    fireEvent.change(decisionSelect, { target: { value: "load" } })
+    expect(screen.getByTestId("loading-percent-input")).toBeInTheDocument()
+
+    // Submitting without notes is blocked inline — nothing reaches the API.
+    fireEvent.click(screen.getByTestId("submit-underwriting-decision"))
+    expect(await screen.findByText(/Notes are mandatory/i)).toBeInTheDocument()
+
+    fireEvent.change(screen.getByTestId("loading-percent-input"), { target: { value: "25" } })
+    fireEvent.change(screen.getByTestId("decision-notes"), { target: { value: "Elevated blood pressure readings" } })
+    fireEvent.click(screen.getByTestId("submit-underwriting-decision"))
+
+    await waitFor(() => {
+      const call = requestMock.mock.calls.find(([path]) => String(path).includes("/underwriting-decision/"))
+      expect(call).toBeTruthy()
+      expect(JSON.parse(String(call?.[1]?.body ?? "{}"))).toEqual({
+        decision: "load",
+        reason: "Elevated blood pressure readings — +25% premium loading",
+      })
+    })
+  })
+
+  it("declines with mandatory notes and shows the terminal rejection banner", async () => {
+    getProposalMock
+      .mockResolvedValueOnce(detailFixture({ status: "PENDING_UNDERWRITING", underwriting_status: "PENDING", medical_required: true }))
+      .mockResolvedValue(
+        detailFixture({
+          status: "CANCELLED",
+          underwriting_status: "DECLINED",
+          reason_code: "UNDERWRITING_DECLINED",
+          reason_text: "BMI above acceptance threshold",
+        }),
+      )
+
+    renderPage()
+    await screen.findByTestId("proposal-detail-header")
+
+    fireEvent.click(within(screen.getByTestId("proposal-tabs")).getByRole("button", { name: "Health & Underwriting" }))
+    fireEvent.click(await screen.findByTestId("open-underwriting-decision"))
+
+    const decisionSelect = document.getElementById("underwriting_decision") as HTMLSelectElement
+    fireEvent.change(decisionSelect, { target: { value: "decline" } })
+    expect(screen.queryByTestId("loading-percent-input")).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByTestId("decision-notes"), { target: { value: "Declined on medical evidence." } })
+    fireEvent.click(screen.getByTestId("submit-underwriting-decision"))
+
+    await waitFor(() => {
+      const call = requestMock.mock.calls.find(([path]) => String(path).includes("/underwriting-decision/"))
+      expect(JSON.parse(String(call?.[1]?.body ?? "{}"))).toEqual({
+        decision: "decline",
+        reason: "Declined on medical evidence.",
+      })
+    })
+
+    // Terminal state banner explains the decline in plain language.
+    expect(await screen.findByTestId("underwriting-declined-banner")).toHaveTextContent("BMI above acceptance threshold")
+    expect(screen.queryByTestId("open-underwriting-decision")).not.toBeInTheDocument()
   })
 
   it("keeps the share total visible and live while editing a beneficiary", async () => {

@@ -110,6 +110,31 @@ export interface ProposalDocumentRecord {
   uploadedAt?: string
 }
 
+export interface ProposalDocumentRequirement {
+  code: string
+  name: string
+  documentType: string
+  mandatory: boolean
+}
+
+export interface OLHealthQuestion {
+  id: string
+  questionId: string
+  sequence: number
+  mandatory: boolean
+  triggerMedicalRequirement: boolean
+  questionCode: string
+  questionText: string
+  answerType: string
+  category?: string | null
+  underwritingImpact?: string | null
+}
+
+export interface OLHealthQuestionnairePayload {
+  questionnaire: string | null
+  questions: OLHealthQuestion[]
+}
+
 // --- Carried quotation children (detail payload) ---
 
 export interface ProposalPlanConfigRow {
@@ -597,6 +622,54 @@ export function normalizeProposalDocument(raw: unknown): ProposalDocumentRecord 
     fileReference: str(record, "file_reference"),
     mandatory: bool(record, "mandatory"),
     uploadedAt: str(record, "uploaded_at"),
+  }
+}
+
+export function normalizeProposalDocumentRequirement(raw: unknown): ProposalDocumentRequirement {
+  const record = asRecord(raw)
+  return {
+    code: str(record, "code") ?? "",
+    name: str(record, "name") ?? str(record, "document_type") ?? "",
+    documentType: str(record, "document_type") ?? "",
+    mandatory: bool(record, "mandatory"),
+  }
+}
+
+export interface ProposalDocumentsPayload {
+  rows: ProposalDocumentRecord[]
+  requirements: ProposalDocumentRequirement[]
+}
+
+export function normalizeProposalDocuments(payload: unknown): ProposalDocumentsPayload {
+  const record = asRecord(payload)
+  const rawRows = Array.isArray(record.results) ? record.results : []
+  const rawRequirements = Array.isArray(record.requirements) ? record.requirements : []
+  return {
+    rows: rawRows.map(normalizeProposalDocument),
+    requirements: rawRequirements.map(normalizeProposalDocumentRequirement),
+  }
+}
+
+export function normalizeHealthQuestions(payload: unknown): OLHealthQuestionnairePayload {
+  const record = asRecord(payload)
+  const rows = Array.isArray(record.results) ? record.results : []
+  return {
+    questionnaire: str(record, "questionnaire") ?? null,
+    questions: rows.map((raw) => {
+      const item = asRecord(raw)
+      return {
+        id: str(item, "id") ?? "",
+        questionId: str(item, "question_id") ?? "",
+        sequence: num(item, "sequence") ?? 0,
+        mandatory: bool(item, "mandatory"),
+        triggerMedicalRequirement: bool(item, "trigger_medical_requirement"),
+        questionCode: str(item, "question_code") ?? "",
+        questionText: str(item, "question_text") ?? "",
+        answerType: str(item, "answer_type") ?? "BOOLEAN",
+        category: str(item, "category"),
+        underwritingImpact: str(item, "underwriting_impact"),
+      }
+    }),
   }
 }
 

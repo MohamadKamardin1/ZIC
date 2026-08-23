@@ -29,10 +29,11 @@ import {
   listProposalDocuments,
   markPaymentReady,
   normalizeFirstPremium,
+  normalizeHealthQuestions,
   normalizeKPIs,
   normalizePaginated,
   normalizeProposalDetail,
-  normalizeProposalDocument,
+  normalizeProposalDocuments,
   normalizeProposalListItem,
   printProposal,
   type PrintResult,
@@ -167,7 +168,7 @@ export function useDeleteBeneficiaryMutation() {
 export function useProposalDocuments(id?: string | null, enabled = true) {
   return useQuery({
     queryKey: ["proposals", "documents", id ?? "none"],
-    queryFn: async () => normalizePaginated(await listProposalDocuments(String(id)), normalizeProposalDocument),
+    queryFn: async () => normalizeProposalDocuments(await listProposalDocuments(String(id))),
     enabled: Boolean(id) && enabled,
   })
 }
@@ -183,7 +184,7 @@ export function useUploadDocumentMutation() {
 export function useHealthQuestions(id?: string | null, enabled = true) {
   return useQuery({
     queryKey: ["proposals", "health-questions", id ?? "none"],
-    queryFn: () => getHealthQuestions(String(id)),
+    queryFn: async () => normalizeHealthQuestions(await getHealthQuestions(String(id))),
     enabled: Boolean(id) && enabled,
   })
 }

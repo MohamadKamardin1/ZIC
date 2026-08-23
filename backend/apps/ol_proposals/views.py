@@ -315,6 +315,7 @@ class ProposalDocumentCollectionView(APIView):
     def get(self, request, proposal_id):
         from apps.ol_proposals.models import ProposalDocumentStatus
         from apps.ol_proposals.serializers import OLProposalDocumentSerializer
+        from apps.ol_proposals.services.document_service import applicable_requirements
 
         proposal = _get_proposal(proposal_id)
         rows = list(proposal.documents.order_by("document_type"))
@@ -324,6 +325,15 @@ class ProposalDocumentCollectionView(APIView):
                     "results": OLProposalDocumentSerializer(rows, many=True).data,
                     "mandatory": proposal.documents.filter(mandatory=True).count(),
                     "uploaded": proposal.documents.filter(status__in=(ProposalDocumentStatus.UPLOADED, ProposalDocumentStatus.VERIFIED)).count(),
+                    "requirements": [
+                        {
+                            "code": row.code,
+                            "name": row.name,
+                            "document_type": row.document_type,
+                            "mandatory": row.mandatory,
+                        }
+                        for row in applicable_requirements(proposal)
+                    ],
                 }
             }
         )

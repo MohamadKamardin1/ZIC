@@ -76,6 +76,12 @@ class DocumentEndpointTests(DRFTestCase):
         self.assertEqual(len(listing.data["data"]["results"]), 1)
         self.assertEqual(listing.data["data"]["mandatory"], 1)
 
+        requirements = listing.data["data"]["requirements"]
+        by_type = {row["document_type"]: row for row in requirements}
+        self.assertTrue(by_type["IDENTITY_DOCUMENT"]["mandatory"])
+        self.assertTrue(by_type["SIGNATURE"]["mandatory"])
+        self.assertIn("name", by_type["IDENTITY_DOCUMENT"])
+
         self.assertTrue(
             AuditLog.objects.filter(action="PROPOSAL_DOCUMENT_UPLOAD", object_id=str(self.proposal.pk)).exists()
         )
