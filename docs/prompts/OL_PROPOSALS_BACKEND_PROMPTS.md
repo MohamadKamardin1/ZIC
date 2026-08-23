@@ -4,7 +4,7 @@
 - [x] Prompt 2 — Quotation to Proposal Conversion
 - [x] Prompt 3 — Enrichment and Beneficiaries
 - [x] Prompt 4 — Documents, Health Answers, and Underwriting Hook
-- [ ] Prompt 5 — Payment Readiness Evaluation Engine
+- [x] Prompt 5 — Payment Readiness Evaluation Engine
 - [ ] Prompt 6 — [pending prompt text]
 - [ ] Prompt 7 — [pending prompt text]
 - [ ] Prompt 8 — [pending prompt text]
