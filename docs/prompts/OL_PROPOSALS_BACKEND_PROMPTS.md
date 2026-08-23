@@ -5,7 +5,7 @@
 - [x] Prompt 3 — Enrichment and Beneficiaries
 - [x] Prompt 4 — Documents, Health Answers, and Underwriting Hook
 - [x] Prompt 5 — Payment Readiness Evaluation Engine
-- [ ] Prompt 6 — [pending prompt text]
+- [x] Prompt 6 — First Premium Tracking and Receipt Seam
 - [ ] Prompt 7 — [pending prompt text]
 - [ ] Prompt 8 — [pending prompt text]
 - [ ] Prompt 9 — [pending prompt text]
@@ -204,6 +204,38 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: checklist contract, endpoints, event flow, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 6/12 — First Premium Tracking and Receipt Seam
+
+```text
+You are a senior Django insurance engineer. Continue the ZIC OL Proposals backend. Execute ONLY Prompt 6.
+
+MANDATORY RULES:
+- BR-03 guard must be airtight and reusable by the future receipts and policies modules.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. Link first premium commitment (source_type PROPOSAL, installment 1) to proposal on ProposalPaymentReady; store reference.
+2. GET first-premium status endpoint: commitment status, amount due, paid, balance, allocations, payment mode, last payment date.
+3. Implement first_premium_posted guard service: true only when linked commitment status is Completed (fully allocated).
+4. Receipts seam contract documented in docs/OL_PROPOSALS_RECEIPTS_SEAM.md:
+   - future receipts module allocates to the commitment; proposals module only reads status
+   - define PremiumReceived event contract for later integration
+5. Expose payment status in proposal detail payload with next-action hints (e.g., "Record receipt in Front Office").
+
+TESTS:
+- guard false for partial payment, true for full payment
+- detail payload shows commitment status and hints
+- seam doc matches commitments allocation contract
+
+GIT:
+- commit: "feat(ol-proposals): implement first premium tracking and receipt seam"
+- push; tick checkbox
+
+FINAL OUTPUT: guard logic, endpoints, seam contract, tests, commit hash, pushed branch.
 ```
 
 ---
