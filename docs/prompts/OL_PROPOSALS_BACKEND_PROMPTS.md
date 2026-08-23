@@ -3,7 +3,7 @@
 - [x] Prompt 1 — Save Prompt Series + Discovery + Proposal Domain Foundation
 - [x] Prompt 2 — Quotation to Proposal Conversion
 - [x] Prompt 3 — Enrichment and Beneficiaries
-- [ ] Prompt 4 — Documents, Health Answers, and Underwriting Hook
+- [x] Prompt 4 — Documents, Health Answers, and Underwriting Hook
 - [ ] Prompt 5 — [pending prompt text]
 - [ ] Prompt 6 — [pending prompt text]
 - [ ] Prompt 7 — [pending prompt text]
