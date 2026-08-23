@@ -27,112 +27,11 @@ class QuotationDocumentService:
     DEFAULT_TEMPLATE_CODE = "OL_QUOTATION_PRINT"
     DEFAULT_TEMPLATE_VERSION = 2
     DOCUMENT_TYPE = "QUOTATION_PRINT"
-
-    DEFAULT_TEMPLATE_HTML = """
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <style>
-    @page { size: A4; margin: 12mm 11mm 14mm 11mm; }
-    * { box-sizing: border-box; }
-    body { font-family: Arial, Helvetica, sans-serif; color: #26313d; font-size: 8.5pt; line-height: 1.25; margin: 0; }
-    .sheet { width: 100%; }
-    .header { display: table; width: 100%; border-bottom: 2px solid #2d3440; padding-bottom: 8px; margin-bottom: 8px; }
-    .header-left, .header-right { display: table-cell; vertical-align: top; }
-    .header-right { text-align: right; width: 62%; font-size: 7.3pt; line-height: 1.35; color: #46515d; }
-    .logo-wrap { width: 105px; height: 55px; position: relative; }
-    .logo-arc { width: 57px; height: 14px; border-top: 3px solid #d94754; border-radius: 50%; position: absolute; left: 23px; top: 3px; }
-    .logo-text { position: absolute; left: 0; top: 8px; color: #183a91; font-weight: 900; font-size: 35pt; letter-spacing: -0.14em; line-height: 1; }
-    .logo-text span { display: inline-block; transform: skew(-7deg); }
-    .title { text-align: center; font-weight: 800; letter-spacing: .12em; font-size: 13pt; padding: 4px 0 5px; border-bottom: 2px solid #2d3440; margin-bottom: 9px; }
-    .info-grid { display: table; width: 100%; border: 1px solid #d5dbe2; margin-bottom: 9px; }
-    .info-col { display: table-cell; width: 50%; padding: 7px 9px; vertical-align: top; }
-    .info-col + .info-col { border-left: 1px solid #d5dbe2; }
-    .section-title { font-size: 9pt; font-weight: 800; border-bottom: 1px solid #c7ced7; padding-bottom: 3px; margin: 0 0 5px; }
-    .kv { margin: 0; }
-    .kv-row { display: table; width: 100%; margin: 0 0 2px; }
-    .kv-row dt, .kv-row dd { display: table-cell; vertical-align: top; }
-    .kv-row dt { width: 44%; font-weight: 700; color: #4f5a66; }
-    .kv-row dd { width: 56%; margin: 0; }
-    .block { margin-top: 8px; page-break-inside: avoid; }
-    table.data { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 7.15pt; }
-    table.data th, table.data td { border: 1px solid #d2d8df; padding: 4px 4px; vertical-align: middle; }
-    table.data th { background: #edf1f4; color: #26313d; font-weight: 800; text-align: left; }
-    table.data td.num, table.data th.num { text-align: right; }
-    table.data tr.total td { font-weight: 800; background: #f7f8fa; }
-    .subheading { border-bottom: 1px solid #c7ced7; font-size: 9pt; font-weight: 800; padding-bottom: 3px; }
-    .plan-heading { font-weight: 800; font-size: 8pt; text-transform: uppercase; margin: 7px 0 3px; border-bottom: 1px solid #dde2e7; padding-bottom: 3px; }
-    .summary-box { width: 52%; margin-left: auto; margin-top: 8px; }
-    .summary-box td:first-child { font-weight: 700; }
-    .summary-box tr:last-child td { background: #eef8f2; font-size: 9pt; }
-    .terms { page-break-inside: avoid; margin-top: 10px; }
-    .terms ol { margin: 5px 0 0 17px; padding: 0; }
-    .terms li { margin-bottom: 3px; }
-    .signature { display: table; width: 100%; margin-top: 13px; padding: 8px 9px 3px; border-top: 1px solid #d5dbe2; background: #fbfbfc; page-break-inside: avoid; }
-    .signature-left, .signature-right { display: table-cell; vertical-align: bottom; }
-    .signature-right { width: 28%; text-align: center; }
-    .signature-line { width: 165px; border-bottom: 1px solid #67717d; height: 21px; margin-bottom: 3px; }
-    .stamp { width: 55px; height: 55px; border: 2px solid #66717d; border-radius: 50%; margin: 0 auto 3px; text-align: center; padding-top: 17px; font-size: 8pt; font-weight: 800; color: #3e4852; }
-    .muted { color: #64707c; }
-    .small { font-size: 7pt; }
-    .avoid-break { page-break-inside: avoid; }
-  </style>
-</head>
-<body>
-<div class="sheet">
-  <div class="header">
-    <div class="header-left"><div class="logo-wrap"><div class="logo-arc"></div><div class="logo-text"><span>ZIC</span></div></div></div>
-    <div class="header-right"><strong>{{ company.name }}</strong><br>{{ company.address }}<br>{% if company.phone %}Tel: {{ company.phone }}<br>{% endif %}{% if company.email %}Email: {{ company.email }}<br>{% endif %}Date: {{ quote.quote_date }}</div>
-  </div>
-  <div class="title">ORDINARY LIFE QUOTATION</div>
-
-  <div class="info-grid avoid-break">
-    <div class="info-col"><div class="section-title">Personal Details</div><dl class="kv">
-      <div class="kv-row"><dt>Name:</dt><dd>{{ prospect.name }}</dd></div>
-      <div class="kv-row"><dt>ID Type:</dt><dd>{{ prospect.identity_type }}</dd></div>
-      <div class="kv-row"><dt>ID Number:</dt><dd>{{ prospect.identity_number }}</dd></div>
-      <div class="kv-row"><dt>Date of Birth:</dt><dd>{{ prospect.date_of_birth }}</dd></div>
-      <div class="kv-row"><dt>Age:</dt><dd>{{ prospect.age_at_quote }} years</dd></div>
-      <div class="kv-row"><dt>Gender:</dt><dd>{{ prospect.gender }}</dd></div>
-      <div class="kv-row"><dt>Address:</dt><dd>{{ prospect.address }}</dd></div>
-      <div class="kv-row"><dt>Location:</dt><dd>{{ prospect.location }}</dd></div>
-    </dl></div>
-    <div class="info-col"><div class="section-title">Quote Summary</div><dl class="kv">
-      <div class="kv-row"><dt>Quote Number:</dt><dd>{{ quote.quote_number }}-v{{ quote.version_number }}</dd></div>
-      <div class="kv-row"><dt>Quote Date:</dt><dd>{{ quote.quote_date }}</dd></div>
-      <div class="kv-row"><dt>Currency:</dt><dd>{{ quote.currency }}</dd></div>
-      <div class="kv-row"><dt>Risk Sum Assured:</dt><dd>{{ financial.total_sum_assured }}</dd></div>
-      <div class="kv-row"><dt>Basic Premium:</dt><dd>{{ financial.base_premium }}</dd></div>
-      <div class="kv-row"><dt>Rider Premium:</dt><dd>{{ financial.total_rider_premium }}</dd></div>
-      <div class="kv-row"><dt>Gross Premium:</dt><dd>{{ financial.total_premium }}</dd></div>
-    </dl></div>
-  </div>
-
-  <div class="block"><div class="subheading">Quote Configurations</div><table class="data"><thead><tr>
-    <th>Plan</th><th>Sub Product</th><th>Payment Frequency</th><th>Policy Term</th><th>Payment Period</th><th class="num">Sum Assured ({{ quote.currency }})</th><th class="num">Basic Premium ({{ quote.currency }})</th><th class="num">Rider Premium ({{ quote.currency }})</th><th class="num">Gross Premium ({{ quote.currency }})</th>
-  </tr></thead><tbody>{% for plan in plans %}<tr>
-    <td>{{ plan.name|default:plan.code }}</td><td>{{ plan.sub_product|default:"-" }}</td><td>{{ plan.premium_frequency }}</td><td>{{ plan.term_years }}</td><td>{{ plan.payment_period_years }}</td><td class="num">{{ plan.base_sum_assured }}</td><td class="num">{{ plan.basic_premium|default:plan.premium_amount }}</td><td class="num">{{ plan.rider_premium|default:"-" }}</td><td class="num">{{ plan.gross_premium|default:plan.premium_amount }}</td>
-  </tr>{% empty %}<tr><td colspan="9" class="muted">No plan configurations recorded.</td></tr>{% endfor %}<tr class="total"><td colspan="5">TOTALS</td><td class="num">{{ financial.total_sum_assured }}</td><td class="num">{{ financial.base_premium }}</td><td class="num">{{ financial.total_rider_premium }}</td><td class="num">{{ financial.total_premium }}</td></tr></tbody></table></div>
-
-  {% if riders %}<div class="block"><div class="subheading">Additional Benefits</div><table class="data"><thead><tr><th>Rider</th><th>Plan</th><th>Sub Product</th><th class="num">Rider Benefit ({{ quote.currency }})</th><th class="num">Benefit Ratio (%)</th></tr></thead><tbody>{% for rider in riders %}<tr><td>{{ rider.name|default:rider.code }}</td><td>{{ rider.plan_name|default:"-" }}</td><td>{{ rider.sub_product|default:"-" }}</td><td class="num">{{ rider.rider_sum_assured }}</td><td class="num">{{ rider.benefit_ratio|default:rider.benefit_value|default:"-" }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
-  {% if benefits %}<div class="block"><div class="subheading">Configured Benefit Details</div><table class="data"><thead><tr><th>Benefit Type</th><th>Plan</th><th>Basis</th><th class="num">Value ({{ quote.currency }})</th><th class="num">Loading</th><th class="num">Discount</th><th class="num">Maximum Cap ({{ quote.currency }})</th></tr></thead><tbody>{% for benefit in benefits %}<tr><td>{{ benefit.name|default:benefit.benefit_type|default:"-" }}</td><td>{{ benefit.plan_name|default:"-" }}</td><td>{{ benefit.basis|default:"-" }}</td><td class="num">{{ benefit.value|default:benefit.sum_assured|default:"-" }}</td><td class="num">{{ benefit.loading|default:"-" }}</td><td class="num">{{ benefit.discount|default:"-" }}</td><td class="num">{{ benefit.maximum_cap|default:"-" }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
-
-  {% if members %}<div class="block"><div class="subheading">Member Coverage Details</div>{% for member in members %}<div class="plan-heading">{{ member.plan_name|default:"Quotation coverage" }}</div><table class="data"><thead><tr><th>Member Name</th><th>Age</th><th>Gender</th><th>Coverage %</th><th class="num">Sum Assured ({{ quote.currency }})</th><th class="num">Basic Premium ({{ quote.currency }})</th><th class="num">Rider Premium ({{ quote.currency }})</th><th class="num">Total Premium ({{ quote.currency }})</th></tr></thead><tbody><tr><td>{{ member.name }}{% if member.is_principal %} (Principal){% endif %}</td><td>{{ member.age }}</td><td>{{ member.gender }}</td><td>{{ member.coverage_percent }}%</td><td class="num">{{ member.sum_assured }}</td><td class="num">{{ member.basic_premium }}</td><td class="num">{{ member.rider_premium }}</td><td class="num">{{ member.total_premium }}</td></tr></tbody></table>{% endfor %}</div>{% endif %}
-
-  {% if installments %}<div class="block"><div class="subheading">Installment Payouts</div>{% for schedule in installments %}<div class="plan-heading">{{ schedule.plan_code }}</div><div class="small">Estimated Maturity Value: <strong>{{ financial.estimated_maturity_value }}</strong> &nbsp; | &nbsp; {{ schedule.number_of_installments }} installments ({{ schedule.frequency }}) &nbsp; | &nbsp; Annuity Period: {{ schedule.annuity_period_years }} years</div><table class="data"><thead><tr><th>#</th><th>Description</th><th class="num">Installment Rate</th><th class="num">Installment Payout ({{ quote.currency }})</th><th class="num">Paid Up Rate</th></tr></thead><tbody>{% for row in schedule.rows %}<tr><td>{{ row.sequence }}</td><td>{{ row.description }}</td><td class="num">{{ row.rate_percent }}%</td><td class="num">{{ row.payout_amount }}</td><td class="num">{{ row.paid_up_rate }}%</td></tr>{% endfor %}</tbody></table>{% endfor %}</div>{% endif %}
-
-  <table class="data summary-box"><tbody><tr><td>Total Sum Assured</td><td class="num">{{ financial.total_sum_assured }}</td></tr><tr><td>Basic Premium</td><td class="num">{{ financial.base_premium }}</td></tr><tr><td>Rider Premium</td><td class="num">{{ financial.total_rider_premium }}</td></tr><tr><td>Loadings</td><td class="num">{{ financial.total_loading }}</td></tr><tr><td>Discounts</td><td class="num">{{ financial.total_discount }}</td></tr><tr><td>Taxes</td><td class="num">{{ financial.total_tax }}</td></tr><tr><td>Total Premium</td><td class="num"><strong>{{ financial.total_premium }}</strong></td></tr><tr><td>Estimated Maturity Value</td><td class="num">{{ financial.estimated_maturity_value }}</td></tr></tbody></table>
-
-  <div class="terms"><div class="subheading">Terms and Conditions</div><ol><li>This quotation is valid for {{ quote.validity_days }} days from the date of generation {{ quote.quote_date }} and expires on {{ quote.expiry_date }}.</li><li>Premiums are calculated based on information provided and are subject to underwriting acceptance.</li><li>Coverage becomes effective only upon policy issuance, premium payment, and satisfaction of all underwriting requirements.</li><li>All benefits are subject to applicable policy terms, conditions, exclusions, and limitations.</li><li>This quotation does not constitute a contract of insurance. Final policy terms may vary based on underwriting.</li></ol><p class="muted small">For inquiries or to proceed with your application, please contact your insurance advisor or our customer service team.</p></div>
-
-  <div class="signature"><div class="signature-left"><div>Prepared By: {{ prepared_by }}</div><div class="signature-line"></div><div>Signature &amp; Date</div><div class="muted small">for and on behalf of {{ company.name }}</div></div><div class="signature-right"><div class="stamp">ZIC</div><strong>{{ company.name }}</strong><br><span class="muted small">Official Stamp</span></div></div>
-</div>
-</body>
-</html>
-"""
+    # Legacy seed/API compatibility only; rendering is owned by DocumentEngine.
+    DEFAULT_TEMPLATE_HTML = ""
 
     @staticmethod
+
     def _display_name(value, fallback=""):
         if value is None:
             return fallback

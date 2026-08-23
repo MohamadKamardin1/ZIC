@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import base64
 import hashlib
+import mimetypes
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from io import BytesIO
+from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlencode
 from uuid import UUID
@@ -73,12 +77,10 @@ class CompanyBranding:
             return default
 
         logo_value = value("LOGO_FILE", "")
-        logo_url = ""
-        if logo_value:
-            try:
-                logo_url = default_storage.url(str(logo_value))
-            except Exception:
-                logo_url = str(logo_value)
+        logo_url = cls._logo_source(logo_value) if logo_value else ""
+        if not logo_url:
+            fallback = Path(settings.BASE_DIR) / "apps" / "documents" / "static" / "documents" / "zic_logo.png"
+            logo_url = cls._logo_source(str(fallback)) if fallback.exists() else ""
         colors = value("ACCENT_COLORS", {})
         if not isinstance(colors, dict):
             colors = {}
@@ -96,6 +98,26 @@ class CompanyBranding:
                 "table_header": str(colors.get("table_header", "#edf1f4")),
             },
         )
+
+    @staticmethod
+    def _logo_source(value: str) -> str:
+        if not value:
+            return ""
+        path = Path(str(value))
+        if not path.exists():
+            try:
+                path = Path(default_storage.path(str(value)))
+            except Exception:
+                try:
+                    return default_storage.url(str(value))
+                except Exception:
+                    return str(value)
+        try:
+            mime_type = mimetypes.guess_type(str(path))[0] or "image/png"
+            encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+            return f"data:{mime_type};base64,{encoded}"
+        except (OSError, ValueError):
+            return str(value)
 
     def as_context(self) -> dict[str, Any]:
         return {
@@ -149,17 +171,244 @@ class DocumentTypeRegistry:
         return tuple(cls._definitions.values())
 
 
+def _number_to_words(number: int) -> str:
+    ones = (
+        "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+        "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen",
+        "eighteen", "nineteen",
+    )
+    tens = ("", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety")
+
+    def under_thousand(value: int) -> str:
+        words = []
+        if value >= 100:
+            words.extend([ones[value // 100], "hundred"])
+            value %= 100
+            if value:
+                words.append("and")
+        if value >= 20:
+            words.append(tens[value // 10])
+            if value % 10:
+                words.append(ones[value % 10])
+        elif value:
+            words.append(ones[value])
+        return " ".join(words)
+
+    if number < 0:
+        return f"minus {_number_to_words(abs(number))}"
+    if number < 1000:
+        return under_thousand(number)
+    groups = ((1_000_000_000, "billion"), (1_000_000, "million"), (1000, "thousand"))
+    words = []
+    remainder = number
+    for divisor, label in groups:
+        if remainder >= divisor:
+            quotient, remainder = divmod(remainder, divisor)
+            words.append(under_thousand(quotient) if quotient < 1000 else _number_to_words(quotient))
+            words.append(label)
+    if remainder:
+        if words:
+            words.append("and")
+        words.append(under_thousand(remainder))
+    return " ".join(words) or "zero"
+
+
+def _amount_in_words(value, currency: str) -> str:
+    try:
+        amount = Decimal(str(value or 0)).quantize(Decimal("0.01"))
+    except (InvalidOperation, TypeError, ValueError):
+        return "Amount unavailable"
+    major = int(abs(amount))
+    minor = int((abs(amount) - major) * 100)
+    currency_names = {"TZS": "Tanzanian shillings", "USD": "US dollars", "KES": "Kenyan shillings"}
+    major_words = f"{_number_to_words(major)} {currency_names.get(currency, currency)}"
+    if minor:
+        return f"{major_words} and {_number_to_words(minor)} cents"
+    return major_words
+
+
+def _yes_no(value) -> str:
+    if isinstance(value, str):
+        return "Yes" if value.strip().upper() in {"YES", "TRUE", "1", "Y"} else "No"
+    return "Yes" if bool(value) else "No"
+
+
+def _quotation_funds(source, currency, money):
+    rows = []
+    for allocation in source.fund_allocations.filter(is_selected=True).select_related(
+        "fund__fund_type", "plan_configuration__plan"
+    ):
+        fund = allocation.fund
+        rows.append(
+            {
+                "code": getattr(fund, "code", ""),
+                "name": getattr(fund, "name", ""),
+                "fund_type": getattr(getattr(fund, "fund_type", None), "name", ""),
+                "risk_profile": getattr(getattr(fund, "fund_type", None), "risk_profile", ""),
+                "currency": getattr(fund, "currency", currency),
+                "valuation_frequency": getattr(fund, "valuation_frequency", ""),
+                "plan_name": getattr(getattr(getattr(allocation, "plan_configuration", None), "plan", None), "name", ""),
+                "allocation_percentage": str(allocation.allocation_percentage),
+                "allocation_amount": money(allocation.allocation_amount, currency),
+            }
+        )
+    return rows
+
+
+def _quotation_projections(source, currency, money):
+    try:
+        summary = source.financial_summary
+    except Exception:
+        summary = None
+    raw_rows = getattr(summary, "projections", []) if summary is not None else []
+    rows = []
+    if not isinstance(raw_rows, list):
+        return rows
+    aliases = {
+        "premiums_paid": ("premiums_paid", "premium_paid", "premium"),
+        "bonuses": ("bonuses", "bonus", "estimated_bonus"),
+        "surrender_value": ("surrender_value", "cash_surrender_value", "surrender"),
+        "paid_up_value": ("paid_up_value", "paidup_value", "paid_up"),
+    }
+    for raw in raw_rows:
+        if not isinstance(raw, dict):
+            continue
+        def first(keys):
+            return next((raw[key] for key in keys if raw.get(key) not in (None, "")), None)
+        rows.append(
+            {
+                "policy_year": raw.get("policy_year", raw.get("year", "")),
+                "premiums_paid": money(first(aliases["premiums_paid"]), currency),
+                "bonuses": money(first(aliases["bonuses"]), currency),
+                "surrender_value": money(first(aliases["surrender_value"]), currency),
+                "paid_up_value": money(first(aliases["paid_up_value"]), currency),
+            }
+        )
+    return rows
+
+
 def _quotation_context(source, branding: dict[str, Any], template: DocumentTemplate):
+    from collections import defaultdict
     from types import SimpleNamespace
 
     from apps.ol_quotations.services.document_service import QuotationDocumentService
 
-    # Reuse the quotation domain context aggregation; the shared engine owns
-    # branding, layout, PDF rendering, storage, and history for every module.
+    # Reuse quotation domain aggregation; the shared engine owns layout, PDF,
+    # storage, provenance, and access for every module.
     legacy_template = SimpleNamespace(layout_variables={})
     context = QuotationDocumentService.build_context(source, legacy_template)
+    money = QuotationDocumentService._money
+    currency = source.currency
+    agent = source.agent or source.agent_partner
+    location_master = getattr(source, "location_master", None)
+    branch = getattr(location_master, "branch", None) if location_master else None
+    agent_code = (
+        getattr(agent, "employee_number", None)
+        or getattr(agent, "agent_code", None)
+        or getattr(agent, "partner_number", None)
+        or getattr(agent, "code", None)
+        or ""
+    )
+    expiry_date = source.expiry_date
+    if expiry_date is None and source.quote_date:
+        validity_days = ConfigurationService.get_int_parameter("OL_QUOTATION_DEFAULT_EXPIRY_DAYS", 30)
+        expiry_date = source.quote_date + timedelta(days=validity_days)
+    context["quote"].update(
+        {
+            "expiry_date": expiry_date.isoformat() if isinstance(expiry_date, date) else expiry_date,
+            "status_watermark": "DRAFT" if source.status == "DRAFT" else "",
+            "location": getattr(location_master, "name", "") or source.location or "-",
+            "branch": getattr(branch, "name", "") or "-",
+            "terms_reference": (source.metadata or {}).get("terms_reference", "OL Standard Terms and Conditions"),
+        }
+    )
+    context["meta"] = {
+        "quote_date": context["quote"].get("quote_date", "-"),
+        "expiry_date": context["quote"].get("expiry_date", "-"),
+        "currency": currency,
+        "agent_name": context["agent"].get("name", "Not assigned"),
+        "agent_code": agent_code or "-",
+        "location": context["quote"]["location"],
+        "branch": context["quote"]["branch"],
+    }
+    context["agent"]["code"] = agent_code or "-"
+
+    product = source.product
+    plan_type = getattr(getattr(product, "plan_type", None), "name", "") or getattr(getattr(product, "plan_type", None), "code", "")
+    rider_totals = defaultdict(lambda: Decimal("0"))
+    for selection in source.rider_selections.filter(is_selected=True):
+        rider_totals[selection.plan_configuration_id] += selection.premium_amount or Decimal("0")
+    enriched_plans = []
+    for config in source.plan_configurations.filter(is_selected=True).select_related("plan", "product_version__product"):
+        row = next((item for item in context["plans"] if item.get("id") == str(config.pk)), {})
+        rules = config.coverage_rules if isinstance(config.coverage_rules, dict) else {}
+        badges = []
+        if rules.get("with_profit") or rules.get("with_profits") or "profit" in plan_type.lower():
+            badges.append("With Profit")
+        if config.joint_life or rules.get("joint_life"):
+            badges.append("Joint Life")
+        if getattr(product, "investment_linked", False) or rules.get("investment_linked"):
+            badges.append("Investment Linked")
+        enriched_plans.append(
+            {
+                **row,
+                "code": getattr(config.plan, "code", "") or row.get("code", "PLAN"),
+                "name": getattr(config.plan, "name", "") or row.get("name", "Plan"),
+                "description": getattr(config.plan, "description", "") or row.get("description", ""),
+                "sub_product": config.sub_product_code or "-",
+                "plan_type": plan_type or "-",
+                "badges": badges,
+                "policy_term": config.term_years,
+                "payment_period": config.payment_period_years or config.term_years,
+                "payment_frequency": config.premium_frequency,
+                "quote_basis": config.quote_basis,
+                "sum_assured": money(config.base_sum_assured, currency),
+                "base_sum_assured": money(config.base_sum_assured, currency),
+                "estimated_maturity_value": money(config.estimated_maturity_value, currency),
+                "estimated_bonus_rate": config.estimated_bonus_rate,
+                "joint_life_display": _yes_no(config.joint_life),
+                "mortgage_display": _yes_no(config.mortgage),
+                "personal_accident_display": _yes_no(config.personal_accident),
+                "premium_waiver_display": _yes_no(config.premium_waiver),
+                "basic_premium": money(config.premium_amount, currency),
+                "rider_premium": money(rider_totals[config.pk], currency),
+                "gross_premium": money((config.premium_amount or Decimal("0")) + rider_totals[config.pk], currency),
+            }
+        )
+    context["plans"] = enriched_plans
+    context["funds"] = _quotation_funds(source, currency, money)
+    context["projections"] = _quotation_projections(source, currency, money)
+
+    try:
+        summary = source.financial_summary
+    except Exception:
+        summary = None
+    total_premium = getattr(summary, "total_premium", None) if summary else source.total_premium
+    if total_premium is None:
+        total_premium = sum((config.premium_amount or Decimal("0") for config in source.plan_configurations.filter(is_selected=True)), Decimal("0"))
+    frequency_totals = defaultdict(lambda: Decimal("0"))
+    for config in source.plan_configurations.filter(is_selected=True):
+        frequency_totals[config.premium_frequency] += config.premium_amount or Decimal("0")
+    premium_rows = []
+    for frequency, amount in sorted(frequency_totals.items()):
+        premium_rows.append({"frequency": frequency, "figures": money(amount, currency), "words": _amount_in_words(amount, currency)})
+    if not premium_rows:
+        premium_rows.append({"frequency": "Total premium", "figures": money(total_premium, currency), "words": _amount_in_words(total_premium, currency)})
+    context["financial"].update(
+        {
+            "total_benefit_premium": money(getattr(summary, "total_benefit_premium", None), currency) if summary else "-",
+            "installment_charge": money(getattr(summary, "installment_charge", None), currency) if summary else "-",
+            "premium_per_frequency": premium_rows,
+            "premium_in_words": _amount_in_words(total_premium, currency),
+        }
+    )
+    context["validity"] = {
+        "days": context["quote"].get("validity_days", 30),
+        "expiry_date": context["quote"].get("expiry_date", "-"),
+        "terms_reference": context["quote"].get("terms_reference", "OL Standard Terms and Conditions"),
+    }
     context["branding"] = branding
-    context["document_title"] = "ORDINARY LIFE QUOTATION"
+    context["document_title"] = "QUOTATION"
     context["template_version"] = template.version
     return context
 
@@ -268,6 +517,41 @@ class DocumentEngine:
         )
 
     @classmethod
+    def _validate_context(cls, context: dict[str, Any], schema: dict[str, Any]):
+        if not isinstance(schema, dict):
+            raise DocumentEngineError("Document template variables schema must be a JSON object.", 400)
+        missing = []
+        invalid = []
+        for raw_name, specification in schema.items():
+            name = str(raw_name)
+            optional = name.endswith("?")
+            field_name = name[:-1] if optional else name
+            required = not optional
+            expected = specification
+            if isinstance(specification, dict):
+                required = bool(specification.get("required", required))
+                expected = specification.get("type", "any")
+            if field_name not in context:
+                if required:
+                    missing.append(field_name)
+                continue
+            value = context[field_name]
+            if value is None and not required:
+                continue
+            if expected == "object" and not isinstance(value, dict):
+                invalid.append(f"{field_name} must be an object")
+            elif expected == "array" and not isinstance(value, list):
+                invalid.append(f"{field_name} must be an array")
+            elif expected == "string" and not isinstance(value, str):
+                invalid.append(f"{field_name} must be a string")
+        if missing or invalid:
+            details = []
+            if missing:
+                details.append("missing variables: " + ", ".join(missing))
+            details.extend(invalid)
+            raise DocumentEngineError("Document template variables are invalid (" + "; ".join(details) + ").", 400)
+
+    @classmethod
     def _render_pdf(cls, html: str) -> tuple[bytes, int]:
         try:
             from weasyprint import HTML
@@ -302,8 +586,10 @@ class DocumentEngine:
                 "source_type": f"{definition.source_app_label}.{definition.source_model}",
                 "source_object_id": str(source.pk),
                 "generated_at": timezone.now(),
+                "generated_by_name": cls.user_display(actor),
             }
         )
+        cls._validate_context(context, template.variables_schema or definition.variables_schema)
         try:
             html = render_to_string(template.layout_template_path, context)
         except Exception as exc:

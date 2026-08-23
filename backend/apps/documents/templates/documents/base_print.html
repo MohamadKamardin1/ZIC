@@ -9,7 +9,7 @@
       size: A4;
       margin: 16mm 13mm 18mm 13mm;
       @bottom-left { content: "{{ branding.footer_legal_text|default:'System generated document' }}"; color: #667085; font-size: 7pt; }
-      @bottom-center { content: "Template v{{ template_version }} | Generated {{ generated_at|date:'Y-m-d H:i' }}"; color: #667085; font-size: 7pt; }
+      @bottom-center { content: "{{ branding.phone }} | {{ branding.email }} | Generated {{ generated_at|date:'Y-m-d H:i' }} by {{ generated_by_name }} | Template v{{ template_version }}"; color: #667085; font-size: 6.5pt; }
       @bottom-right { content: "Page " counter(page) " of " counter(pages); color: #667085; font-size: 7pt; }
     }
     :root { --primary: {{ branding.accent_colors.primary|default:'#183a91' }}; --accent: {{ branding.accent_colors.accent|default:'#d94754' }}; --table-header: {{ branding.accent_colors.table_header|default:'#edf1f4' }}; }
@@ -24,6 +24,15 @@
     .brand-company { width: 62%; text-align: right; color: #475467; font-size: 8pt; line-height: 1.35; }
     .brand-company strong { color: var(--primary); font-size: 11pt; }
     .title-band { color: #fff; background: var(--primary); border-left: 7px solid var(--accent); padding: 8px 11px; margin: 0 0 11px; font-size: 14pt; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+    .draft-watermark { position: fixed; z-index: 0; top: 43%; left: 12%; color: rgba(217, 71, 84, .12); font-size: 56pt; font-weight: 900; letter-spacing: .12em; transform: rotate(-35deg); }
+    .badge { display: inline-block; margin: 0 3px 3px 0; padding: 2px 6px; border-radius: 9px; color: #fff; background: var(--primary); font-size: 7pt; font-weight: 700; }
+    .badge.accent { background: var(--accent); }
+    .plan-card { page-break-inside: avoid; border: 1px solid #d0d5dd; border-left: 4px solid var(--primary); margin: 0 0 9px; padding: 7px 8px; }
+    .plan-card-title { color: var(--primary); font-size: 10pt; font-weight: 800; }
+    .plan-description { margin: 3px 0 6px; color: #667085; font-size: 7.5pt; }
+    .signature-party { display: table-cell; width: 33.33%; padding: 8px 9px 0; vertical-align: bottom; }
+    .signature-party + .signature-party { border-left: 1px solid #d0d5dd; }
+    .signature-party .signature-line { width: 100%; height: 26px; border-bottom: 1px solid #475467; }
     .meta-grid { display: table; width: 100%; border: 1px solid #d0d5dd; margin-bottom: 12px; }
     .meta-cell { display: table-cell; width: 25%; padding: 7px 9px; border-right: 1px solid #d0d5dd; vertical-align: top; }
     .meta-cell:last-child { border-right: 0; }
@@ -33,6 +42,10 @@
     .section-title { color: var(--primary); border-bottom: 1px solid #98a2b3; padding-bottom: 4px; margin: 0 0 5px; font-size: 10pt; font-weight: 800; }
     table.data { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 8pt; }
     table.data th, table.data td { border: 1px solid #d0d5dd; padding: 5px 6px; vertical-align: top; }
+    table.data { page-break-inside: auto; }
+    table.data thead { display: table-header-group; }
+    table.data tfoot { display: table-footer-group; }
+    table.data tr { page-break-inside: avoid; page-break-after: auto; }
     table.data th { background: var(--table-header); color: var(--primary); font-weight: 800; text-align: left; }
     table.data td.numeric, table.data th.numeric { text-align: right; }
     table.data tr.total td { background: #f2f4f7; font-weight: 800; }
@@ -67,11 +80,14 @@
       </div>
     </header>
     <div class="title-band">{{ document_title }}</div>
+    {% if quote.status_watermark %}<div class="draft-watermark">{{ quote.status_watermark }}</div>{% endif %}
     {% block document_content %}{% endblock %}
-    <footer class="signature-block">
-      <div class="signature"><div>Prepared By: {{ prepared_by|default:'ZIC Document Services' }}</div><div class="signature-line"></div><div class="small muted">Signature &amp; Date</div></div>
-      <div class="stamp"><span class="stamp-circle">ZIC</span><br><strong>{{ branding.company_name }}</strong><br><span class="small muted">Official Stamp</span></div>
-    </footer>
+    {% block signature_block %}
+      <footer class="signature-block">
+        <div class="signature"><div>Prepared By: {{ prepared_by|default:'ZIC Document Services' }}</div><div class="signature-line"></div><div class="small muted">Signature &amp; Date</div></div>
+        <div class="stamp"><span class="stamp-circle">ZIC</span><br><strong>{{ branding.company_name }}</strong><br><span class="small muted">Official Stamp</span></div>
+      </footer>
+    {% endblock %}
   </main>
 </body>
 </html>
