@@ -8,7 +8,7 @@
 - [x] Prompt 6 — First Premium Tracking and Receipt Seam
 - [ ] Prompt 7 — [pending prompt text]
 - [x] Prompt 8 — Lifecycle List and Detail APIs
-- [ ] Prompt 9 — Proposal Printout and Options Endpoints
+- [x] Prompt 9 — Proposal Printout and Options Endpoints
 - [ ] Prompt 10 — [pending prompt text]
 - [ ] Prompt 11 — [pending prompt text]
 - [ ] Prompt 12 — [pending prompt text]
