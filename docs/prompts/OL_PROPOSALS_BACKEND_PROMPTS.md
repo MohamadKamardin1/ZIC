@@ -3,7 +3,7 @@
 - [x] Prompt 1 — Save Prompt Series + Discovery + Proposal Domain Foundation
 - [x] Prompt 2 — Quotation to Proposal Conversion
 - [x] Prompt 3 — Enrichment and Beneficiaries
-- [ ] Prompt 4 — [pending prompt text]
+- [ ] Prompt 4 — Documents, Health Answers, and Underwriting Hook
 - [ ] Prompt 5 — [pending prompt text]
 - [ ] Prompt 6 — [pending prompt text]
 - [ ] Prompt 7 — [pending prompt text]
@@ -131,6 +131,40 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: endpoints, validation rules, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 4/12 — Documents, Health Answers, and Underwriting Hook
+
+```text
+You are a senior Django insurance engineer. Continue the ZIC OL Proposals backend. Execute ONLY Prompt 4.
+
+MANDATORY RULES:
+- Mandatory documents block payment-ready, mirroring the BR-12 pattern.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. Document requirement configuration: per product/plan document types with mandatory flag (parameterized; seed identity document, signature, KYC form defaults).
+2. POST document upload endpoint storing file reference, type, uploaded_by; list endpoint with mandatory/optional badges and status.
+3. Health answers endpoint:
+   - serve applicable OL health questionnaire for product/plan and thresholds
+   - accept answers; evaluate triggers using questionnaire item configuration
+   - when triggered: set medical_required, status PENDING_UNDERWRITING, emit MedicalRequirementRaised for the future underwriting module
+4. Underwriting clearance seam: POST underwriting-decision endpoint (clear / load / decline) permission-gated, setting underwriting_status and returning status to ENRICHMENT or terminal rejection with reasons.
+5. Audit uploads and decisions; structured errors for missing mandatory documents.
+
+TESTS:
+- mandatory vs optional document behavior
+- health trigger moves status to PENDING_UNDERWRITING and emits event
+- clearance returns status correctly; decline blocks progression
+- upload audit rows
+
+GIT:
+- commit: "feat(ol-proposals): implement documents and health answers underwriting hook"
+- push; tick checkbox
+
+FINAL OUTPUT: config model, endpoints, trigger logic, tests, commit hash, pushed branch.
 ```
 
 ---
