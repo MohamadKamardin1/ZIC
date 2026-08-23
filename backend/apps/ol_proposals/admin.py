@@ -11,6 +11,7 @@ from .models import (
     OLProposalInstallmentRateRow,
     OLProposalMember,
     OLProposalPlanConfig,
+    OLProposalPrintTemplate,
     OLProposalRider,
 )
 
@@ -114,9 +115,21 @@ class OLProposalBeneficiaryAdmin(admin.ModelAdmin):
 
 @admin.register(OLProposalDocument)
 class OLProposalDocumentAdmin(admin.ModelAdmin):
-    list_display = ("proposal", "document_type", "mandatory", "status", "uploaded_by", "uploaded_at")
-    list_filter = ("status", "mandatory")
-    search_fields = ("proposal__proposal_number", "document_type", "file_reference")
+    list_display = ("proposal", "document_type", "mandatory", "status", "template_version", "uploaded_by", "uploaded_at", "generated_at")
+    list_filter = ("status", "mandatory", "document_type")
+    search_fields = ("proposal__proposal_number", "document_type", "file_reference", "template__code")
+
+
+@admin.register(OLProposalPrintTemplate)
+class OLProposalPrintTemplateAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "version", "is_active", "effective_from", "effective_to", "updated_at")
+    list_filter = ("is_active", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description", "template_html")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "version", "description", "is_active")}),
+        ("Template", {"fields": ("template_html", "layout_variables")}),
+        ("Effective Dating", {"fields": ("effective_from", "effective_to")}),
+    )
 
 
 @admin.register(OLProposalHealthAnswer)

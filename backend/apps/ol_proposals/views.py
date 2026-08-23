@@ -11,6 +11,23 @@ from apps.ol_proposals.serializers import (
     OLProposalDetailSerializer,
 )
 
+PROPOSAL_BANK_OPTIONS = [
+    ("NMB", "NMB Bank Plc"),
+    ("CRDB", "CRDB Bank Plc"),
+    ("TPB", "Tanzania Postal Bank (TPB)"),
+    ("BOA", "Bank of Africa Tanzania"),
+    ("EXIM", "Exim Bank Tanzania"),
+    ("NBC", "NBC Bank"),
+    ("STANBIC", "Stanbic Bank Tanzania"),
+    ("KCB", "KCB Bank Tanzania"),
+    ("DTB", "Diamond Trust Bank Tanzania"),
+    ("CITIBANK", "Citibank Tanzania"),
+    ("AZANIA", "Azania Bank"),
+    ("ADVANS", "Advans Bank Tanzania"),
+]
+
+PROPOSAL_BANK_OPTIONS = tuple(PROPOSAL_BANK_OPTIONS)
+
 
 class MustViewProposalsPermission(IsAuthenticated):
     def has_permission(self, request, view):
@@ -210,35 +227,83 @@ class ProposalEnrichmentOptionsView(APIView):
 
     permission_classes = [MustViewProposalsPermission]
 
+    KIND_LABELS = {
+        "statuses": "Proposal status",
+        "employers": "Corporate partner (employer)",
+        "intermediaries": "Intermediary/agent partner",
+        "beneficial-types": "Beneficial type",
+        "document-types": "Proposal document type",
+        "banks": "Bank",
+        "channels": "Distribution channel",
+    }
+
     def get(self, request, kind):
         query = request.query_params.get("q", "")
         results = self._options(kind, query)
-        return Response({"data": {"results": results, "count": len(results)}})
+        return Response(
+            {
+                "data": {
+                    "kind": kind,
+                    "label": self.KIND_LABELS.get(kind, kind),
+                    "results": results,
+                    "count": len(results),
+                }
+            }
+        )
 
     def _options(self, kind, query):
+        if kind == "statuses":
+            from apps.ol_parameters.models import OLProposalStatus
+
+            rows = OLProposalStatus.objects.filter(is_active=True, applies_to__iexact="PROPOSAL").order_by("display_order", "code")
+            return [
+                {"id": item.code, "label": item.name or item.code, "value": item.code}
+                for item in rows
+                if not query or query.lower() in f"{item.name} {item.code}".lower()
+            ]
         if kind in ("employers", "intermediaries"):
             from apps.partners.models import Partner
 
             partners = Partner.objects.filter(is_active=True, status="ACTIVE")
             if kind == "employers":
                 partners = partners.filter(party_type__iexact="CORPORATE")
-            results = [
+            return [
                 {"id": str(p.pk), "label": _partner_label(p), "reference": p.partner_number}
                 for p in partners.order_by("partner_number")[:200]
+                if not query or query.lower() in _partner_label(p).lower()
             ]
-            return results
         if kind == "beneficial-types":
             from apps.ol_parameters.models import OLBeneficialType
 
             return [
                 {"id": str(item.pk), "label": item.name or item.code, "code": item.code}
                 for item in OLBeneficialType.objects.filter(is_active=True).order_by("name", "code")[:200]
+                if not query or query.lower() in f"{item.name} {item.code}".lower()
+            ]
+        if kind == "document-types":
+            from apps.ol_parameters.models import OLProposalDocumentRequirement
+
+            return [
+                {"id": item.code, "label": item.name or item.document_type, "value": item.document_type}
+                for item in OLProposalDocumentRequirement.objects.filter(is_active=True).order_by("name", "document_type")
+                if not query or query.lower() in f"{item.name} {item.document_type}".lower()
+            ]
+        if kind == "banks":
+            return [
+                {"id": code, "label": label, "value": label}
+                for code, label in PROPOSAL_BANK_OPTIONS
+                if not query or query.lower() in label.lower()
             ]
         if kind == "channels":
             return [{"value": channel, "label": channel} for channel in ("AGENT", "BROKER", "BANCA", "OTHER")]
         from apps.ol_proposals.errors import ProposalError
 
-        raise ProposalError(f"Unknown options kind '{kind}'.", error_code="PROPOSAL_NOT_FOUND", status_code=404, resolution_steps=["Use one of: employers, intermediaries, beneficial-types, channels."])
+        raise ProposalError(
+            f"Unknown options kind '{kind}'.",
+            error_code="PROPOSAL_NOT_FOUND",
+            status_code=404,
+            resolution_steps=["Use one of: statuses, employers, intermediaries, beneficial-types, document-types, banks, channels."],
+        )
 
 
 class ProposalDocumentCollectionView(APIView):
@@ -552,6 +617,46 @@ class ProposalReactivateView(APIView):
         )
         proposal.refresh_from_db()
         return Response({"data": OLProposalDetailSerializer(proposal).data})
+
+
+class MustPrintProposalPermission(IsAuthenticated):
+    def has_permission(self, request, view):
+        if not super().has_permission(request, view):
+            return False
+        return has_ol_proposal_permission(request.user, "print")
+
+
+class ProposalPrintView(APIView):
+    """POST /api/v1/ol-proposals/proposals/{id}/print/ — render a summary printout."""
+
+    permission_classes = [MustPrintProposalPermission]
+
+    def post(self, request, proposal_id):
+        from apps.ol_proposals.services.print_service import ProposalPrintService
+
+        proposal = _get_proposal(proposal_id)
+        document = ProposalPrintService.generate(
+            proposal=proposal,
+            actor=request.user,
+            request=request,
+            template_code=request.data.get("template_code"),
+            preview=bool(request.data.get("preview")),
+        )
+        return Response(
+            {
+                "data": {
+                    "proposal_number": proposal.proposal_number,
+                    "document_type": document.document_type,
+                    "status": document.status,
+                    "file_reference": document.file_reference,
+                    "template_code": document.template.code if document.template_id else None,
+                    "template_version": document.template_version,
+                    "source_version": (document.metadata or {}).get("source_version_number"),
+                    "urls": ProposalPrintService.document_urls(document),
+                }
+            },
+            status=201,
+        )
 
 
 class ProposalDetailView(APIView):

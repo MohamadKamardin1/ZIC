@@ -36,6 +36,7 @@ class ProposalDocumentStatus(models.TextChoices):
     UPLOADED = "UPLOADED", "Uploaded"
     VERIFIED = "VERIFIED", "Verified"
     REJECTED = "REJECTED", "Rejected"
+    GENERATED = "GENERATED", "Generated"
 
 
 class ProposalSourceChannel(models.TextChoices):
@@ -528,29 +529,113 @@ class OLProposalBeneficiary(models.Model):
             raise ValidationError(errors)
 
 
+class OLProposalPrintTemplate(models.Model):
+    """Versioned, parameter-managed HTML template used for proposal printouts."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    code = models.CharField(max_length=80)
+    name = models.CharField(max_length=255)
+    version = models.PositiveIntegerField(default=1)
+    description = models.TextField(blank=True, default="")
+    template_html = models.TextField()
+    layout_variables = models.JSONField(default=dict, blank=True)
+    effective_from = models.DateField(null=True, blank=True)
+    effective_to = models.DateField(null=True, blank=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "ol_proposal_print_template"
+        ordering = ["code", "-version"]
+        constraints = [
+            models.UniqueConstraint(fields=["code", "version"], name="ol_proposal_print_template_code_version_uq"),
+        ]
+        indexes = [
+            models.Index(fields=["code", "is_active", "effective_from", "effective_to"], name="ol_prop_print_tpl_active_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.code} v{self.version}"
+
+    def clean(self):
+        errors = {}
+        self.code = (self.code or "").strip().upper()
+        self.name = (self.name or "").strip()
+        self.template_html = self.template_html or ""
+        if not self.code:
+            errors["code"] = "Template code is required."
+        if not self.name:
+            errors["name"] = "Template name is required."
+        if self.version < 1:
+            errors["version"] = "Template version must be positive."
+        if not self.template_html.strip():
+            errors["template_html"] = "Template HTML is required."
+        if not isinstance(self.layout_variables, dict):
+            errors["layout_variables"] = "Layout variables must be a JSON object."
+        if self.effective_from and self.effective_to and self.effective_to < self.effective_from:
+            errors["effective_to"] = "Effective-to cannot be before effective-from."
+        if errors:
+            raise ValidationError(errors)
+
+
 class OLProposalDocument(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     proposal = models.ForeignKey(OLProposal, on_delete=models.CASCADE, related_name="documents")
     document_type = models.CharField(max_length=120, db_index=True)
     file_reference = models.CharField(max_length=500, blank=True, default="")
+    html_reference = models.CharField(max_length=500, blank=True, default="")
+    mime_type = models.CharField(max_length=120, default="application/pdf")
     mandatory = models.BooleanField(default=False)
     status = models.CharField(
         max_length=30, choices=ProposalDocumentStatus.choices, default=ProposalDocumentStatus.REQUESTED, db_index=True
     )
     rejection_reason = models.TextField(blank=True, default="")
+    template = models.ForeignKey(
+        "ol_proposals.OLProposalPrintTemplate",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="generated_documents",
+    )
+    template_version = models.PositiveIntegerField(null=True, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
     uploaded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="uploaded_ol_proposal_documents"
     )
     uploaded_at = models.DateTimeField(null=True, blank=True)
+    generated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="generated_ol_proposal_documents"
+    )
+    generated_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "ol_proposal_document"
         ordering = ["proposal", "document_type"]
+        indexes = [
+            models.Index(fields=["proposal", "document_type", "status"], name="ol_prop_doc_type_status_idx"),
+            models.Index(fields=["proposal", "template_version"], name="ol_prop_doc_tpl_ver_idx"),
+        ]
 
     def __str__(self):
         return f"{self.proposal.proposal_number}:{self.document_type}"
+
+    def clean(self):
+        errors = {}
+        self.document_type = (self.document_type or "").strip().upper()
+        self.file_reference = (self.file_reference or "").strip()
+        self.html_reference = (self.html_reference or "").strip()
+        self.mime_type = (self.mime_type or "application/pdf").strip().lower()
+        if not self.document_type:
+            errors["document_type"] = "Document type is required."
+        if not isinstance(self.metadata, dict):
+            errors["metadata"] = "Metadata must be a JSON object."
+        if self.template_id and self.template_version is not None and self.template.version != self.template_version:
+            errors["template_version"] = "Stored template version must match the selected template."
+        if errors:
+            raise ValidationError(errors)
 
 
 class OLProposalHealthAnswer(models.Model):

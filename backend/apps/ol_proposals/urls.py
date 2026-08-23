@@ -17,6 +17,7 @@ from apps.ol_proposals.views import (
     ProposalListView,
     ProposalMarkPaymentReadyView,
     ProposalPaymentReadinessView,
+    ProposalPrintView,
     ProposalReactivateView,
     ProposalUnderwritingDecisionView,
 )
@@ -30,6 +31,7 @@ urlpatterns = [
     path("proposals/<uuid:proposal_id>/enrich/", ProposalEnrichView.as_view(), name="ol-proposals-enrich"),
     path("proposals/<uuid:proposal_id>/cancel/", ProposalCancelView.as_view(), name="ol-proposals-cancel"),
     path("proposals/<uuid:proposal_id>/reactivate/", ProposalReactivateView.as_view(), name="ol-proposals-reactivate"),
+    path("proposals/<uuid:proposal_id>/print/", ProposalPrintView.as_view(), name="ol-proposals-print"),
     path("proposals/<uuid:proposal_id>/completeness/", ProposalCompletenessView.as_view(), name="ol-proposals-completeness"),
     path("proposals/<uuid:proposal_id>/documents/", ProposalDocumentCollectionView.as_view(), name="ol-proposals-documents"),
     path("proposals/<uuid:proposal_id>/health-questions/", ProposalHealthQuestionsView.as_view(), name="ol-proposals-health-questions"),
