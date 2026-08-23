@@ -38,3 +38,18 @@ Every commitment carries a due date, amount due, amount paid, balance, grace/lap
 Every status change, payment, reversal, and batch action writes an audit entry with actor, before/after state, reason, and source channel (`API`, `ADMIN`, `IMPORT`, `BATCH`, `PORTAL`, etc.), and publishes a domain event (e.g. `CommitmentGenerated`, `CommitmentPaymentAllocated`, `CommitmentOverdue`, `CommitmentCompleted`) to the outbox.
 
 Detailed engineering contract: `frontend/docs/COMMITMENTS_UI_GUIDE.md` and `docs/OL_COMMITMENTS_DESIGN.md`.
+
+## Print Commitment Statement
+
+From a commitment detail page, open **Documents** and choose **Generate commitment PDF** when a new statement is required. Existing instances show the approved template version, generating actor, generation time, and page count. Use **Preview** to view the PDF inside the authenticated application, **Download** to save it through the secure document client, or **Open in new tab** when a short-lived signed ticket is available.
+
+Do not copy the protected `/api/v1/documents/instances/.../download/` URL into a browser tab. If a session has expired, the application refreshes the access token once and retries automatically. If the retry fails, sign in again and reopen the Documents tab. A stale signed ticket should be replaced by returning to the instance list and generating a fresh link. Branding or pending-template messages link to System Parameters → Document Branding.
+
+| Print message | Meaning | Resolution |
+| --- | --- | --- |
+| `TEMPLATE_PENDING` | The Commitment Statement or requested future document has no approved active layout. | Complete the document template/branding setup in System Parameters, then generate again. |
+| `BRANDING_NOT_CONFIGURED` | No usable active branding version or legacy fallback value is available. | Save company details, logo, and colors at System Parameters → Document Branding. |
+| `Session expired — sign in again` | Bearer authentication failed after one refresh retry. | Sign in again; never work around the protection with a raw URL. |
+| `The document download ticket has expired` | The signed five-minute ticket is no longer valid. | Generate a new instance link from the Documents tab. |
+
+The generated statement records `DOCUMENT_GENERATED` and the later preview/download event with the actor, source transaction, template version, correlation ID, and API source channel. The short-lived ticket path additionally records ticket issuance and ticket download.

@@ -9,6 +9,9 @@ vi.mock("../../lib/documentClient", () => ({
     requiresLogin = false
     loginUrl = "/login"
   },
+  fetchAuthenticatedDocument: vi.fn(),
+  openAuthenticatedDocument: vi.fn(),
+  revokeAuthenticatedDocument: vi.fn(),
 }))
 
 vi.mock("../../lib/apiClient", () => ({
@@ -107,7 +110,8 @@ beforeEach(() => {
   requestMock.mockReset()
   navigateMock.mockReset()
   requestMock.mockImplementation(async (path: string) => {
-    if (path.startsWith("/api/v1/documents/render/")) return { signed_download_url: "/api/v1/documents/instances/document-1/download/?ticket=signed-ticket" }
+    if (path.startsWith("/api/v1/documents/instances/?")) return { count: 1, page: 1, page_size: 50, results: [{ id: "document-1", document_type: "OL_QUOTATION", template_name: "Ordinary Life Quotation", template_version: 1, generated_by_display: "E2E Superadmin", generated_at: "2026-08-19T10:05:00Z", page_count: 2, signed_download_url: "/api/v1/documents/instances/document-1/download/?ticket=signed-ticket" }] }
+    if (path.startsWith("/api/v1/documents/render/")) return { id: "document-1", signed_download_url: "/api/v1/documents/instances/document-1/download/?ticket=signed-ticket" }
     if (path.includes("/summary/")) return { total: 4, drafts: 1, finalized: 1, converted: 1, expired: 1 }
     if (path.startsWith("/api/v1/ol/quotations/quotations/")) return { results: [draftRow, finalizedRow], count: 25, page: 1, page_size: 20 }
     return {}
@@ -168,7 +172,7 @@ describe("OL Quotations list", () => {
     })
   })
 
-  it("renders print documents and opens only the signed ticket from the work queue", async () => {
+  it("opens the shared document panel from the work queue", async () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null)
     render(<OLQuotations />)
     await screen.findByText("Q-0001")
@@ -177,9 +181,10 @@ describe("OL Quotations list", () => {
     fireEvent.click(within(rows[2]).getByRole("button", { name: "Actions for row 2" }))
     fireEvent.click(screen.getByRole("button", { name: "Print" }))
 
-    await waitFor(() => expect(requestMock).toHaveBeenCalledWith("/api/v1/documents/render/OL_QUOTATION/finalized-1/", { method: "POST", body: JSON.stringify({}) }))
-    expect(openSpy).toHaveBeenCalledWith("/api/v1/documents/instances/document-1/download/?ticket=signed-ticket", "_blank", "noopener,noreferrer")
-    expect(openSpy.mock.calls.some(([url]) => String(url).includes("/api/") && !String(url).includes("ticket="))).toBe(false)
+    expect(await screen.findByRole("heading", { name: "Quotation documents · Q-0002" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Preview" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Open in new tab" })).toBeInTheDocument()
+    expect(openSpy).not.toHaveBeenCalled()
   })
 
   it("navigates to create and view routes", async () => {

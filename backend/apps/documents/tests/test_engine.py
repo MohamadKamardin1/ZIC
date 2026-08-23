@@ -4,6 +4,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from io import BytesIO
 from urllib.parse import parse_qs, urlparse
+from unittest.mock import patch
 
 from django.core.files.storage import default_storage
 from django.core.management import call_command
@@ -22,7 +23,7 @@ from apps.ol_parameters.models import (
     OLProduct as ParameterProduct,
     OLRiderSetup,
 )
-from apps.ol_commitments.models import OLCommitment
+from apps.ol_commitments.models import OLCommitment, OLCommitmentAllocation
 from apps.ol_proposals.models import OLProposal
 from apps.ol_quotations.models import (
     OLQuotation,
@@ -681,3 +682,202 @@ class UnifiedDocumentEngineAPITests(TestCase):
         self.assertEqual(response.data["data"]["version"], 9)
         self.assertEqual(response.data["data"]["company_name"], "ZIC Existing Branding")
         self.assertEqual(response.data["data"]["accent_colors"]["primary"], "#abcdef")
+
+    def _prompt5_sources(self):
+        self._prepare_complete_quotation(plan_count=4)
+        proposal = OLProposal.objects.create(
+            quotation=self.quotation,
+            proposal_number="OL-PROP-PROMPT5-001",
+            status="ACTIVE",
+            prospect_snapshot={
+                "name": "Asha Ali",
+                "identity_type": "National ID",
+                "identity_number": "NIDA-900101-001",
+            },
+            plans_snapshot=[{"code": "EDU-01", "name": "Elimu Bora Plan 1"}],
+            financial_summary_snapshot={"total_premium": "52500.00"},
+            created_by=self.admin,
+        )
+        commitment = OLCommitment.objects.create(
+            commitment_number="OL-CMT-PROMPT5-001",
+            source_type="MANUAL",
+            source_reference="MANUAL-PROMPT5-001",
+            partner=self.partner,
+            partner_name_snapshot="Asha Ali",
+            product_name_snapshot="ZIC Education Product",
+            plan_name_snapshot="Elimu Bora Plan",
+            currency="TZS",
+            premium_frequency="ANNUAL",
+            installment_number=1,
+            installment_count=12,
+            due_date=date.today() + timedelta(days=30),
+            premium_amount=Decimal("50000.00"),
+            amount_paid=Decimal("10000.00"),
+            amount_waived=Decimal("0.00"),
+            status="DUE",
+            created_by=self.admin,
+            updated_by=self.admin,
+        )
+        OLCommitmentAllocation.objects.create(
+            commitment=commitment,
+            receipt_reference="RCPT-PROMPT5-001",
+            amount=Decimal("10000.00"),
+            payment_mode="BANK_TRANSFER",
+            currency="TZS",
+            exchange_rate=Decimal("1.000000"),
+            allocated_by=self.admin,
+            source_channel="API",
+        )
+        return proposal, commitment
+
+    @staticmethod
+    def _image_resource_count(reader):
+        count = 0
+        for page in reader.pages:
+            resources = page.get("/Resources")
+            if not resources:
+                continue
+            xobjects = resources.get_object().get("/XObject")
+            if not xobjects:
+                continue
+            for reference in xobjects.get_object().values():
+                if reference.get_object().get("/Subtype") == "/Image":
+                    count += 1
+        return count
+
+    def _prompt5_render_and_download(self, document_type, object_id, expected_pages, expected_text):
+        response = self.client.post(
+            f"/api/v1/documents/render/{document_type}/{object_id}/",
+            {},
+            format="json",
+            HTTP_X_CORRELATION_ID=f"prompt5-{document_type.lower()}",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        data = response.data["data"]
+        self.assertEqual(data["mime_type"], "application/pdf")
+        self.assertGreaterEqual(data["page_count"], expected_pages)
+        self.assertEqual(data["template_version"], 1)
+        self.assertTrue(data["signed_download_url"])
+        signed = urlparse(data["signed_download_url"])
+        ticket = parse_qs(signed.query)["ticket"][0]
+        download = self.client.get(f"{signed.path}?ticket={ticket}")
+        self.assertEqual(download.status_code, 200, f"Download returned HTTP {download.status_code}")
+        self.assertEqual(download["Content-Type"], "application/pdf")
+        pdf = b"".join(download.streaming_content)
+        self.assertGreater(len(pdf), 2000)
+        reader = PdfReader(BytesIO(pdf))
+        self.assertGreaterEqual(len(reader.pages), expected_pages)
+        text_by_page = [" ".join((page.extract_text() or "").split()) for page in reader.pages]
+        text = " ".join(text_by_page)
+        for expected in expected_text:
+            self.assertIn(expected, text, f"{document_type} missing {expected!r}")
+        self.assertIn("Zanzibar Insurance Corporation Test", text)
+        self.assertIn("Template v1", text)
+        self.assertGreaterEqual(self._image_resource_count(reader), 1)
+        for page_number in range(1, len(reader.pages) + 1):
+            self.assertIn(f"Page {page_number} of {len(reader.pages)}", text)
+        instance = DocumentInstance.objects.get(pk=data["id"])
+        self.assertEqual(instance.generated_by_id, self.admin.pk)
+        self.assertEqual(instance.correlation_id, f"prompt5-{document_type.lower()}")
+        self.assertTrue(AuditLog.objects.filter(
+            action="DOCUMENT_GENERATED",
+            object_id=str(instance.pk),
+            user=self.admin,
+            source_channel="API",
+        ).exists())
+        self.assertTrue(AuditLog.objects.filter(
+            action="DOCUMENT_TICKET_DOWNLOADED",
+            object_id=str(instance.pk),
+            user=self.admin,
+            source_channel="API",
+        ).exists())
+        return data, instance, reader, text
+
+    def test_prompt5_pdf_verification_matrix_covers_all_implemented_types(self):
+        proposal, commitment = self._prompt5_sources()
+        cases = (
+            (
+                "OL_QUOTATION",
+                self.quotation.pk,
+                2,
+                (
+                    "QUOTATION", "OL-UNIFIED-DOC-001", "Zanzibar Insurance Corporation Test",
+                    "Plan & Sub-Products", "Member Coverage", "Riders & Benefits",
+                    "Investment Fund Allocations", "Financial Summary", "Policy-Year Projections",
+                    "Installment Payout Schedule", "Customer", "Agent / Intermediary",
+                    "Company Representative", "does not constitute an offer",
+                ),
+            ),
+            (
+                "PROPOSAL_SUMMARY",
+                proposal.pk,
+                1,
+                (
+                    "PROPOSAL SUMMARY", "OL-PROP-PROMPT5-001", "Asha Ali", "Proposed plans",
+                    "Plan code", "Underwriting and approval", "Financial summary",
+                    "Customer", "Agent / Intermediary", "Company Representative",
+                    "does not constitute an offer",
+                ),
+            ),
+            (
+                "COMMITMENT_STATEMENT",
+                commitment.pk,
+                1,
+                (
+                    "COMMITMENT STATEMENT", "OL-CMT-PROMPT5-001", "Asha Ali",
+                    "Commitment details", "Payment summary", "Payment allocations",
+                    "Receipt reference", "RCPT-PROMPT5-001", "Finance Officer",
+                    "Company Representative", "does not constitute",
+                ),
+            ),
+        )
+        for document_type, object_id, expected_pages, expected_text in cases:
+            with self.subTest(document_type=document_type):
+                self._prompt5_render_and_download(document_type, object_id, expected_pages, expected_text)
+
+    def test_prompt5_unauthenticated_render_and_download_are_teachable(self):
+        proposal, _ = self._prompt5_sources()
+        anonymous = APIClient()
+        render_response = anonymous.post(
+            f"/api/v1/documents/render/PROPOSAL_SUMMARY/{proposal.pk}/",
+            {},
+            format="json",
+        )
+        self.assertEqual(render_response.status_code, 401)
+        self.assertIn("Authentication credentials were not provided", str(render_response.data))
+        self.assertTrue(render_response["WWW-Authenticate"].startswith("Bearer"))
+        data = self.render_document()
+        signed = urlparse(data["signed_download_url"])
+        download_response = anonymous.get(signed.path, {"ticket": "not-a-valid-ticket"})
+        self.assertEqual(download_response.status_code, 403)
+        self.assertIn("ticket", str(download_response.data).lower())
+
+    def test_prompt5_signed_ticket_tamper_and_expiry_are_rejected(self):
+        data = self.render_document()
+        signed = urlparse(data["signed_download_url"])
+        ticket = parse_qs(signed.query)["ticket"][0]
+        tampered_ticket = f"{ticket[:-1]}{'A' if ticket[-1] != 'A' else 'B'}"
+        tampered = APIClient().get(signed.path, {"ticket": tampered_ticket})
+        self.assertEqual(tampered.status_code, 403)
+        self.assertIn("invalid", str(tampered.data).lower())
+        with patch.object(DocumentEngine, "TICKET_MAX_AGE_SECONDS", -1):
+            expired = APIClient().get(signed.path, {"ticket": ticket})
+        self.assertEqual(expired.status_code, 403)
+        self.assertIn("expired", str(expired.data).lower())
+
+    def test_prompt5_permission_matrix_denies_each_document_type_to_staff_without_entitlement(self):
+        proposal, commitment = self._prompt5_sources()
+        self.client.force_authenticate(self.denied_user)
+        for document_type, object_id in (
+            ("OL_QUOTATION", self.quotation.pk),
+            ("PROPOSAL_SUMMARY", proposal.pk),
+            ("COMMITMENT_STATEMENT", commitment.pk),
+        ):
+            with self.subTest(document_type=document_type):
+                response = self.client.post(
+                    f"/api/v1/documents/render/{document_type}/{object_id}/",
+                    {},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, 403, response.data)
+                self.assertIn("permission", str(response.data).lower())

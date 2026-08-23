@@ -147,25 +147,26 @@ Finalization can set `approval_required=true` when configured thresholds are exc
 
 ## Printable documents
 
+The quotation, proposal, and commitment screens use the unified document namespace:
+
 | Method | Endpoint | Permission | Behavior |
 |---|---|---|---|
-| `POST` | `/api/v1/ol-quotations/quotations/{id}/print/` | Print | Generate and persist HTML/PDF quotation output and issue short-lived signed document URLs. |
-| `GET` | `/api/v1/ol-quotations/quotations/{id}/print/?preview=true` | Print | Generate an explicitly requested preview using the same permission and storage rules. |
-| `GET` | `/api/v1/ol-quotations/quotations/{id}/documents/` | View | List generated documents with source quotation/version, template provenance, and short-lived signed URLs. |
-| `GET` | `/api/v1/ol-quotations/documents/{document_id}/download/` | Print or valid ticket | Stream the protected PDF document. Bearer authentication is the primary path; a valid signed ticket is supplementary. |
-| `GET` | `/api/v1/ol-quotations/documents/{document_id}/html/` | Print or valid ticket | Stream the protected HTML document with the same authorization and ticket rules. |
+| `POST` | `/api/v1/documents/render/OL_QUOTATION/{id}/` | `ol_quotations.print` | Generate a new branded `DocumentInstance`, store HTML/PDF, and issue a five-minute signed PDF ticket. |
+| `POST` | `/api/v1/documents/render/PROPOSAL_SUMMARY/{id}/` | Proposal print contract | Generate a branded Proposal Summary using the linked quotation and proposal snapshots. |
+| `POST` | `/api/v1/documents/render/COMMITMENT_STATEMENT/{id}/` | `ol_commitments.view` | Generate a branded Commitment Statement using human-readable finance snapshots. |
+| `GET` | `/api/v1/documents/instances/?source_type=ol_quotations.olquotation&object_id={id}` | View/source scope | List instance metadata, template name/version, actor, timestamp, page count, and secure actions. |
+| `GET` | `/api/v1/documents/instances/{document_id}/preview/` | Bearer | Stream protected HTML preview; fetch through the authenticated document client only. |
+| `GET` | `/api/v1/documents/instances/{document_id}/download/` | Bearer or valid ticket | Stream the protected PDF with permission and scope rechecked server-side. |
 
-The quotation URL namespace is canonicalized to `/api/v1/ol-quotations/`. The compatibility mount `/api/v1/ol/quotations/` remains available and resolves the same quotation and document routes; clients should emit and store only the canonical `/api/v1/ol-quotations/` paths. There is no additional `/quotations/quotations/` prefix in a document URL: the canonical protected path is `/api/v1/ol-quotations/documents/{document_id}/download/` or `/html/`.
-
-Print generation stores `OLQuotationDocument` with the source quotation, immutable source version, print template/version, actor, timestamp, MIME type, and private storage references. Storage references are never returned to API clients. Draft preview requires explicit `preview=true`; expired quotations are never printable. The response retains the `pdf_url` and `html_url` field names for frontend compatibility and additionally returns `signed_download_url`, `signed_preview_url` when available, and the corresponding ISO-8601 expiry fields `download_url_expires_at` and `preview_url_expires_at`.
+The earlier quotation-specific `/api/v1/ol-quotations/quotations/{id}/print/` and document routes remain compatibility endpoints for existing clients. New UI code must use the unified namespace and must not construct a duplicate `/quotations/quotations/` document prefix. Print generation creates a new immutable `DocumentInstance` while retaining source transaction and template provenance.
 
 ### Signed document ticket contract
 
-Each issued URL contains a `ticket` query parameter. The ticket is a Django HMAC-backed timestamp signature using the application secret and a dedicated document-download salt. It is valid for **300 seconds (5 minutes)** and is single-purpose. Its signed payload binds the ticket version and purpose to the document UUID, quotation UUID, issuing user UUID, and requested `pdf` or `html` format. Tickets are not long-lived bearer credentials and are not persisted as files or database records.
+Each issued URL contains a `ticket` query parameter. The ticket is a Django HMAC-backed timestamp signature using the application secret and a dedicated document-download salt. It is valid for **300 seconds (5 minutes)** and is single-purpose. Its signed payload binds the ticket version and purpose to the document instance, source type/object, issuing user, and PDF format. Tickets are not long-lived bearer credentials and are not persisted as files or database records.
 
-A ticket request may omit `Authorization`, which supports a safe new-tab or mobile share flow. On every use the backend verifies the signature and timestamp, confirms the ticket format and resource identifiers, verifies that the ticket owner is still active, rechecks `ol_quotations.print`, and rechecks visible-partner quotation scope. If an authenticated Bearer user also supplies a ticket, the authenticated user must be the ticket owner. Tampered, expired, cross-format, out-of-scope, or no-longer-authorized tickets return HTTP `403`. A request without both a valid ticket and Bearer authentication returns HTTP `401` with a Bearer challenge.
+A ticket request may omit `Authorization`, which supports a safe new-tab or mobile share flow. On every use the backend verifies the signature and timestamp, confirms the ticket format and resource identifiers, verifies that the ticket owner is still active, and rechecks document permission and partner scope. If an authenticated Bearer user also supplies a ticket, the authenticated user must be the ticket owner. Tampered, expired, cross-format, out-of-scope, or no-longer-authorized tickets return HTTP `403`. A request without both a valid ticket and Bearer authentication returns HTTP `401` with a Bearer challenge.
 
-The protected stream uses `Content-Disposition: inline`, `Cache-Control: private, no-store, max-age=0`, `Pragma: no-cache`, and `X-Content-Type-Options: nosniff`. PDF responses use `application/pdf`; HTML responses use `text/html; charset=utf-8`. Frontend print and download call sites must fetch these URLs through the authenticated blob document client rather than assigning an API URL to `window.open`, an iframe, or an anchor `href`.
+The protected stream uses `Content-Disposition: inline`, `Cache-Control: private, no-store, max-age=0`, `Pragma: no-cache`, and `X-Content-Type-Options: nosniff`. PDF responses use `application/pdf`; HTML responses use `text/html; charset=utf-8`. Frontend print and download call sites must fetch protected URLs through the authenticated blob document client rather than assigning an API URL to `window.open`, an iframe, or an anchor `href`.
 
 ## Partner verification and completion
 
