@@ -32,6 +32,7 @@ import {
   normalizeKPIs,
   normalizePaginated,
   normalizeProposalDetail,
+  normalizeProposalDocument,
   normalizeProposalListItem,
   printProposal,
   type PrintResult,
@@ -166,7 +167,7 @@ export function useDeleteBeneficiaryMutation() {
 export function useProposalDocuments(id?: string | null, enabled = true) {
   return useQuery({
     queryKey: ["proposals", "documents", id ?? "none"],
-    queryFn: async () => normalizePaginated(await listProposalDocuments(String(id)), (row) => row),
+    queryFn: async () => normalizePaginated(await listProposalDocuments(String(id)), normalizeProposalDocument),
     enabled: Boolean(id) && enabled,
   })
 }

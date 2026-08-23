@@ -103,6 +103,8 @@ export interface ProposalDocumentRecord {
   documentTypeDisplay?: string
   status: string
   fileReference?: string
+  mandatory?: boolean
+  uploadedAt?: string
 }
 
 // --- Carried quotation children (detail payload) ---
@@ -193,6 +195,8 @@ export interface ProposalCompleteness {
 export interface ProposalDetail extends ProposalListItem {
   quotationId?: string
   quotationVersion?: number | null
+  agentPartnerId?: string
+  employerPartnerId?: string
   underwritingStatus?: string
   reasonCode?: string
   reasonText?: string
@@ -453,6 +457,8 @@ export function normalizeProposalDetail(raw: unknown): ProposalDetail {
     quotationId: str(record, "quotation", "quotation_id"),
     quotationNumber: str(record, "quotation_number") ?? base.quotationNumber,
     quotationVersion: num(record, "quotation_version"),
+    agentPartnerId: str(record, "agent_partner"),
+    employerPartnerId: str(record, "employer_partner"),
     underwritingStatus: str(record, "underwriting_status"),
     reasonCode: str(record, "reason_code"),
     reasonText: str(record, "reason_text"),
@@ -551,6 +557,8 @@ export function normalizeProposalDetail(raw: unknown): ProposalDetail {
       documentTypeDisplay: str(item, "document_type_display"),
       status: str(item, "status") ?? "",
       fileReference: str(item, "file_reference"),
+      mandatory: bool(item, "mandatory"),
+      uploadedAt: str(item, "uploaded_at"),
     })),
     allowedActions: normalizeAllowedActions(record.allowed_actions),
     // The detail payload evaluates readiness inline under ``checklist``.
@@ -571,6 +579,19 @@ export function normalizePaginated<T>(payload: unknown, mapRow: (row: unknown) =
   const rows = Array.isArray(payload) ? payload : Array.isArray(record.results) ? record.results : []
   const count = typeof record.count === "number" ? record.count : rows.length
   return { results: rows.map(mapRow), count }
+}
+
+export function normalizeProposalDocument(raw: unknown): ProposalDocumentRecord {
+  const record = asRecord(raw)
+  return {
+    id: str(record, "id") ?? "",
+    documentType: str(record, "document_type") ?? "",
+    documentTypeDisplay: str(record, "document_type_display"),
+    status: str(record, "status") ?? "",
+    fileReference: str(record, "file_reference"),
+    mandatory: bool(record, "mandatory"),
+    uploadedAt: str(record, "uploaded_at"),
+  }
 }
 
 export function normalizeKPIs(payload: unknown): RegisterKPIs {
@@ -793,11 +814,16 @@ export async function listQuotationVersions(quotationId: string): Promise<Quotat
   }
 }
 
-export async function enrichProposalSection(id: string, section: string, data: Record<string, unknown>) {
+/** PATCH /enrich/ expects { section_name: {fields} } with one or more sections. */
+export async function enrichProposalSections(id: string, sections: Record<string, Record<string, unknown>>) {
   return request<unknown>(`${BASE}/proposals/${id}/enrich/`, {
     method: "PATCH",
-    body: JSON.stringify({ section, ...data }),
+    body: JSON.stringify(sections),
   })
+}
+
+export async function enrichProposalSection(id: string, section: string, data: Record<string, unknown>) {
+  return enrichProposalSections(id, { [section]: data })
 }
 
 export async function addBeneficiary(id: string, data: Record<string, unknown>) {

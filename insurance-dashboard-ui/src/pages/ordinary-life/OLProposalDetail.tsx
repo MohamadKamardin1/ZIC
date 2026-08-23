@@ -37,15 +37,19 @@ import {
   markPaymentReady,
   type ProposalDetail,
 } from "../../lib/proposals"
-import { proposalDetailKey, useProposalDetail, useProposalHistory } from "../../lib/proposalsHooks"
+import { proposalDetailKey, useProposalDetail, useProposalDocuments, useProposalHistory, useUploadDocumentMutation } from "../../lib/proposalsHooks"
 import { useAccess } from "../../lib/access"
 import { dateLabel, formatMoney } from "../../lib/commitmentsDisplay"
+import { TextInput } from "../../components/ui/FormControls"
+import { SmartSelect } from "../../components/ui/SmartSelect"
 import { useToast } from "../../components/ui/Toast"
+import OLEnrichmentModal from "./OLEnrichmentModal"
 
-type TabId = "overview" | "source" | "history"
+type TabId = "overview" | "documents" | "source" | "history"
 
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: "overview", label: "Overview" },
+  { id: "documents", label: "Documents" },
   { id: "source", label: "Quotation Source" },
   { id: "history", label: "History" },
 ]
@@ -126,6 +130,119 @@ function SnapshotViewer({ snapshot }: { snapshot: Record<string, unknown> }) {
   )
 }
 
+const DOCUMENT_TYPES_OPTIONS_URL = "/api/v1/ol-proposals/options/document-types/"
+
+/** Document requirements workspace — list, counts, and upload (BR-12). */
+function DocumentsPanel({
+  detail,
+  onActionError,
+}: {
+  detail: ProposalDetail
+  onActionError: (error: unknown) => void
+}) {
+  const { toast } = useToast()
+  const documentsQuery = useProposalDocuments(detail.id)
+  const rows = documentsQuery.data?.results ?? detail.documents
+  const mandatoryCount = rows.filter((row) => row.mandatory).length
+  const uploadedCount = rows.filter((row) => ["UPLOADED", "VERIFIED"].includes(row.status.toUpperCase())).length
+
+  const [documentType, setDocumentType] = useState("")
+  const [fileReference, setFileReference] = useState("")
+  const upload = useUploadDocumentMutation()
+
+  const submitUpload = () => {
+    if (!documentType || !fileReference.trim()) return
+    onActionError(null)
+    upload.mutate(
+      { id: String(detail.id), data: { document_type: documentType, file_reference: fileReference.trim() } },
+      {
+        onSuccess: () => {
+          toast({ title: "Document uploaded", message: `${documentType} was attached to this proposal.`, tone: "success" })
+          setDocumentType("")
+          setFileReference("")
+        },
+        onError: (error) => onActionError(error),
+      },
+    )
+  }
+
+  return (
+    <div className="space-y-4" data-testid="tab-documents">
+      <section className="surface-card p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="flex items-center gap-2 font-bold">
+            <FileText size={16} aria-hidden="true" />
+            Documents
+          </h2>
+          <span className="text-xs font-bold uppercase tracking-[0.08em] text-[var(--muted-foreground)]" data-testid="documents-counts">
+            {uploadedCount}/{Math.max(mandatoryCount, uploadedCount)} mandatory uploaded
+          </span>
+        </div>
+        {rows.length > 0 ? (
+          <ul className="divide-y">
+            {rows.map((row) => (
+              <li key={row.id || row.documentType} className="flex items-center justify-between gap-3 py-2 text-sm" data-document-type={row.documentType}>
+                <span className="min-w-0 truncate font-semibold">
+                  {row.documentTypeDisplay || row.documentType}
+                  {row.mandatory ? <span className="ml-2 rounded-full bg-[var(--secondary)] px-1.5 py-0.5 text-[10px] font-bold">Mandatory</span> : null}
+                </span>
+                <span className="flex flex-none items-center gap-3">
+                  {row.fileReference && /^https?:\/\//.test(row.fileReference) && (
+                    <a href={row.fileReference} target="_blank" rel="noreferrer" className="text-xs font-bold underline-offset-2 hover:underline">
+                      Open
+                    </a>
+                  )}
+                  <span className="text-xs font-bold uppercase tracking-wide text-[var(--muted-foreground)]">{row.status}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-[var(--muted-foreground)]">No documents have been uploaded for this proposal yet.</p>
+        )}
+      </section>
+
+      <section className="surface-card p-4">
+        <h2 className="mb-3 font-bold">Upload document</h2>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <SmartSelect
+            entity="document-types"
+            label="Document type"
+            name="upload_document_type"
+            optionsUrl={DOCUMENT_TYPES_OPTIONS_URL}
+            rememberLastUsed={false}
+            value={documentType}
+            onChange={setDocumentType}
+            placeholder="Select document type"
+          />
+          <TextInput
+            label="File reference"
+            name="upload_file_reference"
+            value={fileReference}
+            onChange={(event) => setFileReference(event.target.value)}
+            placeholder="DMS reference or URL"
+          />
+        </div>
+        <div className="mt-4 flex justify-end">
+          <button
+            type="button"
+            className="button-primary"
+            data-testid="upload-document"
+            disabled={!documentType || !fileReference.trim() || upload.isPending}
+            onClick={submitUpload}
+          >
+            {upload.isPending ? "Uploading…" : "Upload document"}
+          </button>
+        </div>
+      </section>
+
+      {documentsQuery.isError && (
+        <ErrorCoach error={documentsQuery.error} title="The document list could not be loaded" compact onRetry={() => void documentsQuery.refetch()} />
+      )}
+    </div>
+  )
+}
+
 export default function OLProposalDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -135,6 +252,7 @@ export default function OLProposalDetail() {
   const [activeTab, setActiveTab] = useState<TabId>("overview")
   const [snapshotVersion, setSnapshotVersion] = useState<number | null>(null)
   const [actionError, setActionError] = useState<unknown>(null)
+  const [enrichOpen, setEnrichOpen] = useState(false)
 
   const detailQuery = useProposalDetail(id)
   const detail = detailQuery.data ?? null
@@ -272,12 +390,12 @@ export default function OLProposalDetail() {
         {/* Action bar */}
         <div role="toolbar" aria-label="Proposal actions" className="flex flex-wrap items-center justify-end gap-2" data-testid="proposal-action-bar">
           {canAct("enrich") && (
-            <button type="button" className="button-secondary" disabled title="Enrichment workspace opens with the enrichment release">
+            <button type="button" className="button-secondary" onClick={() => setEnrichOpen(true)} data-testid="open-enrichment">
               Enrich
             </button>
           )}
           {canAct("upload_documents") && (
-            <button type="button" className="button-secondary" onClick={() => setActiveTab("overview")}>
+            <button type="button" className="button-secondary" onClick={() => setActiveTab("documents")}>
               Documents
             </button>
           )}
@@ -477,24 +595,11 @@ export default function OLProposalDetail() {
                   </div>
                 ) : null}
               </section>
-
-              {detail.documents.length > 0 && (
-                <section className="surface-card p-4">
-                  <h2 className="mb-3 flex items-center gap-2 font-bold">
-                    <FileText size={16} aria-hidden="true" />
-                    Documents
-                  </h2>
-                  <ul className="divide-y">
-                    {detail.documents.map((row) => (
-                      <li key={row.documentType + row.fileReference} className="flex items-center justify-between py-2 text-sm">
-                        <span className="font-semibold">{row.documentTypeDisplay || row.documentType}</span>
-                        <span className="text-xs font-bold uppercase tracking-wide text-[var(--muted-foreground)]">{row.status}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
             </div>
+          )}
+
+          {activeTab === "documents" && (
+            <DocumentsPanel detail={detail} onActionError={setActionError} />
           )}
 
           {activeTab === "source" && (
@@ -699,6 +804,8 @@ export default function OLProposalDetail() {
           <FirstPremiumCard status={detail.firstPremium} />
         </aside>
       </div>
+
+      <OLEnrichmentModal open={enrichOpen} onClose={() => setEnrichOpen(false)} detail={detail} />
     </div>
   )
 }

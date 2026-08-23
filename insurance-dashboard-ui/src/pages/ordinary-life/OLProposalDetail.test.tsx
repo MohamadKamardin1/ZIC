@@ -11,6 +11,10 @@ const {
   getSnapshotMock,
   markReadyMock,
   convertMock,
+  enrichMock,
+  documentsListMock,
+  uploadDocMock,
+  requestMock,
 } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
   getProposalMock: vi.fn(),
@@ -18,6 +22,10 @@ const {
   getSnapshotMock: vi.fn(),
   markReadyMock: vi.fn(),
   convertMock: vi.fn(),
+  enrichMock: vi.fn(),
+  documentsListMock: vi.fn(),
+  uploadDocMock: vi.fn(),
+  requestMock: vi.fn(),
 }))
 
 vi.mock("../../lib/proposals", async (importOriginal) => {
@@ -29,7 +37,15 @@ vi.mock("../../lib/proposals", async (importOriginal) => {
     getQuotationVersionSnapshot: getSnapshotMock,
     markPaymentReady: markReadyMock,
     convertToPolicy: convertMock,
+    enrichProposalSection: enrichMock,
+    listProposalDocuments: documentsListMock,
+    uploadProposalDocument: uploadDocMock,
   }
+})
+
+vi.mock("../../lib/apiClient", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/apiClient")>()
+  return { ...actual, request: requestMock }
 })
 
 vi.mock("react-router-dom", () => ({
@@ -82,6 +98,10 @@ function detailFixture(overrides: Record<string, unknown> = {}) {
     declaration_aml_flag: false,
     existing_policies_count: 2,
     occupation_risk_note: "Office administration role.",
+    bank_name: "CRDB Bank PLC",
+    bank_account_name: "Asha Said",
+    bank_account_number: "******8842",
+    declarations_free_text: {"smoker": false},
     created_at: "2026-08-01T09:00:00Z",
     checklist: {
       passed: false,
@@ -223,6 +243,10 @@ beforeEach(() => {
   getSnapshotMock.mockReset()
   markReadyMock.mockReset()
   convertMock.mockReset()
+  enrichMock.mockReset()
+  documentsListMock.mockReset()
+  uploadDocMock.mockReset()
+  requestMock.mockReset()
 
   grantedPermissions = [
     "ol_proposals.view",
@@ -237,6 +261,39 @@ beforeEach(() => {
   getProposalMock.mockResolvedValue(detailFixture())
   getHistoryMock.mockResolvedValue(historyFixture())
   getSnapshotMock.mockImplementation(async (_quotationId: string, versionNumber: number) => snapshotFixture(versionNumber))
+  enrichMock.mockResolvedValue({ data: {} })
+  documentsListMock.mockResolvedValue({
+    results: [
+      { id: "doc-uuid-1", document_type: "NATIONAL_ID", document_type_display: "National ID", status: "UPLOADED", file_reference: "docs/nid.pdf", mandatory: true },
+    ],
+    count: 1,
+  })
+  uploadDocMock.mockResolvedValue({ document_type: "NATIONAL_ID", status: "UPLOADED" })
+
+  requestMock.mockImplementation(async (path: string) => {
+    if (path.includes("/ol-proposals/options/employers/")) {
+      return { data: { kind: "employers", results: [{ id: "employer-partner-7", label: "Zanzibar Ports Ltd" }], count: 1 } }
+    }
+    if (path.includes("/ol-proposals/options/intermediaries/")) {
+      return { data: { kind: "intermediaries", results: [{ id: "agent-partner-3", label: "Juma Intermediaries" }], count: 1 } }
+    }
+    if (path.includes("/ol-proposals/options/banks/")) {
+      return { data: { kind: "banks", results: [{ id: "crdb", value: "CRDB Bank PLC", label: "CRDB Bank PLC" }, { id: "nmb", value: "NMB Bank PLC", label: "NMB Bank PLC" }], count: 2 } }
+    }
+    if (path.includes("/ol-proposals/options/document-types/")) {
+      return {
+        data: {
+          kind: "document-types",
+          results: [
+            { id: "NATIONAL_ID", value: "NATIONAL_ID", label: "National ID" },
+            { id: "SIGNATURE", value: "SIGNATURE", label: "Signature specimen" },
+          ],
+          count: 2,
+        },
+      }
+    }
+    throw new Error(`Unhandled request in test: ${path}`)
+  })
 })
 
 describe("OL Proposal detail page", () => {
@@ -247,8 +304,9 @@ describe("OL Proposal detail page", () => {
     expect(screen.getByTestId("proposal-detail-header")).toHaveTextContent("Asha Said")
     expect(screen.getByTestId("proposal-detail-header")).toHaveTextContent("Twenty Year Endowment")
 
-    for (const tab of ["Overview", "Quotation Source", "History"]) {
-      expect(screen.getByRole("button", { name: tab })).toBeInTheDocument()
+    const tabsNav = within(screen.getByTestId("proposal-tabs"))
+    for (const tab of ["Overview", "Documents", "Quotation Source", "History"]) {
+      expect(tabsNav.getByRole("button", { name: tab })).toBeInTheDocument()
     }
 
     expect(screen.getByTestId("tick-payment-ready-off")).toBeTruthy()
@@ -337,5 +395,91 @@ describe("OL Proposal detail page", () => {
 
     expect(await screen.findByTestId("error-coach-code")).toHaveTextContent("PROPOSAL_NOT_FOUND")
     expect(screen.getByTestId("error-coach-steps")).toHaveTextContent("Verify the proposal number.")
+  })
+
+  it("saves the employer enrichment section with the selected corporate partner", async () => {
+    renderPage()
+    await screen.findByTestId("proposal-detail-header")
+
+    fireEvent.click(screen.getByTestId("open-enrichment"))
+    const section = await screen.findByTestId("enrich-section-employer")
+
+    const referenceInput = within(section).getByLabelText(/Employment reference/) as HTMLInputElement
+    expect(referenceInput.value).toBe("ZPL-2231")
+    fireEvent.change(referenceInput, { target: { value: "ZPL-9988" } })
+
+    fireEvent.click(document.getElementById("enrich_employer_partner") as HTMLElement)
+    fireEvent.click(await screen.findByRole("option", { name: "Zanzibar Ports Ltd" }))
+
+    fireEvent.click(screen.getByTestId("enrich-save-employer"))
+
+    await waitFor(() =>
+      expect(enrichMock).toHaveBeenCalledWith("prop-uuid-0001", "employer", {
+        employer_partner: "employer-partner-7",
+        employment_reference: "ZPL-9988",
+        payroll_deduction: true,
+      }),
+    )
+  })
+
+  it("only sends the bank account number when a replacement value is typed", async () => {
+    renderPage()
+    await screen.findByTestId("proposal-detail-header")
+
+    fireEvent.click(screen.getByTestId("open-enrichment"))
+    await screen.findByTestId("enrich-section-bank")
+
+    // Save without touching the masked number — it must not be overwritten.
+    fireEvent.click(screen.getByTestId("enrich-save-bank_details"))
+    await waitFor(() => expect(enrichMock).toHaveBeenCalledTimes(1))
+    const [, , firstPayload] = enrichMock.mock.calls[0]
+    expect(firstPayload.bank_name).toBe("CRDB Bank PLC")
+    expect(firstPayload.bank_account_name).toBe("Asha Said")
+    expect(firstPayload).not.toHaveProperty("bank_account_number")
+
+    fireEvent.change(document.getElementById("enrich_bank_account_number") as HTMLInputElement, {
+      target: { value: "9988776655" },
+    })
+    fireEvent.click(screen.getByTestId("enrich-save-bank_details"))
+    await waitFor(() => expect(enrichMock).toHaveBeenCalledTimes(2))
+    const [, , secondPayload] = enrichMock.mock.calls[1]
+    expect(secondPayload.bank_account_number).toBe("9988776655")
+  })
+
+  it("blocks saving declarations with invalid JSON and shows a validation message", async () => {
+    renderPage()
+    await screen.findByTestId("proposal-detail-header")
+
+    fireEvent.click(screen.getByTestId("open-enrichment"))
+    await screen.findByTestId("enrich-section-declarations")
+
+    fireEvent.change(screen.getByLabelText(/Declarations note/), { target: { value: "{not json" } })
+    fireEvent.click(screen.getByTestId("enrich-save-declarations"))
+
+    expect(await screen.findByTestId("enrich-validation-error")).toHaveTextContent(/valid JSON/i)
+    expect(enrichMock).not.toHaveBeenCalled()
+  })
+
+  it("lists documents on the Documents tab and uploads through the form", async () => {
+    renderPage()
+    await screen.findByTestId("proposal-detail-header")
+
+    fireEvent.click(within(screen.getByTestId("proposal-tabs")).getByRole("button", { name: "Documents" }))
+    const panel = await screen.findByTestId("tab-documents")
+    expect(within(panel).getByText("National ID")).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTestId("documents-counts")).toHaveTextContent("1/1 mandatory uploaded"))
+
+    fireEvent.click(document.getElementById("upload_document_type") as HTMLElement)
+    fireEvent.click(await screen.findByRole("option", { name: "National ID" }))
+    fireEvent.change(screen.getByLabelText(/File reference/), { target: { value: "dms://scans/nid.pdf" } })
+
+    fireEvent.click(screen.getByTestId("upload-document"))
+
+    await waitFor(() =>
+      expect(uploadDocMock).toHaveBeenCalledWith("prop-uuid-0001", {
+        document_type: "NATIONAL_ID",
+        file_reference: "dms://scans/nid.pdf",
+      }),
+    )
   })
 })
