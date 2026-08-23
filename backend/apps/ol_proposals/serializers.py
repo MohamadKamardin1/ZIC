@@ -93,6 +93,23 @@ class OLProposalHealthAnswerSerializer(serializers.ModelSerializer):
         fields = ("id", "questionnaire_item", "health_question", "answer", "score", "triggers_medical", "answered_at")
 
 
+class OLHealthQuestionnaireItemSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    sequence = serializers.IntegerField()
+    mandatory = serializers.BooleanField()
+    trigger_medical_requirement = serializers.BooleanField()
+    scoring_threshold = serializers.SerializerMethodField()
+    question_id = serializers.UUIDField(source="health_question_id")
+    question_code = serializers.CharField(source="health_question.code", read_only=True)
+    question_text = serializers.CharField(source="health_question.question_text", read_only=True)
+    answer_type = serializers.CharField(source="health_question.answer_type", read_only=True)
+    category = serializers.CharField(source="health_question.category", read_only=True)
+    underwriting_impact = serializers.CharField(source="health_question.underwriting_impact", read_only=True)
+
+    def get_scoring_threshold(self, item):
+        return str(item.score) if item.score is not None else None
+
+
 class OLProposalBaseSerializer(serializers.ModelSerializer):
     quotation_number = serializers.CharField(source="quotation.quote_number", read_only=True)
     bank_account_number = serializers.SerializerMethodField()

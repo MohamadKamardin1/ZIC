@@ -967,6 +967,43 @@ class OLProposalStatus(OLParameterBaseModel):
         self.allowed_transitions = normalized
 
 
+class OLProposalDocumentRequirement(OLParameterBaseModel):
+    """Per-product/plan mandatory document requirements for proposals (BR-12)."""
+
+    product = models.ForeignKey(
+        "ol_parameters.OLProduct",
+        on_delete=models.PROTECT,
+        related_name="proposal_document_requirements",
+        null=True,
+        blank=True,
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        related_name="proposal_document_requirements",
+        null=True,
+        blank=True,
+    )
+    document_type = models.CharField(max_length=120, db_index=True)
+    mandatory = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        ordering = ["name", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_proposal_doc_req_code_uq"),
+        ]
+        indexes = [
+            models.Index(fields=["product", "plan", "document_type"], name="ol_prop_doc_req_scope_idx"),
+            models.Index(fields=["mandatory", "is_active"], name="ol_prop_doc_req_mand_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        self.document_type = (self.document_type or "").strip().upper()
+        if not self.document_type:
+            raise ValidationError({"document_type": "A document type is required."})
+
+
 class OLPolicyStatus(OLParameterBaseModel):
     """Configurable policy lifecycle status and outgoing transition metadata."""
 

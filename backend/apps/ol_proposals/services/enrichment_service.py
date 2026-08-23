@@ -340,7 +340,7 @@ def _populate_beneficiary(beneficiary, data, proposal, exclude=None):
 # Completeness
 # ---------------------------------------------------------------------------
 
-REQUIRED_SECTIONS = ["beneficiaries", "declarations", "bank_details"]
+REQUIRED_SECTIONS = ["beneficiaries", "declarations", "bank_details", "documents"]
 OPTIONAL_SECTIONS = ["employer", "intermediary"]
 ALL_SECTIONS = REQUIRED_SECTIONS + OPTIONAL_SECTIONS
 
@@ -357,6 +357,9 @@ def missing_sections(proposal):
     mark("beneficiaries", bool(beneficiaries) and any(item.is_primary for item in beneficiaries) and sum(map(lambda item: Decimal(str(item.share_percent or 0)), beneficiaries), Decimal("0.00")) == Decimal("100.00") and all((not item.is_minor or bool((item.guardian_name or "").strip())) for item in beneficiaries))
     mark("declarations", proposal.declaration_pep_flag is not None and proposal.declaration_aml_flag is not None)
     mark("bank_details", bool((proposal.bank_name or "").strip()) and bool((proposal.bank_account_name or "").strip()) and bool((proposal.bank_account_number or "").strip()))
+    from apps.ol_proposals.services.document_service import missing_mandatory_documents
+
+    mark("documents", missing_mandatory_documents(proposal) == [])
     mark("employer", bool(proposal.employer_partner_id))
     mark("intermediary", bool(proposal.agent_partner_id))
 

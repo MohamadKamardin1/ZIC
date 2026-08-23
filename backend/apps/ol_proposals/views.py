@@ -81,6 +81,13 @@ class MustEnrichProposalPermission(IsAuthenticated):
         return has_ol_proposal_permission(request.user, "enrich")
 
 
+class MustUploadDocumentsPermission(IsAuthenticated):
+    def has_permission(self, request, view):
+        if not super().has_permission(request, view):
+            return False
+        return has_ol_proposal_permission(request.user, "upload_documents")
+
+
 def _get_proposal(proposal_id):
     proposal = (
         OLProposal.objects.select_related("quotation", "partner", "agent_partner", "employer_partner", "converted_policy")
@@ -232,6 +239,115 @@ class ProposalEnrichmentOptionsView(APIView):
         from apps.ol_proposals.errors import ProposalError
 
         raise ProposalError(f"Unknown options kind '{kind}'.", error_code="PROPOSAL_NOT_FOUND", status_code=404, resolution_steps=["Use one of: employers, intermediaries, beneficial-types, channels."])
+
+
+class ProposalDocumentCollectionView(APIView):
+    """GET/POST /api/v1/ol-proposals/{id}/documents/"""
+
+    def get_permissions(self):
+        return [IsAuthenticated()] if self.request.method in ("GET",) else [MustUploadDocumentsPermission()]
+
+    def get(self, request, proposal_id):
+        from apps.ol_proposals.models import ProposalDocumentStatus
+        from apps.ol_proposals.serializers import OLProposalDocumentSerializer
+
+        proposal = _get_proposal(proposal_id)
+        rows = list(proposal.documents.order_by("document_type"))
+        return Response(
+            {
+                "data": {
+                    "results": OLProposalDocumentSerializer(rows, many=True).data,
+                    "mandatory": proposal.documents.filter(mandatory=True).count(),
+                    "uploaded": proposal.documents.filter(status__in=(ProposalDocumentStatus.UPLOADED, ProposalDocumentStatus.VERIFIED)).count(),
+                }
+            }
+        )
+
+    def post(self, request, proposal_id):
+        from apps.governance.services.audit_service import AuditService
+        from apps.ol_proposals.services.document_service import upload_document
+
+        proposal = _get_proposal(proposal_id)
+        document, created = upload_document(
+            proposal=proposal,
+            document_type=request.data.get("document_type"),
+            file_reference=request.data.get("file_reference"),
+            actor=request.user,
+            source_channel="API",
+        )
+        AuditService.log_action(
+            "PROPOSAL_DOCUMENT_UPLOAD",
+            proposal,
+            actor=request.user,
+            request=request,
+            after_state={"document_type": document.document_type, "file_reference": document.file_reference},
+            changed_fields=["documents"],
+            reason=f"Uploaded '{document.document_type}'.",
+            source_channel="API",
+        )
+        return Response(
+            {"data": {"document_type": document.document_type, "file_reference": document.file_reference, "mandatory": document.mandatory, "status": document.status}},
+            status=201 if created else 200,
+        )
+
+
+class ProposalHealthQuestionsView(APIView):
+    """GET /api/v1/ol-proposals/{id}/health-questions/"""
+
+    permission_classes = [MustViewProposalsPermission]
+
+    def get(self, request, proposal_id):
+        from apps.ol_proposals.serializers import OLHealthQuestionnaireItemSerializer
+        from apps.ol_proposals.services.health_service import applicable_questionnaire, questionnaire_items
+
+        proposal = _get_proposal(proposal_id)
+        questionnaire = applicable_questionnaire(proposal)
+        return Response(
+            {
+                "data": {
+                    "questionnaire": questionnaire.code if questionnaire else None,
+                    "results": OLHealthQuestionnaireItemSerializer(questionnaire_items(proposal), many=True).data,
+                }
+            }
+        )
+
+
+class ProposalHealthAnswersView(APIView):
+    """POST /api/v1/ol-proposals/{id}/health-answers/"""
+
+    permission_classes = [MustEnrichProposalPermission]
+
+    def post(self, request, proposal_id):
+        from apps.ol_proposals.services.health_service import record_answers
+
+        proposal = _get_proposal(proposal_id)
+        answers = request.data.get("answers") if isinstance(request.data, dict) else request.data
+        result = record_answers(proposal=proposal, answers=answers, actor=request.user, source_channel="API", reason=request.data.get("reason") or "")
+        proposal.refresh_from_db()
+        payload = OLProposalDetailSerializer(proposal).data
+        payload["health_result"] = result
+        return Response({"data": payload})
+
+
+class ProposalUnderwritingDecisionView(APIView):
+    """POST /api/v1/ol-proposals/{id}/underwriting-decision/"""
+
+    permission_classes = [MustEnrichProposalPermission]
+
+    def post(self, request, proposal_id):
+        from apps.ol_proposals.services.underwriting_service import decide
+
+        proposal = _get_proposal(proposal_id)
+        proposal = decide(
+            proposal=proposal,
+            decision=request.data.get("decision"),
+            actor=request.user,
+            request=request,
+            reason=request.data.get("reason") or "",
+            source_channel="API",
+        )
+        proposal.refresh_from_db()
+        return Response({"data": OLProposalDetailSerializer(proposal).data})
 
 
 class ProposalListView(APIView):
