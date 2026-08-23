@@ -1327,7 +1327,9 @@ class QuotationService:
         rows = QuotationService._effective_queryset(OLBeneficialType.objects.all(), as_of).order_by("category", "name", "code")
         return [
             {
-                "id": row.pk,
+                "id": str(row.pk),
+                "value": str(row.pk),
+                "label": f"{row.code} — {row.name}",
                 "code": row.code,
                 "name": row.name,
                 "category": row.category,

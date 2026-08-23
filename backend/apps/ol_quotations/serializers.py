@@ -425,7 +425,13 @@ class OLQuotationRiderOptionSerializer(serializers.Serializer):
 
 
 class OLQuotationBenefitInputSerializer(serializers.Serializer):
-    beneficial_type_id = serializers.UUIDField(required=False, allow_null=True)
+    beneficial_type_id = serializers.UUIDField(
+        required=False,
+        allow_null=True,
+        error_messages={
+            "invalid": "Select a configured Benefit Type from the list. Do not submit the benefit name or code.",
+        },
+    )
     benefit_type = serializers.CharField(required=False, allow_blank=True, max_length=80)
     basis = serializers.ChoiceField(choices=["FIXED", "RATIO", "LOADED", "DISCOUNTED", "CAPPED"])
     value = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=Decimal("0"), required=False, allow_null=True)
@@ -452,7 +458,13 @@ class OLQuotationRiderSelectionInputSerializer(serializers.Serializer):
     plan_config_id = serializers.UUIDField(required=False, allow_null=True)
     rider_sum_assured = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=Decimal("0.01"))
     rider_term_years = serializers.IntegerField(min_value=1, required=False, allow_null=True)
-    beneficial_type_id = serializers.UUIDField(required=False, allow_null=True)
+    beneficial_type_id = serializers.UUIDField(
+        required=False,
+        allow_null=True,
+        error_messages={
+            "invalid": "Select a configured Benefit Type from the list. Do not submit the benefit name or code.",
+        },
+    )
     benefit_basis = serializers.ChoiceField(choices=["FIXED", "RATIO", "LOADED", "DISCOUNTED", "CAPPED"], required=False, default="FIXED")
     benefit_value = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=Decimal("0"), required=False, allow_null=True)
     loading = serializers.DecimalField(max_digits=9, decimal_places=4, min_value=Decimal("0"), max_value=Decimal("100"), required=False, default=Decimal("0"))

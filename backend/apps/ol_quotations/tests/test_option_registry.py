@@ -1,4 +1,5 @@
 import inspect
+from uuid import UUID
 
 from django.core.management import call_command
 from django.test import TestCase
@@ -78,6 +79,14 @@ class OLOptionRegistryTests(TestCase):
                 self.assertGreater(search_page["count"], 0)
                 self.assertLessEqual(len(search_page["items"]), 1)
                 self.assertTrue(any(query.casefold() in item["label"].casefold() for item in search_page["items"]))
+
+    def test_benefit_types_use_uuid_values_for_fk_consumers(self):
+        data = self.get_options("benefit-types", page_size=200)
+        self.assertGreater(data["count"], 0)
+        for option in data["items"]:
+            UUID(str(option["value"]))
+            self.assertIn(" — ", option["label"])
+            self.assertEqual(option["meta"]["code"], option["label"].split(" — ", 1)[0])
 
     def test_inactive_catalog_records_are_excluded(self):
         inactive = OLPlanType.objects.create(

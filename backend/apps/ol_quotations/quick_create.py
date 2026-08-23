@@ -317,7 +317,7 @@ def _specs() -> dict[str, QuickCreateSpec]:
         entity: QuickCreateSpec(entity, "system_parameters.manage", (FieldSpec("code"), FieldSpec("name")), lambda data, actor, request, entity=entity: _create_choice(entity, data, actor, request))
         for entity in (
             "identity-types", "payment-frequencies", "quote-bases", "premium-factors", "member-relations",
-            "cover-types", "payment-modes", "benefit-types", "currencies",
+            "cover-types", "payment-modes", "benefit-type-codes", "currencies",
         )
     }
     return {
@@ -339,6 +339,7 @@ def _specs() -> dict[str, QuickCreateSpec]:
         "investment-funds": QuickCreateSpec("investment-funds", "ol_parameters.create", (*_model_fields(OLInvestmentFund), FieldSpec("fund_type", "select", True, (), None, "investment-fund-types"), FieldSpec("currency", "select", False, _dynamic_choices("currencies"), "TZS"), FieldSpec("valuation_frequency", "select", False, _enum_choices(OLValuationFrequency), OLValuationFrequency.DAILY)), _create_fund),
         "products": QuickCreateSpec("products", "ol_parameters.create", (*_model_fields(OLProduct), FieldSpec("plan_type", "select", True, (), None, "plan-types"), FieldSpec("insurance_class", "select", False, _enum_choices(OLInsuranceClass), OLInsuranceClass.INDIVIDUAL), FieldSpec("allow_riders", "boolean", False, (), False), FieldSpec("allow_loans", "boolean", False, (), False), FieldSpec("allow_withdrawals", "boolean", False, (), False), FieldSpec("allow_surrender", "boolean", False, (), True), FieldSpec("allow_paidup", "boolean", False, (), False), FieldSpec("allow_bonus", "boolean", False, (), False), FieldSpec("investment_linked", "boolean", False, (), False)), _create_product),
         "riders": QuickCreateSpec("riders", "ol_parameters.create", (*_model_fields(OLRiderSetup), FieldSpec("rider_category", "select", True, _enum_choices(OLRiderCategory)), FieldSpec("benefit_type", "select", True, _enum_choices(OLRiderBenefitType)), FieldSpec("calculation_basis", "select", False, _enum_choices(OLRiderCalculationBasis), OLRiderCalculationBasis.SUM_ASSURED)), _create_rider),
+        "benefit-types": QuickCreateSpec("benefit-types", "ol_parameters.create", (*_model_fields(OLBeneficialType), FieldSpec("category", "select", False, _enum_choices(OLBeneficialTypeCategory), OLBeneficialTypeCategory.BENEFIT), FieldSpec("calculation_basis", required=False, default="PERCENTAGE"), FieldSpec("default_ratio", "decimal", False, (), 0)), _create_benefit_catalog),
         "benefit-types-catalog": QuickCreateSpec("benefit-types-catalog", "ol_parameters.create", (*_model_fields(OLBeneficialType), FieldSpec("category", "select", False, _enum_choices(OLBeneficialTypeCategory), OLBeneficialTypeCategory.BENEFIT), FieldSpec("calculation_basis", required=False, default="PERCENTAGE"), FieldSpec("default_ratio", "decimal", False, (), 0)), _create_benefit_catalog),
     }
 
