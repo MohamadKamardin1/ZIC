@@ -10,7 +10,7 @@
 - [x] Prompt 8 — Lifecycle List and Detail APIs
 - [x] Prompt 9 — Proposal Printout and Options Endpoints
 - [x] Prompt 10 — Dashboard, Reports, Portal, and Notifications Integration
-- [ ] Prompt 11 — [pending prompt text]
+- [ ] Prompt 11 — Full Step and Error Matrix Test Suite
 - [ ] Prompt 12 — [pending prompt text]
 
 > **Note on fidelity:** prompts 2–12 were not included in the pasted series message for this session. They will be appended `EXACTLY as provided` when the user supplies them, then executed strictly one at a time. Prompt 1 below is saved verbatim.
@@ -335,6 +335,33 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: integration map, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 11/12 — Full Step and Error Matrix Test Suite
+
+```text
+You are a senior QA engineer. Continue the ZIC OL Proposals backend. Execute ONLY Prompt 11.
+
+MANDATORY RULES:
+- Every step and error path tested; fix all failures before pushing.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. Integration tests for the complete happy path:
+   quotation finalize -> partner verify -> convert -> enrich -> beneficiaries -> documents -> health answers -> payment ready -> first premium commitment -> allocate full payment -> convert to policy.
+2. Error matrix tests asserting structured teachable errors for every proposal error code, including deep links and resolution steps.
+3. Permission matrix for all endpoints and actions.
+4. Idempotency tests: conversion, payment-ready, policy conversion, expiry batch.
+5. Audit assertions: every state change has audit row with actor, before/after, reason where required, source channel.
+6. E2E API flow tests simulating staff and portal users.
+
+GIT:
+- commit: "test(ol-proposals): full step and error matrix test suite"
+- push; tick checkbox
+
+FINAL OUTPUT: coverage summary, audit evidence, test results, commit hash, pushed branch.
 ```
 
 ---
