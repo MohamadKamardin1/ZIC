@@ -2,7 +2,7 @@
 
 This file preserves the five sequential workstreams from the supplied print-flow incident instructions. They must be executed in order; no later prompt may be merged or skipped before the preceding prompt is green.
 
-## [ ] Prompt 1 — Audit frontend print and download navigation
+## [x] Prompt 1 — Audit frontend print and download navigation
 
 1. Search the entire frontend for direct navigation to API URLs used for printing/downloading: window.open, anchor href, location.href, iframe src pointing at /api/.
 2. Confirm the print button bypasses the authenticated API client (this is the expected root cause). Also check token expiry handling on that call.
