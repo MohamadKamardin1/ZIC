@@ -16,6 +16,17 @@ class Command(BaseCommand):
     @transaction.atomic
     def handle(self, *args, **options):
         today = date.today()
+        from apps.ol_proposals.services.notification_service import (
+            expiring_soon_candidates,
+            notify_expiring_soon,
+        )
+
+        expiring_count = 0
+        for proposal in expiring_soon_candidates(as_of=today, window_days=7):
+            _, created = notify_expiring_soon(proposal=proposal, dispatch_on=today, source_channel="SYSTEM")
+            if created:
+                expiring_count += 1
+
         terminal = set(parameter_resolver.terminal_proposal_statuses() or ("CANCELLED", "CONVERTED", "EXPIRED"))
         candidates = OLProposal.objects.filter(expiry_date__isnull=False, expiry_date__lt=today).exclude(
             status__in=terminal
@@ -28,4 +39,6 @@ class Command(BaseCommand):
                 source_channel="SYSTEM",
             )
             count += 1
-        self.stdout.write(self.style.SUCCESS(f"Expired {count} proposal(s)."))
+        self.stdout.write(
+            self.style.SUCCESS(f"Notified {expiring_count} expiring-soon proposal(s); expired {count} proposal(s).")
+        )

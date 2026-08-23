@@ -508,7 +508,7 @@ class ProposalListView(APIView):
 
 
 class ProposalKpisView(APIView):
-    """GET /api/v1/ol-proposals/proposals/kpis/ — register key performance indicators."""
+    """GET /api/v1/ol-proposals/proposals/kpis/ — register KPIs (role-filtered)."""
 
     permission_classes = [MustViewProposalsPermission]
 
@@ -518,12 +518,95 @@ class ProposalKpisView(APIView):
         return Response(
             {
                 "data": proposal_kpis(
+                    user=request.user,
                     period_from=request.query_params.get("period_from"),
                     period_to=request.query_params.get("period_to"),
                     expiring_soon_days=request.query_params.get("expiring_soon_days"),
                 )
             }
         )
+
+
+class ProposalDashboardKpisView(APIView):
+    """GET /api/v1/ol-proposals/proposals/dashboard-kpis/ — dashboard hook (role-filtered)."""
+
+    permission_classes = [MustViewProposalsPermission]
+
+    def get(self, request):
+        from apps.ol_proposals.services.dashboard_kpi_service import proposal_dashboard_kpis
+
+        return Response({"data": proposal_dashboard_kpis(user=request.user)})
+
+
+class ProposalReportingDatasetView(APIView):
+    """GET /api/v1/ol-proposals/proposals/reporting/dataset/ — reporting module contract."""
+
+    permission_classes = [MustViewProposalsPermission]
+
+    def get(self, request):
+        from apps.ol_proposals.services.reporting_service import register
+
+        return Response({"data": register()})
+
+
+def _portal_proposal_queryset(partner):
+    from django.db.models import Prefetch
+
+    from apps.ol_proposals.models import OLProposalPlanConfig
+
+    selected = Prefetch(
+        "plan_configs",
+        queryset=OLProposalPlanConfig.objects.filter(is_selected=True).select_related("plan", "product_version__product"),
+    )
+    return OLProposal.objects.filter(partner=partner).select_related(
+        "quotation", "partner", "agent_partner", "employer_partner", "first_premium_commitment"
+    ).prefetch_related(selected, "beneficiaries")
+
+
+class PartnerPortalProposalListView(APIView):
+    """GET /api/v1/ol-proposals/proposals/portal/ — read-only proposals for the linked partner."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from apps.ol_proposals.serializers import PartnerPortalProposalListSerializer
+
+        partner = request.user.current_partner() if hasattr(request.user, "current_partner") else None
+        if partner is None:
+            return Response({"data": {"results": [], "count": 0}})
+        queryset = _portal_proposal_queryset(partner).order_by("-created_at")
+        return Response(
+            {
+                "data": {
+                    "results": PartnerPortalProposalListSerializer(
+                        queryset[:200], many=True, context={"request": request}
+                    ).data,
+                    "count": queryset.count(),
+                }
+            }
+        )
+
+
+class PartnerPortalProposalDetailView(APIView):
+    """GET /api/v1/ol-proposals/proposals/portal/{id}/ — scoped read-only detail."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, proposal_id):
+        from apps.ol_proposals.serializers import PartnerPortalProposalDetailSerializer
+
+        partner = request.user.current_partner() if hasattr(request.user, "current_partner") else None
+        proposal = None
+        if partner is not None:
+            proposal = _portal_proposal_queryset(partner).filter(pk=proposal_id).first()
+        if proposal is None:
+            raise ProposalError(
+                "The proposal could not be found.",
+                error_code="PROPOSAL_NOT_FOUND",
+                status_code=404,
+                resolution_steps=["Verify the proposal number."],
+            )
+        return Response({"data": PartnerPortalProposalDetailSerializer(proposal, context={"request": request}).data})
 
 
 class ProposalExportView(APIView):

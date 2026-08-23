@@ -258,6 +258,105 @@ class OLProposalListSerializer(serializers.ModelSerializer):
         )
 
 
+class PartnerPortalProposalListSerializer(serializers.ModelSerializer):
+    policyholder = serializers.SerializerMethodField()
+    agent = serializers.SerializerMethodField()
+    employer = serializers.SerializerMethodField()
+    product = serializers.SerializerMethodField()
+    plan = serializers.SerializerMethodField()
+    total_premium = serializers.SerializerMethodField()
+    status_badge = serializers.SerializerMethodField()
+
+    def _selected_config(self, obj):
+        configs = list(obj.plan_configs.all())
+        return configs[0] if configs else None
+
+    def get_policyholder(self, obj):
+        return obj.partner_name_snapshot or "-"
+
+    def get_agent(self, obj):
+        return obj.agent_name_snapshot or "-"
+
+    def get_employer(self, obj):
+        return obj.employer_name_snapshot or "-"
+
+    def get_product(self, obj):
+        config = self._selected_config(obj)
+        product = getattr(getattr(config, "product_version", None), "product", None) if config else None
+        if product is None:
+            return "-"
+        return f"{getattr(product, 'code', '') or ''} - {getattr(product, 'name', '') or ''}".strip() or "-"
+
+    def get_plan(self, obj):
+        config = self._selected_config(obj)
+        plan = getattr(config, "plan", None) if config else None
+        if plan is None:
+            return "-"
+        return (config.plan_name_snapshot or getattr(plan, "name", "") or getattr(plan, "code", "") or "-").strip()
+
+    def get_total_premium(self, obj):
+        snapshot = obj.financial_summary_snapshot or {}
+        value = snapshot.get("total_premium")
+        return str(value) if value is not None else ""
+
+    def get_status_badge(self, obj):
+        names = self.context.setdefault("_status_names", {})
+        if not names:
+            from apps.ol_parameters.models import OLProposalStatus
+
+            names.update(
+                {row.code.upper(): row.name for row in OLProposalStatus.objects.filter(applies_to__iexact="PROPOSAL", is_active=True)}
+            )
+        return {"code": obj.status, "name": names.get((obj.status or "").upper(), obj.status)}
+
+    class Meta:
+        model = OLProposal
+        fields = (
+            "id",
+            "proposal_number",
+            "policyholder",
+            "agent",
+            "employer",
+            "product",
+            "plan",
+            "total_premium",
+            "currency",
+            "status_badge",
+            "expiry_date",
+            "created_at",
+        )
+
+
+class PartnerPortalProposalDetailSerializer(PartnerPortalProposalListSerializer):
+    quotation_number = serializers.CharField(source="quotation.quote_number", read_only=True)
+    beneficiaries = OLProposalBeneficiarySerializer(many=True, read_only=True)
+    first_premium = serializers.SerializerMethodField()
+
+    def get_first_premium(self, obj):
+        from apps.ol_proposals.services.first_premium_service import first_premium_status
+
+        status = first_premium_status(obj)
+        if not status["linked"]:
+            return {"linked": False, "first_premium_posted": False}
+        commitment = status["commitment"]
+        return {
+            "linked": True,
+            "commitment_number": commitment["commitment_number"],
+            "status": commitment["status"],
+            "amount_due": commitment["amount_due"],
+            "amount_paid": commitment["amount_paid"],
+            "balance": commitment["balance"],
+            "first_premium_posted": status["first_premium_posted"],
+        }
+
+    class Meta(PartnerPortalProposalListSerializer.Meta):
+        fields = PartnerPortalProposalListSerializer.Meta.fields + (
+            "quotation_number",
+            "beneficiaries",
+            "first_premium",
+        )
+
+
 class OLProposalDetailSerializer(OLProposalBaseSerializer):
     plan_configs = OLProposalPlanConfigSerializer(many=True, read_only=True)
     members = OLProposalMemberSerializer(many=True, read_only=True)

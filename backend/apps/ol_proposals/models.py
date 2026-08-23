@@ -6,6 +6,12 @@ from django.db import models
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.ol_commitments.models import (
+    NotificationChannel,
+    NotificationDispatchStatus,
+    NotificationRecipientType,
+)
+
 # =============================================================================
 # Legacy compatible status choices (extended) — authoritative catalog lives in
 # ol_parameters.OLProposalStatus; these choices keep old call-sites working.
@@ -659,3 +665,58 @@ class OLProposalHealthAnswer(models.Model):
 
     def __str__(self):
         return f"{self.proposal.proposal_number}:{self.health_question_id}"
+
+
+class OLProposalNotificationLog(models.Model):
+    """Proposal notification dispatch log mirroring the commitments seam.
+
+    Mirrors ``OLCommitmentNotificationLog`` (same channel/recipient/status
+    catalogues) so proposals publish into the same notification center
+    contract; the unique constraint guarantees one row per event run.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    proposal = models.ForeignKey(OLProposal, on_delete=models.CASCADE, related_name="notification_logs")
+    event_type = models.CharField(max_length=150, db_index=True)
+    dispatch_on = models.DateField(null=True, blank=True, db_index=True)
+    notification_channel = models.CharField(max_length=30, choices=NotificationChannel.choices, default=NotificationChannel.SYSTEM)
+    recipient_type = models.CharField(
+        max_length=30, choices=NotificationRecipientType.choices, default=NotificationRecipientType.STAFF
+    )
+    recipient_identifier = models.CharField(max_length=200, blank=True, default="")
+    template_code = models.CharField(max_length=100, blank=True, default="")
+    status = models.CharField(
+        max_length=20, choices=NotificationDispatchStatus.choices, default=NotificationDispatchStatus.PENDING
+    )
+    payload = models.JSONField(default=dict, blank=True)
+    dispatched_at = models.DateTimeField(null=True, blank=True)
+    source_channel = models.CharField(
+        max_length=30, choices=ProposalSourceChannel.choices, default=ProposalSourceChannel.SYSTEM
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "ol_proposal_notification_log"
+        ordering = ["-dispatch_on", "-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["proposal", "event_type", "dispatch_on", "notification_channel", "recipient_type"],
+                name="ol_proposal_notification_unique",
+            ),
+            models.CheckConstraint(
+                check=Q(status__in=[choice for choice, _ in NotificationDispatchStatus.choices]),
+                name="ol_proposal_notify_status_valid",
+            ),
+            models.CheckConstraint(
+                check=Q(notification_channel__in=[choice for choice, _ in NotificationChannel.choices]),
+                name="ol_proposal_notify_channel_valid",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["proposal", "status", "dispatch_on"], name="ol_prop_notify_state_idx"),
+            models.Index(fields=["event_type", "dispatch_on"], name="ol_prop_notify_type_date_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.proposal.proposal_number}:{self.event_type}@{self.dispatch_on}"

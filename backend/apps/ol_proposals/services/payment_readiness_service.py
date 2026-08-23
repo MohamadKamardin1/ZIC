@@ -250,4 +250,7 @@ def mark_payment_ready(*, proposal, actor=None, request=None, source_channel="AP
                 else None,
             },
         )
+        from apps.ol_proposals.services.notification_service import notify_payment_ready
+
+        notify_payment_ready(proposal=proposal, actor=actor, source_channel=source_channel)
     return {**result, "already_ready": False}

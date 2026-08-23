@@ -121,6 +121,10 @@ def transition_proposal(*, proposal, to_status, actor=None, request=None, reason
         proposal_events.emit_expired(proposal, actor=actor, from_status=current, reason=reason, source_channel=source_channel)
     else:
         proposal_events.emit_enriched(proposal, actor=actor, from_status=current, to_status=target, reason=reason or f"Transitioned to {target}.", source_channel=source_channel)
+    if target == "CONVERTED":
+        from apps.ol_proposals.services.notification_service import notify_converted
+
+        notify_converted(proposal=proposal, actor=actor, source_channel=source_channel)
     return proposal
 
 

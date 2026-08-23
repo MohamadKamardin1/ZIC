@@ -1,10 +1,13 @@
 from django.urls import path
 
 from apps.ol_proposals.views import (
+    PartnerPortalProposalDetailView,
+    PartnerPortalProposalListView,
     ProposalBeneficiaryCollectionView,
     ProposalBeneficiaryItemView,
     ProposalCancelView,
     ProposalCompletenessView,
+    ProposalDashboardKpisView,
     ProposalDetailView,
     ProposalDocumentCollectionView,
     ProposalEnrichmentOptionsView,
@@ -19,13 +22,18 @@ from apps.ol_proposals.views import (
     ProposalPaymentReadinessView,
     ProposalPrintView,
     ProposalReactivateView,
+    ProposalReportingDatasetView,
     ProposalUnderwritingDecisionView,
 )
 
 urlpatterns = [
     path("proposals/", ProposalListView.as_view(), name="ol-proposals-list"),
     path("proposals/kpis/", ProposalKpisView.as_view(), name="ol-proposals-kpis"),
+    path("proposals/dashboard-kpis/", ProposalDashboardKpisView.as_view(), name="ol-proposals-dashboard-kpis"),
+    path("proposals/reporting/dataset/", ProposalReportingDatasetView.as_view(), name="ol-proposals-reporting-dataset"),
     path("proposals/export/", ProposalExportView.as_view(), name="ol-proposals-export"),
+    path("proposals/portal/", PartnerPortalProposalListView.as_view(), name="ol-proposals-portal-list"),
+    path("proposals/portal/<uuid:proposal_id>/", PartnerPortalProposalDetailView.as_view(), name="ol-proposals-portal-detail"),
     path("proposals/options/<str:kind>/", ProposalEnrichmentOptionsView.as_view(), name="ol-proposals-enrichment-options"),
     path("proposals/<uuid:proposal_id>/", ProposalDetailView.as_view(), name="ol-proposals-detail"),
     path("proposals/<uuid:proposal_id>/enrich/", ProposalEnrichView.as_view(), name="ol-proposals-enrich"),

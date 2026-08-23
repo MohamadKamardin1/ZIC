@@ -5,6 +5,7 @@ the list, CSV, and KPI endpoints stay consistent with the same contract.
 """
 
 from datetime import date, timedelta
+from decimal import Decimal, InvalidOperation
 
 from django.db.models import Prefetch, Q
 
@@ -99,8 +100,32 @@ def order_queryset(queryset, ordering=None):
     return queryset.order_by(f"{direction}{key}", "-created_at")
 
 
-def proposal_kpis(*, period_from=None, period_to=None, expiring_soon_days=None, as_of=None):
-    """Return register KPIs. Converted-in-period honors optional date bounds."""
+def proposal_kpis(*, user=None, period_from=None, period_to=None, expiring_soon_days=None, as_of=None):
+    """Return register KPIs. Converted-in-period honors optional date bounds.
+
+    Role-filtered: when ``user`` is supplied and lacks the OL proposal view
+    permission (or is unauthenticated), all proposal KPIs are withheld as
+    zeros rather than leaking restricted volumes.
+    """
+    zeros = {
+        "total_proposals": 0,
+        "pending_underwriting": 0,
+        "payment_ready": 0,
+        "awaiting_first_premium": 0,
+        "awaiting_first_premium_amount": "0.00",
+        "converted": 0,
+        "converted_in_period": 0,
+        "expiring_soon": 0,
+        "expiring_in_7_days": 0,
+        "cancelled": 0,
+        "expired": 0,
+    }
+    if user is not None:
+        from apps.ol_proposals.permissions import has_ol_proposal_permission
+
+        if not getattr(user, "is_authenticated", False) or not has_ol_proposal_permission(user, "view"):
+            return zeros
+
     today = as_of or date.today()
     try:
         days = max(0, int(expiring_soon_days if expiring_soon_days is not None else 30))
@@ -116,25 +141,50 @@ def proposal_kpis(*, period_from=None, period_to=None, expiring_soon_days=None, 
     if period_to:
         converted = converted.filter(created_at__date__lte=period_to)
 
-    expiring_soon = (
-        base.filter(
-            expiry_date__isnull=False,
-            expiry_date__gte=today,
-            expiry_date__lte=today + timedelta(days=days),
-        ).exclude(status__in=terminal)
-    )
+    expiring_soon = base.filter(
+        expiry_date__isnull=False,
+        expiry_date__gte=today,
+        expiry_date__lte=today + timedelta(days=days),
+    ).exclude(status__in=terminal)
+    expiring_in_7 = base.filter(
+        expiry_date__isnull=False,
+        expiry_date__gt=today,
+        expiry_date__lte=today + timedelta(days=7),
+    ).exclude(status__in=terminal)
+    awaiting = base.filter(status="AWAITING_FIRST_PREMIUM")
 
     return {
         "total_proposals": base.count(),
         "pending_underwriting": base.filter(status="PENDING_UNDERWRITING").count(),
         "payment_ready": base.filter(status="PAYMENT_READY").count(),
-        "awaiting_first_premium": base.filter(status="AWAITING_FIRST_PREMIUM").count(),
+        "awaiting_first_premium": awaiting.count(),
+        "awaiting_first_premium_amount": _awaiting_amount(awaiting),
         "converted": base.filter(status="CONVERTED").count(),
         "converted_in_period": converted.count(),
         "expiring_soon": expiring_soon.count(),
+        "expiring_in_7_days": expiring_in_7.count(),
         "cancelled": base.filter(status="CANCELLED").count(),
         "expired": base.filter(status="EXPIRED").count(),
     }
+
+
+def _awaiting_amount(queryset):
+    """Sum of first-premium amounts for awaiting-first-premium proposals."""
+    total = Decimal("0")
+    for obj in queryset.select_related("first_premium_commitment"):
+        commitment = obj.first_premium_commitment
+        if commitment is not None and commitment.premium_amount:
+            total += Decimal(str(commitment.premium_amount))
+            continue
+        snapshot = obj.financial_summary_snapshot or {}
+        raw = snapshot.get("total_premium")
+        if raw is None:
+            continue
+        try:
+            total += Decimal(str(raw))
+        except (InvalidOperation, TypeError, ValueError):
+            continue
+    return str(total)
 
 
 def iter_csv_rows(serialized_rows):
