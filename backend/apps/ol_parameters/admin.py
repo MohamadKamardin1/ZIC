@@ -13,6 +13,7 @@ from .models import (
     OLPaidUpRate,
     OLPaidUpSetup,
     OLCommitmentStatus,
+    OLProposalStatus,
     OLHealthQuestion,
     OLHealthQuestionnaire,
     OLHealthQuestionnaireItem,
@@ -475,6 +476,19 @@ class OLCommitmentStatusAdmin(OLDefaultSetupAdmin):
     fieldsets = (
         ("Identity", {"fields": ("code", "name", "description", "is_active")}),
         ("Status behavior", {"fields": ("display_order", "applies_to", "is_terminal")}),
+        ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
+    )
+
+
+@admin.register(OLProposalStatus)
+class OLProposalStatusAdmin(OLDefaultSetupAdmin):
+    list_display = ("display_order", "code", "name", "applies_to", "is_terminal", "is_active", "updated_at")
+    list_filter = ("is_active", "applies_to", "is_terminal")
+    search_fields = ("code", "name", "description", "applies_to")
+    ordering = ("applies_to", "display_order", "name", "code")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description", "is_active")}),
+        ("Status behavior", {"fields": ("display_order", "applies_to", "is_terminal", "allowed_transitions")}),
         ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
     )
 
