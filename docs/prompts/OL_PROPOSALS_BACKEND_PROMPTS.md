@@ -1,6 +1,6 @@
 # OL PROPOSALS BACKEND — PROMPT SERIES (12 prompts)
 
-- [ ] Prompt 1 — Save Prompt Series + Discovery + Proposal Domain Foundation
+- [x] Prompt 1 — Save Prompt Series + Discovery + Proposal Domain Foundation
 - [ ] Prompt 2 — [pending prompt text]
 - [ ] Prompt 3 — [pending prompt text]
 - [ ] Prompt 4 — [pending prompt text]
