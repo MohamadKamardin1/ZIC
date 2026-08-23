@@ -638,4 +638,3 @@ export default function OLPolicySetup() {
   </MasterDetailPage>
 }
 
-export { screens as olPolicySetupScreens }

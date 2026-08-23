@@ -1,0 +1,77 @@
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { MemoryRouter } from "react-router-dom"
+import { beforeEach, describe, expect, it, vi } from "vitest"
+import { Topbar } from "./Topbar"
+
+const { listDashboardMock, listOverdueMock, markReadMock, markAllMock, searchMock, navigateMock } = vi.hoisted(() => ({
+  listDashboardMock: vi.fn(),
+  listOverdueMock: vi.fn(),
+  markReadMock: vi.fn(),
+  markAllMock: vi.fn(),
+  searchMock: vi.fn(),
+  navigateMock: vi.fn(),
+}))
+
+vi.mock("react-router-dom", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router-dom")>()
+  return { ...actual, useNavigate: () => navigateMock }
+})
+
+vi.mock("../../lib/api", () => ({
+  listDashboardNotifications: listDashboardMock,
+  listCommitmentOverdueNotifications: listOverdueMock,
+  markDashboardNotificationRead: markReadMock,
+  markAllDashboardNotificationsRead: markAllMock,
+  searchDashboard: searchMock,
+}))
+
+vi.mock("../../lib/auth", () => ({ useAuth: () => ({ user: { fullName: "Test User", username: "tester" }, signOut: vi.fn() }) }))
+
+vi.mock("../../theme/ThemeProvider", () => ({ useTheme: () => ({ theme: "light", setTheme: vi.fn() }) }))
+
+vi.mock("../ai/AIContext", () => ({ useAI: () => ({ setPanelOpen: vi.fn() }) }))
+
+vi.mock("../../lib/language", () => ({ useLanguage: () => ({ language: "en", setLanguage: vi.fn(), t: (key: string) => key, languageOptions: [] }) }))
+
+const DASH_NOTICE = {
+  id: 1, kind: "system", title: "Partner approved", message: "Approved", status: "UNREAD", route: "/partners", entityType: "Partner", entityId: "1", isRead: false, createdAt: new Date().toISOString(),
+}
+
+const OVERDUE_NOTICE = {
+  id: "evt-9", kind: "ol-commitments", title: "Commitment OLC-2026-00009 is overdue", message: "Past its grace date.", status: "UNREAD", route: "/ordinary-life/commitments/9", entityType: "OLCommitment", entityId: "evt-9", isRead: false, createdAt: new Date().toISOString(), deepLink: "/ordinary-life/commitments/9",
+}
+
+function renderTopbar() {
+  return render(
+    <MemoryRouter>
+      <Topbar onToggleSidebar={vi.fn()} />
+    </MemoryRouter>,
+  )
+}
+
+beforeEach(() => {
+  listDashboardMock.mockReset()
+  listOverdueMock.mockReset()
+  markReadMock.mockReset()
+  markAllMock.mockReset()
+  searchMock.mockReset()
+  navigateMock.mockReset()
+  listDashboardMock.mockResolvedValue([DASH_NOTICE])
+  listOverdueMock.mockResolvedValue([OVERDUE_NOTICE])
+  searchMock.mockResolvedValue([])
+})
+
+describe("Topbar bell notification center integration", () => {
+  it("surfaces CommitmentOverdue notifications with a deep link that navigates", async () => {
+    renderTopbar()
+
+    const bell = await screen.findByRole("button", { name: "notifications" })
+    fireEvent.click(bell)
+
+    const item = await screen.findByText("Commitment OLC-2026-00009 is overdue")
+    expect(item).toBeInTheDocument()
+
+    fireEvent.click(item)
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/ordinary-life/commitments/9"))
+  })
+})

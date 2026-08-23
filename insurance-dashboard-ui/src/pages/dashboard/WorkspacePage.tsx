@@ -116,7 +116,7 @@ export default function WorkspacePage({ section }: { section: WorkspaceSection }
   async function markRead(notification: DashboardNotificationRecord) {
     if (notification.isRead) return
     try {
-      const updated = await markDashboardNotificationRead(notification.id)
+      const updated = await markDashboardNotificationRead(Number(notification.id))
       setNotifications((items) => items.map((item) => item.id === updated.id ? updated : item))
     } catch (err) { setError(err instanceof Error ? err.message : "Unable to update notification.") }
   }

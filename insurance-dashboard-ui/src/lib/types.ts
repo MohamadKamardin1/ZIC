@@ -218,7 +218,7 @@ export interface DashboardAlertRecord {
 }
 
 export interface DashboardNotificationRecord {
-  id: number
+  id: number | string
   kind: string
   title: string
   message: string
@@ -228,6 +228,8 @@ export interface DashboardNotificationRecord {
   entityId: string
   isRead: boolean
   createdAt: string
+  /** Optional SPA deep link surfaced by module notification feeds (e.g. OL Commitments). */
+  deepLink?: string
 }
 
 export interface GlobalSearchResult {

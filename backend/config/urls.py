@@ -1,21 +1,19 @@
-from django.contrib import admin
-from django.urls import path, include
-from django.conf import settings
-from django.conf.urls.static import static
-
-from drf_spectacular.views import (
-    SpectacularAPIView,
-    SpectacularSwaggerView,
-    SpectacularRedocView,
-)
-
-from apps.core.views import health_check, liveness_check, readiness_check
 from apps.authentication.views import AccessMetadataView
-from apps.ol_quotations.views import OLPlanSearchView
+from apps.core.views import health_check, liveness_check, readiness_check
 from apps.ol_quotations.option_views import (
     OLOptionQuickCreateSchemaView,
     OLOptionQuickCreateView,
     OLOptionRegistryView,
+)
+from apps.ol_quotations.views import OLPlanSearchView
+from django.conf import settings
+from django.conf.urls.static import static
+from django.contrib import admin
+from django.urls import include, path
+from drf_spectacular.views import (
+    SpectacularAPIView,
+    SpectacularRedocView,
+    SpectacularSwaggerView,
 )
 
 api_v1_patterns = [
@@ -38,6 +36,7 @@ api_v1_patterns = [
     path('ol/options/<str:entity>/quick-create-schema/', OLOptionQuickCreateSchemaView.as_view(), name='ol-option-quick-create-schema-root'),
     path('ol/options/<str:entity>/quick-create/', OLOptionQuickCreateView.as_view(), name='ol-option-quick-create-root'),
     path('ol/options/<str:entity>/', OLOptionRegistryView.as_view(), name='ol-option-registry-root'),
+    path('ol-commitments/', include('apps.ol_commitments.urls')),
     path('ol-quotations/', include('apps.ol_quotations.urls')),
     path('ol/quotations/', include('apps.ol_quotations.urls')),
     path('group-credit/', include('apps.group_credit.urls')),
