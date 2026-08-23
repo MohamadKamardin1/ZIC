@@ -4,7 +4,7 @@ Backend reference: `docs/prompts/OL_PROPOSALS_BACKEND_PROMPTS.md` (complete), `d
 Kits in use: design system, DataTable, SmartSelect, ErrorCoach, ReasonField, ConfirmDialog.
 
 - [x] Prompt 1 — Proposals UI Foundation and Readiness Primitives
-- [ ] Prompt 2 — [pending prompt text]
+- [x] Prompt 2 — Proposals List Page with KPIs and Filters
 - [ ] Prompt 3 — [pending prompt text]
 - [ ] Prompt 4 — [pending prompt text]
 - [ ] Prompt 5 — [pending prompt text]
@@ -41,3 +41,31 @@ GIT:
 - push; if blocked create feature/web-proposals-foundation and push; tick checkbox
 
 FINAL OUTPUT: hooks, primitives, tests, commit hash, pushed branch.
+
+## Prompt 2/10 — Proposals List Page with KPIs and Filters
+
+You are a senior frontend engineer. Continue the ZIC Proposals UI. Execute ONLY Prompt 2 from the saved series file.
+
+MANDATORY RULES:
+- Table-first; actions gated by allowed actions + permissions.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. KPI cards: Total Proposals, Pending Underwriting, Payment Ready, Awaiting First Premium, Converted in Period, Expiring Soon.
+2. Proposals DataTable with backend columns: proposal_number, policyholder name, agent, employer (badge when present), product/plan summary, total premium, currency, status badge, payment_ready tick, first_premium_posted tick, expiry date with ExpiryWarning, created_at, actions.
+3. Filters: status, product, agent, employer presence, expiry window, payment_ready, first_premium_posted; search by number/policyholder/identity; quick chips: Awaiting First Premium, Expiring 7 Days, Pending Underwriting.
+4. Row actions from allowed actions: View, Enrich, Mark Payment Ready, Convert to Policy, Cancel, Print.
+5. Buttons: Convert Quotation (primary), Export CSV.
+6. States: loading skeleton, empty state with guidance linking to quotations, ErrorCoach on fetch failure.
+
+TESTS:
+- KPI display and deep links applying filters
+- chip filters work
+- action visibility by status/permission
+- export respects filters
+
+GIT:
+- commit: "feat(web): proposals list page with KPIs and filters"
+- push; tick checkbox
+
+FINAL OUTPUT: page behavior, tests, commit hash, pushed branch.
