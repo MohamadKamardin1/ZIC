@@ -7,7 +7,7 @@ Kits in use: design system, DataTable, SmartSelect, ErrorCoach, ReasonField, Con
 - [x] Prompt 2 — Proposals List Page with KPIs and Filters
 - [x] Prompt 3 — Convert Quotation Modal: Search, Versions, and Partner Verification
 - [x] Prompt 4 — Proposal Detail Page Shell and Overview
-- [ ] Prompt 5 — [pending prompt text]
+- [x] Prompt 5 — Enrichment Workspace and Documents Tab
 - [ ] Prompt 6 — [pending prompt text]
 - [ ] Prompt 7 — [pending prompt text]
 - [ ] Prompt 8 — [pending prompt text]
@@ -127,3 +127,32 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: page structure, tests, commit hash, pushed branch.
+
+## Prompt 5/10 — Enrichment Workspace and Documents Tab
+
+You are a senior frontend engineer. Continue the ZIC Proposals UI. Execute ONLY Prompt 5.
+
+MANDATORY RULES:
+- All selects use SmartSelect with '+' quick-create where permitted.
+- Bank account numbers stay masked end to end; never render or resend raw values.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. Enrichment modal over PATCH /enrich/ with independent sections: employer (corporate partner SmartSelect, employment reference, payroll deduction), intermediary (agent SmartSelect with quick-create; channel display-only from quotation), declarations (PEP/AML tri-state, existing policies count, occupation note, free-text JSON), bank details (bank name SmartSelect, account name, masked account number).
+2. Each section has Save and Clear actions; saving one section must not affect the others.
+3. Masked account number is placeholder-only — it is included in a payload only when a replacement value is typed.
+4. Documents tab: mandatory/uploaded counts, document list (type, status, mandatory badge), upload form using the proposal options document-types endpoint plus file reference.
+5. Action bar: Enrich opens the modal; Documents jumps to the tab. Both gated by allowed actions + permissions.
+6. Validation and API failures teach: inline validation for declarations JSON, ErrorCoach with retry for rejected saves.
+
+TESTS:
+- Employer section save sends selected partner + edited fields
+- Masked account number omitted unless replaced
+- Invalid declarations JSON blocked with message
+- Documents tab lists rows and uploads via mutation
+
+GIT:
+- commit: "feat(web): proposal enrichment workspace and documents tab"
+- push; tick checkbox
+
+FINAL OUTPUT: modal behavior, documents tab behavior, tests, commit hash, pushed branch.
