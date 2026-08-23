@@ -9,7 +9,7 @@
 - [ ] Prompt 7 — [pending prompt text]
 - [x] Prompt 8 — Lifecycle List and Detail APIs
 - [x] Prompt 9 — Proposal Printout and Options Endpoints
-- [ ] Prompt 10 — [pending prompt text]
+- [ ] Prompt 10 — Dashboard, Reports, Portal, and Notifications Integration
 - [ ] Prompt 11 — [pending prompt text]
 - [ ] Prompt 12 — [pending prompt text]
 
@@ -304,6 +304,37 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: template variables, endpoints, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 10/12 — Dashboard, Reports, Portal, and Notifications Integration
+
+```text
+You are a senior Django insurance engineer. Continue the ZIC OL Proposals backend. Execute ONLY Prompt 10.
+
+MANDATORY RULES:
+- Integrate through events and clean seams.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. Dashboard KPI hook: awaiting first premium count and amount, expiring-in-7-days count, pending underwriting count (role-filtered).
+2. Register report category "Ordinary Life Proposals" and expose dataset fields (status, product, agent, premium, dates) for the reporting module.
+3. Partner portal read-only endpoints scoped strictly to linked partner: own proposals list and detail without internal actions; sanitized errors.
+4. Notification events: ProposalExpiringSoon (from expiry batch), ProposalPaymentReady, ProposalConverted into the notification center seam used by commitments.
+5. Audit consistency utility covering proposal actions.
+
+TESTS:
+- portal scoping denies other partners
+- dashboard KPI math
+- notification events emitted once
+- audit utility passes
+
+GIT:
+- commit: "feat(ol-proposals): integrate dashboard reports portal notifications"
+- push; tick checkbox
+
+FINAL OUTPUT: integration map, tests, commit hash, pushed branch.
 ```
 
 ---
