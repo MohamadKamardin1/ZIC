@@ -2842,10 +2842,38 @@ if __name__ == "__main__":
     pass
 
 
-class OLPrintTicketAPITests(OLQuotationAPITests):
+class OLPrintTicketAPITests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        OLQuotationAPITests.setUpTestData.__func__(cls)
+
     def setUp(self):
-        super().setUp()
+        self.client = APIClient()
         self.client.force_authenticate(user=self.admin)
+
+    # Reuse the established quotation fixture helpers without inheriting the
+    # entire base test class and duplicating its unrelated test methods.
+    def create_draft(self, client=None, user=None):
+        return OLQuotationAPITests.create_draft(self, client=client, user=user)
+
+    def personal_details_payload(self, identity_number="ID-OLQ-0001", date_of_birth="1990-01-01"):
+        return OLQuotationAPITests.personal_details_payload(
+            self,
+            identity_number=identity_number,
+            date_of_birth=date_of_birth,
+        )
+
+    def populate_wizard(self, quotation_id):
+        return OLQuotationAPITests.populate_wizard(self, quotation_id)
+
+    def create_financial_rate(self, rate="10.00"):
+        return OLQuotationAPITests.create_financial_rate(self, rate=rate)
+
+    def calculate_financial_details(self, draft):
+        return OLQuotationAPITests.calculate_financial_details(self, draft)
+
+    def _prepare_finalizable_lifecycle_quotation(self, identity_number):
+        return OLQuotationAPITests._prepare_finalizable_lifecycle_quotation(self, identity_number)
 
     def test_raw_unauthenticated_print_request_returns_bearer_401(self):
         draft = self._prepare_finalizable_lifecycle_quotation("ID-OLQ-TICKET-001")

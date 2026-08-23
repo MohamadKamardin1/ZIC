@@ -25,7 +25,7 @@ This file preserves the five sequential workstreams from the supplied print-flow
 
 5. Verify URL naming consistency (no accidental duplicate prefixes) and document the final print URL contract.
 
-## [ ] Prompt 5 — Execute the complete regression, delivery, and reporting gate
+## [x] Prompt 5 — Execute the complete regression, delivery, and reporting gate
 
 TESTS:
 
