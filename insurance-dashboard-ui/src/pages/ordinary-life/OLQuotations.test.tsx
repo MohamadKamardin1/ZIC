@@ -2,7 +2,15 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import OLQuotations from "./OLQuotations"
 
-const { requestMock, navigateMock } = vi.hoisted(() => ({ requestMock: vi.fn(), navigateMock: vi.fn() }))
+const { requestMock, navigateMock, openDocumentMock } = vi.hoisted(() => ({ requestMock: vi.fn(), navigateMock: vi.fn(), openDocumentMock: vi.fn() }))
+
+vi.mock("../../lib/documentClient", () => ({
+  AuthenticatedDocumentError: class AuthenticatedDocumentError extends Error {
+    requiresLogin = false
+    loginUrl = "/login"
+  },
+  openAuthenticatedDocument: openDocumentMock,
+}))
 
 vi.mock("../../lib/apiClient", () => ({
   request: requestMock,
@@ -99,7 +107,10 @@ const finalizedRow = {
 beforeEach(() => {
   requestMock.mockReset()
   navigateMock.mockReset()
+  openDocumentMock.mockReset()
+  openDocumentMock.mockResolvedValue({ objectUrl: "blob:quotation" })
   requestMock.mockImplementation(async (path: string) => {
+    if (path.includes("/print/")) return { pdf_url: "/api/v1/ol-quotations/documents/document-1/download/" }
     if (path.includes("/summary/")) return { total: 4, drafts: 1, finalized: 1, converted: 1, expired: 1 }
     if (path.startsWith("/api/v1/ol/quotations/quotations/")) return { results: [draftRow, finalizedRow], count: 25, page: 1, page_size: 20 }
     return {}
@@ -158,6 +169,23 @@ describe("OL Quotations list", () => {
       expect(latestPath).toContain("quote_date_from=2026-08-01")
       expect(latestPath).toContain("quote_date_to=2026-08-31")
     })
+  })
+
+  it("opens print documents through authenticated retrieval from the work queue", async () => {
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null)
+    render(<OLQuotations />)
+    await screen.findByText("Q-0001")
+
+    const rows = screen.getAllByRole("row")
+    fireEvent.click(within(rows[2]).getByRole("button", { name: "Actions for row 2" }))
+    fireEvent.click(screen.getByRole("button", { name: "Print" }))
+
+    await waitFor(() => expect(openDocumentMock).toHaveBeenCalledWith("/api/v1/ol-quotations/documents/document-1/download/", {
+      kind: "pdf",
+      mode: "preview",
+      filename: "Q-0002.pdf",
+    }))
+    expect(openSpy).not.toHaveBeenCalledWith(expect.stringContaining("/api/"), expect.anything(), expect.anything())
   })
 
   it("navigates to create and view routes", async () => {

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import { FilePlus2 } from "lucide-react"
 import { buildTableQuery, request, type TableQuery } from "../../lib/apiClient"
+import { ErrorCoach } from "../../components/ErrorCoach"
+import { AuthenticatedDocumentError, openAuthenticatedDocument } from "../../lib/documentClient"
 import { useAccess } from "../../lib/access"
 import { DataTable, normalizeTableResponse } from "../../components/ui/DataTable"
 import { FilterBar, type FilterValues } from "../../components/ui/FilterBar"
@@ -162,6 +164,7 @@ export default function OLQuotations() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [confirm, setConfirm] = useState<ConfirmState>(null)
   const [busy, setBusy] = useState(false)
+  const [documentError, setDocumentError] = useState<AuthenticatedDocumentError | null>(null)
 
   const permissionKeys = useMemo(() => access.permissions.map((permission) => `${permission.module}.${permission.action}`.toLowerCase()), [access.permissions])
   const hasPermission = useCallback((permission: string) => {
@@ -221,15 +224,35 @@ export default function OLQuotations() {
     } finally { setBusy(false) }
   }, [confirm, toast])
 
+  const printQuotation = useCallback(async (row: QuotationRecord) => {
+    setBusy(true)
+    setDocumentError(null)
+    try {
+      const document = await request<Record<string, unknown>>(actionPath(row, "print", "/print/"), { method: "POST", body: JSON.stringify({ preview: false }) })
+      const pdfUrl = document.pdf_url ?? document.pdfUrl
+      if (typeof pdfUrl !== "string" || !pdfUrl) throw new Error("The server did not return a PDF document URL.")
+      await openAuthenticatedDocument(pdfUrl, { kind: "pdf", mode: "preview", filename: `${row.quote_number || "quotation"}.pdf` })
+    } catch (error) {
+      const status = error && typeof error === "object" && typeof (error as { status?: unknown }).status === "number" ? (error as { status: number }).status : undefined
+      const authError = error instanceof AuthenticatedDocumentError
+        ? error
+        : status === 401
+          ? new AuthenticatedDocumentError("Session expired — sign in again", { status, requiresLogin: true })
+          : new AuthenticatedDocumentError(error instanceof Error ? error.message : "The printout could not be opened.")
+      setDocumentError(authError)
+      toast({ tone: "danger", title: authError.requiresLogin ? "Session expired — sign in again" : "Unable to print quotation", message: authError.message })
+    } finally { setBusy(false) }
+  }, [toast])
+
   const actions: RowAction<QuotationRecord>[] = useMemo(() => [
     { key: "view", label: "View", onSelect: (row) => navigate(`/ordinary-life/quotations/${row.id}`) },
     { key: "edit", label: "Edit", onSelect: (row) => navigate(`/ordinary-life/quotations/${row.id}/edit`) },
     { key: "revise", label: "Revise", onSelect: (row) => setConfirm({ kind: "revise", row }) },
     { key: "finalize", label: "Finalize", onSelect: (row) => setConfirm({ kind: "finalize", row }) },
-    { key: "print", label: "Print", onSelect: (row) => { const url = actionPath(row, "print", "/print/"); window.open(url, "_blank", "noopener,noreferrer") } },
+    { key: "print", label: "Print", onSelect: (row) => { void printQuotation(row) } },
     { key: "convert_to_proposal", label: "Convert to Proposal", onSelect: (row) => setConfirm({ kind: "convert", row }) },
     { key: "delete", label: "Delete", tone: "danger", onSelect: (row) => setConfirm({ kind: "delete", row }) },
-  ], [navigate])
+  ], [navigate, printQuotation])
 
   const canAction = useCallback((action: RowAction<QuotationRecord>, row: QuotationRecord) => {
     const key = action.key as ActionKey
@@ -261,6 +284,7 @@ export default function OLQuotations() {
   }
 
   return <div className="space-y-5 p-4 md:p-6">
+    {documentError && <ErrorCoach title={documentError.requiresLogin ? "Session expired — sign in again" : "Print action needs attention"} message={documentError.message} loginUrl={documentError.requiresLogin ? documentError.loginUrl : undefined} onDismiss={() => setDocumentError(null)} />}
     <MasterDetailPage
       eyebrow="Ordinary Life"
       title="Quotations"
@@ -274,7 +298,8 @@ export default function OLQuotations() {
         </div>
         <FilterBar definitions={filterDefinitions} value={filters} onChange={(key, value) => setFilters((current) => ({ ...current, [key]: value }))} onReset={() => setFilters({})} />
       </div>
-      <DataTable<QuotationRecord>
+            <DataTable<QuotationRecord>
+
         metadata={{ columns, defaultOrdering: "-quote_date", pageSize: 20, totalLabel: "Quotations" } satisfies TableMetadata<QuotationRecord>}
         fetcher={fetcher}
         filters={filters}

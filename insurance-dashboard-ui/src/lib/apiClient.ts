@@ -1,3 +1,5 @@
+import { apiFetchAuth } from "./api"
+
 export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? import.meta.env.VITE_API_BASE ?? "").replace(/\/$/, "")
 
 export type QueryValue = string | number | boolean | null | undefined
@@ -129,10 +131,18 @@ export async function request<T>(path: string, options: ApiRequestOptions = {}):
   const correlationId = options.correlationId ?? createCorrelationId()
   headers.set("X-Correlation-ID", correlationId)
 
-  const token = options.skipAuth ? null : (localStorage.getItem("aims_access_token") ?? sessionStorage.getItem("aims_access_token"))
-  if (token) headers.set("Authorization", `Bearer ${token}`)
-
-  const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers })
+  const { skipAuth, correlationId: _ignoredCorrelationId, ...fetchOptions } = options
+  let response: Response
+  try {
+    response = skipAuth
+      ? await fetch(`${API_BASE_URL}${path}`, { ...fetchOptions, headers })
+      : await apiFetchAuth(path, { ...fetchOptions, headers })
+  } catch (error) {
+    if (error && typeof error === "object" && (error as { status?: unknown }).status === 401) {
+      throw new ApiClientError({ status: 401, code: "AUTHENTICATION_REQUIRED", message: "Session expired — sign in again", fieldErrors: {}, details: error })
+    }
+    throw error
+  }
   if (!response.ok) throw await normalizeResponseError(response)
   if (response.status === 204) return undefined as T
   const payload = await response.json()

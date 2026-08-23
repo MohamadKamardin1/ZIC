@@ -2,10 +2,13 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import OLQuotationDetail from "./OLQuotationDetail"
 
-const { requestMock, navigateMock, toastMock } = vi.hoisted(() => ({
+const { requestMock, navigateMock, toastMock, fetchDocumentMock, openDocumentMock, revokeDocumentMock } = vi.hoisted(() => ({
   requestMock: vi.fn(),
   navigateMock: vi.fn(),
   toastMock: vi.fn(),
+  fetchDocumentMock: vi.fn(),
+  openDocumentMock: vi.fn(),
+  revokeDocumentMock: vi.fn(),
 }))
 
 vi.mock("../../lib/apiClient", () => ({
@@ -13,6 +16,16 @@ vi.mock("../../lib/apiClient", () => ({
   ApiClientError: class ApiClientError extends Error {
     fieldErrors: Record<string, string[]> = {}
   },
+}))
+
+vi.mock("../../lib/documentClient", () => ({
+  AuthenticatedDocumentError: class AuthenticatedDocumentError extends Error {
+    requiresLogin = false
+    loginUrl = "/login"
+  },
+  fetchAuthenticatedDocument: fetchDocumentMock,
+  openAuthenticatedDocument: openDocumentMock,
+  revokeAuthenticatedDocument: revokeDocumentMock,
 }))
 
 vi.mock("react-router-dom", () => ({
@@ -87,7 +100,7 @@ const financial = {
 }
 
 const versions = { versions: [{ id: "version-1", version_number: 1, status: "CURRENT", created_by: "Superuser", created_at: "2026-08-19T10:00:00Z", change_reason: "Initial quotation" }] }
-const documents = [{ id: "document-1", source_version_number: 1, template_code: "OL_QUOTATION", template_version: "3", document_type: "Quotation PDF", status: "GENERATED", generated_at: "2026-08-19T10:05:00Z", pdf_url: "/media/quotation.pdf" }]
+const documents = [{ id: "document-1", source_version_number: 1, template_code: "OL_QUOTATION", template_version: "3", document_type: "Quotation PDF", status: "GENERATED", generated_at: "2026-08-19T10:05:00Z", pdf_url: "/media/quotation.pdf", html_url: "/media/quotation.html" }]
 
 function setupRequestMock(status = "DRAFT") {
   requestMock.mockImplementation(async (path: string, options?: RequestInit) => {
@@ -107,6 +120,10 @@ beforeEach(() => {
   requestMock.mockReset()
   navigateMock.mockReset()
   toastMock.mockReset()
+  fetchDocumentMock.mockReset()
+  openDocumentMock.mockReset()
+  revokeDocumentMock.mockReset()
+  fetchDocumentMock.mockResolvedValue({ objectUrl: "blob:quotation-preview", blob: new Blob(["preview"], { type: "text/html" }), contentType: "text/html" })
   setupRequestMock()
 })
 
@@ -203,6 +220,7 @@ describe("OL quotation detail lifecycle", () => {
   })
 
   it("uses the quote-specific print preview title", async () => {
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null)
     setupRequestMock("FINALIZED")
     render(<OLQuotationDetail />)
     await screen.findByText("Q-0001")
@@ -210,5 +228,7 @@ describe("OL quotation detail lifecycle", () => {
 
     expect(await screen.findByRole("heading", { name: "Quote Printout Preview - Q-0001-v1 (Asha Family Protection)" })).toBeInTheDocument()
     expect(screen.getByText("This is a preview. Click download to get the formatted PDF document.")).toBeInTheDocument()
+    expect(fetchDocumentMock).toHaveBeenCalledWith("/media/quotation.html", "html")
+    expect(openSpy).not.toHaveBeenCalledWith(expect.stringContaining("/api/"), expect.anything(), expect.anything())
   })
 })

@@ -95,6 +95,10 @@ interface ApiError {
   message: string
 }
 
+function resolveApiUrl(path: string): string {
+  return /^https?:\/\//i.test(path) ? path : `${API_BASE}${path}`
+}
+
 async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers)
   headers.set("Content-Type", "application/json")
@@ -108,7 +112,7 @@ async function apiFetch(path: string, init: RequestInit = {}): Promise<Response>
     console.warn(`[apiFetch] ${init.method ?? "GET"} ${path} — NO token in sessionStorage`)
   }
 
-  const res = await fetch(`${API_BASE}${path}`, { ...init, headers })
+  const res = await fetch(resolveApiUrl(path), { ...init, headers })
   if (!res.ok) console.warn(`[apiFetch] ${path} → ${res.status}`)
   return res
 }

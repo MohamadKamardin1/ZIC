@@ -7,7 +7,7 @@ This file preserves the five sequential workstreams from the supplied print-flow
 1. Search the entire frontend for direct navigation to API URLs used for printing/downloading: window.open, anchor href, location.href, iframe src pointing at /api/.
 2. Confirm the print button bypasses the authenticated API client (this is the expected root cause). Also check token expiry handling on that call.
 
-## [ ] Prompt 2 — Implement the authenticated document client flow
+## [x] Prompt 2 — Implement the authenticated document client flow
 
 3. Fix by implementing an authenticated document flow:
    - frontend utility openAuthenticatedDocument(url): fetch via API client with Bearer token, expect blob, validate content-type, create object URL, open preview modal or trigger download

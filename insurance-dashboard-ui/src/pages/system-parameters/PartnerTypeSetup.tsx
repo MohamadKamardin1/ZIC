@@ -26,6 +26,7 @@ import {
   batchUpdateFieldValues,
 } from "../../lib/api"
 import { useDataRefresh, emitDataChange } from "../../lib/useDataRefresh"
+import { AuthenticatedDocumentError, openAuthenticatedDocument } from "../../lib/documentClient"
 import { SkeletonTable } from "../../components/shared/Skeleton"
 import type {
   PartnerTypeRecord,
@@ -138,6 +139,7 @@ function DocumentsTab({ partnerTypeId, applicationId }: { partnerTypeId: string;
 
   const [uploadingFor, setUploadingFor] = useState<string | null>(null)
   const [uploadError, setUploadError] = useState("")
+  const [documentError, setDocumentError] = useState<AuthenticatedDocumentError | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [existingDocs, setExistingDocs] = useState<ApplicationDocument[]>([])
@@ -231,6 +233,17 @@ function DocumentsTab({ partnerTypeId, applicationId }: { partnerTypeId: string;
     }
   }
 
+  async function handleViewDoc(doc: ApplicationDocument) {
+    if (!doc.file) return
+    setDocumentError(null)
+    try {
+      await openAuthenticatedDocument(doc.file, { mode: "preview" })
+    } catch (error) {
+      const status = error && typeof error === "object" && typeof (error as { status?: unknown }).status === "number" ? (error as { status: number }).status : undefined
+      setDocumentError(error instanceof AuthenticatedDocumentError ? error : new AuthenticatedDocumentError(status === 401 ? "Session expired — sign in again" : "The document could not be opened. Please try again.", { status, requiresLogin: status === 401 }))
+    }
+  }
+
   async function handleDeleteDoc(docId: string) {
     if (!applicationId) return
     if (!confirm("Delete this uploaded document?")) return
@@ -246,6 +259,7 @@ function DocumentsTab({ partnerTypeId, applicationId }: { partnerTypeId: string;
 
   return (
     <div>
+      {documentError && <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900" role="alert"><strong>{documentError.requiresLogin ? "Session expired — sign in again" : "Document action needs attention"}:</strong> {documentError.message}{documentError.requiresLogin ? <a className="ml-2 font-semibold underline" href={documentError.loginUrl}>Sign in again</a> : null}</div>}
       <input
         ref={fileInputRef}
         type="file"
@@ -381,15 +395,14 @@ function DocumentsTab({ partnerTypeId, applicationId }: { partnerTypeId: string;
                     <td className="px-4 py-3">
                       {doc ? (
                         <div className="flex items-center gap-2">
-                          <a
-                            href={doc.file}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <button
+                            type="button"
+                            onClick={() => void handleViewDoc(doc)}
                             className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium" style={{ backgroundColor: "var(--color-bg-success-soft)", color: "var(--color-text-success-soft)" }}
                           >
                             <FileText className="h-3 w-3" />
                             {doc.documentName}
-                          </a>
+                          </button>
                           <button
                             onClick={() => handleDeleteDoc(doc.id)}
                             className="rounded p-0.5 text-destructive hover:bg-destructive/10"
