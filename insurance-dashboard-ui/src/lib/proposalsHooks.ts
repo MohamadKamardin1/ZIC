@@ -35,8 +35,8 @@ import {
   normalizeProposalDetail,
   normalizeProposalDocuments,
   normalizeProposalListItem,
-  printProposal,
-  type PrintResult,
+  type GeneratedDocumentRecord,
+  generateProposalPrint,
   reactivateProposal,
   submitHealthAnswers,
   submitUnderwritingDecision,
@@ -277,7 +277,7 @@ export function useReactivateProposalMutation() {
 
 export function usePrintProposalMutation() {
   return useMutation({
-    mutationFn: (id: string): Promise<PrintResult> => printProposal(id),
+    mutationFn: (id: string): Promise<GeneratedDocumentRecord> => generateProposalPrint(id),
   })
 }
 

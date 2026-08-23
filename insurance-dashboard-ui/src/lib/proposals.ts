@@ -987,6 +987,45 @@ export interface PrintResult {
   blobUrl: string
 }
 
+export interface GeneratedDocumentRecord {
+  id: string
+  documentType: string
+  status: string
+  templateCode?: string | null
+  templateVersion?: number | null
+  sourceVersion?: number | null
+  generatedByName?: string
+  generatedAt?: string | null
+  pdfUrl?: string | null
+  htmlUrl?: string | null
+}
+
+export function normalizeGeneratedDocument(raw: unknown): GeneratedDocumentRecord {
+  const record = asRecord(raw)
+  const urls = asRecord(record.urls)
+  return {
+    id: str(record, "id") ?? "",
+    documentType: str(record, "document_type") ?? "",
+    status: str(record, "status") ?? "",
+    templateCode: str(record, "template_code"),
+    templateVersion: num(record, "template_version"),
+    sourceVersion: num(record, "source_version"),
+    generatedByName: str(record, "generated_by_name"),
+    generatedAt: str(record, "generated_at"),
+    pdfUrl: str(urls, "pdf_url"),
+    htmlUrl: str(urls, "html_url"),
+  }
+}
+
+export async function generateProposalPrint(id: string): Promise<GeneratedDocumentRecord> {
+  const payload = await request<unknown>(`${BASE}/proposals/${id}/print/`, { method: "POST" })
+  return normalizeGeneratedDocument(payload)
+}
+
+export interface ProposalPrintPreview extends GeneratedDocumentRecord {
+  proposalNumber: string
+}
+
 export async function printProposal(id: string): Promise<PrintResult> {
   const response = await fetch(`${BASE}/proposals/${id}/print/?format=pdf`, {
     headers: {
@@ -1002,20 +1041,11 @@ export async function printProposal(id: string): Promise<PrintResult> {
   }
 }
 
-export async function listGeneratedDocuments(id: string) {
-  const payload = await listProposalDocuments(id)
+export async function listGeneratedDocuments(id: string): Promise<GeneratedDocumentRecord[]> {
+  const payload = await request<unknown>(`${BASE}/proposals/${id}/generated-documents/`)
   const record = asRecord(payload)
-  const rows = Array.isArray(payload) ? payload : Array.isArray(record.results) ? record.results : []
-  return rows
-    .map((row) => asRecord(row))
-    .filter((item) => str(item, "status") === "GENERATED")
-    .map((item) => ({
-      id: str(item, "id") ?? "",
-      documentType: str(item, "document_type") ?? "",
-      documentTypeDisplay: str(item, "document_type_display") ?? str(item, "document_type") ?? "",
-      status: str(item, "status") ?? "",
-      fileReference: str(item, "file_reference"),
-    }))
+  const rows = Array.isArray(record.results) ? record.results : []
+  return rows.map(normalizeGeneratedDocument)
 }
 
 export async function getProposalOptions(kind: string) {

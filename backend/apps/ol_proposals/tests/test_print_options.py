@@ -248,6 +248,18 @@ class PrintAndOptionsEndpointTests(DRFTestCase):
         self.assertEqual(generated[0]["status"], "GENERATED")
         self.assertIsNotNone(generated[0]["file_reference"])
 
+        register = self.client.get(f"{self.base}/generated-documents/")
+        self.assertEqual(register.status_code, 200)
+        register_rows = register.data["data"]["results"]
+        self.assertEqual(len(register_rows), 1)
+        entry = register_rows[0]
+        self.assertEqual(entry["document_type"], "PROPOSAL_PRINT")
+        self.assertEqual(entry["template_code"], "OL_PROPOSAL_PRINT")
+        self.assertEqual(entry["template_version"], 1)
+        self.assertTrue(entry["generated_by_name"])
+        self.assertIsNotNone(entry["generated_at"])
+        self.assertTrue(entry["urls"]["pdf_url"])
+
     def test_options_statuses_labeled_active_only(self):
         OLProposalStatus.objects.create(
             code="INACTIVE_STATUS", name="Hidden", applies_to="PROPOSAL", display_order=99, is_active=False,

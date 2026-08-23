@@ -745,6 +745,39 @@ class ProposalConvertToPolicyView(APIView):
         )
 
 
+class ProposalGeneratedDocumentsView(APIView):
+    """GET /api/v1/ol-proposals/proposals/{id}/generated-documents/ — printout register."""
+
+    permission_classes = [MustViewProposalsPermission]
+
+    def get(self, request, proposal_id):
+        from apps.ol_proposals.models import ProposalDocumentStatus
+        from apps.ol_proposals.services.print_service import ProposalPrintService
+
+        proposal = _get_proposal(proposal_id)
+        rows = proposal.documents.filter(status=ProposalDocumentStatus.GENERATED).order_by("-generated_at", "-created_at")
+        results = []
+        for document in rows:
+            generated_by = document.generated_by
+            name = ""
+            if generated_by is not None:
+                name = f"{generated_by.first_name} {generated_by.last_name}".strip() or generated_by.username
+            results.append(
+                {
+                    "id": str(document.pk),
+                    "document_type": document.document_type,
+                    "status": document.status,
+                    "template_code": (document.metadata or {}).get("template_code"),
+                    "template_version": document.template_version,
+                    "source_version": (document.metadata or {}).get("source_version_number"),
+                    "generated_by_name": name,
+                    "generated_at": document.generated_at.isoformat() if document.generated_at else None,
+                    "urls": ProposalPrintService.document_urls(document),
+                }
+            )
+        return Response({"data": {"results": results}})
+
+
 class ProposalPrintView(APIView):
     """POST /api/v1/ol-proposals/proposals/{id}/print/ — render a summary printout."""
 

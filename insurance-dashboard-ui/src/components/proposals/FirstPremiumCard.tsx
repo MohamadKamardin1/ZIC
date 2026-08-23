@@ -105,6 +105,21 @@ export function FirstPremiumCard({
         </table>
       )}
 
+      {!status.posted && (
+        <div>
+          <button
+            type="button"
+            data-testid="record-receipt-hint"
+            title="The Front Office receipts workspace ships in a later release — for now this opens the commitment detail where allocations are listed."
+            onClick={openCommitment}
+            className="button-secondary inline-flex h-8 items-center gap-1.5 px-2.5 text-xs font-semibold"
+          >
+            <ArrowRight size={13} aria-hidden="true" />
+            Record receipt in Front Office
+          </button>
+        </div>
+      )}
+
       <div className="flex items-start gap-2 border-t border-[var(--border)] pt-2 text-xs leading-5 text-[var(--muted-foreground)]">
         <ArrowRight size={13} aria-hidden="true" className="mt-0.5 flex-none" />
         <span data-testid="first-premium-next-action">

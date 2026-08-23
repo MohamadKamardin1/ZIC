@@ -26,17 +26,18 @@ import {
 } from "lucide-react"
 import { ErrorCoach } from "../../components/commitments/ErrorCoach"
 import { InfoBanner } from "../../components/ui/Overlays"
+import { ApiClientError } from "../../lib/apiClient"
 import ExpiryWarning from "../../components/proposals/ExpiryWarning"
 import FirstPremiumCard from "../../components/proposals/FirstPremiumCard"
 import ProposalStatusBadge, { proposalStatusLabel } from "../../components/proposals/ProposalStatusBadge"
 import ReadinessChecklist from "../../components/proposals/ReadinessChecklist"
 import {
-  convertToPolicy,
   getQuotationVersionSnapshot,
   markPaymentReady,
+  type ChecklistItem,
   type ProposalDetail,
 } from "../../lib/proposals"
-import { proposalDetailKey, useProposalDetail, useProposalHistory } from "../../lib/proposalsHooks"
+import { proposalDetailKey, useCancelProposalMutation, useProposalDetail, useProposalHistory } from "../../lib/proposalsHooks"
 import { useAccess } from "../../lib/access"
 import { dateLabel, formatMoney } from "../../lib/commitmentsDisplay"
 import { useToast } from "../../components/ui/Toast"
@@ -44,14 +45,39 @@ import OLEnrichmentModal from "./OLEnrichmentModal"
 import { OLBeneficiariesPanel } from "./OLBeneficiaries"
 import { OLProposalDocuments } from "./OLProposalDocuments"
 import { OLHealth } from "./OLHealth"
+import { OLConvertToPolicyModal } from "./OLConvertToPolicyModal"
+import { OLCancelModal } from "./OLCancelModal"
+import { OLPrintPreviewModal } from "./OLPrintPreviewModal"
+import { OLGeneratedDocuments } from "./OLGeneratedDocuments"
 
-type TabId = "overview" | "beneficiaries" | "health" | "documents" | "source" | "history"
+type TabId = "overview" | "beneficiaries" | "health" | "documents" | "generated" | "source" | "history"
+
+/** Failed checklist rows from a PROPOSAL_NOT_PAYMENT_READY (409) response. */
+function conflictItemsFromError(error: unknown): ChecklistItem[] {
+  if (!(error instanceof ApiClientError)) return []
+  if (error.code !== "PROPOSAL_NOT_PAYMENT_READY") return []
+  const details = (error.details ?? {}) as { checklist?: unknown }
+  const rows = Array.isArray(details.checklist) ? details.checklist : []
+  return rows.map((raw) => {
+    const record = raw as Record<string, unknown>
+    const steps = Array.isArray(record.resolution_steps) ? (record.resolution_steps as string[]) : []
+    return {
+      key: String(record.key ?? ""),
+      passed: false,
+      errorCode: String(record.error_code ?? ""),
+      message: String(record.message ?? ""),
+      resolutionSteps: steps,
+      deepLink: record.deep_link ? String(record.deep_link) : undefined,
+    }
+  })
+}
 
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: "overview", label: "Overview" },
   { id: "beneficiaries", label: "Beneficiaries" },
   { id: "health", label: "Health & Underwriting" },
   { id: "documents", label: "Documents" },
+  { id: "generated", label: "Generated Documents" },
   { id: "source", label: "Quotation Source" },
   { id: "history", label: "History" },
 ]
@@ -142,6 +168,10 @@ export default function OLProposalDetail() {
   const [snapshotVersion, setSnapshotVersion] = useState<number | null>(null)
   const [actionError, setActionError] = useState<unknown>(null)
   const [enrichOpen, setEnrichOpen] = useState(false)
+  const [convertOpen, setConvertOpen] = useState(false)
+  const [cancelOpen, setCancelOpen] = useState(false)
+  const [printOpen, setPrintOpen] = useState(false)
+  const [readinessConflict, setReadinessConflict] = useState<ChecklistItem[] | null>(null)
 
   const detailQuery = useProposalDetail(id)
   const detail = detailQuery.data ?? null
@@ -161,24 +191,22 @@ export default function OLProposalDetail() {
     mutationFn: () => markPaymentReady(String(id)),
     onSuccess: () => {
       setActionError(null)
-      toast({ title: "Payment readiness confirmed", message: "The first premium commitment was generated.", tone: "success" })
+      setReadinessConflict(null)
+      toast({ title: "Proposal payment ready.", message: "First premium commitment created.", tone: "success" })
       void queryClient.invalidateQueries({ queryKey: proposalDetailKey(id) })
     },
-    onError: (error) => setActionError(error),
+    onError: (error) => {
+      const conflict = conflictItemsFromError(error)
+      if (conflict.length > 0) {
+        setActionError(null)
+        setReadinessConflict(conflict)
+      } else {
+        setActionError(error)
+      }
+    },
   })
 
-  const convert = useMutation({
-    mutationFn: () => convertToPolicy(String(id)),
-    onSuccess: (payload) => {
-      setActionError(null)
-      const record = (payload as { policy?: { id?: string }; id?: string }).policy ?? (payload as Record<string, unknown>)
-      const policyId = String(record.id ?? "")
-      toast({ title: "Proposal converted", message: "The policy was issued from this proposal.", tone: "success" })
-      void queryClient.invalidateQueries({ queryKey: proposalDetailKey(id) })
-      if (policyId) navigate(`/ordinary-life/policies?policy_number=${encodeURIComponent(policyId)}`)
-    },
-    onError: (error) => setActionError(error),
-  })
+  const cancelProposal = useCancelProposalMutation()
 
   const totals = useMemo(() => {
     if (!detail) return { totalPremium: null as number | null }
@@ -293,18 +321,18 @@ export default function OLProposalDetail() {
               Mark Payment Ready
             </button>
           )}
-          {canAct("convert") && (
-            <button type="button" className="button-primary" onClick={() => convert.mutate()} disabled={convert.isPending}>
+          {canAct("convert") && detail.status !== "CONVERTED" && (
+            <button type="button" className="button-primary" onClick={() => setConvertOpen(true)} data-testid="open-convert">
               Convert to Policy
             </button>
           )}
-          {canAct("cancel") && (
-            <button type="button" className="button-secondary" disabled title="Cancellation moves with the lifecycle actions release">
+          {canAct("cancel") && !["CANCELLED", "CONVERTED", "EXPIRED"].includes(detail.status) && (
+            <button type="button" className="button-secondary" onClick={() => setCancelOpen(true)} data-testid="open-cancel">
               Cancel
             </button>
           )}
           {canAct("print") && (
-            <button type="button" className="button-secondary" disabled title="Printing arrives with the documents release">
+            <button type="button" className="button-secondary" onClick={() => setPrintOpen(true)} data-testid="open-print">
               <Printer size={15} aria-hidden="true" />
               Print
             </button>
@@ -319,6 +347,40 @@ export default function OLProposalDetail() {
             {detail.reasonText}
           </p>
         </InfoBanner>
+      )}
+
+      {detail.status === "CONVERTED" && (
+        <div
+          className="flex items-center gap-3 rounded-[10px] border border-[var(--success)]/40 bg-[var(--success)]/10 px-4 py-3 text-sm"
+          role="status"
+          data-testid="converted-banner"
+        >
+          <BadgeCheck size={16} className="text-[var(--success)]" aria-hidden="true" />
+          <p className="font-bold text-[var(--success)]">
+            Converted to policy{detail.reasonText ? ` — ${detail.reasonText}` : ""}
+          </p>
+          {canAct("print") && (
+            <button type="button" className="ml-auto text-xs font-bold underline-offset-2 hover:underline" onClick={() => setPrintOpen(true)}>
+              Print summary
+            </button>
+          )}
+        </div>
+      )}
+
+      {detail.status === "CANCELLED" && (
+        <div
+          className="rounded-[10px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/35 dark:text-red-100"
+          role="alert"
+          data-testid="cancelled-banner"
+        >
+          <p className="font-bold">This proposal was cancelled and is read-only.</p>
+          {(detail.reasonText || detail.reasonCode) && (
+            <p className="mt-0.5">
+              Reason: {detail.reasonCode ? `${detail.reasonCode} — ` : ""}
+              {detail.reasonText}
+            </p>
+          )}
+        </div>
       )}
 
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
@@ -472,6 +534,8 @@ export default function OLProposalDetail() {
           {activeTab === "health" && <OLHealth detail={detail} canEnrich={canAct("enrich")} onActionError={setActionError} />}
 
           {activeTab === "documents" && <OLProposalDocuments detail={detail} onActionError={setActionError} />}
+
+          {activeTab === "generated" && <OLGeneratedDocuments detail={detail} />}
 
           {activeTab === "source" && (
             <div className="space-y-4" data-testid="tab-source">
@@ -653,7 +717,20 @@ export default function OLProposalDetail() {
                 <span className="font-bold capitalize">{detail.completeness.requiredMissing.join(", ") || detail.completeness.missing.join(", ")}</span>
               </p>
             )}
-            <ReadinessChecklist items={detail.readiness?.items ?? []} proposalId={detail.id} />
+            {readinessConflict && readinessConflict.length > 0 && (
+              <p className="mb-2 rounded-md bg-[var(--destructive)]/10 px-2 py-1.5 text-xs font-bold text-[var(--destructive)]" data-testid="conflict-note">
+                Payment-ready was refused — resolve each red item below, then try again.
+              </p>
+            )}
+            <ReadinessChecklist
+              items={(() => {
+                const base = detail.readiness?.items ?? []
+                if (!readinessConflict?.length) return base
+                const byKey = new Map(readinessConflict.map((item) => [item.key, item]))
+                return base.map((item) => byKey.get(item.key) ?? item)
+              })()}
+              proposalId={detail.id}
+            />
             {canAct("mark_payment_ready") && (
               <button
                 type="button"
@@ -677,6 +754,41 @@ export default function OLProposalDetail() {
       </div>
 
       <OLEnrichmentModal open={enrichOpen} onClose={() => setEnrichOpen(false)} detail={detail} />
+
+      <OLConvertToPolicyModal
+        open={convertOpen}
+        proposalId={String(detail.id)}
+        onClose={() => setConvertOpen(false)}
+        onError={(error) => setActionError(error)}
+      />
+
+      <OLCancelModal
+        open={cancelOpen}
+        proposalNumber={detail.proposalNumber}
+        pending={cancelProposal.isPending}
+        onClose={() => setCancelOpen(false)}
+        onConfirm={(reason) =>
+          cancelProposal.mutate(
+            { id: String(detail.id), reason },
+            {
+              onSuccess: () => {
+                setActionError(null)
+                toast({ title: "Proposal cancelled", message: "The cancellation reason was recorded on the audit trail.", tone: "success" })
+                void queryClient.invalidateQueries({ queryKey: proposalDetailKey(id) })
+                setCancelOpen(false)
+              },
+              onError: (error) => setActionError(error),
+            },
+          )
+        }
+      />
+
+      <OLPrintPreviewModal
+        open={printOpen}
+        proposalId={String(detail.id)}
+        onClose={() => setPrintOpen(false)}
+        onError={(error) => setActionError(error)}
+      />
     </div>
   )
 }

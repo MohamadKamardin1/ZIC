@@ -47,7 +47,9 @@ export function ReadinessChecklist({
             key={item.key}
             data-checklist-item={item.key}
             data-checklist-passed={item.passed ? "true" : "false"}
-            className="flex flex-col gap-1 rounded-md border border-[var(--border)] px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+            className={`flex flex-col gap-1 rounded-md border px-3 py-2 sm:flex-row sm:items-center sm:justify-between ${
+              item.passed ? "border-[var(--border)]" : "border-[var(--destructive)]/50 bg-[var(--destructive)]/5"
+            }`}
           >
             <div className="flex items-start gap-2">
               {item.passed ? (
@@ -62,12 +64,14 @@ export function ReadinessChecklist({
                 {!item.passed && (
                   <>
                     {item.message && (
-                      <p className="text-xs leading-5 text-[var(--muted-foreground)]">{item.message}</p>
+                      <p className="text-xs font-semibold leading-5 text-[var(--destructive)]">{item.message}</p>
                     )}
                     {item.resolutionSteps.length > 0 && (
-                      <p className="text-xs leading-5 text-[var(--muted-foreground)]">
-                        {item.resolutionSteps[0]}
-                      </p>
+                      <ul className="mt-0.5 list-disc pl-4 text-xs leading-5 text-[var(--muted-foreground)]">
+                        {item.resolutionSteps.map((step) => (
+                          <li key={step}>{step}</li>
+                        ))}
+                      </ul>
                     )}
                   </>
                 )}

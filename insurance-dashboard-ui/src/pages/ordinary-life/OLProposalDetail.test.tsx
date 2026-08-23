@@ -11,12 +11,16 @@ const {
   getSnapshotMock,
   markReadyMock,
   convertMock,
+  cancelProposalMock,
   enrichMock,
   documentsListMock,
   uploadDocMock,
   addBeneficiaryMock,
   updateBeneficiaryMock,
   deleteBeneficiaryMock,
+  getFirstPremiumMock,
+  generatePrintMock,
+  listGeneratedDocsMock,
   requestMock,
 } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
@@ -25,12 +29,16 @@ const {
   getSnapshotMock: vi.fn(),
   markReadyMock: vi.fn(),
   convertMock: vi.fn(),
+  cancelProposalMock: vi.fn(),
   enrichMock: vi.fn(),
   documentsListMock: vi.fn(),
   uploadDocMock: vi.fn(),
   addBeneficiaryMock: vi.fn(),
   updateBeneficiaryMock: vi.fn(),
   deleteBeneficiaryMock: vi.fn(),
+  getFirstPremiumMock: vi.fn(),
+  generatePrintMock: vi.fn(),
+  listGeneratedDocsMock: vi.fn(),
   requestMock: vi.fn(),
 }))
 
@@ -43,12 +51,16 @@ vi.mock("../../lib/proposals", async (importOriginal) => {
     getQuotationVersionSnapshot: getSnapshotMock,
     markPaymentReady: markReadyMock,
     convertToPolicy: convertMock,
+    cancelProposal: cancelProposalMock,
     enrichProposalSection: enrichMock,
     listProposalDocuments: documentsListMock,
     uploadProposalDocument: uploadDocMock,
     addBeneficiary: addBeneficiaryMock,
     updateBeneficiary: updateBeneficiaryMock,
     deleteBeneficiary: deleteBeneficiaryMock,
+    getFirstPremiumStatus: getFirstPremiumMock,
+    generateProposalPrint: generatePrintMock,
+    listGeneratedDocuments: listGeneratedDocsMock,
   }
 })
 
@@ -352,6 +364,9 @@ beforeEach(() => {
   addBeneficiaryMock.mockReset()
   updateBeneficiaryMock.mockReset()
   deleteBeneficiaryMock.mockReset()
+  getFirstPremiumMock.mockReset()
+  generatePrintMock.mockReset()
+  listGeneratedDocsMock.mockReset()
   requestMock.mockReset()
 
   grantedPermissions = [
@@ -383,6 +398,32 @@ beforeEach(() => {
   addBeneficiaryMock.mockResolvedValue({ data: {} })
   updateBeneficiaryMock.mockResolvedValue({ data: {} })
   deleteBeneficiaryMock.mockResolvedValue({ data: { deleted: true } })
+  getFirstPremiumMock.mockResolvedValue({ linked: false, first_premium_posted: false, next_actions: [] })
+  generatePrintMock.mockResolvedValue({
+    documentType: "PROPOSAL_PRINT",
+    status: "GENERATED",
+    templateCode: "OL_PROPOSAL_PRINT",
+    templateVersion: 1,
+    sourceVersion: 3,
+    generatedByName: "Asha Underwriter",
+    generatedAt: "2026-08-20T10:00:00Z",
+    pdfUrl: "/media/ol_proposals/OLP-2026-000042/print.pdf",
+    htmlUrl: null,
+  })
+  listGeneratedDocsMock.mockResolvedValue([
+    {
+      id: "print-doc-uuid-1",
+      documentType: "PROPOSAL_PRINT",
+      status: "GENERATED",
+      templateCode: "OL_PROPOSAL_PRINT",
+      templateVersion: 1,
+      sourceVersion: 3,
+      generatedByName: "Asha Underwriter",
+      generatedAt: "2026-08-20T10:00:00Z",
+      pdfUrl: "/media/ol_proposals/OLP-2026-000042/print.pdf",
+      htmlUrl: null,
+    },
+  ])
 
   requestMock.mockImplementation(routeBaseRequests)
 })
@@ -404,7 +445,7 @@ describe("OL Proposal detail page", () => {
     expect(screen.getByTestId("proposal-detail-header")).toHaveTextContent("Twenty Year Endowment")
 
     const tabsNav = within(screen.getByTestId("proposal-tabs"))
-    for (const tab of ["Overview", "Beneficiaries", "Health & Underwriting", "Documents", "Quotation Source", "History"]) {
+    for (const tab of ["Overview", "Beneficiaries", "Health & Underwriting", "Documents", "Generated Documents", "Quotation Source", "History"]) {
       expect(tabsNav.getByRole("button", { name: tab })).toBeInTheDocument()
     }
 
@@ -477,6 +518,233 @@ describe("OL Proposal detail page", () => {
 
     fireEvent.click(screen.getByTestId("panel-mark-payment-ready"))
     await waitFor(() => expect(markReadyMock).toHaveBeenCalledWith("prop-uuid-0001"))
+  })
+
+  it("flips failed checklist items red with resolution steps and deep links on a 409 refusal", async () => {
+    markReadyMock.mockRejectedValueOnce(
+      new ApiClientError({
+        status: 409,
+        code: "PROPOSAL_NOT_PAYMENT_READY",
+        message: "This proposal is not payment-ready; resolve each failed checklist item.",
+        fieldErrors: {},
+        details: {
+          checklist: [
+            {
+              key: "mandatory_documents_complete",
+              passed: false,
+              error_code: "PROPOSAL_MANDATORY_DOCUMENTS_MISSING",
+              message: "Signature specimen has not been uploaded.",
+              resolution_steps: ["Open Documents and upload Signature specimen.", "Re-run Mark Payment Ready."],
+              deep_link: "/proposals/{id}/documents",
+            },
+          ],
+        },
+      }),
+    )
+
+    renderPage()
+    await screen.findByTestId("proposal-detail-header")
+
+    fireEvent.click(screen.getByTestId("panel-mark-payment-ready"))
+
+    // Teachable conflict note replaces the generic error coach.
+    expect(await screen.findByTestId("conflict-note")).toHaveTextContent(/refused/i)
+
+    const failedItem = document.querySelector('[data-checklist-item="mandatory_documents_complete"]') as HTMLElement
+    await waitFor(() => expect(failedItem.getAttribute("data-checklist-passed")).toBe("false"))
+    expect(failedItem).toHaveTextContent("Signature specimen has not been uploaded.")
+    expect(failedItem).toHaveTextContent("Open Documents and upload Signature specimen.")
+    expect(failedItem).toHaveTextContent("Re-run Mark Payment Ready.")
+
+    // The deep link routes to the screen where the failure is fixed.
+    fireEvent.click(within(failedItem).getByTestId("checklist-link-mandatory_documents_complete"))
+    expect(navigateMock).toHaveBeenCalledWith("/ordinary-life/proposals/prop-uuid-0001/documents")
+  })
+
+  it("shows the first premium commitment with due, paid, balance and receipt hint while partially paid", async () => {
+    getProposalMock.mockResolvedValue(
+      detailFixture({
+        status: "AWAITING_FIRST_PREMIUM",
+        first_premium: {
+          linked: true,
+          first_premium_posted: false,
+          next_actions: ["Record receipt in Front Office.", "Allocate the receipt against commitment CMT-2026-0044."],
+          commitment: {
+            commitment_number: "CMT-2026-0044",
+            commitment_id: "cmt-uuid-1",
+            status: "PARTIAL",
+            amount_due: "1250.50",
+            amount_paid: "500.00",
+            balance: "750.50",
+            currency: "TZS",
+            allocations: [
+              { receipt_reference: "RCP-88", amount: "500.00", payment_mode: "CASH", currency: "TZS", allocated_at: "2026-08-18T09:15:00Z" },
+            ],
+          },
+        },
+      }),
+    )
+
+    renderPage()
+    await screen.findByTestId("proposal-detail-header")
+
+    const card = document.querySelector('[data-first-premium-card="linked"]') as HTMLElement
+    await waitFor(() => expect(card.getAttribute("data-posted")).toBe("false"))
+    expect(card).toHaveTextContent("CMT-2026-0044")
+    expect(card).toHaveTextContent("1,250.50")
+    expect(card).toHaveTextContent("500.00")
+    expect(card).toHaveTextContent("750.50")
+    expect(within(card).getByTestId("first-premium-allocations")).toHaveTextContent("RCP-88")
+    const hint = within(card).getByTestId("record-receipt-hint")
+    expect(hint).toHaveTextContent("Record receipt in Front Office")
+  })
+
+  it("hides the receipt hint once the first premium is fully posted (BR-03 satisfied)", async () => {
+    getProposalMock.mockResolvedValue(
+      detailFixture({
+        status: "AWAITING_FIRST_PREMIUM",
+        payment_ready: true,
+        first_premium: {
+          linked: true,
+          first_premium_posted: true,
+          next_actions: ["Proceed to policy conversion (first premium is fully allocated)."],
+          commitment: {
+            commitment_number: "CMT-2026-0044",
+            commitment_id: "cmt-uuid-1",
+            status: "SETTLED",
+            amount_due: "1250.50",
+            amount_paid: "1250.50",
+            balance: "0.00",
+            currency: "TZS",
+            allocations: [],
+          },
+        },
+      }),
+    )
+
+    renderPage()
+    await screen.findByTestId("proposal-detail-header")
+
+    const card = document.querySelector('[data-first-premium-card="linked"]') as HTMLElement
+    await waitFor(() => expect(card.getAttribute("data-posted")).toBe("true"))
+    expect(screen.queryByTestId("record-receipt-hint")).not.toBeInTheDocument()
+  })
+
+  it("blocks conversion behind BR-03 with PROPOSAL_FIRST_PREMIUM_NOT_POSTED before the premium posts", async () => {
+    getFirstPremiumMock.mockResolvedValue({
+      linked: true,
+      first_premium_posted: false,
+      next_actions: ["Record receipt in Front Office."],
+      commitment: {
+        commitment_number: "CMT-2026-0044",
+        commitment_id: "cmt-uuid-1",
+        status: "PARTIAL",
+        amount_due: "1250.50",
+        amount_paid: "500.00",
+        balance: "750.50",
+        currency: "TZS",
+        allocations: [],
+      },
+    })
+
+    renderPage()
+    await screen.findByTestId("proposal-detail-header")
+
+    fireEvent.click(screen.getByTestId("open-convert"))
+
+    expect(await screen.findByTestId("br03-summary")).toHaveTextContent("Not posted")
+    const coach = screen.getByTestId("br03-blocked-coach")
+    expect(coach).toHaveTextContent("PROPOSAL_FIRST_PREMIUM_NOT_POSTED")
+    expect(coach).toHaveTextContent(/Front Office/i)
+    expect(screen.getByTestId("confirm-convert")).toBeDisabled()
+    expect(convertMock).not.toHaveBeenCalled()
+  })
+
+  it("issues the policy after BR-03 passes and links the issued policy number", async () => {
+    getFirstPremiumMock.mockResolvedValue({
+      linked: true,
+      first_premium_posted: true,
+      next_actions: ["Proceed to policy conversion (first premium is fully allocated)."],
+      commitment: {
+        commitment_number: "CMT-2026-0044",
+        commitment_id: "cmt-uuid-1",
+        status: "SETTLED",
+        amount_due: "1250.50",
+        amount_paid: "1250.50",
+        balance: "0.00",
+        currency: "TZS",
+        allocations: [],
+      },
+    })
+    convertMock.mockResolvedValue({ proposal_number: "OLP-2026-000042", status: "CONVERTED", policy_number: "OLP-POL-2026-0077", converted_policy: "pol-uuid-77", created: true })
+    getProposalMock.mockResolvedValueOnce(detailFixture()).mockResolvedValue(
+      detailFixture({ status: "CONVERTED", reason_code: "CONVERTED", reason_text: "Converted to policy OLP-POL-2026-0077.", allowed_actions: ["view", "print"] }),
+    )
+
+    renderPage()
+    await screen.findByTestId("proposal-detail-header")
+
+    fireEvent.click(screen.getByTestId("open-convert"))
+    await waitFor(() => expect(screen.getByTestId("br03-summary")).toHaveTextContent("Posted"))
+
+    fireEvent.click(screen.getByTestId("confirm-convert"))
+    await waitFor(() => expect(convertMock).toHaveBeenCalledWith("prop-uuid-0001"))
+
+    const policyLink = await screen.findByTestId("policy-number-link")
+    expect(policyLink).toHaveTextContent("OLP-POL-2026-0077")
+
+    // Lifecycle banner confirms conversion after the detail refresh.
+    expect(await screen.findByTestId("converted-banner")).toHaveTextContent("Converted to policy OLP-POL-2026-0077")
+  })
+
+  it("cancels through the reason + danger confirm flow and shows the cancellation banner", async () => {
+    cancelProposalMock.mockResolvedValue({ data: {} })
+    getProposalMock.mockResolvedValueOnce(detailFixture()).mockResolvedValue(
+      detailFixture({ status: "CANCELLED", reason_code: "CUSTOMER_REQUEST", reason_text: "Customer withdrew the application.", allowed_actions: ["view"] }),
+    )
+
+    renderPage()
+    await screen.findByTestId("proposal-detail-header")
+
+    fireEvent.click(screen.getByTestId("open-cancel"))
+
+    const continueButton = screen.getByTestId("cancel-continue") as HTMLButtonElement
+    expect(continueButton).toBeDisabled()
+
+    fireEvent.change(screen.getByLabelText(/Cancellation reason/), { target: { value: "Customer withdrew the application." } })
+    fireEvent.click(continueButton)
+
+    // Danger confirm restates the reason before anything is sent.
+    expect(screen.getByText(/Cancel this proposal\?/)).toBeInTheDocument()
+    expect(screen.getByText(/Customer withdrew the application\./)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Yes — cancel proposal" }))
+
+    await waitFor(() => expect(cancelProposalMock).toHaveBeenCalledWith("prop-uuid-0001", "Customer withdrew the application."))
+    expect(await screen.findByTestId("cancelled-banner")).toHaveTextContent("Customer withdrew the application.")
+  })
+
+  it("previews the printout with a PDF download and lists generated documents with template metadata", async () => {
+    renderPage()
+    await screen.findByTestId("proposal-detail-header")
+
+    fireEvent.click(screen.getByTestId("open-print"))
+
+    const metadata = await screen.findByTestId("print-metadata")
+    expect(metadata).toHaveTextContent("PROPOSAL_PRINT")
+    expect(metadata).toHaveTextContent("OL_PROPOSAL_PRINT")
+    expect(metadata).toHaveTextContent("v1")
+    const download = screen.getByTestId("print-download-pdf") as HTMLAnchorElement
+    expect(download.getAttribute("download")).toBe("proposal-prop-uuid-0001.pdf")
+
+    fireEvent.click(within(screen.getByTestId("proposal-tabs")).getByRole("button", { name: "Generated Documents" }))
+    const panel = await screen.findByTestId("tab-generated")
+    expect(await within(panel).findByTestId("generated-counts")).toHaveTextContent("1 printout")
+    const row = await within(panel).findByTestId("generated-row-print-doc-uuid-1")
+    expect(row).toHaveTextContent("v1")
+    expect(row).toHaveTextContent("Asha Underwriter")
+    expect(row).toHaveTextContent("v3")
+    expect(row).toHaveTextContent("PDF")
+    expect(generatePrintMock).toHaveBeenCalledWith("prop-uuid-0001")
   })
 
   it("renders an ErrorCoach when the proposal fetch fails", async () => {
