@@ -1,10 +1,14 @@
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, status, viewsets
+from rest_framework.permissions import AllowAny
+from rest_framework.settings import api_settings
+from rest_framework.exceptions import NotAuthenticated
 from rest_framework.views import APIView
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied, ValidationError as DRFValidationError
 from django.db.models import Count, Q
+from django.http import Http404, HttpResponse
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils.dateparse import parse_date
 from uuid import UUID
@@ -77,6 +81,7 @@ from .serializers import (
 )
 from .services.quotation_service import QuotationService
 from .services.document_service import QuotationDocumentService
+from .services.print_ticket_service import PrintTicketError, PrintTicketService
 
 
 def _response(data=None, message="Data retrieved successfully", status_code=status.HTTP_200_OK):
@@ -794,8 +799,8 @@ class OLQuotationViewSet(QuotationScopedViewSet):
         except DRFValidationError as exc:
             detail = getattr(exc, "detail", str(exc))
             return _response(detail, "Quotation printout could not be generated.", status.HTTP_400_BAD_REQUEST)
-        payload = OLQuotationDocumentSerializer(document).data
-        payload.update(QuotationDocumentService.document_urls(document))
+        payload = OLQuotationDocumentSerializer(document, context={"request": request}).data
+        payload.update(QuotationDocumentService.document_urls(document, request=request, actor=request.user, issue_tickets=True))
         payload["quotation_id"] = str(quotation.pk)
         payload["quote_number"] = quotation.quote_number
         response_status = status.HTTP_201_CREATED if request.method.upper() == "POST" else status.HTTP_200_OK
@@ -809,8 +814,8 @@ class OLQuotationViewSet(QuotationScopedViewSet):
         rows = page if page is not None else queryset
         payload = []
         for document in rows:
-            row = OLQuotationDocumentSerializer(document).data
-            row.update(QuotationDocumentService.document_urls(document))
+            row = OLQuotationDocumentSerializer(document, context={"request": request}).data
+            row.update(QuotationDocumentService.document_urls(document, request=request, actor=request.user, issue_tickets=True))
             payload.append(row)
         if page is not None:
             return self.get_paginated_response(payload)
@@ -1082,6 +1087,39 @@ class OLQuotationBenefitViewSet(QuotationScopedViewSet):
     filterset_fields = ["quotation", "code", "benefit_type", "is_selected"]
     search_fields = ["code", "name", "quotation__quote_number"]
     ordering_fields = ["created_at", "code", "sum_assured", "premium_amount"]
+
+
+class OLQuotationDocumentDownloadView(APIView):
+    """Stream a quotation document using Bearer auth or a short-lived ticket."""
+
+    authentication_classes = api_settings.DEFAULT_AUTHENTICATION_CLASSES
+    permission_classes = [AllowAny]
+
+    def get(self, request, pk=None):
+        ticket = request.query_params.get("ticket", "")
+        expected_format = "html" if request.path.rstrip("/").endswith("/html") else "pdf"
+        try:
+            document = OLQuotationDocument.objects.select_related("quotation").get(pk=pk)
+            if ticket:
+                payload = PrintTicketService.unsign(ticket)
+                return PrintTicketService.stream(
+                    document=document,
+                    payload=payload,
+                    request=request,
+                    expected_format=expected_format,
+                )
+            if not getattr(request.user, "is_authenticated", False):
+                raise NotAuthenticated("Authentication credentials were not provided.")
+            return PrintTicketService.stream(
+                document=document,
+                request=request,
+                actor=request.user,
+                expected_format=expected_format,
+            )
+        except PrintTicketError as exc:
+            return HttpResponse(str(exc), status=exc.status_code, content_type="text/plain")
+        except OLQuotationDocument.DoesNotExist as exc:
+            raise Http404("The requested quotation document does not exist.") from exc
 
 
 class OLQuotationDocumentViewSet(QuotationScopedViewSet):

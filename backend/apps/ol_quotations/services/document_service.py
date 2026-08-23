@@ -20,6 +20,7 @@ from apps.ol_quotations.models import (
     QuotationStatus,
 )
 from .quotation_service import QuotationService
+from .print_ticket_service import PrintTicketService
 
 
 class QuotationDocumentService:
@@ -517,8 +518,39 @@ class QuotationDocumentService:
         return document
 
     @staticmethod
-    def document_urls(document):
-        return {
-            "pdf_url": default_storage.url(document.file_reference) if document.file_reference else None,
-            "html_url": default_storage.url(document.html_reference) if document.html_reference else None,
+    def document_urls(document, *, request=None, actor=None, issue_tickets=False):
+        result = {
+            "pdf_url": PrintTicketService.protected_path(document, "pdf") if document.file_reference else None,
+            "html_url": PrintTicketService.protected_path(document, "html") if document.html_reference else None,
         }
+        if issue_tickets and actor is not None:
+            pdf_ticket, expires_at = PrintTicketService.issue(
+                document=document,
+                actor=actor,
+                request=request,
+                content_format="pdf",
+            )
+            result["pdf_url"] = PrintTicketService.ticket_url(
+                document=document,
+                ticket=pdf_ticket,
+                content_format="pdf",
+                request=request,
+            )
+            result["signed_download_url"] = result["pdf_url"]
+            result["download_url_expires_at"] = expires_at.isoformat()
+            if document.html_reference:
+                html_ticket, html_expires_at = PrintTicketService.issue(
+                    document=document,
+                    actor=actor,
+                    request=request,
+                    content_format="html",
+                )
+                result["html_url"] = PrintTicketService.ticket_url(
+                    document=document,
+                    ticket=html_ticket,
+                    content_format="html",
+                    request=request,
+                )
+                result["signed_preview_url"] = result["html_url"]
+                result["preview_url_expires_at"] = html_expires_at.isoformat()
+        return result

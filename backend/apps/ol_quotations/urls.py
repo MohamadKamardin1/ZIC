@@ -25,6 +25,7 @@ from .views import (
     OLQuotationVersionViewSet,
     OLQuotationViewSet,
     OLPlanSearchView,
+    OLQuotationDocumentDownloadView,
 )
 
 router = DefaultRouter()
@@ -50,5 +51,7 @@ urlpatterns = [
     path("options/<str:entity>/", OLOptionRegistryView.as_view(), name="ol-option-registry"),
     path("options/<str:entity>/quick-create-schema/", OLOptionQuickCreateSchemaView.as_view(), name="ol-option-quick-create-schema"),
     path("options/<str:entity>/quick-create/", OLOptionQuickCreateView.as_view(), name="ol-option-quick-create"),
+    path("documents/<uuid:pk>/download/", OLQuotationDocumentDownloadView.as_view(), name="ol-quotation-document-download"),
+    path("documents/<uuid:pk>/html/", OLQuotationDocumentDownloadView.as_view(), name="ol-quotation-document-html"),
     *router.urls,
 ]

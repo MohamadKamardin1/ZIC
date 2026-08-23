@@ -14,7 +14,7 @@ This file preserves the five sequential workstreams from the supplied print-flow
    - replace ALL print/download call sites (quotations, proposals, commitments, documents lists) with this utility
    - on 401: auto token-refresh retry once; if still failing show ErrorCoach "Session expired — sign in again" with login deep link
 
-## [ ] Prompt 3 — Harden backend print access with signed tickets
+## [x] Prompt 3 — Harden backend print access with signed tickets
 
 4. Backend hardening:
    - add signed print ticket support: POST print returns document instance plus a short-lived (5 min) single-purpose signed download URL (HMAC ticket) that re-checks permission and expiry server-side, enabling safe "open in new tab" and mobile sharing without exposing long-lived tokens

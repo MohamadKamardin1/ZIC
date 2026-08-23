@@ -1,5 +1,7 @@
 from datetime import date, timedelta
 from decimal import Decimal
+from unittest import mock
+from urllib.parse import parse_qs, urlencode, urlparse
 
 from django.core.files.storage import default_storage
 from django.core.management import call_command
@@ -7,7 +9,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from apps.common.models import DomainEvent
-from apps.governance.models import AuditEvent
+from apps.governance.models import AuditEvent, AuditLog
 from apps.ol_parameters.models import (
     OLAnticipatedEndowmentInstallmentRate,
     OLBonusRate,
@@ -45,6 +47,7 @@ from apps.system_parameters.services.config_service import ConfigurationService
 from apps.ordinary_life.models import OLPlan, OLProduct as LegacyOLProduct, OLProductVersion
 from apps.ol_proposals.models import OLProposal
 from apps.ol_quotations.services.document_service import QuotationDocumentService
+from apps.ol_quotations.services.print_ticket_service import PrintTicketService
 
 
 class OLQuotationAPITests(TestCase):
@@ -2837,3 +2840,147 @@ class OLQuotationAPITests(TestCase):
 
 if __name__ == "__main__":
     pass
+
+
+class OLPrintTicketAPITests(OLQuotationAPITests):
+    def setUp(self):
+        super().setUp()
+        self.client.force_authenticate(user=self.admin)
+
+    def test_raw_unauthenticated_print_request_returns_bearer_401(self):
+        draft = self._prepare_finalizable_lifecycle_quotation("ID-OLQ-TICKET-001")
+        anonymous = APIClient()
+        response = anonymous.get(f"/api/v1/ol-quotations/quotations/{draft['id']}/print/")
+        self.assertEqual(response.status_code, 401, response.data)
+        self.assertTrue(response["WWW-Authenticate"].startswith("Bearer"))
+
+    def _generated_document(self, identifier="ID-OLQ-TICKET-002"):
+        draft = self._prepare_finalizable_lifecycle_quotation(identifier)
+        finalized = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/finalize/",
+            {},
+            format="json",
+        )
+        self.assertEqual(finalized.status_code, 200, finalized.data)
+        generated = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/print/",
+            {"preview": False},
+            format="json",
+        )
+        self.assertEqual(generated.status_code, 201, generated.data)
+        return draft, generated.data["data"]
+
+    def test_print_returns_short_lived_signed_urls_and_ticket_downloads_without_bearer(self):
+        draft, payload = self._generated_document()
+        self.assertTrue(payload["signed_download_url"])
+        self.assertTrue(payload["download_url_expires_at"])
+        self.assertIn("ticket=", payload["signed_download_url"])
+        self.assertNotIn("file_reference", payload)
+        self.assertNotIn("html_reference", payload)
+
+        parsed = urlparse(payload["signed_download_url"])
+        anonymous = APIClient()
+        protected_without_credentials = anonymous.get(
+            f"/api/v1/ol-quotations/documents/{payload['id']}/download/"
+        )
+        self.assertEqual(protected_without_credentials.status_code, 401)
+        self.assertTrue(protected_without_credentials["WWW-Authenticate"].startswith("Bearer"))
+
+        response = anonymous.get(f"{parsed.path}?{parsed.query}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertEqual(response["Cache-Control"], "private, no-store, max-age=0")
+        self.assertEqual(response["X-Content-Type-Options"], "nosniff")
+        self.assertIn(b"%PDF", b"".join(response.streaming_content))
+
+        bearer_response = self.client.get(f"/api/v1/ol-quotations/documents/{payload['id']}/download/")
+        self.assertEqual(bearer_response.status_code, 200)
+        self.assertEqual(bearer_response["Content-Type"], "application/pdf")
+
+        html_parsed = urlparse(payload["html_url"])
+        cross_format_response = APIClient().get(
+            f"/api/v1/ol-quotations/documents/{payload['id']}/html/?{parsed.query}"
+        )
+        self.assertEqual(cross_format_response.status_code, 403)
+        html_response = APIClient().get(f"{html_parsed.path}?{html_parsed.query}")
+        self.assertEqual(html_response.status_code, 200)
+        self.assertEqual(html_response["Content-Type"], "text/html; charset=utf-8")
+        self.assertIn(b"ORDINARY LIFE QUOTATION", b"".join(html_response.streaming_content))
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action="PRINT_TICKET_ISSUED",
+                object_id=str(payload["quotation_id"]),
+                source_channel="API",
+            ).exists()
+        )
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action="PRINT_TICKET_DOWNLOADED",
+                object_id=str(payload["quotation_id"]),
+                source_channel="API",
+            ).exists()
+        )
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action="PRINT_DOCUMENT_DOWNLOADED",
+                object_id=str(payload["quotation_id"]),
+                source_channel="API",
+            ).exists()
+        )
+
+    def test_tampered_ticket_is_rejected(self):
+        _draft, payload = self._generated_document("ID-OLQ-TICKET-003")
+        parsed = urlparse(payload["signed_download_url"])
+        ticket = parse_qs(parsed.query)["ticket"][0]
+        tampered = f"{ticket[:-1]}{'A' if ticket[-1] != 'A' else 'B'}"
+        response = APIClient().get(f"{parsed.path}?{urlencode({'ticket': tampered})}")
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("invalid", response.content.decode().lower())
+
+    def test_ticket_actor_binding_and_owner_permission_recheck(self):
+        _draft, payload = self._generated_document("ID-OLQ-TICKET-ACTOR")
+        parsed = urlparse(payload["signed_download_url"])
+        ticket_query = parsed.query
+
+        self.client.force_authenticate(self.viewer)
+        mismatch = self.client.get(f"{parsed.path}?{ticket_query}")
+        self.assertEqual(mismatch.status_code, 403)
+
+        self.admin.is_active = False
+        self.admin.save(update_fields=["is_active"])
+        owner_revoked = APIClient().get(f"{parsed.path}?{ticket_query}")
+        self.assertEqual(owner_revoked.status_code, 403)
+
+    def test_expired_ticket_is_rejected(self):
+        _draft, payload = self._generated_document("ID-OLQ-TICKET-004")
+        parsed = urlparse(payload["signed_download_url"])
+        ticket = parse_qs(parsed.query)["ticket"][0]
+        with mock.patch.object(PrintTicketService, "MAX_AGE_SECONDS", -1):
+            response = APIClient().get(f"{parsed.path}?{urlencode({'ticket': ticket})}")
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("expired", response.content.decode().lower())
+
+    def test_all_registered_print_routes_have_authentication_and_permission_classes(self):
+        from django.urls import URLPattern, URLResolver, get_resolver
+        from rest_framework.settings import api_settings
+
+        def patterns(items):
+            for item in items:
+                if isinstance(item, URLResolver):
+                    yield from patterns(item.url_patterns)
+                elif isinstance(item, URLPattern):
+                    route = str(item.pattern)
+                    if "print" in route.lower():
+                        yield item
+
+        routes = list(patterns(get_resolver().url_patterns))
+        self.assertTrue(routes)
+        for route in routes:
+            callback = route.callback
+            view_class = getattr(callback, "cls", None)
+            self.assertIsNotNone(view_class, route)
+            self.assertTrue(getattr(view_class, "permission_classes", None), route)
+            self.assertTrue(
+                getattr(view_class, "authentication_classes", api_settings.DEFAULT_AUTHENTICATION_CLASSES),
+                route,
+            )
