@@ -382,4 +382,3 @@ export default function OLDefaultSetup() {
   </MasterDetailPage>
 }
 
-export { screens as olDefaultSetupScreens }

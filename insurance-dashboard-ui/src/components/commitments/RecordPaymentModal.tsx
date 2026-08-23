@@ -18,11 +18,11 @@ export interface RecordPaymentModalProps {
   onSuccess: () => void
 }
 
-export function remainingAfterPayment(balance: number, amount: number): number {
+function remainingAfterPayment(balance: number, amount: number): number {
   return balance - (Number.isFinite(amount) ? amount : 0)
 }
 
-export function isOverpayment(balance: number, amount: number): boolean {
+function isOverpayment(balance: number, amount: number): boolean {
   return remainingAfterPayment(balance, amount) < 0
 }
 

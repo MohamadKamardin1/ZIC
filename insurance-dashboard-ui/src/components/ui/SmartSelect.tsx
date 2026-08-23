@@ -16,8 +16,6 @@ export type SmartOption = FilterOption & {
 
 export type SmartSelectEntity = string
 
-export { OPTION_CREATE_PERMISSIONS } from "../../lib/optionMetadata"
-
 export type SmartSelectProps = FormFieldProps & {
   entity: SmartSelectEntity
   value?: string
