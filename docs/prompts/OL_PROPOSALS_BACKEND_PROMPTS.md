@@ -1,7 +1,7 @@
 # OL PROPOSALS BACKEND — PROMPT SERIES (12 prompts)
 
 - [x] Prompt 1 — Save Prompt Series + Discovery + Proposal Domain Foundation
-- [ ] Prompt 2 — [pending prompt text]
+- [ ] Prompt 2 — Quotation to Proposal Conversion
 - [ ] Prompt 3 — [pending prompt text]
 - [ ] Prompt 4 — [pending prompt text]
 - [ ] Prompt 5 — [pending prompt text]
@@ -58,6 +58,42 @@ GIT:
 - push; if blocked create feature/ol-proposals-foundation and push; tick checkbox
 
 FINAL OUTPUT: design summary, models, events, permissions, error codes, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 2/12 — Quotation to Proposal Conversion
+
+```text
+You are a senior Django insurance engineer. Continue the ZIC OL Proposals backend. Execute ONLY Prompt 2 from the saved series file.
+
+MANDATORY RULES:
+- Conversion must be idempotent and enforce BR-01.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. Implement conversion service convert_quotation_to_proposal(quotation, version):
+   - require quotation FINALIZED and partner_verified true; otherwise PROPOSAL_PARTNER_NOT_VERIFIED with resolution steps pointing to the quotation partner-verification flow
+   - idempotency key = quotation + version; duplicate returns existing proposal with PROPOSAL_ALREADY_CONVERTED-style informational payload
+   - carry over: prospect/personal details, plan configs, members, installment configs and rows, fund allocations, riders, benefits, financial summary snapshot, currency, agent
+   - set initial status ENRICHMENT, expiry_date from OL default proposal validity days
+   - emit ProposalCreated
+2. Move ownership of conversion into ol_proposals; refactor the existing quotations convert endpoint to delegate to this service without breaking its contract.
+3. Expose POST /api/v1/ol/proposals/from-quotation/{quotation_id}/ with optional version parameter.
+4. Audit conversion with source channel and actor; log carried record counts.
+
+TESTS:
+- successful conversion carries every child dataset correctly
+- unverified partner blocked with teachable error
+- repeated conversion returns same proposal (idempotent)
+- expiry date computed from parameter
+- quotation endpoint delegation works unchanged
+
+GIT:
+- commit: "feat(ol-proposals): implement quotation to proposal conversion"
+- push; tick checkbox
+
+FINAL OUTPUT: service contract, endpoint, refactor notes, tests, commit hash, pushed branch.
 ```
 
 ---
