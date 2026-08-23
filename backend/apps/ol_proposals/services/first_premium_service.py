@@ -120,7 +120,7 @@ def link_first_premium_commitment(*, proposal, actor=None, request=None, source_
         after_state={
             "commitment": commitment.commitment_number,
             "premium_amount": str(commitment.premium_amount),
-            "status": commitment.status,
+            "commitment_status": commitment.status,
         },
         changed_fields=["first_premium_commitment"],
         reason=f"First premium commitment {commitment.commitment_number} linked to proposal.",

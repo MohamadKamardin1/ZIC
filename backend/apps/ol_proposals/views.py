@@ -329,7 +329,6 @@ class ProposalDocumentCollectionView(APIView):
         )
 
     def post(self, request, proposal_id):
-        from apps.governance.services.audit_service import AuditService
         from apps.ol_proposals.services.document_service import upload_document
 
         proposal = _get_proposal(proposal_id)
@@ -338,16 +337,6 @@ class ProposalDocumentCollectionView(APIView):
             document_type=request.data.get("document_type"),
             file_reference=request.data.get("file_reference"),
             actor=request.user,
-            source_channel="API",
-        )
-        AuditService.log_action(
-            "PROPOSAL_DOCUMENT_UPLOAD",
-            proposal,
-            actor=request.user,
-            request=request,
-            after_state={"document_type": document.document_type, "file_reference": document.file_reference},
-            changed_fields=["documents"],
-            reason=f"Uploaded '{document.document_type}'.",
             source_channel="API",
         )
         return Response(
@@ -707,6 +696,43 @@ class MustPrintProposalPermission(IsAuthenticated):
         if not super().has_permission(request, view):
             return False
         return has_ol_proposal_permission(request.user, "print")
+
+
+class MustConvertProposalPermission(IsAuthenticated):
+    def has_permission(self, request, view):
+        if not super().has_permission(request, view):
+            return False
+        return has_ol_proposal_permission(request.user, "convert")
+
+
+class ProposalConvertToPolicyView(APIView):
+    """POST /api/v1/ol-proposals/proposals/{id}/convert/ — BR-03-gated policy conversion."""
+
+    permission_classes = [MustConvertProposalPermission]
+
+    def post(self, request, proposal_id):
+        from apps.ol_proposals.services.policy_conversion_service import convert_proposal_to_policy
+
+        proposal = _get_proposal(proposal_id)
+        policy, created = convert_proposal_to_policy(
+            proposal=proposal,
+            actor=request.user,
+            request=request,
+            source_channel="API",
+        )
+        proposal.refresh_from_db()
+        return Response(
+            {
+                "data": {
+                    "proposal_number": proposal.proposal_number,
+                    "status": proposal.status,
+                    "policy_number": policy.policy_number,
+                    "converted_policy": str(policy.pk),
+                    "created": created,
+                }
+            },
+            status=201 if created else 200,
+        )
 
 
 class ProposalPrintView(APIView):

@@ -2,6 +2,7 @@
 
 from django.utils import timezone
 
+from apps.governance.services.audit_service import AuditService
 from apps.ol_parameters.models import OLProposalDocumentRequirement
 from apps.ol_proposals.errors import ProposalError
 from apps.ol_proposals.models import OLProposalDocument, ProposalDocumentStatus
@@ -80,5 +81,14 @@ def upload_document(*, proposal, document_type, file_reference, actor, source_ch
             "uploaded_by": actor if actor and getattr(actor, "is_authenticated", False) else None,
             "uploaded_at": timezone.now(),
         },
+    )
+    AuditService.log_action(
+        "PROPOSAL_DOCUMENT_UPLOAD",
+        proposal,
+        actor=actor,
+        after_state={"document_type": document.document_type, "file_reference": document.file_reference},
+        changed_fields=["documents"],
+        reason=f"Uploaded '{document.document_type}'.",
+        source_channel=source_channel,
     )
     return document, created
