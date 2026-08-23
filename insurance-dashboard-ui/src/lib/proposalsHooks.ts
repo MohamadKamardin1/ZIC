@@ -9,7 +9,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   type ProposalDetail,
-  type ProposalListFilters,
+  type ProposalListParams,
   type FirstPremiumStatusShape,
   addBeneficiary,
   cancelProposal,
@@ -41,7 +41,7 @@ import {
   uploadProposalDocument,
 } from "./proposals"
 
-export function proposalListKey(filters: ProposalListFilters = {}) {
+export function proposalListKey(filters: ProposalListParams = {}) {
   return ["proposals", "list", filters] as const
 }
 
@@ -70,7 +70,7 @@ export function invalidateProposalQueries(
   }
 }
 
-export function useProposalList(filters: ProposalListFilters = {}) {
+export function useProposalList(filters: ProposalListParams = {}) {
   return useQuery({
     queryKey: proposalListKey(filters),
     queryFn: async () => normalizePaginated(await listProposals(filters), normalizeProposalListItem),

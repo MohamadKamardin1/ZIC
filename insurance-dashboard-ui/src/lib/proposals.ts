@@ -30,15 +30,21 @@ export interface ProposalListItem {
   id: string
   proposalNumber: string
   status: string
+  statusName?: string
   partnerName: string
-  productName?: string
-  quotationNumber?: string
+  agentName?: string
   employerName?: string
-  premiumAmount?: number | null
+  productName?: string
+  planName?: string
+  quotationNumber?: string
+  totalPremium?: number | null
   currency?: string
   expiryDate?: string | null
   medicalRequired?: boolean
   createdAt?: string | null
+  paymentReady: boolean
+  firstPremiumPosted: boolean
+  allowedActions: ProposalAction[]
 }
 
 export interface ChecklistItem {
@@ -106,13 +112,30 @@ export interface ProposalDetail extends ProposalListItem {
   firstPremium: FirstPremiumStatusShape | null
 }
 
-export interface ProposalListFilters extends TableQuery {
+export interface ProposalListParams extends TableQuery {
   status?: string
+  product?: string
+  agent?: string
+  hasEmployer?: boolean
+  expiryFrom?: string
+  expiryTo?: string
+  paymentReady?: boolean
+  firstPremiumPosted?: boolean
 }
 
-export interface ProposalKPIs {
-  total: number
-  byStatus: Record<string, number>
+/** Register KPIs from ``GET /proposals/kpis/`` (snake_case payload). */
+export interface RegisterKPIs {
+  totalProposals: number
+  pendingUnderwriting: number
+  paymentReady: number
+  awaitingFirstPremium: number
+  awaitingFirstPremiumAmount: number
+  converted: number
+  convertedInPeriod: number
+  expiringSoon: number
+  expiringIn7Days: number
+  cancelled: number
+  expired: number
 }
 
 // ---------------------------------------------------------------------------
@@ -238,19 +261,26 @@ export function normalizeFirstPremium(raw: unknown): FirstPremiumStatusShape {
 
 export function normalizeProposalListItem(raw: unknown): ProposalListItem {
   const record = asRecord(raw)
+  const badge = asRecord(record.status_badge)
   return {
     id: str(record, "id") ?? "",
     proposalNumber: str(record, "proposal_number", "proposalNumber") ?? "—",
     status: str(record, "status") ?? "",
-    partnerName: str(record, "partner_name", "partnerName") ?? str(record, "partner_display") ?? "—",
-    productName: str(record, "product_name", "productName", "plan_display"),
-    quotationNumber: str(record, "quotation_number", "quotationNumber"),
+    statusName: str(badge, "name", "label"),
+    partnerName: str(record, "policyholder", "partner_name", "partnerName") ?? str(record, "partner_display") ?? "—",
+    agentName: str(record, "agent_name_snapshot", "agent_name", "agent"),
     employerName: str(record, "employer_name_snapshot", "employer_name"),
-    premiumAmount: num(record, "premium_amount", "premiumAmount"),
+    productName: str(record, "product_name", "productName", "product"),
+    planName: str(record, "plan_name", "planName", "plan"),
+    quotationNumber: str(record, "quotation_number", "quotationNumber"),
+    totalPremium: num(record, "total_premium", "premium_amount", "totalPremium"),
     currency: str(record, "currency"),
     expiryDate: str(record, "expiry_date", "expiryDate") ?? null,
     medicalRequired: bool(record, "medical_required"),
     createdAt: str(record, "created_at") ?? null,
+    paymentReady: bool(record, "payment_ready", "paymentReady"),
+    firstPremiumPosted: bool(record, "first_premium_posted", "firstPremiumPosted"),
+    allowedActions: normalizeAllowedActions(record.allowed_actions),
   }
 }
 
@@ -313,27 +343,80 @@ export function normalizePaginated<T>(payload: unknown, mapRow: (row: unknown) =
   return { results: rows.map(mapRow), count }
 }
 
-export function normalizeKPIs(payload: unknown): ProposalKPIs {
+export function normalizeKPIs(payload: unknown): RegisterKPIs {
   const record = asRecord(payload)
-  const byStatus: Record<string, number> = {}
-  for (const [key, value] of Object.entries(record)) {
-    if (typeof value === "number" && key !== "total") byStatus[key] = value
+  const pick = (...keys: string[]): number => {
+    for (const key of keys) {
+      const value = num(record, key)
+      if (value !== null) return value
+    }
+    return 0
   }
-  const nested = asRecord(record.by_status ?? record.statuses)
-  for (const [key, value] of Object.entries(nested)) {
-    if (typeof value === "number") byStatus[key] = value
+  return {
+    totalProposals: pick("total_proposals", "total"),
+    pendingUnderwriting: pick("pending_underwriting"),
+    paymentReady: pick("payment_ready"),
+    awaitingFirstPremium: pick("awaiting_first_premium"),
+    awaitingFirstPremiumAmount: pick("awaiting_first_premium_amount"),
+    converted: pick("converted"),
+    convertedInPeriod: pick("converted_in_period", "converted"),
+    expiringSoon: pick("expiring_soon"),
+    expiringIn7Days: pick("expiring_in_7_days", "expiring_soon"),
+    cancelled: pick("cancelled"),
+    expired: pick("expired"),
   }
-  let total = num(record, "total") ?? 0
-  if (!total) total = Object.values(byStatus).reduce((sum, value) => sum + value, 0)
-  return { total, byStatus }
 }
 
 // ---------------------------------------------------------------------------
 // Fetchers
 // ---------------------------------------------------------------------------
 
-export async function listProposals(filters: ProposalListFilters = {}) {
-  return request<unknown>(`${BASE}/proposals/${buildTableQuery(filters)}`)
+export async function listProposals(params: ProposalListParams = {}) {
+  return request<unknown>(
+    `${BASE}/proposals/${buildTableQuery({
+      page: params.page,
+      pageSize: params.pageSize,
+      search: params.search,
+      ordering: params.ordering,
+      filters: {
+        status: params.status,
+        product: params.product,
+        agent: params.agent,
+        has_employer: params.hasEmployer === undefined ? "" : String(params.hasEmployer),
+        expiry_from: params.expiryFrom,
+        expiry_to: params.expiryTo,
+        payment_ready: params.paymentReady === undefined ? "" : String(params.paymentReady),
+        first_premium_posted: params.firstPremiumPosted === undefined ? "" : String(params.firstPremiumPosted),
+      },
+    })}`,
+  )
+}
+
+/** Server-side CSV export — mirrors the list filter contract. */
+export async function exportProposalsCsv(params: ProposalListParams = {}): Promise<PrintResult> {
+  const query = buildTableQuery({
+    search: params.search,
+    ordering: params.ordering,
+    filters: {
+      status: params.status,
+      product: params.product,
+      agent: params.agent,
+      has_employer: params.hasEmployer === undefined ? "" : String(params.hasEmployer),
+      expiry_from: params.expiryFrom,
+      expiry_to: params.expiryTo,
+      payment_ready: params.paymentReady === undefined ? "" : String(params.paymentReady),
+      first_premium_posted: params.firstPremiumPosted === undefined ? "" : String(params.firstPremiumPosted),
+    },
+  })
+  const response = await fetch(`${BASE}/proposals/export/${query}`, {
+    headers: {
+      Authorization: `Bearer ${localStorage.getItem("aims_access_token") ?? sessionStorage.getItem("aims_access_token") ?? ""}`,
+      Accept: "text/csv",
+    },
+  })
+  if (!response.ok) throw await (await import("./apiClient")).normalizeResponseError(response)
+  const blob = await response.blob()
+  return { fileName: "ol-proposals.csv", blobUrl: URL.createObjectURL(blob) }
 }
 
 export async function getProposalKPIs() {
