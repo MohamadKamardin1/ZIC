@@ -8,7 +8,7 @@
 - [x] Prompt 6 — First Premium Tracking and Receipt Seam
 - [ ] Prompt 7 — [pending prompt text]
 - [x] Prompt 8 — Lifecycle List and Detail APIs
-- [ ] Prompt 9 — [pending prompt text]
+- [ ] Prompt 9 — Proposal Printout and Options Endpoints
 - [ ] Prompt 10 — [pending prompt text]
 - [ ] Prompt 11 — [pending prompt text]
 - [ ] Prompt 12 — [pending prompt text]
@@ -269,6 +269,41 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: endpoint contract, KPI rules, lifecycle rules, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 9/12 — Proposal Printout and Options Endpoints
+
+```text
+You are a senior Django insurance engineer. Continue the ZIC OL Proposals backend. Execute ONLY Prompt 9.
+
+MANDATORY RULES:
+- Generated documents retain source and template version.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. Proposal summary print template (template code + version) with variables: proposal number, policyholder, beneficiaries, employer/intermediary, plans, terms, premiums, benefits, riders, first premium due, expiry, declarations, company header.
+2. POST print endpoint generating HTML+PDF, storing OLProposalDocument-style generated document linked to proposal and template version; GET documents list.
+3. Options endpoints for proposal UI:
+   - proposal statuses
+   - corporate partners (employers)
+   - intermediary/agent partners
+   - beneficial types
+   - document types
+   - banks for policyholder bank details
+4. Admin tables for proposals, beneficiaries, documents.
+
+TESTS:
+- printout renders with all variable groups
+- document stores template version and source link
+- options endpoints labeled and active-only
+
+GIT:
+- commit: "feat(ol-proposals): implement proposal printout and options endpoints"
+- push; tick checkbox
+
+FINAL OUTPUT: template variables, endpoints, tests, commit hash, pushed branch.
 ```
 
 ---
