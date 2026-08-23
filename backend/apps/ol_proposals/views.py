@@ -768,6 +768,59 @@ class ProposalPrintView(APIView):
         )
 
 
+class ProposalHistoryView(APIView):
+    """GET /api/v1/ol-proposals/proposals/{id}/history/ — status timeline.
+
+    Reads the durable ``DomainEvent`` outbox rows emitted by the lifecycle
+    (created, enriched, payment-ready, converted, cancelled, expired) so the
+    detail page can render an auditable timeline with actor, previous/new
+    state, reason, and source channel.
+    """
+
+    permission_classes = [MustViewProposalsPermission]
+
+    def get(self, request, proposal_id):
+        from apps.common.models import DomainEvent
+        from django.contrib.auth import get_user_model
+
+        proposal = _get_proposal(proposal_id)
+        events = DomainEvent.objects.filter(aggregate_type="OLProposal", aggregate_id=str(proposal.pk)).order_by("occurred_at", "id")
+        user_model = get_user_model()
+        actor_ids = {
+            str((event.payload or {}).get("actor_id") or "")
+            for event in events
+            if (event.payload or {}).get("actor_id")
+        }
+        actor_names = {}
+        if actor_ids:
+            for user in user_model.objects.filter(pk__in=actor_ids):
+                actor_names[str(user.pk)] = user.full_name or user.get_username()
+        items = []
+        for event in events:
+            payload = event.payload or {}
+            items.append(
+                {
+                    "id": str(event.pk),
+                    "event_type": event.event_type,
+                    "occurred_at": event.occurred_at.isoformat() if event.occurred_at else None,
+                    "actor": actor_names.get(str(payload.get("actor_id") or ""), ""),
+                    "from_status": payload.get("from_status") or "",
+                    "to_status": payload.get("to_status") or "",
+                    "reason": payload.get("reason") or "",
+                    "source_channel": payload.get("source_channel") or "",
+                }
+            )
+        return Response(
+            {
+                "data": {
+                    "proposal_id": str(proposal.pk),
+                    "proposal_number": proposal.proposal_number,
+                    "events": items,
+                }
+            }
+        )
+
+
 class ProposalDetailView(APIView):
     """GET /api/v1/ol-proposals/{id}/ — proposal detail with carried children."""
 

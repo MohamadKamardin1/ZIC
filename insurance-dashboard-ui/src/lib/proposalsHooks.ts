@@ -21,6 +21,7 @@ import {
   getHealthQuestions,
   getPaymentReadiness,
   getProposal,
+  getProposalHistory,
   getProposalKPIs,
   getProposalOptions,
   listGeneratedDocuments,
@@ -90,6 +91,18 @@ export function useProposalDetail(id?: string | null, enabled = true) {
   return useQuery({
     queryKey: proposalDetailKey(id),
     queryFn: async () => (id ? (normalizeProposalDetail(await getProposal(id)) as ProposalDetail) : null),
+    enabled: Boolean(id) && enabled,
+  })
+}
+
+export function proposalHistoryKey(id?: string | null) {
+  return ["proposals", "history", id ?? "none"] as const
+}
+
+export function useProposalHistory(id?: string | null, enabled = true) {
+  return useQuery({
+    queryKey: proposalHistoryKey(id),
+    queryFn: async () => (id ? getProposalHistory(id) : []),
     enabled: Boolean(id) && enabled,
   })
 }

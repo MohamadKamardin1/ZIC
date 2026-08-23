@@ -105,10 +105,121 @@ export interface ProposalDocumentRecord {
   fileReference?: string
 }
 
+// --- Carried quotation children (detail payload) ---
+
+export interface ProposalPlanConfigRow {
+  id: string
+  planName: string
+  subProductCode?: string
+  sectionNumber?: string
+  baseSumAssured?: number | null
+  termYears?: number | null
+  paymentPeriodYears?: number | null
+  premiumFrequency?: string
+  quoteBasis?: string
+  estimatedMaturityValue?: number | null
+  premiumAmount?: number | null
+  isSelected: boolean
+}
+
+export interface ProposalMemberRow {
+  id: string
+  memberType?: string
+  fullName: string
+  identityNumber?: string
+  dateOfBirth?: string | null
+  ageAtQuote?: number | null
+  gender?: string
+  smokerStatus?: string
+  relationship?: string
+  memberSumAssured?: number | null
+  coverageBasis?: string
+}
+
+export interface ProposalInstallmentRow {
+  id: string
+  frequency?: string
+  numberOfInstallments?: number | null
+  installmentAmount?: number | null
+  firstDueDate?: string | null
+  currency?: string
+  isSelected: boolean
+}
+
+export interface ProposalFundRow {
+  id: string
+  fundName: string
+  allocationPercentage?: number | null
+  allocationAmount?: number | null
+  isSelected: boolean
+}
+
+export interface ProposalRiderRow {
+  id: string
+  riderName: string
+  riderSumAssured?: number | null
+  riderTermYears?: number | null
+  benefitBasis?: string
+  benefitValue?: number | null
+  premiumAmount?: number | null
+  isSelected: boolean
+}
+
+export interface ProposalBenefitRow {
+  id: string
+  code?: string
+  name: string
+  benefitType?: string
+  basis?: string
+  value?: number | null
+  sumAssured?: number | null
+  premiumAmount?: number | null
+  isSelected: boolean
+}
+
+export interface ProposalQuotationVersionRow {
+  versionNumber: number
+  status?: string
+  changeReason?: string
+  createdAt?: string | null
+}
+
+export interface ProposalCompleteness {
+  missing: string[]
+  requiredMissing: string[]
+  complete: boolean
+}
+
 export interface ProposalDetail extends ProposalListItem {
+  quotationId?: string
+  quotationVersion?: number | null
+  underwritingStatus?: string
+  reasonCode?: string
+  reasonText?: string
+  sourceChannel?: string
+  employmentReference?: string
+  payrollDeduction?: boolean | null
+  intermediaryChannel?: string
+  declarationPep: boolean | null
+  declarationAml: boolean | null
+  existingPoliciesCount?: number | null
+  occupationRiskNote?: string
+  declarationsFreeText?: string
+  bankName?: string
+  bankAccountName?: string
+  bankAccountNumberMasked?: string
+  paymentReadyAt?: string | null
+  convertedPolicyId?: string
+  completeness: ProposalCompleteness | null
+  quotationVersions: ProposalQuotationVersionRow[]
+  planConfigs: ProposalPlanConfigRow[]
+  members: ProposalMemberRow[]
+  installmentConfigs: ProposalInstallmentRow[]
+  fundAllocations: ProposalFundRow[]
+  riders: ProposalRiderRow[]
+  benefits: ProposalBenefitRow[]
   beneficiaries: BeneficiaryRecord[]
   documents: ProposalDocumentRecord[]
-  allowedActions: ProposalAction[]
   readiness: ReadinessReport | null
   firstPremium: FirstPremiumStatusShape | null
 }
@@ -295,40 +406,158 @@ export function normalizeAllowedActions(raw: unknown): ProposalAction[] {
   return []
 }
 
+function rowsOf(record: Raw, ...keys: string[]): Raw[] {
+  for (const key of keys) {
+    const value = record[key]
+    if (Array.isArray(value)) return value.map((row) => asRecord(row))
+  }
+  return []
+}
+
+function triBool(source: unknown, ...keys: string[]): boolean | null {
+  const record = asRecord(source)
+  for (const key of keys) {
+    if (typeof record[key] === "boolean") return record[key] as boolean
+  }
+  return null
+}
+
 export function normalizeProposalDetail(raw: unknown): ProposalDetail {
   const base = normalizeProposalListItem(raw)
   const record = asRecord(raw)
-  const beneficiaries = Array.isArray(record.beneficiaries) ? record.beneficiaries : []
-  const documents = Array.isArray(record.documents) ? record.documents : []
-  return {
+
+  const planConfigs = rowsOf(record, "plan_configs").map((item) => ({
+    id: str(item, "id") ?? "",
+    planName: str(item, "plan_name_snapshot", "plan_name") ?? "—",
+    subProductCode: str(item, "sub_product_code"),
+    sectionNumber: str(item, "section_number"),
+    baseSumAssured: num(item, "base_sum_assured"),
+    termYears: num(item, "term_years"),
+    paymentPeriodYears: num(item, "payment_period_years"),
+    premiumFrequency: str(item, "premium_frequency"),
+    quoteBasis: str(item, "quote_basis"),
+    estimatedMaturityValue: num(item, "estimated_maturity_value"),
+    premiumAmount: num(item, "premium_amount"),
+    isSelected: bool(item, "is_selected"),
+  }))
+
+  const selectedPlan = planConfigs.find((plan) => plan.isSelected) ?? planConfigs[0]
+
+  const detail: ProposalDetail = {
     ...base,
-    employerName: base.employerName ?? str(record, "employer_partner_name"),
-    beneficiaries: beneficiaries.map((row) => {
-      const item = asRecord(row)
-      return {
-        id: str(item, "id") ?? "",
-        personName: str(item, "person_name") ?? "—",
-        sharePercent: num(item, "share_percent") ?? 0,
-        isPrimary: bool(item, "is_primary"),
-        isMinor: bool(item, "is_minor"),
-        identityType: str(item, "identity_type"),
-        identityNumber: str(item, "identity_number"),
-      }
-    }),
-    documents: documents.map((row) => {
-      const item = asRecord(row)
-      return {
-        id: str(item, "id") ?? "",
-        documentType: str(item, "document_type") ?? "",
-        documentTypeDisplay: str(item, "document_type_display"),
-        status: str(item, "status") ?? "",
-        fileReference: str(item, "file_reference"),
-      }
-    }),
+    partnerName: str(record, "partner_name_snapshot") ?? base.partnerName,
+    agentName: str(record, "agent_name_snapshot") ?? base.agentName,
+    employerName: str(record, "employer_name_snapshot") ?? base.employerName,
+    productName: str(record, "product_name") ?? (selectedPlan ? `Plan ${selectedPlan.planName}` : undefined),
+    planName: str(record, "plan_name") ?? selectedPlan?.planName,
+    quotationId: str(record, "quotation", "quotation_id"),
+    quotationNumber: str(record, "quotation_number") ?? base.quotationNumber,
+    quotationVersion: num(record, "quotation_version"),
+    underwritingStatus: str(record, "underwriting_status"),
+    reasonCode: str(record, "reason_code"),
+    reasonText: str(record, "reason_text"),
+    sourceChannel: str(record, "source_channel"),
+    employmentReference: str(record, "employment_reference"),
+    payrollDeduction: triBool(record, "payroll_deduction"),
+    intermediaryChannel: str(record, "intermediary_channel"),
+    declarationPep: triBool(record, "declaration_pep_flag"),
+    declarationAml: triBool(record, "declaration_aml_flag"),
+    existingPoliciesCount: num(record, "existing_policies_count"),
+    occupationRiskNote: str(record, "occupation_risk_note"),
+    declarationsFreeText: str(record, "declarations_free_text"),
+    bankName: str(record, "bank_name"),
+    bankAccountName: str(record, "bank_account_name"),
+    bankAccountNumberMasked: str(record, "bank_account_number"),
+    paymentReadyAt: str(record, "payment_ready_at") ?? null,
+    convertedPolicyId: str(record, "converted_policy"),
+    completeness: record.completeness
+      ? {
+          missing: strArray(asRecord(record.completeness), "missing"),
+          requiredMissing: strArray(asRecord(record.completeness), "required_missing"),
+          complete: bool(asRecord(record.completeness), "complete"),
+        }
+      : null,
+    quotationVersions: rowsOf(record, "quotation_versions").map((item) => ({
+      versionNumber: num(item, "version_number", "version") ?? 0,
+      status: str(item, "status"),
+      changeReason: str(item, "change_reason"),
+      createdAt: str(item, "created_at") ?? null,
+    })),
+    planConfigs,
+    members: rowsOf(record, "members").map((item) => ({
+      id: str(item, "id") ?? "",
+      memberType: str(item, "member_type"),
+      fullName:
+        str(item, "full_name_snapshot") ??
+        ([str(item, "first_name"), str(item, "last_name")].filter(Boolean).join(" ") || "—"),
+      identityNumber: str(item, "identity_number"),
+      dateOfBirth: str(item, "date_of_birth") ?? null,
+      ageAtQuote: num(item, "age_at_quote"),
+      gender: str(item, "gender"),
+      smokerStatus: str(item, "smoker_status"),
+      relationship: str(item, "relationship"),
+      memberSumAssured: num(item, "member_sum_assured"),
+      coverageBasis: str(item, "coverage_basis"),
+    })),
+    installmentConfigs: rowsOf(record, "installment_configs").map((item) => ({
+      id: str(item, "id") ?? "",
+      frequency: str(item, "frequency"),
+      numberOfInstallments: num(item, "number_of_installments"),
+      installmentAmount: num(item, "installment_amount"),
+      firstDueDate: str(item, "first_due_date") ?? null,
+      currency: str(item, "currency"),
+      isSelected: bool(item, "is_selected"),
+    })),
+    fundAllocations: rowsOf(record, "fund_allocations").map((item) => ({
+      id: str(item, "id") ?? "",
+      fundName: str(item, "fund_name_snapshot", "fund") ?? "—",
+      allocationPercentage: num(item, "allocation_percentage"),
+      allocationAmount: num(item, "allocation_amount"),
+      isSelected: bool(item, "is_selected"),
+    })),
+    riders: rowsOf(record, "riders").map((item) => ({
+      id: str(item, "id") ?? "",
+      riderName: str(item, "rider_name_snapshot", "rider") ?? "—",
+      riderSumAssured: num(item, "rider_sum_assured"),
+      riderTermYears: num(item, "rider_term_years"),
+      benefitBasis: str(item, "benefit_basis"),
+      benefitValue: num(item, "benefit_value"),
+      premiumAmount: num(item, "premium_amount"),
+      isSelected: bool(item, "is_selected"),
+    })),
+    benefits: rowsOf(record, "benefits").map((item) => ({
+      id: str(item, "id") ?? "",
+      code: str(item, "code"),
+      name: str(item, "name") ?? "—",
+      benefitType: str(item, "benefit_type"),
+      basis: str(item, "basis"),
+      value: num(item, "value"),
+      sumAssured: num(item, "sum_assured"),
+      premiumAmount: num(item, "premium_amount"),
+      isSelected: bool(item, "is_selected"),
+    })),
+    beneficiaries: rowsOf(record, "beneficiaries").map((item) => ({
+      id: str(item, "id") ?? "",
+      personName: str(item, "person_name") ?? "—",
+      sharePercent: num(item, "share_percent") ?? 0,
+      isPrimary: bool(item, "is_primary"),
+      isMinor: bool(item, "is_minor"),
+      identityType: str(item, "identity_type"),
+      identityNumber: str(item, "identity_number"),
+    })),
+    documents: rowsOf(record, "documents").map((item) => ({
+      id: str(item, "id") ?? "",
+      documentType: str(item, "document_type") ?? "",
+      documentTypeDisplay: str(item, "document_type_display"),
+      status: str(item, "status") ?? "",
+      fileReference: str(item, "file_reference"),
+    })),
     allowedActions: normalizeAllowedActions(record.allowed_actions),
-    readiness: record.readiness ? normalizeReadiness(record.readiness) : null,
+    // The detail payload evaluates readiness inline under ``checklist``.
+    readiness: record.checklist || record.readiness ? normalizeReadiness(record.checklist ?? record.readiness) : null,
     firstPremium: record.first_premium ? normalizeFirstPremium(record.first_premium) : null,
   }
+  return detail
 }
 
 export interface Paginated<T> {
@@ -426,6 +655,68 @@ export async function getProposalKPIs() {
 
 export async function getProposal(id: string) {
   return request<unknown>(`${BASE}/proposals/${id}/`)
+}
+
+// ---------------------------------------------------------------------------
+// History timeline + quotation version snapshots
+// ---------------------------------------------------------------------------
+
+export interface ProposalHistoryEvent {
+  id: string
+  eventType: string
+  eventTypeLabel: string
+  occurredAt?: string | null
+  actor?: string
+  fromStatus?: string
+  toStatus?: string
+  reason?: string
+  sourceChannel?: string
+}
+
+export function normalizeProposalHistoryEvent(raw: unknown): ProposalHistoryEvent {
+  const record = asRecord(raw)
+  const eventType = str(record, "event_type") ?? ""
+  return {
+    id: str(record, "id") ?? "",
+    eventType,
+    eventTypeLabel: eventType.replace(/([a-z])([A-Z])/g, "$1 $2"),
+    occurredAt: str(record, "occurred_at") ?? null,
+    actor: str(record, "actor"),
+    fromStatus: str(record, "from_status"),
+    toStatus: str(record, "to_status"),
+    reason: str(record, "reason"),
+    sourceChannel: str(record, "source_channel"),
+  }
+}
+
+export async function getProposalHistory(id: string): Promise<ProposalHistoryEvent[]> {
+  const payload = await request<unknown>(`${BASE}/proposals/${id}/history/`)
+  const rows = Array.isArray(payload) ? payload : rowsOf(asRecord(payload), "events")
+  return rows.map(normalizeProposalHistoryEvent)
+}
+
+export interface QuotationVersionSnapshot {
+  quotationId: string
+  quoteNumber: string
+  versionNumber: number
+  status?: string
+  changeReason?: string
+  createdAt?: string | null
+  snapshot: Raw
+}
+
+export async function getQuotationVersionSnapshot(quotationId: string, versionNumber: number): Promise<QuotationVersionSnapshot> {
+  const payload = await request<unknown>(`${QUOTATIONS_BASE}/${quotationId}/as-of-version/${versionNumber}/`)
+  const record = asRecord(payload)
+  return {
+    quotationId: str(record, "quotation_id") ?? quotationId,
+    quoteNumber: str(record, "quote_number") ?? "",
+    versionNumber: num(record, "version_number") ?? versionNumber,
+    status: str(record, "status"),
+    changeReason: str(record, "change_reason"),
+    createdAt: str(record, "created_at") ?? null,
+    snapshot: asRecord(record.snapshot),
+  }
 }
 
 export async function createProposalFromQuotation(quotationId: string, version?: number) {

@@ -199,6 +199,31 @@ class ListingServiceTests(DRFTestCase):
         self.assertTrue(data["first_premium"]["first_premium_posted"])
         self.assertEqual(len(data["quotation_versions"]), 1)
 
+    def test_history_timeline_orders_events_with_actor_state_reason(self):
+        from apps.ol_proposals import events as proposal_events
+
+        actor = User.objects.create_superuser(username="hist_op", password="Password@12345", email="hist_op@zic.tz")
+        proposal_events.emit_created(self.enrich, actor=actor, reason="Created from quotation", source_channel="WEB")
+        proposal_events.emit_payment_ready(
+            self.enrich, actor=actor, from_status="ENRICHMENT", reason="Checklist passed", source_channel="API"
+        )
+
+        response = self.client.get(f"/api/v1/ol-proposals/proposals/{self.enrich.pk}/history/")
+        self.assertEqual(response.status_code, 200)
+        data = response.data["data"]
+        self.assertEqual(data["proposal_number"], "OLP-2026-L001")
+
+        rows = data["events"]
+        self.assertEqual([row["event_type"] for row in rows], ["ProposalCreated", "ProposalPaymentReady"])
+        created = rows[0]
+        self.assertEqual(created["actor"], "hist_op")
+        self.assertEqual(created["to_status"], "ENRICHMENT")
+        self.assertEqual(created["source_channel"], "WEB")
+        ready = rows[1]
+        self.assertEqual(ready["from_status"], "ENRICHMENT")
+        self.assertEqual(ready["to_status"], "ENRICHMENT")
+        self.assertEqual(ready["reason"], "Checklist passed")
+
 
 class LifecycleServiceTests(TestCase):
     def setUp(self):
