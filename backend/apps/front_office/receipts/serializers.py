@@ -14,8 +14,8 @@ from apps.front_office.receipts.services.parameter_resolver import payment_mode_
 
 _ALLOWED_BY_STATUS = {
     "DRAFT": ["update", "post", "cancel"],
-    "POSTED": ["allocate"],
-    "PARTIALLY_ALLOCATED": ["allocate"],
+    "POSTED": ["allocate", "reverse"],
+    "PARTIALLY_ALLOCATED": ["allocate", "reverse"],
     "FULLY_ALLOCATED": ["reverse"],
     "REVERSED": [],
     "CANCELLED": [],
@@ -355,6 +355,20 @@ class ReceiptDraftSerializer(serializers.ModelSerializer):
 
         actor = self.context.get("request").user if self.context.get("request") else None
         return update_draft(instance, actor=actor, **validated_data)
+
+
+class ReceiptReasonSerializer(serializers.Serializer):
+    """Mandatory reason for reversal, allocation reversal, and cancellation."""
+
+    reason = serializers.CharField(
+        required=True,
+        allow_blank=False,
+        max_length=2000,
+        error_messages={
+            "required": "A reason is required for this action.",
+            "blank": "A reason is required for this action.",
+        },
+    )
 
 
 class ReceiptAllocationRequestSerializer(serializers.Serializer):

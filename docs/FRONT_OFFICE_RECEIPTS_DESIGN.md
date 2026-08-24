@@ -250,3 +250,64 @@ silently assumed.
   `OLCommitmentAllocation` insert) reports the commitment-side converted amount
   and currency for cross-currency allocations, with the applied `exchange_rate`
   carried explicitly.
+
+## 16. Prompt 6 — receipt reversal, allocation reversal & draft cancellation
+
+Reversal is a first-class, auditable, *never-deleting* operation. Assumptions
+governing the reversal/cancellation behavior:
+
+- **Reversal never deletes history.** The original `ReceiptAllocation` row is
+  kept and marked `allocation_status = REVERSED`; a linked reversal row
+  (`reversal_of` set, status `REVERSED`) is created. `recompute_allocated()`
+  sums only `reversal_of__isnull=True AND allocation_status = ACTIVE`, so the
+  reversal row and the status-`REVERSED` original are both excluded and the
+  allocated amount decreases by the reversed amount. The same pattern is
+  mirrored on the OL Commitments side: the original `OLCommitmentAllocation` is
+  kept and a reversal `OLCommitmentAllocation` (with `reversal_of`) is created
+  by `ol_commitments.services.reversal_service.reverse_allocation_to_commitment`.
+- **Reasons are mandatory.** A reversal (full or single allocation) and a
+  cancellation without a `reason` are rejected (structured
+  `RECEIPT_REASON_REQUIRED`, or a DRF 400 with `field_errors.reason` from the
+  endpoint serializer). The reason is persisted on the `ReceiptReversal`
+  record, the status history row, and the audit trail.
+- **Full receipt reversal** (`POST /receipts/{id}/reverse/`): reverses every
+  active allocation (OL commitment side included), records a `ReceiptReversal`
+  with a `RVR-` reversal number and a frozen `reversed_allocations` snapshot
+  (each entry carries the original allocation, its reversal row, and the linked
+  OL commitment allocation reversal reference), marks the receipt `REVERSED`
+  with `reversed_at`/`reversed_by`, restores each commitment's
+  `amount_paid`/`balance`/status, and emits `ReceiptReversed`. After a first
+  premium reversal the commitment returns to `PENDING`, so the proposal
+  `first_premium_posted` guard (which reads commitment `COMPLETED` +
+  fully-paid) naturally becomes `False`.
+- **Single allocation reversal** (`POST /receipts/{id}/allocations/{id}/reverse/`):
+  reverses one active allocation, recomputes the receipt allocated/unallocated
+  amounts, and recalculates the receipt status from the amount split (e.g.
+  `FULLY_ALLOCATED` -> `PARTIALLY_ALLOCATED`, or back to `POSTED` when it was
+  the only allocation). The commitment balance/status restore to match.
+- **Status rules.** `DRAFT` receipts cancel (`CANCELLED` + `cancellation_reason`);
+  `POSTED`/`PARTIALLY_ALLOCATED`/`FULLY_ALLOCATED` receipts reverse (`REVERSED`).
+  No hard delete exists for any status. `POSTED`/`PARTIALLY_ALLOCATED`/`FULLY_ALLOCATED`
+  are shown with the `reverse` action in `allowed_actions`.
+- **Reversal constraints.**
+  - An already-reversed receipt (or an already-reversed allocation) is blocked
+    with `RECEIPT_ALREADY_REVERSED` (409).
+  - A configured lock period blocks reversal outside the window with
+    `RECEIPT_REVERSAL_LOCKED` (422). The optional integer system parameter
+    `RECEIPT_REVERSAL_LOCK_DAYS` sets how many days after `receipt_date` a
+    reversal is still allowed; a value of `0`/unset disables the lock. Reversal
+    of an old receipt beyond the window is refused with resolution steps.
+  - Permissions: `front_office.receipts.reverse` gates full and single
+    allocation reversal; `front_office.receipts.cancel` gates cancellation
+    (`MustActionPermission`).
+- **Reversal numbering.** Reversal numbers use a dedicated, parameterized
+  `ReceiptNumberingRule` (`RVR_DEFAULT`, prefix `RVR`, seeded by
+  `seed_receipt_parameters`). `ReceiptNumberingService.next_number` accepts an
+  optional `rule_code`; without one it resolves the canonical receipt rule by
+  code (stable `RCT_DEFAULT` selection regardless of rule creation order).
+- **Audit.** Reversal writes CREATE audit rows for the `ReceiptReversal` record
+  and each reversal `ReceiptAllocation`/`OLCommitmentAllocation` row, and UPDATE
+  rows for the original allocations, the receipt, and each commitment — with
+  before/after state, actor (`reversed_by`/`created_by`), reason, and the linked
+  commitment allocation reversal references. `CommitmentPaymentReversed` is
+  emitted on the commitments side for every reversed commitment allocation.

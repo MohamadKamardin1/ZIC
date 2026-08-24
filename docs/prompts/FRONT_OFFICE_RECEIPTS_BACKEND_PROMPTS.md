@@ -5,7 +5,7 @@
 - [x] Prompt 3 — Implement Receipt Creation, Draft Editing, Validation & Posting
 - [x] Prompt 4 — Implement Receipt Allocation to OL Commitments & First Premium
 - [x] Prompt 5 — Implement Multi-Currency Receipt & Allocation Behavior
-- [ ] Prompt 6 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
+- [ ] Prompt 6 — Implement Receipt Reversal, Allocation Reversal & Draft Cancellation
 - [ ] Prompt 7 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
 - [ ] Prompt 8 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
 - [ ] Prompt 9 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
@@ -472,4 +472,69 @@ GIT:
 
 FINAL OUTPUT:
 Return exchange model/endpoint, conversion rules, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 6/12 — Implement Receipt Reversal, Allocation Reversal & Draft Cancellation
+
+```text
+You are a senior Django financial controls engineer. Continue the Front Office Receipts backend. Execute ONLY Prompt 6.
+
+MANDATORY RULES:
+- Reversal must never delete history.
+- Reasons are mandatory.
+- Reversal must restore commitment/proposal states consistently.
+- Commit and push; tick Prompt 6 after completion.
+
+OBJECTIVE:
+Implement receipt reversal, allocation reversal, and draft cancellation.
+
+SCOPE:
+1. API endpoints:
+   - POST /api/v1/front-office/receipts/{id}/reverse/
+   - POST /api/v1/front-office/receipts/{id}/allocations/{allocation_id}/reverse/
+   - POST /api/v1/front-office/receipts/{id}/cancel/
+2. Rules:
+   - DRAFT receipts can be cancelled with reason
+   - POSTED/PARTIALLY_ALLOCATED/FULLY_ALLOCATED receipts can be reversed with reason
+   - reversed receipt status = REVERSED
+   - cancellation status = CANCELLED
+   - no hard delete
+3. Full receipt reversal:
+   - reverse all allocations
+   - call OLCommitment reversal service for each linked commitment allocation
+   - restore commitment balance/status
+   - if first premium was reversed, proposal first_premium_posted guard becomes false
+   - emit ReceiptReversed
+4. Single allocation reversal:
+   - creates reversal allocation row
+   - updates receipt allocated/unallocated amounts
+   - updates commitment balance/status
+   - receipt status recalculated
+5. Reversal constraints:
+   - already reversed blocked
+   - reversal after configured lock period returns RECEIPT_REVERSAL_LOCKED
+   - permission required
+6. Audit:
+   - before/after state
+   - actor
+   - reason
+   - linked commitment allocation reversal references
+
+TESTS:
+- cancel draft
+- reverse fully allocated receipt
+- reverse one allocation
+- proposal guard false after first premium reversal
+- already reversed blocked
+- lock-period blocked
+- audit/event assertions
+
+GIT:
+- commit: "feat(receipts): implement receipt reversal allocation reversal and cancellation"
+- push; tick Prompt 6 checkbox
+
+FINAL OUTPUT:
+Return reversal behavior, constraints, tests, commit hash, pushed branch.
 ```

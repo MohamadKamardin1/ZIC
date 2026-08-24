@@ -38,25 +38,43 @@ def _period_key(value, frequency):
 
 class ReceiptNumberingService:
     @staticmethod
-    def resolve_rule(branch_id=None):
-        """Active effective rule: branch-specific first, then the generic rule."""
+    def resolve_rule(branch_id=None, rule_code=None):
+        """Active effective rule: by ``rule_code``, else branch-specific, else generic.
+
+        ``rule_code`` selects a specific rule (e.g. ``RVR_DEFAULT`` for reversal
+        numbers) and raises ``RECEIPT_PARAMETER_MISSING`` when it is not
+        configured. Without it, resolution falls back to the branch-specific
+        rule first, then the generic receipt numbering rule.
+        """
         today = date.today()
         queryset = ReceiptNumberingRule.objects.filter(is_active=True).filter(
             models.Q(effective_from__isnull=True) | models.Q(effective_from__lte=today)
         ).filter(
             models.Q(effective_to__isnull=True) | models.Q(effective_to__gte=today)
         )
+        if rule_code:
+            rule = (
+                queryset.filter(code=rule_code)
+                .order_by("-effective_from", "-created_at")
+                .first()
+            )
+            if not rule:
+                raise parameter_missing(rule_code, navigation_path=NUMBERING_NAVIGATION)
+            return rule
+        # Without an explicit rule code, prefer the canonical rule by code
+        # (e.g. ``RCT_DEFAULT`` over the ``RVR_DEFAULT`` reversal rule) so the
+        # seeded receipt rule is stable regardless of creation order.
         if branch_id:
             branch_rule = (
                 queryset.filter(branch_id=branch_id)
-                .order_by("-effective_from", "-created_at")
+                .order_by("code", "-effective_from", "-created_at")
                 .first()
             )
             if branch_rule:
                 return branch_rule
         rule = (
             queryset.filter(branch__isnull=True)
-            .order_by("-effective_from", "-created_at")
+            .order_by("code", "-effective_from", "-created_at")
             .first()
         )
         if not rule:
@@ -64,14 +82,14 @@ class ReceiptNumberingService:
         return rule
 
     @classmethod
-    def next_number(cls, branch_id=None):
-        """Generate the next receipt number for a branch (default rule when no branch)."""
+    def next_number(cls, branch_id=None, rule_code=None):
+        """Generate the next number for a rule (branch-aware, or by ``rule_code``)."""
         with _number_lock:
-            return cls._next_number_locked(branch_id)
+            return cls._next_number_locked(branch_id, rule_code)
 
     @classmethod
-    def _next_number_locked(cls, branch_id=None):
-        rule = cls.resolve_rule(branch_id)
+    def _next_number_locked(cls, branch_id=None, rule_code=None):
+        rule = cls.resolve_rule(branch_id, rule_code)
         with transaction.atomic():
             locked = ReceiptNumberingRule.objects.select_for_update().get(pk=rule.pk)
             cls._maybe_reset(locked)

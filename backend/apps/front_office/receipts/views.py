@@ -3,13 +3,16 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.front_office.receipts.models import Receipt
+from apps.front_office.receipts.models import Receipt, ReceiptAllocation
 from apps.front_office.receipts.permissions import has_receipt_permission
 from apps.front_office.receipts.serializers import (
     ReceiptAllocationRequestSerializer,
+    ReceiptAllocationSerializer,
     ReceiptBaseSerializer,
     ReceiptDetailSerializer,
     ReceiptDraftSerializer,
+    ReceiptReasonSerializer,
+    ReceiptReversalSerializer,
 )
 from apps.front_office.receipts.services.receipt_service import get_receipt_or_404, post_receipt
 
@@ -308,6 +311,87 @@ class ExchangeRateView(APIView):
                 field_errors={"rate": ["No active rate is on file for the pair and date."]},
             )
         return Response({"data": payload})
+
+
+class ReceiptReverseView(APIView):
+    """POST /front-office/receipts/<uuid>/reverse/ — full receipt reversal."""
+
+    def get_permissions(self):
+        return [MustActionPermission(action="reverse")]
+
+    def post(self, request, receipt_id):
+        from apps.front_office.receipts.services.reversal_service import reverse_receipt
+
+        receipt = get_receipt_or_404(receipt_id)
+        serializer = ReceiptReasonSerializer(data=request.data or {})
+        serializer.is_valid(raise_exception=True)
+        receipt, reversal_record = reverse_receipt(
+            receipt,
+            reason=serializer.validated_data["reason"],
+            actor=request.user,
+            source_channel="API",
+        )
+        return Response(
+            {
+                "data": ReceiptDetailSerializer(receipt).data,
+                "reversal": ReceiptReversalSerializer(reversal_record).data,
+            }
+        )
+
+
+class ReceiptAllocationReverseView(APIView):
+    """POST /front-office/receipts/<uuid>/allocations/<uuid>/reverse/ — one allocation."""
+
+    def get_permissions(self):
+        return [MustActionPermission(action="reverse")]
+
+    def post(self, request, receipt_id, allocation_id):
+        from apps.front_office.receipts.errors import allocation_invalid
+        from apps.front_office.receipts.services.reversal_service import reverse_allocation
+
+        receipt = get_receipt_or_404(receipt_id)
+        allocation = ReceiptAllocation.objects.filter(pk=allocation_id).first()
+        if allocation is None or allocation.receipt_id != receipt.pk:
+            raise allocation_invalid(
+                message="The allocation was not found for this receipt.",
+                field_errors={"allocation_id": ["Allocation not found for this receipt."]},
+            )
+        serializer = ReceiptReasonSerializer(data=request.data or {})
+        serializer.is_valid(raise_exception=True)
+        receipt, reversal_row = reverse_allocation(
+            receipt,
+            allocation,
+            reason=serializer.validated_data["reason"],
+            actor=request.user,
+            source_channel="API",
+        )
+        return Response(
+            {
+                "data": ReceiptDetailSerializer(receipt).data,
+                "allocation": ReceiptAllocationSerializer(reversal_row).data,
+            }
+        )
+
+
+class ReceiptCancelView(APIView):
+    """POST /front-office/receipts/<uuid>/cancel/ — cancel a draft receipt."""
+
+    def get_permissions(self):
+        return [MustActionPermission(action="cancel")]
+
+    def post(self, request, receipt_id):
+        from apps.front_office.receipts.services.reversal_service import cancel_draft
+
+        receipt = get_receipt_or_404(receipt_id)
+        serializer = ReceiptReasonSerializer(data=request.data or {})
+        serializer.is_valid(raise_exception=True)
+        receipt = cancel_draft(
+            receipt,
+            reason=serializer.validated_data["reason"],
+            actor=request.user,
+            source_channel="API",
+        )
+        return Response({"data": ReceiptDetailSerializer(receipt).data})
 
 
 class ReceiptOptionsView(APIView):

@@ -108,6 +108,22 @@ RECEIPT_ERROR_REGISTRY = {
             "Create a new receipt if a re-collection is required.",
         ],
     ),
+    "RECEIPT_REASON_REQUIRED": (
+        "A reason is required for this receipt action.",
+        422,
+        [
+            "Provide the reason for the reversal or cancellation.",
+            "Reasons are mandatory for all financial reversals and cancellations.",
+        ],
+    ),
+    "RECEIPT_REVERSAL_LOCKED": (
+        "The receipt is outside the configured reversal window.",
+        422,
+        [
+            "Review the configured reversal lock period (system parameter RECEIPT_REVERSAL_LOCK_DAYS).",
+            "Contact operations if the reversal must still be processed.",
+        ],
+    ),
     "RECEIPT_PAYMENT_REFERENCE_REQUIRED": (
         "A payment reference is required for this payment mode.",
         422,
@@ -212,6 +228,26 @@ def parameter_missing(parameter_label, navigation_path=None):
 
 def already_posted():
     return registry_error("RECEIPT_ALREADY_POSTED")
+
+
+def already_reversed(message=None):
+    return registry_error("RECEIPT_ALREADY_REVERSED", message=message)
+
+
+def reason_required(action="this action"):
+    return registry_error(
+        "RECEIPT_REASON_REQUIRED",
+        message=f"A reason is required for {action}.",
+        field_errors={"reason": ["A reason is required for reversal or cancellation."]},
+    )
+
+
+def reversal_locked(days, receipt_date=None):
+    return registry_error(
+        "RECEIPT_REVERSAL_LOCKED",
+        message=f"The receipt is outside the configured {days} day reversal window.",
+        details={"lock_days": days, "receipt_date": receipt_date.isoformat() if receipt_date else None},
+    )
 
 
 def allocation_invalid(message=None, field_errors=None):

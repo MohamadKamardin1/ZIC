@@ -18,6 +18,7 @@ COMMITMENT_SUSPENDED = "CommitmentSuspended"
 COMMITMENT_WAIVED = "CommitmentWaived"
 COMMITMENT_CANCELLED = "CommitmentCancelled"
 COMMITMENT_COMPLETED = "CommitmentCompleted"
+COMMITMENT_PAYMENT_REVERSED = "CommitmentPaymentReversed"
 
 EVENT_TYPES = (
     COMMITMENT_GENERATED,
@@ -27,6 +28,7 @@ EVENT_TYPES = (
     COMMITMENT_WAIVED,
     COMMITMENT_CANCELLED,
     COMMITMENT_COMPLETED,
+    COMMITMENT_PAYMENT_REVERSED,
 )
 
 
@@ -161,4 +163,45 @@ def emit_completed(commitment, *, actor=None, from_status="", reason="", source_
         reason=reason,
         source_channel=source_channel,
         metadata=metadata,
+    )
+
+
+def emit_payment_reversed(
+    commitment,
+    *,
+    allocation=None,
+    reversed_allocation=None,
+    actor=None,
+    from_status="",
+    reason="",
+    source_channel=None,
+    metadata=None,
+):
+    """``CommitmentPaymentReversed`` — a committed allocation was reversed.
+
+    ``allocation`` is the newly created reversal ``OLCommitmentAllocation`` row
+    (``reversal_of`` set); ``reversed_allocation`` is the original row it
+    reverses. Both identifiers are carried so downstream consumers can reconcile
+    the full money trail (the original is never deleted).
+    """
+    payload_extra = {}
+    if allocation is not None:
+        payload_extra["reversal_allocation_id"] = str(allocation.pk)
+        payload_extra["receipt_reference"] = allocation.receipt_reference
+        payload_extra["amount"] = str(allocation.amount)
+        payload_extra["currency"] = allocation.currency
+        payload_extra["exchange_rate"] = str(allocation.exchange_rate)
+        payload_extra["converted_amount"] = str(allocation.converted_amount)
+    if reversed_allocation is not None:
+        payload_extra["reversed_allocation_id"] = str(reversed_allocation.pk)
+    return emit_commitment_event(
+        COMMITMENT_PAYMENT_REVERSED,
+        commitment,
+        actor=actor,
+        from_status=from_status,
+        to_status=commitment.status,
+        reason=reason,
+        source_channel=source_channel,
+        metadata=metadata,
+        payload_extra=payload_extra,
     )

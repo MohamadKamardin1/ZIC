@@ -26,6 +26,18 @@ class Command(BaseCommand):
             },
         )
 
+        reversal_numbering, reversal_numbering_created = ReceiptNumberingRule.objects.update_or_create(
+            code="RVR_DEFAULT",
+            defaults={
+                "name": "Default Receipt Reversal Numbering",
+                "prefix": "RVR",
+                "sequence_padding": 6,
+                "next_sequence": 1,
+                "reset_frequency": ResetFrequency.YEARLY,
+                "is_active": True,
+            },
+        )
+
         bank, bank_created = CompanyBankAccount.objects.update_or_create(
             code="TZS_MAIN",
             defaults={
@@ -92,6 +104,7 @@ class Command(BaseCommand):
             self.style.SUCCESS(
                 "Front Office Receipts parameters seeded: "
                 f"numbering rule {('created' if numbering_created else 'updated')}, "
+                f"reversal numbering rule {('created' if reversal_numbering_created else 'updated')}, "
                 f"bank account {('created' if bank_created else 'updated')}, "
                 f"{created_rules} payment mode rules created, {updated_rules} updated."
             )
