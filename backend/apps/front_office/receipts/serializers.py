@@ -1,8 +1,11 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 
 from apps.front_office.receipts.models import (
     Receipt,
     ReceiptAllocation,
+    ReceiptAllocationTargetType,
     ReceiptDocument,
     ReceiptReversal,
     ReceiptStatusHistory,
@@ -36,6 +39,11 @@ def _actor_name(actor):
 class ReceiptAllocationSerializer(serializers.ModelSerializer):
     allocated_by = serializers.SerializerMethodField()
     allocated_by_name = serializers.SerializerMethodField()
+    commitment = serializers.UUIDField(source="commitment_id", allow_null=True, required=False)
+    commitment_number = serializers.SerializerMethodField()
+    ol_commitment_allocation = serializers.UUIDField(
+        source="ol_commitment_allocation_id", allow_null=True, required=False
+    )
 
     class Meta:
         model = ReceiptAllocation
@@ -44,6 +52,9 @@ class ReceiptAllocationSerializer(serializers.ModelSerializer):
             "target_type",
             "target_id",
             "target_display",
+            "commitment",
+            "commitment_number",
+            "ol_commitment_allocation",
             "amount",
             "currency",
             "exchange_rate",
@@ -61,6 +72,11 @@ class ReceiptAllocationSerializer(serializers.ModelSerializer):
 
     def get_allocated_by_name(self, obj):
         return _actor_name(obj.allocated_by)
+
+    def get_commitment_number(self, obj):
+        if obj.commitment_id:
+            return obj.commitment.commitment_number
+        return obj.target_display or obj.target_id or None
 
 
 class ReceiptReversalSerializer(serializers.ModelSerializer):
@@ -325,3 +341,15 @@ class ReceiptDraftSerializer(serializers.ModelSerializer):
 
         actor = self.context.get("request").user if self.context.get("request") else None
         return update_draft(instance, actor=actor, **validated_data)
+
+
+class ReceiptAllocationRequestSerializer(serializers.Serializer):
+    """Manual allocation payload: OL_COMMITMENT target, amount, optional narration."""
+
+    target_type = serializers.ChoiceField(
+        choices=[ReceiptAllocationTargetType.OL_COMMITMENT],
+        error_messages={"invalid_choice": "Only OL_COMMITMENT allocations are supported."},
+    )
+    target_id = serializers.CharField(max_length=120, allow_blank=False)
+    amount = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=Decimal("0.01"))
+    narration = serializers.CharField(required=False, allow_blank=True, default="")

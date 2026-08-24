@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 from apps.front_office.receipts.models import Receipt
 from apps.front_office.receipts.permissions import has_receipt_permission
 from apps.front_office.receipts.serializers import (
+    ReceiptAllocationRequestSerializer,
     ReceiptBaseSerializer,
     ReceiptDetailSerializer,
     ReceiptDraftSerializer,
@@ -174,6 +175,81 @@ class ReceiptPostView(APIView):
         reason = ((request.data or {}).get("reason") or "").strip()
         receipt = post_receipt(receipt, actor=request.user, reason=reason, source_channel="API")
         return Response({"data": ReceiptDetailSerializer(receipt).data})
+
+
+class ReceiptAllocationOptionsView(APIView):
+    """GET /front-office/receipts/<uuid>/allocation-options/ — open commitments."""
+
+    def get_permissions(self):
+        return [MustViewReceiptsPermission()]
+
+    def get(self, request, receipt_id):
+        from apps.front_office.receipts.services.allocation_service import allocation_options
+
+        receipt = get_receipt_or_404(receipt_id)
+        options = allocation_options(receipt)
+        return Response(
+            {
+                "data": {
+                    "receipt": ReceiptBaseSerializer(receipt).data,
+                    "commitments": options,
+                }
+            }
+        )
+
+
+class ReceiptAllocateView(APIView):
+    """POST /front-office/receipts/<uuid>/allocate/ — manual allocation."""
+
+    def get_permissions(self):
+        return [MustActionPermission(action="allocate")]
+
+    def post(self, request, receipt_id):
+        from apps.front_office.receipts.services.allocation_service import allocate
+
+        receipt = get_receipt_or_404(receipt_id)
+        serializer = ReceiptAllocationRequestSerializer(data=request.data or {})
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        allocation, receipt, created = allocate(
+            receipt,
+            target_type=data["target_type"],
+            target_id=data["target_id"],
+            amount=data["amount"],
+            narration=data.get("narration", ""),
+            actor=request.user,
+            source_channel="API",
+        )
+        return Response(
+            {"data": ReceiptDetailSerializer(receipt).data},
+            status=201 if created else 200,
+        )
+
+
+class ReceiptAutoAllocateView(APIView):
+    """POST /front-office/receipts/<uuid>/auto-allocate/ — oldest-due-first."""
+
+    def get_permissions(self):
+        return [MustActionPermission(action="allocate")]
+
+    def post(self, request, receipt_id):
+        from apps.front_office.receipts.services.allocation_service import auto_allocate
+
+        receipt = get_receipt_or_404(receipt_id)
+        result = auto_allocate(receipt, actor=request.user, source_channel="API")
+        return Response(
+            {
+                "data": {
+                    "receipt": ReceiptDetailSerializer(receipt).data,
+                    "allocations": result["allocations"],
+                    "total_allocated": result["total_allocated"],
+                    "remaining_unallocated": result["remaining_unallocated"],
+                    "receipt_status": result["receipt_status"],
+                    "commitments_count": result["commitments_count"],
+                    "exhausted": result["exhausted"],
+                }
+            }
+        )
 
 
 class ReceiptOptionsView(APIView):

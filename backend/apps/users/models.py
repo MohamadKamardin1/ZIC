@@ -209,6 +209,12 @@ class User(AbstractBaseUser, PermissionsMixin):
     def full_name(self):
         return f'{self.first_name} {self.last_name}'.strip()
 
+    def get_full_name(self):
+        return self.full_name
+
+    def get_short_name(self):
+        return self.first_name or self.email
+
     @property
     def locked_until(self):
         return self.account_locked_until

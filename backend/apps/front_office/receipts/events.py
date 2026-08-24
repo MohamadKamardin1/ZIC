@@ -17,6 +17,7 @@ RECEIPT_ALLOCATED = "ReceiptAllocated"
 RECEIPT_FULLY_ALLOCATED = "ReceiptFullyAllocated"
 RECEIPT_REVERSED = "ReceiptReversed"
 RECEIPT_CANCELLED = "ReceiptCancelled"
+PREMIUM_RECEIVED = "PremiumReceived"
 FIRST_PREMIUM_RECEIVED = "FirstPremiumReceived"
 
 EVENT_TYPES = (
@@ -26,6 +27,7 @@ EVENT_TYPES = (
     RECEIPT_FULLY_ALLOCATED,
     RECEIPT_REVERSED,
     RECEIPT_CANCELLED,
+    PREMIUM_RECEIVED,
     FIRST_PREMIUM_RECEIVED,
 )
 
@@ -191,3 +193,63 @@ def emit_first_premium_received(
         aggregate_id=str(receipt.pk),
         payload=payload,
     )
+
+
+def emit_premium_received(
+    receipt,
+    *,
+    allocation=None,
+    commitment=None,
+    actor=None,
+    from_status="",
+    to_status="",
+    reason="",
+    source_channel=None,
+):
+    """``PremiumReceived`` per ``docs/OL_PROPOSALS_RECEIPTS_SEAM.md``.
+
+    Published in the same transaction as the ``OLCommitmentAllocation`` insert
+    for every allocation (the seam's publishing rule). ``aggregate_type`` is
+    ``OLCommitment`` so proposals/policies/reports reconcile on the commitment.
+    """
+    payload = {
+        "proposal_number": None,
+        "commitment_number": commitment.commitment_number if commitment is not None else None,
+        "receipt_reference": receipt.receipt_number,
+        "amount": str(allocation.amount) if allocation is not None else str(receipt.receipt_amount),
+        "currency": (allocation.currency if allocation is not None else receipt.currency),
+        "payment_mode": receipt.payment_mode,
+        "allocated_at": (allocation.allocated_at.isoformat() if allocation is not None and allocation.allocated_at else None),
+        "allocated_by": str(actor.pk) if actor and getattr(actor, "pk", None) else None,
+        "source_channel": source_channel or receipt.source_channel,
+        "reason": reason or "",
+        "reverse_of": None,
+        "from_status": from_status or "",
+        "to_status": to_status or "",
+    }
+    if commitment is not None:
+        payload.update(
+            {
+                "premium_amount": str(commitment.premium_amount),
+                "amount_paid": str(commitment.amount_paid),
+                "balance": str(commitment.balance),
+            }
+        )
+        proposal = _resolve_source(commitment)
+        if proposal is not None:
+            payload["proposal_number"] = getattr(proposal, "proposal_number", None)
+    return DomainEvent.objects.create(
+        event_type=PREMIUM_RECEIVED,
+        aggregate_type="OLCommitment",
+        aggregate_id=str(commitment.pk) if commitment is not None else str(receipt.pk),
+        payload=payload,
+    )
+
+
+def _resolve_source(commitment):
+    if commitment is None or not commitment.source_content_type_id or not commitment.source_object_id:
+        return None
+    try:
+        return commitment.source
+    except Exception:
+        return None

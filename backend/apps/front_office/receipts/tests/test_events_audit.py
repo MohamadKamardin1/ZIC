@@ -47,6 +47,7 @@ class ReceiptEventTests(TestCase):
                 "ReceiptFullyAllocated",
                 "ReceiptReversed",
                 "ReceiptCancelled",
+                "PremiumReceived",
                 "FirstPremiumReceived",
             },
         )

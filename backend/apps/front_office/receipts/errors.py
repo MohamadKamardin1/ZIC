@@ -214,6 +214,29 @@ def already_posted():
     return registry_error("RECEIPT_ALREADY_POSTED")
 
 
+def allocation_invalid(message=None, field_errors=None):
+    return registry_error("RECEIPT_ALLOCATION_INVALID", message=message, field_errors=field_errors)
+
+
+def overallocation(*, available=None, field="amount", message=None, field_errors=None):
+    if message is None:
+        message = (
+            f"The allocation exceeds the available balance of {available}."
+            if available is not None
+            else "The allocation exceeds the available balance."
+        )
+    if field_errors is None:
+        field_errors = {field: [message]}
+    return registry_error("RECEIPT_OVERALLOCATION", message=message, field_errors=field_errors)
+
+
+def currency_mismatch():
+    return registry_error(
+        "RECEIPT_CURRENCY_MISMATCH",
+        message="The receipt currency does not match the target commitment currency.",
+    )
+
+
 def payment_reference_required():
     return registry_error(
         "RECEIPT_PAYMENT_REFERENCE_REQUIRED",

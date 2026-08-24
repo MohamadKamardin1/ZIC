@@ -326,6 +326,23 @@ class ReceiptAllocation(AuditedModel):
     )
     target_id = models.CharField(max_length=120, blank=True, default="", db_index=True)
     target_display = models.CharField(max_length=255, blank=True, default="")
+    # OL commitment links (names are surfaced through target_display); the
+    # OLCommitmentAllocation row is the commitments-side write that this record
+    # mirrors so both ledgers reconcile (docs/OL_PROPOSALS_RECEIPTS_SEAM.md).
+    commitment = models.ForeignKey(
+        "ol_commitments.OLCommitment",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="receipt_allocations",
+    )
+    ol_commitment_allocation = models.ForeignKey(
+        "ol_commitments.OLCommitmentAllocation",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="receipt_allocations",
+    )
     amount = models.DecimalField(max_digits=18, decimal_places=2)
     currency = models.CharField(max_length=3, default="TZS")
     exchange_rate = models.DecimalField(max_digits=12, decimal_places=6, default=Decimal("1.000000"))
