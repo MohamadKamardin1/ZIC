@@ -10,15 +10,42 @@ and the idempotency guard).
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from apps.front_office.receipts import events as receipt_events
-from apps.front_office.receipts.errors import ReceiptError, invalid_status, not_found
+from apps.front_office.receipts.config_models import ReceiptPaymentModeRule
+from apps.front_office.receipts.errors import (
+    ReceiptError,
+    already_posted,
+    bank_account_required,
+    invalid_status,
+    not_found,
+    parameter_missing,
+    payment_reference_required,
+)
 from apps.front_office.receipts.models import Receipt, ReceiptStatus, ReceiptStatusHistory
-from apps.front_office.receipts.services.parameter_resolver import default_currency
+from apps.front_office.receipts.services.parameter_resolver import configured_currencies, default_currency
 from apps.front_office.receipts.services.receipt_numbering import ReceiptNumberingService
+from apps.partner_onboarding.models import Branch
+from apps.partners.models import Partner
 
 ZERO = Decimal("0.00")
+
+# Core receipt identity/economic fields frozen once a receipt is posted. Drafts
+# are fully editable; posted receipts are immutable except allocation/reversal
+# actions (Prompt 3 mandatory rule).
+IMMUTABLE_AFTER_POST = (
+    "payer_name",
+    "payer_identity",
+    "receipt_amount",
+    "currency",
+    "exchange_rate",
+    "payment_mode",
+    "receipt_date",
+    "branch_id",
+    "partner_id",
+)
 
 
 def _receipt_number(branch_id=None):
@@ -92,7 +119,8 @@ def create_draft(*, actor=None, request=None, source_channel="API", **fields):
 
     actor_instance = actor if actor and getattr(actor, "is_authenticated", False) else None
     receipt = Receipt(
-        receipt_number=fields.get("receipt_number") or _receipt_number(branch_id=fields.get("branch_id")),
+        # Drafts are numbered at posting time by the numbering service.
+        receipt_number=(fields.get("receipt_number") or "").strip() or None,
         idempotency_key=idempotency_key,
         receipt_date=fields.get("receipt_date") or timezone.localdate(),
         branch_id=fields.get("branch_id"),
@@ -123,15 +151,25 @@ def create_draft(*, actor=None, request=None, source_channel="API", **fields):
             status_code=422,
             field_errors=exc.message_dict,
         )
-    receipt.save()
-    receipt_events.emit_created(
-        receipt,
-        actor=actor_instance,
-        reason="Receipt draft created.",
-        source_channel=source_channel,
-        metadata={"branch": receipt.branch_name_snapshot, "payment_mode": receipt.payment_mode},
-    )
-    record_status_history(receipt, to_status=ReceiptStatus.DRAFT, actor=actor_instance, reason="Receipt draft created.", source_channel=source_channel)
+    try:
+        with transaction.atomic():
+            receipt.save()
+            receipt_events.emit_created(
+                receipt,
+                actor=actor_instance,
+                reason="Receipt draft created.",
+                source_channel=source_channel,
+                metadata={"branch": receipt.branch_name_snapshot, "payment_mode": receipt.payment_mode},
+            )
+            record_status_history(receipt, to_status=ReceiptStatus.DRAFT, actor=actor_instance, reason="Receipt draft created.", source_channel=source_channel)
+    except IntegrityError:
+        # A concurrent submission with the same idempotency key won the insert;
+        # return the already-created receipt so retries are safe.
+        if idempotency_key:
+            existing = Receipt.objects.filter(idempotency_key=idempotency_key).first()
+            if existing is not None:
+                return existing, False
+        raise
     return receipt, True
 
 
@@ -143,7 +181,12 @@ def get_receipt_or_404(receipt_id):
 
 
 def update_draft(receipt, *, actor=None, source_channel=None, **fields):
-    """Update a DRAFT receipt; posted/reversed/cancelled receipts are locked."""
+    """Update a DRAFT receipt; posted receipts are immutable.
+
+    Once posted, a receipt's core fields (payer, amount, currency, payment
+    mode, receipt date, branch) are frozen; allocation/reversal actions are the
+    only permitted mutations afterwards.
+    """
     if receipt.status != ReceiptStatus.DRAFT:
         raise invalid_status("update", receipt.status)
 
@@ -173,6 +216,112 @@ def update_draft(receipt, *, actor=None, source_channel=None, **fields):
             field_errors=exc.message_dict,
         )
     receipt.save()
+    return receipt
+
+
+def _validate_active_reference_data(receipt):
+    """Reject posting when a referenced catalog record is inactive or missing."""
+    if receipt.branch_id and not Branch.objects.filter(pk=receipt.branch_id, is_active=True).exists():
+        raise parameter_missing("RECEIPT_BRANCHES")
+    if receipt.partner_id and not Partner.objects.filter(pk=receipt.partner_id, is_active=True).exists():
+        raise parameter_missing("RECEIPT_PARTNERS")
+    if (receipt.currency or "").strip().upper() not in configured_currencies():
+        raise parameter_missing("RECEIPT_CURRENCIES")
+
+
+def _validate_payment_mode_rule(receipt):
+    """Validate the configured payment-mode rule and its requirements."""
+    rule = ReceiptPaymentModeRule.objects.filter(
+        payment_mode=(receipt.payment_mode or "").strip().upper(), is_active=True
+    ).first()
+    if rule is None:
+        raise parameter_missing("RECEIPT_PAYMENT_MODES")
+
+    amount = Decimal(receipt.receipt_amount or ZERO)
+    if rule.min_amount is not None and amount < rule.min_amount:
+        raise ReceiptError(
+            f"The receipt amount is below the minimum ({rule.min_amount}) allowed for {rule.payment_mode}.",
+            error_code="RECEIPT_AMOUNT_INVALID",
+            status_code=422,
+            field_errors={"receipt_amount": [f"Amount must be at least {rule.min_amount} for {rule.payment_mode}."]},
+        )
+    if rule.max_amount is not None and amount > rule.max_amount:
+        raise ReceiptError(
+            f"The receipt amount exceeds the maximum ({rule.max_amount}) allowed for {rule.payment_mode}.",
+            error_code="RECEIPT_AMOUNT_INVALID",
+            status_code=422,
+            field_errors={"receipt_amount": [f"Amount cannot exceed {rule.max_amount} for {rule.payment_mode}."]},
+        )
+    if rule.requires_reference and not (receipt.payment_reference or "").strip():
+        raise payment_reference_required()
+    if rule.requires_bank_account and not receipt.bank_account_id:
+        raise bank_account_required()
+    return rule
+
+
+def post_receipt(receipt, *, actor=None, reason="", source_channel=None):
+    """Post a draft receipt.
+
+    Assigns the receipt number (if not already assigned), validates the
+    active reference data and the payment-mode rule, then marks the receipt
+    POSTED with ``posted_at``/``posted_by``, emits ``ReceiptPosted``, and
+    records the status transition. The signal receivers persist the before/
+    after audit row.
+
+    Idempotent: retrying a post of an already-posted receipt raises
+    ``RECEIPT_ALREADY_POSTED`` (409) with no side effects — no renumbering, no
+    duplicate event, no double audit.
+    """
+    posted_states = (
+        ReceiptStatus.POSTED,
+        ReceiptStatus.PARTIALLY_ALLOCATED,
+        ReceiptStatus.FULLY_ALLOCATED,
+    )
+    if receipt.status in posted_states:
+        raise already_posted()
+    if receipt.status != ReceiptStatus.DRAFT:
+        raise invalid_status("post", receipt.status)
+
+    _validate_amount(receipt.receipt_amount)
+
+    if not (receipt.receipt_number or "").strip():
+        receipt.receipt_number = _receipt_number(branch_id=receipt.branch_id)
+
+    _validate_active_reference_data(receipt)
+    _validate_payment_mode_rule(receipt)
+
+    from_status = receipt.status
+    actor_instance = actor if actor and getattr(actor, "is_authenticated", False) else None
+    receipt.status = ReceiptStatus.POSTED
+    receipt.posted_at = timezone.now()
+    receipt.posted_by = actor_instance
+    receipt.updated_by = actor_instance
+    receipt.source_channel = source_channel or receipt.source_channel
+    try:
+        receipt.full_clean_ex()
+    except ValidationError as exc:
+        raise ReceiptError(
+            "The receipt could not be posted; correct the highlighted fields.",
+            error_code="VALIDATION_ERROR",
+            status_code=422,
+            field_errors=exc.message_dict,
+        )
+    receipt.save()
+    receipt_events.emit_posted(
+        receipt,
+        actor=actor_instance,
+        from_status=from_status,
+        reason=reason or "Receipt posted.",
+        source_channel=source_channel,
+    )
+    record_status_history(
+        receipt,
+        from_status=from_status,
+        to_status=ReceiptStatus.POSTED,
+        actor=actor_instance,
+        reason=reason or "Receipt posted.",
+        source_channel=source_channel,
+    )
     return receipt
 
 

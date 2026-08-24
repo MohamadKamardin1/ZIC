@@ -2,7 +2,7 @@
 
 - [x] Prompt 1 — Save Prompt Series + Front Office Receipts Domain Foundation
 - [x] Prompt 2 — Implement Receipt Parameters, Numbering & Reference Data
-- [ ] Prompt 3 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
+- [ ] Prompt 3 — Implement Receipt Creation, Draft Editing, Validation & Posting
 - [ ] Prompt 4 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
 - [ ] Prompt 5 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
 - [ ] Prompt 6 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
@@ -258,4 +258,79 @@ GIT:
 
 FINAL OUTPUT:
 Return parameter models, seed data, numbering contract, options endpoints, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 3/12 — Implement Receipt Creation, Draft Editing, Validation & Posting
+
+```text
+You are a senior Django finance transaction engineer. Continue the Front Office Receipts backend. Execute ONLY Prompt 3.
+
+MANDATORY RULES:
+- Receipt creation and posting must be idempotent.
+- Drafts can be edited; posted receipts are immutable except allocation/reversal actions.
+- Commit and push; tick Prompt 3 after completion.
+
+OBJECTIVE:
+Implement robust receipt creation, draft editing, validation, and posting.
+
+SCOPE:
+1. API endpoints:
+   - POST /api/v1/front-office/receipts/
+   - PATCH /api/v1/front-office/receipts/{id}/
+   - POST /api/v1/front-office/receipts/{id}/post/
+2. Create receipt as DRAFT by default.
+3. Posting should:
+   - assign receipt number if not already assigned
+   - validate payment mode rule
+   - validate receipt amount > 0
+   - validate currency active
+   - validate branch active
+   - validate partner active
+   - validate reference required by payment mode
+   - set POSTED status
+   - set posted_at and posted_by
+   - emit ReceiptPosted
+   - audit before/after
+4. Posted receipts cannot have core fields edited:
+   - payer
+   - amount
+   - currency
+   - payment mode
+   - receipt date
+   - branch
+5. Support idempotency key header:
+   - X-Idempotency-Key
+   - duplicate POST returns same receipt
+6. Response payload must include display fields:
+   - branch_display
+   - partner_display
+   - currency_display
+   - payment_mode_display
+   - bank_account_display
+   - created_by_display
+   - posted_by_display
+7. Structured errors:
+   - RECEIPT_ALREADY_POSTED
+   - RECEIPT_AMOUNT_INVALID
+   - RECEIPT_PARAMETER_MISSING
+   - RECEIPT_INVALID_STATUS
+8. Admin action to post draft receipt with reason/comment.
+
+TESTS:
+- create draft receipt
+- edit draft
+- post receipt assigns number
+- posted receipt immutable
+- idempotent create
+- missing payment reference blocked when mode requires it
+- audit/event assertions
+
+GIT:
+- commit: "feat(receipts): implement receipt creation draft editing and posting"
+- push; tick Prompt 3 checkbox
+
+FINAL OUTPUT:
+Return endpoints, validation rules, idempotency behavior, tests, commit hash, pushed branch.
 ```

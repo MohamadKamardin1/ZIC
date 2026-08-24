@@ -10,7 +10,7 @@ from apps.front_office.receipts.serializers import (
     ReceiptDetailSerializer,
     ReceiptDraftSerializer,
 )
-from apps.front_office.receipts.services.receipt_service import get_receipt_or_404
+from apps.front_office.receipts.services.receipt_service import get_receipt_or_404, post_receipt
 
 
 def _true(value):
@@ -127,10 +127,20 @@ class ReceiptListView(APIView):
         return Response({"data": _paginate(queryset, request)})
 
     def post(self, request):
-        serializer = ReceiptDraftSerializer(data=request.data, context={"request": request})
+        # Idempotent create: the X-Idempotency-Key header maps to the receipt's
+        # idempotency_key; a duplicate submission returns the same receipt.
+        data = request.data
+        header_key = (request.headers.get("X-Idempotency-Key") or "").strip()
+        if header_key and not (data or {}).get("idempotency_key"):
+            data = {**request.data, "idempotency_key": header_key}
+        serializer = ReceiptDraftSerializer(data=data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         receipt = serializer.save()
-        return Response({"data": ReceiptDetailSerializer(receipt).data}, status=201)
+        created = getattr(serializer, "_created", True)
+        return Response(
+            {"data": ReceiptDetailSerializer(receipt).data},
+            status=201 if created else 200,
+        )
 
 
 class ReceiptDetailView(APIView):
@@ -150,6 +160,19 @@ class ReceiptDetailView(APIView):
         serializer = ReceiptDraftSerializer(receipt, data=request.data, partial=True, context={"request": request})
         serializer.is_valid(raise_exception=True)
         receipt = serializer.save()
+        return Response({"data": ReceiptDetailSerializer(receipt).data})
+
+
+class ReceiptPostView(APIView):
+    """POST /front-office/receipts/<uuid>/post/ — post a draft receipt."""
+
+    def get_permissions(self):
+        return [MustActionPermission(action="post")]
+
+    def post(self, request, receipt_id):
+        receipt = get_receipt_or_404(receipt_id)
+        reason = ((request.data or {}).get("reason") or "").strip()
+        receipt = post_receipt(receipt, actor=request.user, reason=reason, source_channel="API")
         return Response({"data": ReceiptDetailSerializer(receipt).data})
 
 

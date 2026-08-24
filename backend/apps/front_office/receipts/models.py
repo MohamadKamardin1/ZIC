@@ -103,7 +103,8 @@ class Receipt(AuditedModel):
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    receipt_number = models.CharField(max_length=50, unique=True, db_index=True)
+    # Assigned at posting time by the numbering service; drafts carry no number.
+    receipt_number = models.CharField(max_length=50, unique=True, null=True, blank=True, db_index=True)
     idempotency_key = models.CharField(max_length=64, unique=True, null=True, blank=True, db_index=True)
     receipt_date = models.DateField(db_index=True)
 
@@ -198,7 +199,9 @@ class Receipt(AuditedModel):
         ]
 
     def __str__(self):
-        return f"{self.receipt_number} ({self.payer_name})"
+        if self.receipt_number:
+            return f"{self.receipt_number} ({self.payer_name})"
+        return f"DRAFT {self.payer_name}"
 
     @property
     def display_partner(self):
@@ -251,8 +254,10 @@ class Receipt(AuditedModel):
     def clean(self):
         errors = {}
 
-        if not self.receipt_number:
-            errors["receipt_number"] = "Receipt number is required."
+        # Drafts are numbered at posting time; only non-draft receipts must
+        # carry a human receipt number.
+        if not (self.receipt_number or "").strip() and (self.status or "").strip().upper() != ReceiptStatus.DRAFT:
+            errors["receipt_number"] = "Receipt number is required once the receipt is posted."
         if not self.receipt_date:
             errors["receipt_date"] = "Receipt date is required."
         if not (self.payer_name or "").strip():

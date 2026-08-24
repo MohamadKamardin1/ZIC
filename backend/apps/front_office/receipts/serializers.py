@@ -141,6 +141,13 @@ class ReceiptBaseSerializer(serializers.ModelSerializer):
     reversed_by = serializers.SerializerMethodField()
     reversed_by_name = serializers.SerializerMethodField()
     allowed_actions = serializers.SerializerMethodField()
+    branch_display = serializers.SerializerMethodField()
+    partner_display = serializers.SerializerMethodField()
+    currency_display = serializers.SerializerMethodField()
+    payment_mode_display = serializers.SerializerMethodField()
+    bank_account_display = serializers.SerializerMethodField()
+    created_by_display = serializers.SerializerMethodField()
+    posted_by_display = serializers.SerializerMethodField()
 
     class Meta:
         model = Receipt
@@ -150,34 +157,41 @@ class ReceiptBaseSerializer(serializers.ModelSerializer):
             "receipt_date",
             "branch",
             "branch_name",
+            "branch_display",
             "partner",
             "partner_name",
+            "partner_display",
             "payer_name",
             "payer_identity",
             "source_module",
             "source_reference_type",
             "source_reference_id",
             "currency",
+            "currency_display",
             "exchange_rate",
             "receipt_amount",
             "allocated_amount",
             "unallocated_amount",
             "payment_mode",
             "payment_mode_label",
+            "payment_mode_display",
             "payment_reference",
             "bank_account",
             "bank_account_name",
+            "bank_account_display",
             "narration",
             "status",
             "posted_at",
             "posted_by",
             "posted_by_name",
+            "posted_by_display",
             "reversed_at",
             "reversed_by",
             "reversed_by_name",
             "cancellation_reason",
             "source_channel",
             "allowed_actions",
+            "created_by_display",
             "created_at",
             "updated_at",
         )
@@ -196,6 +210,27 @@ class ReceiptBaseSerializer(serializers.ModelSerializer):
 
     def get_payment_mode_label(self, obj):
         return payment_mode_label(obj.payment_mode)
+
+    def get_branch_display(self, obj):
+        return obj.branch_name_snapshot or (str(obj.branch) if obj.branch_id else None)
+
+    def get_partner_display(self, obj):
+        return obj.partner_name_snapshot or (str(obj.partner) if obj.partner_id else None)
+
+    def get_currency_display(self, obj):
+        return obj.currency
+
+    def get_payment_mode_display(self, obj):
+        return payment_mode_label(obj.payment_mode)
+
+    def get_bank_account_display(self, obj):
+        return obj.bank_account_snapshot or (str(obj.bank_account) if obj.bank_account_id else None)
+
+    def get_created_by_display(self, obj):
+        return _actor_name(obj.created_by)
+
+    def get_posted_by_display(self, obj):
+        return _actor_name(obj.posted_by)
 
     def get_posted_by(self, obj):
         return getattr(obj, "posted_by_id", None)
@@ -232,6 +267,12 @@ class ReceiptDraftSerializer(serializers.ModelSerializer):
     branch = serializers.UUIDField(required=False, allow_null=True)
     partner = serializers.UUIDField(required=False, allow_null=True)
     bank_account = serializers.UUIDField(required=False, allow_null=True)
+    # The idempotency key's uniqueness is enforced by create_draft (a duplicate
+    # key returns the existing receipt); the model UniqueValidator would reject
+    # a legitimate retry before the service's idempotency guard runs.
+    idempotency_key = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True, max_length=64, validators=[]
+    )
 
     class Meta:
         model = Receipt
@@ -275,7 +316,8 @@ class ReceiptDraftSerializer(serializers.ModelSerializer):
 
         actor = self.context.get("request").user if self.context.get("request") else None
         source_channel = self.context.get("source_channel") or "API"
-        receipt, _created = create_draft(actor=actor, source_channel=source_channel, **validated_data)
+        receipt, created = create_draft(actor=actor, source_channel=source_channel, **validated_data)
+        self._created = created
         return receipt
 
     def update(self, instance, validated_data):

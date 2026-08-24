@@ -1,0 +1,36 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+{% block content %}
+<div id="content-main">
+  <h2>{% trans "Post selected draft receipts" %}</h2>
+  <p>{% blocktrans count counter=receipts|length %}The following draft receipt will be posted.{% plural %}The following {{ counter }} draft receipts will be posted.{% endblocktrans %}</p>
+  <ul>
+    {% for receipt in receipts %}
+    <li>
+      {{ receipt.receipt_number|default:"(no number yet)" }} —
+      {{ receipt.payer_name }} — {{ receipt.receipt_amount }} {{ receipt.currency }}
+      ({{ receipt.receipt_date }})
+    </li>
+    {% endfor %}
+  </ul>
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {% for receipt in receipts %}<input type="hidden" name="_selected_action" value="{{ receipt.pk }}">{% endfor %}
+    <input type="hidden" name="select_across" value="0">
+    <fieldset class="module aligned">
+      <div class="form-row">
+        <label for="{{ form.reason.id_for_label }}">{{ form.reason.label }}:</label>
+        {{ form.reason }}
+        {{ form.reason.errors }}
+        {% if form.reason.help_text %}<div class="help">{{ form.reason.help_text }}</div>{% endif %}
+      </div>
+    </fieldset>
+    <input type="hidden" name="action" value="post_draft_receipt">
+    <input type="hidden" name="apply" value="1">
+    <div class="submit-row">
+      <input type="submit" value="{% trans 'Post receipts' %}" class="default" name="_save">
+      <a href="{% url 'admin:front_office_receipt_changelist' %}" class="button cancel-link">{% trans "No, take me back" %}</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

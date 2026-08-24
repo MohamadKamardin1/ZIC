@@ -17,6 +17,7 @@ RECEIPT_PARAMETER_NAVIGATION = {
     "RECEIPT_BRANCHES": "System Parameters > Branches",
     "RECEIPT_CURRENCIES": "System Parameters > Currencies",
     "RECEIPT_PAYMENT_MODES": "System Parameters > Payment Modes",
+    "RECEIPT_PARTNERS": "Partners > Partner Records",
     "RECEIPT_NUMBERING_RULE": "Front Office Parameters > Receipt Numbering",
     "RECEIPT_COMPANY_BANK_ACCOUNTS": "Front Office Parameters > Company Bank Accounts",
 }
@@ -107,6 +108,22 @@ RECEIPT_ERROR_REGISTRY = {
             "Create a new receipt if a re-collection is required.",
         ],
     ),
+    "RECEIPT_PAYMENT_REFERENCE_REQUIRED": (
+        "A payment reference is required for this payment mode.",
+        422,
+        [
+            "Provide the reference provided by the payer (e.g. M-PESA transaction ID or bank transfer reference).",
+            "Confirm the payment mode rule for the selected payment mode.",
+        ],
+    ),
+    "RECEIPT_BANK_ACCOUNT_REQUIRED": (
+        "A bank account is required for this payment mode.",
+        422,
+        [
+            "Attach the payer's bank account to the receipt.",
+            "Confirm the payment mode rule for the selected payment mode.",
+        ],
+    ),
     "RECEIPT_CURRENCY_MISMATCH": (
         "The payment currency does not match the receipt currency.",
         422,
@@ -190,4 +207,22 @@ def parameter_missing(parameter_label, navigation_path=None):
         "RECEIPT_PARAMETER_MISSING",
         message=f"The required parameter '{parameter_label}' is missing or inactive. Configure it under {path}.",
         details={"parameter": parameter_label, "navigation_path": path},
+    )
+
+
+def already_posted():
+    return registry_error("RECEIPT_ALREADY_POSTED")
+
+
+def payment_reference_required():
+    return registry_error(
+        "RECEIPT_PAYMENT_REFERENCE_REQUIRED",
+        field_errors={"payment_reference": ["A payment reference is required for this payment mode."]},
+    )
+
+
+def bank_account_required():
+    return registry_error(
+        "RECEIPT_BANK_ACCOUNT_REQUIRED",
+        field_errors={"bank_account": ["A bank account is required for this payment mode."]},
     )

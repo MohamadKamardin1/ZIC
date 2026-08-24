@@ -38,27 +38,36 @@ class ReceiptApiTests(APITestCase):
         create_response = self._create(narration="First premium deposit.")
         self.assertEqual(create_response.status_code, 201)
         data = create_response.data["data"]
-        self.assertTrue(data["receipt_number"])
+        self.assertIsNone(data["receipt_number"])
         self.assertEqual(data["status"], "DRAFT")
         self.assertEqual(data["unallocated_amount"], "100000.00")
         self.assertIn("update", data["allowed_actions"])
         receipt_id = data["id"]
-
-        list_response = self.client.get(f"{BASE}/")
-        self.assertEqual(list_response.status_code, 200)
-        self.assertEqual(list_response.data["data"]["count"], 1)
-        self.assertEqual(list_response.data["data"]["results"][0]["receipt_number"], data["receipt_number"])
-
-        detail_response = self.client.get(f"{BASE}/{receipt_id}/")
-        self.assertEqual(detail_response.status_code, 200)
-        self.assertEqual(detail_response.data["data"]["payer_name"], "Jane Doe")
-        self.assertEqual(detail_response.data["data"]["payment_mode_label"], "Cash")
 
         update_response = self.client.patch(
             f"{BASE}/{receipt_id}/", {"narration": "Client confirmed deposit."}, format="json"
         )
         self.assertEqual(update_response.status_code, 200)
         self.assertEqual(update_response.data["data"]["narration"], "Client confirmed deposit.")
+
+        post_response = self.client.post(f"{BASE}/{receipt_id}/post/", {"reason": "Money confirmed."}, format="json")
+        self.assertEqual(post_response.status_code, 200)
+        posted = post_response.data["data"]
+        self.assertTrue(posted["receipt_number"])
+        self.assertEqual(posted["status"], "POSTED")
+        self.assertEqual(posted["posted_by_display"], "receipt_admin")
+
+        list_response = self.client.get(f"{BASE}/")
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(list_response.data["data"]["count"], 1)
+        self.assertEqual(list_response.data["data"]["results"][0]["receipt_number"], posted["receipt_number"])
+
+        detail_response = self.client.get(f"{BASE}/{receipt_id}/")
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(detail_response.data["data"]["payer_name"], "Jane Doe")
+        self.assertEqual(detail_response.data["data"]["payment_mode_label"], "Cash")
+        self.assertEqual(detail_response.data["data"]["currency_display"], "TZS")
+        self.assertEqual(detail_response.data["data"]["payment_mode_display"], "Cash")
 
     def test_create_with_nonpositive_amount_fails(self):
         self.client.force_authenticate(self.admin)

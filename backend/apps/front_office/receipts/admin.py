@@ -1,10 +1,14 @@
-from django.contrib import admin
+from django import forms
+from django.contrib import admin, messages
+from django.shortcuts import redirect, render
+from django.urls import reverse
 
 from apps.front_office.receipts.config_models import (
     CompanyBankAccount,
     ReceiptNumberingRule,
     ReceiptPaymentModeRule,
 )
+from apps.front_office.receipts.errors import ReceiptError
 from apps.front_office.receipts.models import (
     Receipt,
     ReceiptAllocation,
@@ -12,6 +16,16 @@ from apps.front_office.receipts.models import (
     ReceiptReversal,
     ReceiptStatusHistory,
 )
+from apps.front_office.receipts.services.receipt_service import post_receipt
+
+
+class PostReceiptForm(forms.Form):
+    reason = forms.CharField(
+        widget=forms.Textarea,
+        required=True,
+        label="Reason / comment",
+        help_text="Required. Records why the selected draft receipts are being posted.",
+    )
 
 
 class ReceiptAllocationInline(admin.TabularInline):
@@ -44,6 +58,8 @@ class ReceiptStatusHistoryInline(admin.TabularInline):
 
 @admin.register(Receipt)
 class ReceiptAdmin(admin.ModelAdmin):
+    actions = ("post_draft_receipt",)
+
     list_display = (
         "receipt_number",
         "receipt_date",
@@ -143,6 +159,45 @@ class ReceiptAdmin(admin.ModelAdmin):
         ("Provenance", {"fields": ("created_by", "updated_by", "created_at", "updated_at")}),
     )
     inlines = (ReceiptAllocationInline, ReceiptReversalInline, ReceiptDocumentInline, ReceiptStatusHistoryInline)
+
+    @admin.action(description="Post draft receipt (with reason)")
+    def post_draft_receipt(self, request, queryset):
+        """Admin action: post selected draft receipts with a required reason."""
+        if "apply" not in request.POST:
+            form = PostReceiptForm()
+            context = {
+                **self.admin_site.each_context(request),
+                "title": "Post selected draft receipts",
+                "receipts": queryset.order_by("receipt_date", "created_at"),
+                "form": form,
+            }
+            return render(request, "admin/front_office/post_receipt_confirmation.html", context)
+
+        form = PostReceiptForm(request.POST)
+        if not form.is_valid():
+            context = {
+                **self.admin_site.each_context(request),
+                "title": "Post selected draft receipts",
+                "receipts": queryset.order_by("receipt_date", "created_at"),
+                "form": form,
+            }
+            return render(request, "admin/front_office/post_receipt_confirmation.html", context)
+
+        reason = form.cleaned_data["reason"]
+        posted = 0
+        skipped = 0
+        for receipt in queryset:
+            try:
+                post_receipt(receipt, actor=request.user, reason=reason, source_channel="ADMIN")
+                posted += 1
+            except ReceiptError:
+                skipped += 1
+        self.message_user(
+            request,
+            f"{posted} receipt(s) posted, {skipped} skipped (only drafts can be posted).",
+            level=messages.SUCCESS,
+        )
+        return redirect(reverse("admin:front_office_receipt_changelist"))
 
 
 @admin.register(ReceiptAllocation)
