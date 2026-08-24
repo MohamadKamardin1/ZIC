@@ -185,3 +185,68 @@ Implemented and tested in this prompt:
 - Structured error registry with the 10 codes above.
 - Tests: model creation, amount computations, status enum behavior, permissions
   registered, structured error shape, audit on create/update.
+
+## 15. Prompt 5 — multi-currency receipt and allocation behavior
+
+The following assumptions govern cross-currency receipt and allocation
+behavior. Multi-currency handling is explicit and auditable; nothing is
+silently assumed.
+
+- **`ExchangeRate` reference table.** A minimal `ExchangeRate` model
+  (`apps/front_office/receipts/models.py`) holds `from_currency`, `to_currency`,
+  `rate`, `effective_date`, `source`, `is_active`, plus `created_at`/`updated_at`.
+  A rate is uniquely identified by `(from_currency, to_currency, effective_date)`;
+  the resolver picks the most recent active rate with `effective_date` at or
+  before the reference date (default today). This is a receipts-context reference
+  table — the dashboard's `CurrencyPair`/`CurrencyRate` remain per-owner
+  watchlist data and are not used for allocation conversion.
+- **Same currency needs no rate.** When the receipt currency equals the target
+  commitment currency the applied rate is `1.000000`, source `SAME_CURRENCY`;
+  `converted_amount` equals the allocation `amount` and `converted_currency`
+  equals the commitment currency.
+- **Cross-currency requires an explicit rate.** A cross-currency allocation
+  (receipt currency != commitment currency) must carry a positive exchange rate
+  quoted receipt-currency → target/commitment-currency. Resolution order:
+  1. an explicit `exchange_rate` on the allocation request wins (source
+     `EXPLICIT`, or the caller-supplied `exchange_rate_source`);
+  2. otherwise the most recent active table rate for the pair is applied (source
+     `EXCHANGE_RATE_TABLE:<row.source>`);
+  3. otherwise the allocation is rejected with `RECEIPT_CURRENCY_MISMATCH` (422)
+     and resolution steps.
+  Converted amount: `converted = (amount * rate)` quantized to 2dp in the
+  commitment currency.
+- **Both amounts are stored and surfaced.** `ReceiptAllocation.amount` holds the
+  receipt-currency original; `converted_amount`/`converted_currency` hold the
+  commitment-side values. The allocation response carries
+  `allocation_amount_in_receipt_currency` and
+  `allocation_amount_in_target_currency`. `recompute_allocated()` keeps summing
+  `amount` in the receipt currency.
+- **Audit fields.** Each allocation persists `exchange_rate_used` (the applied
+  rate, quantized to the column scale so the audit trail exactly matches the
+  stored value), `exchange_rate_source` (provenance), `converted_amount`, and
+  `converted_currency`. `AuditService` snapshots all concrete fields, so these
+  appear in the `ReceiptAllocation` audit row's `after_state`.
+- **Rate validation.** Zero and negative rates are rejected: the allocation
+  serializer enforces a minimum positive rate (structured 400 with
+  `field_errors.exchange_rate`), and the service re-validates on the write path.
+  A missing rate for a cross-currency allocation is `RECEIPT_CURRENCY_MISMATCH`
+  with resolution steps and `field_errors.exchange_rate`.
+- **Staleness is a warning, never a block.** The optional system parameter
+  `RECEIPT_EXCHANGE_RATE_STALE_DAYS` (integer) configures a staleness window.
+  When set and a table-resolved rate is older than the window, the allocation
+  response and the exchange-rate endpoint carry a `warning`; the write is not
+  blocked. Explicit rates and same-currency allocations never produce a stale
+  warning.
+- **Auto-allocation stays same-currency.** `auto_allocate` skips cross-currency
+  commitments — a cross-currency allocation must be explicit, so auto-allocation
+  never applies rate `1.0` silently. Cross-currency is handled by a manual
+  allocation (explicit rate or table-resolved rate).
+- **Endpoint contract.** `GET /api/v1/front-office/exchange-rate/?from=&to=&date=`
+  validates three-letter alpha codes and an ISO date, then returns the resolved
+  rate as `{from_currency, to_currency, rate, effective_date, source, is_active,
+  stale, warning}`. A missing rate raises `RECEIPT_CURRENCY_MISMATCH` with
+  resolution steps.
+- **Events.** `PremiumReceived` (published in the same transaction as the
+  `OLCommitmentAllocation` insert) reports the commitment-side converted amount
+  and currency for cross-currency allocations, with the applied `exchange_rate`
+  carried explicitly.

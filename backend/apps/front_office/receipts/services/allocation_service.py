@@ -28,6 +28,9 @@ from apps.front_office.receipts.models import (
     ReceiptAllocationTargetType,
     ReceiptStatus,
 )
+from apps.front_office.receipts.services.exchange_rate_service import (
+    resolve_rate as resolve_exchange_rate,
+)
 from apps.front_office.receipts.services.receipt_service import record_status_history
 from apps.ol_commitments.errors import CommitmentError
 from apps.ol_commitments.models import OLCommitment
@@ -39,10 +42,17 @@ from apps.ol_parameters.models import OLCommitmentStatus
 ALLOCATABLE_STATUSES = (ReceiptStatus.POSTED, ReceiptStatus.PARTIALLY_ALLOCATED)
 
 _TWO_DP = Decimal("0.01")
+_SIX_DP = Decimal("0.000001")
 
 
 def _fmt(value):
     return str(Decimal(value or ZERO).quantize(_TWO_DP))
+
+
+def _snapshot_rate(value):
+    # Quantize to the exchange_rate_used column scale so the audit trail exactly
+    # matches the persisted value (the serializer can carry up to 8dp).
+    return Decimal(value or ZERO).quantize(_SIX_DP)
 
 
 def _terminal_codes():
@@ -153,11 +163,65 @@ def _raise_mapped_commitment_error(exc):
             field_errors=getattr(exc, "field_errors", None),
         )
     if code == "CURRENCY_MISMATCH":
-        raise currency_mismatch()
+        raise currency_mismatch(
+            field_errors=getattr(exc, "field_errors", None),
+        )
     raise exc
 
 
-def allocate(receipt, *, target_type, target_id, amount, narration="", actor=None, source_channel="API"):
+def _validate_exchange_rate(rate):
+    try:
+        rate = Decimal(str(rate))
+    except (InvalidOperation, TypeError, ValueError):
+        raise allocation_invalid(
+            message="The exchange rate is not valid.",
+            field_errors={"exchange_rate": ["Enter a valid exchange rate."]},
+        )
+    if rate <= 0:
+        raise allocation_invalid(
+            message="The exchange rate must be greater than zero.",
+            field_errors={"exchange_rate": ["Enter an exchange rate greater than zero."]},
+        )
+    return rate
+
+
+def _resolve_allocation_rate(receipt, commitment, explicit_rate, explicit_source):
+    """Resolve the receipt->commitment rate, source, and optional stale warning.
+
+    Same currency -> rate 1.0 (no rate needed). Cross-currency -> an explicit
+    rate wins (source ``EXPLICIT``); otherwise the most recent active table rate
+    for the pair; a missing rate raises ``RECEIPT_CURRENCY_MISMATCH`` with
+    resolution steps.
+    """
+    receipt_currency = (receipt.currency or "").strip().upper()
+    target_currency = (commitment.currency or "").strip().upper()
+    if receipt_currency == target_currency:
+        return Decimal("1.000000"), "SAME_CURRENCY", None
+    if explicit_rate not in (None, ""):
+        rate = _validate_exchange_rate(explicit_rate)
+        source = (explicit_source or "").strip() or "EXPLICIT"
+        return rate, source, None
+    resolved = resolve_exchange_rate(receipt_currency, target_currency)
+    if resolved is None:
+        raise currency_mismatch(
+            message=f"No active exchange rate is configured from {receipt_currency} to {target_currency}.",
+            field_errors={"exchange_rate": ["An exchange rate is required for cross-currency allocations."]},
+        )
+    return resolved["rate"], f"EXCHANGE_RATE_TABLE:{resolved['source']}", resolved["warning"]
+
+
+def allocate(
+    receipt,
+    *,
+    target_type,
+    target_id,
+    amount,
+    narration="",
+    exchange_rate=None,
+    exchange_rate_source=None,
+    actor=None,
+    source_channel="API",
+):
     """Resolve an OL commitment target and delegate to the allocation engine."""
     if (target_type or "").strip().upper() != ReceiptAllocationTargetType.OL_COMMITMENT:
         raise allocation_invalid(
@@ -175,24 +239,39 @@ def allocate(receipt, *, target_type, target_id, amount, narration="", actor=Non
         commitment,
         amount=amount,
         narration=narration,
+        exchange_rate=exchange_rate,
+        exchange_rate_source=exchange_rate_source,
         actor=actor,
         source_channel=source_channel,
     )
 
 
-def allocate_to_commitment(receipt, commitment, *, amount, narration="", actor=None, source_channel="API"):
+def allocate_to_commitment(
+    receipt,
+    commitment,
+    *,
+    amount,
+    narration="",
+    exchange_rate=None,
+    exchange_rate_source=None,
+    actor=None,
+    source_channel="API",
+):
     """Allocate ``amount`` of a posted receipt to an OL commitment.
 
-    Returns ``(allocation, receipt, created)``. Idempotent per (receipt,
-    commitment): a repeated allocation returns the existing active
-    ``ReceiptAllocation`` without double-applying to either ledger.
+    Returns ``(allocation, receipt, created, warning)``. Idempotent per
+    (receipt, commitment): a repeated allocation returns the existing active
+    ``ReceiptAllocation`` without double-applying to either ledger. ``warning``
+    carries a stale-rate warning when a table rate older than the configured
+    staleness window was applied (``None`` otherwise).
 
     Constraints enforced before/within the commitment write:
       - receipt must be POSTED or PARTIALLY_ALLOCATED (``RECEIPT_INVALID_STATUS``)
       - amount > 0 (``RECEIPT_ALLOCATION_INVALID``)
       - amount <= receipt unallocated balance (``RECEIPT_OVERALLOCATION``)
       - amount <= commitment balance (delegated, mapped to ``RECEIPT_OVERALLOCATION``)
-      - same currency (``RECEIPT_CURRENCY_MISMATCH``)
+      - same currency needs no rate; cross-currency requires a positive rate
+        (``RECEIPT_CURRENCY_MISMATCH`` when missing)
     """
     # Idempotency first: a retry for an already-allocated (receipt, commitment)
     # returns the existing allocation without re-running the status/amount guards
@@ -205,13 +284,14 @@ def allocate_to_commitment(receipt, commitment, *, amount, narration="", actor=N
     ).first()
     if existing is not None:
         receipt.refresh_from_db()
-        return existing, receipt, False
+        return existing, receipt, False, None
 
     _guard_allocatable(receipt, "allocate")
     amount = _validate_allocation_amount(amount)
 
-    if (receipt.currency or "").strip().upper() != (commitment.currency or "").strip().upper():
-        raise currency_mismatch()
+    rate, rate_source, warning = _resolve_allocation_rate(
+        receipt, commitment, exchange_rate, exchange_rate_source
+    )
 
     unallocated = Decimal(receipt.unallocated_amount or ZERO)
     if amount > unallocated:
@@ -230,7 +310,7 @@ def allocate_to_commitment(receipt, commitment, *, amount, narration="", actor=N
                 receipt_reference=receipt.receipt_number,
                 payment_mode=receipt.payment_mode,
                 currency=receipt.currency,
-                exchange_rate=Decimal("1.000000"),
+                exchange_rate=rate,
                 reason=narration or "",
                 allocated_by=actor_instance,
                 source_channel=source_channel,
@@ -245,7 +325,11 @@ def allocate_to_commitment(receipt, commitment, *, amount, narration="", actor=N
                 ol_commitment_allocation=ol_allocation,
                 amount=amount,
                 currency=receipt.currency,
-                exchange_rate=ol_allocation.exchange_rate,
+                exchange_rate=_snapshot_rate(ol_allocation.exchange_rate),
+                exchange_rate_used=_snapshot_rate(ol_allocation.exchange_rate),
+                exchange_rate_source=rate_source,
+                converted_amount=ol_allocation.converted_amount,
+                converted_currency=commitment.currency,
                 narration=narration or "",
                 allocated_by=actor_instance,
                 source_channel=source_channel,
@@ -281,12 +365,12 @@ def allocate_to_commitment(receipt, commitment, *, amount, narration="", actor=N
         ).first()
         if existing is not None:
             receipt.refresh_from_db()
-            return existing, receipt, False
+            return existing, receipt, False, None
         raise
     except CommitmentError as exc:
         _raise_mapped_commitment_error(exc)
         raise
-    return allocation, receipt, True
+    return allocation, receipt, True, warning
 
 
 def _emit_allocation_events(
@@ -360,16 +444,21 @@ def auto_allocate(receipt, *, actor=None, source_channel="API"):
 
     remaining = Decimal(receipt.unallocated_amount or ZERO)
     actor_instance = actor if actor and getattr(actor, "is_authenticated", False) else None
+    receipt_currency = (receipt.currency or "").strip().upper()
     results = []
     for commitment in commitments:
         if remaining <= 0:
             break
+        # Auto-allocation stays same-currency: cross-currency needs an explicit
+        # rate, so it is left for a manual allocation (never silently 1.0).
+        if (commitment.currency or "").strip().upper() != receipt_currency:
+            continue
         balance = Decimal(commitment.balance or ZERO)
         if balance <= 0:
             continue
         amount = min(remaining, balance)
         balance_before = balance
-        allocation, receipt, _created = allocate_to_commitment(
+        allocation, receipt, _created, _warning = allocate_to_commitment(
             receipt,
             commitment,
             amount=amount,
@@ -382,6 +471,8 @@ def auto_allocate(receipt, *, actor=None, source_channel="API"):
                 "commitment_number": commitment.commitment_number,
                 "amount": _fmt(amount),
                 "currency": commitment.currency,
+                "allocation_amount_in_receipt_currency": _fmt(allocation.amount),
+                "allocation_amount_in_target_currency": _fmt(allocation.converted_amount),
                 "balance_before": _fmt(balance_before),
                 "balance_after": _fmt(commitment.balance),
                 "status": commitment.status,

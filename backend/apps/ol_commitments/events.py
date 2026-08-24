@@ -83,6 +83,9 @@ def emit_payment_allocated(
         payload_extra["allocation_id"] = str(allocation.pk)
         payload_extra["receipt_reference"] = allocation.receipt_reference
         payload_extra["amount"] = str(allocation.amount)
+        payload_extra["currency"] = allocation.currency
+        payload_extra["exchange_rate"] = str(allocation.exchange_rate)
+        payload_extra["converted_amount"] = str(allocation.converted_amount)
     return emit_commitment_event(
         COMMITMENT_PAYMENT_ALLOCATED,
         commitment,

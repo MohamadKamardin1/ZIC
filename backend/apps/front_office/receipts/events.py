@@ -7,7 +7,10 @@ defined in ``docs/OL_PROPOSALS_RECEIPTS_SEAM.md`` so proposals, policies,
 reports, and the portal consume it asynchronously.
 """
 
+from decimal import Decimal
+
 from apps.common.models import DomainEvent
+from apps.front_office.receipts.models import ZERO
 
 AGGREGATE_TYPE = "Receipt"
 
@@ -211,13 +214,28 @@ def emit_premium_received(
     Published in the same transaction as the ``OLCommitmentAllocation`` insert
     for every allocation (the seam's publishing rule). ``aggregate_type`` is
     ``OLCommitment`` so proposals/policies/reports reconcile on the commitment.
+    For cross-currency allocations the amount/currency reflect the commitment
+    side (converted), and the applied rate is carried explicitly.
     """
+    converted = (
+        Decimal(getattr(allocation, "converted_amount", ZERO))
+        if allocation is not None
+        else ZERO
+    )
+    if allocation is not None and converted > 0:
+        amount_str = str(converted)
+        currency = allocation.converted_currency or allocation.currency
+    else:
+        amount_str = str(allocation.amount) if allocation is not None else str(receipt.receipt_amount)
+        currency = allocation.currency if allocation is not None else receipt.currency
     payload = {
         "proposal_number": None,
         "commitment_number": commitment.commitment_number if commitment is not None else None,
         "receipt_reference": receipt.receipt_number,
-        "amount": str(allocation.amount) if allocation is not None else str(receipt.receipt_amount),
-        "currency": (allocation.currency if allocation is not None else receipt.currency),
+        "amount": amount_str,
+        "currency": currency,
+        "exchange_rate": str(allocation.exchange_rate) if allocation is not None else str(receipt.exchange_rate or ZERO),
+        "converted_amount": str(converted) if allocation is not None else str(receipt.receipt_amount or ZERO),
         "payment_mode": receipt.payment_mode,
         "allocated_at": (allocation.allocated_at.isoformat() if allocation is not None and allocation.allocated_at else None),
         "allocated_by": str(actor.pk) if actor and getattr(actor, "pk", None) else None,

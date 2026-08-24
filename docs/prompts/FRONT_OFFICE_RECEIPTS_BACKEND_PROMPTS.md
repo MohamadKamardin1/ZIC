@@ -4,7 +4,7 @@
 - [x] Prompt 2 — Implement Receipt Parameters, Numbering & Reference Data
 - [x] Prompt 3 — Implement Receipt Creation, Draft Editing, Validation & Posting
 - [x] Prompt 4 — Implement Receipt Allocation to OL Commitments & First Premium
-- [ ] Prompt 5 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
+- [ ] Prompt 5 — Implement Multi-Currency Receipt & Allocation Behavior
 - [ ] Prompt 6 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
 - [ ] Prompt 7 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
 - [ ] Prompt 8 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
@@ -413,4 +413,63 @@ GIT:
 
 FINAL OUTPUT:
 Return allocation contract, BR-03 integration evidence, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 5/12 — Implement Multi-Currency Receipt & Allocation Behavior
+
+```text
+You are a senior Django insurance finance engineer. Continue the Front Office Receipts backend. Execute ONLY Prompt 5.
+
+MANDATORY RULES:
+- Multi-currency handling must be explicit and auditable.
+- Commit and push; tick Prompt 5 after completion.
+
+OBJECTIVE:
+Implement multi-currency receipt and allocation behavior.
+
+SCOPE:
+1. Integrate with Currency and ExchangeRate parameters if they exist; create minimal ExchangeRate model if absent.
+2. ExchangeRate fields:
+   - from_currency
+   - to_currency
+   - rate
+   - effective_date
+   - source
+   - is_active
+3. Receipt allocation rules:
+   - same currency requires no exchange rate
+   - cross-currency allocation requires explicit exchange_rate
+   - converted amount must be shown in allocation response
+   - store original amount and converted amount
+4. Add endpoint:
+   - GET /api/v1/front-office/exchange-rate/?from=&to=&date=
+5. Validation:
+   - missing exchange rate returns RECEIPT_CURRENCY_MISMATCH with resolution steps
+   - zero/negative rate blocked
+   - stale rate warning if configured
+6. Add audit fields:
+   - exchange_rate_used
+   - exchange_rate_source
+   - converted_amount
+7. Update allocation endpoint to support:
+   - allocation_amount_in_receipt_currency
+   - allocation_amount_in_target_currency
+8. Document assumptions in docs/FRONT_OFFICE_RECEIPTS_DESIGN.md.
+
+TESTS:
+- same-currency allocation
+- cross-currency allocation with explicit rate
+- missing rate error
+- exchange-rate endpoint
+- converted amount math
+- audit values captured
+
+GIT:
+- commit: "feat(receipts): implement multi-currency exchange rate handling"
+- push; tick Prompt 5 checkbox
+
+FINAL OUTPUT:
+Return exchange model/endpoint, conversion rules, tests, commit hash, pushed branch.
 ```

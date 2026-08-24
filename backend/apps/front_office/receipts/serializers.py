@@ -44,6 +44,8 @@ class ReceiptAllocationSerializer(serializers.ModelSerializer):
     ol_commitment_allocation = serializers.UUIDField(
         source="ol_commitment_allocation_id", allow_null=True, required=False
     )
+    allocation_amount_in_receipt_currency = serializers.SerializerMethodField()
+    allocation_amount_in_target_currency = serializers.SerializerMethodField()
 
     class Meta:
         model = ReceiptAllocation
@@ -56,8 +58,14 @@ class ReceiptAllocationSerializer(serializers.ModelSerializer):
             "commitment_number",
             "ol_commitment_allocation",
             "amount",
+            "allocation_amount_in_receipt_currency",
+            "allocation_amount_in_target_currency",
             "currency",
             "exchange_rate",
+            "exchange_rate_used",
+            "exchange_rate_source",
+            "converted_amount",
+            "converted_currency",
             "allocation_status",
             "reversal_of",
             "narration",
@@ -77,6 +85,12 @@ class ReceiptAllocationSerializer(serializers.ModelSerializer):
         if obj.commitment_id:
             return obj.commitment.commitment_number
         return obj.target_display or obj.target_id or None
+
+    def get_allocation_amount_in_receipt_currency(self, obj):
+        return str(obj.amount)
+
+    def get_allocation_amount_in_target_currency(self, obj):
+        return str(obj.converted_amount)
 
 
 class ReceiptReversalSerializer(serializers.ModelSerializer):
@@ -344,7 +358,12 @@ class ReceiptDraftSerializer(serializers.ModelSerializer):
 
 
 class ReceiptAllocationRequestSerializer(serializers.Serializer):
-    """Manual allocation payload: OL_COMMITMENT target, amount, optional narration."""
+    """Manual allocation payload: OL_COMMITMENT target, amount, optional rate.
+
+    Cross-currency allocations require a positive ``exchange_rate`` (from the
+    receipt currency to the target commitment currency) unless an active rate is
+    on file for the pair; ``exchange_rate_source`` records provenance.
+    """
 
     target_type = serializers.ChoiceField(
         choices=[ReceiptAllocationTargetType.OL_COMMITMENT],
@@ -352,4 +371,12 @@ class ReceiptAllocationRequestSerializer(serializers.Serializer):
     )
     target_id = serializers.CharField(max_length=120, allow_blank=False)
     amount = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=Decimal("0.01"))
+    exchange_rate = serializers.DecimalField(
+        max_digits=18,
+        decimal_places=8,
+        required=False,
+        allow_null=True,
+        min_value=Decimal("0.00000001"),
+    )
+    exchange_rate_source = serializers.CharField(required=False, allow_blank=True, default="")
     narration = serializers.CharField(required=False, allow_blank=True, default="")

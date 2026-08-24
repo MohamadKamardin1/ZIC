@@ -230,10 +230,14 @@ def overallocation(*, available=None, field="amount", message=None, field_errors
     return registry_error("RECEIPT_OVERALLOCATION", message=message, field_errors=field_errors)
 
 
-def currency_mismatch():
-    return registry_error(
-        "RECEIPT_CURRENCY_MISMATCH",
-        message="The receipt currency does not match the target commitment currency.",
+def currency_mismatch(message=None, field_errors=None, resolution_steps=None):
+    default_message, status_code, steps = RECEIPT_ERROR_REGISTRY["RECEIPT_CURRENCY_MISMATCH"]
+    return ReceiptError(
+        message or default_message,
+        error_code="RECEIPT_CURRENCY_MISMATCH",
+        status_code=status_code,
+        resolution_steps=resolution_steps or list(steps),
+        field_errors=field_errors,
     )
 
 

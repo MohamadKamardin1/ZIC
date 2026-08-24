@@ -211,17 +211,22 @@ class ReceiptAllocateView(APIView):
         serializer = ReceiptAllocationRequestSerializer(data=request.data or {})
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-        allocation, receipt, created = allocate(
+        allocation, receipt, created, warning = allocate(
             receipt,
             target_type=data["target_type"],
             target_id=data["target_id"],
             amount=data["amount"],
             narration=data.get("narration", ""),
+            exchange_rate=data.get("exchange_rate"),
+            exchange_rate_source=data.get("exchange_rate_source") or None,
             actor=request.user,
             source_channel="API",
         )
+        response_data = {"data": ReceiptDetailSerializer(receipt).data}
+        if warning:
+            response_data["warning"] = warning
         return Response(
-            {"data": ReceiptDetailSerializer(receipt).data},
+            response_data,
             status=201 if created else 200,
         )
 
@@ -250,6 +255,59 @@ class ReceiptAutoAllocateView(APIView):
                 }
             }
         )
+
+
+class ExchangeRateView(APIView):
+    """GET /front-office/exchange-rate/?from=&to=&date= — configured rate lookup."""
+
+    permission_classes = [MustViewReceiptsPermission]
+
+    def get(self, request):
+        from apps.front_office.receipts.errors import currency_mismatch
+        from apps.front_office.receipts.services.exchange_rate_service import lookup_payload
+
+        from_currency = (request.query_params.get("from") or "").strip().upper()
+        to_currency = (request.query_params.get("to") or "").strip().upper()
+        date_param = (request.query_params.get("date") or "").strip()
+
+        def _valid(code):
+            return len(code) == 3 and code.isalpha()
+
+        if not _valid(from_currency) or not _valid(to_currency):
+            raise currency_mismatch(
+                message="A valid from and to currency (three-letter codes) is required.",
+                field_errors={
+                    "from": ["A three-letter from currency is required."]
+                    if not _valid(from_currency)
+                    else [],
+                    "to": ["A three-letter to currency is required."]
+                    if not _valid(to_currency)
+                    else [],
+                },
+            )
+        effective_date = None
+        if date_param:
+            try:
+                from datetime import date
+
+                effective_date = date.fromisoformat(date_param)
+            except ValueError:
+                raise currency_mismatch(
+                    message="The date must use the ISO format YYYY-MM-DD.",
+                    field_errors={"date": ["Enter a date in YYYY-MM-DD format."]},
+                )
+
+        payload = lookup_payload(from_currency, to_currency, effective_date)
+        if payload is None:
+            raise currency_mismatch(
+                message=f"No active exchange rate is configured from {from_currency} to {to_currency}.",
+                resolution_steps=[
+                    "Configure an ExchangeRate for the pair in Front Office parameters.",
+                    "Or supply the exchange_rate explicitly on the allocation request.",
+                ],
+                field_errors={"rate": ["No active rate is on file for the pair and date."]},
+            )
+        return Response({"data": payload})
 
 
 class ReceiptOptionsView(APIView):

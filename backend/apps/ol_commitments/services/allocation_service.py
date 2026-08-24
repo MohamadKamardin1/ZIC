@@ -68,8 +68,27 @@ def allocate_to_commitment(
     if amount is None or amount <= 0:
         raise _amount_error()
 
-    if exchange_rate is None:
-        exchange_rate = ONE
+    paid_currency = (currency or commitment.currency or "").strip().upper()
+    target_currency = (commitment.currency or "").strip().upper()
+    same_currency = paid_currency == target_currency
+
+    # Same currency needs no rate; a cross-currency allocation requires an
+    # explicit positive rate (prompt 5 — multi-currency is explicit, never
+    # silently assumed at 1.0).
+    if exchange_rate in (None, ""):
+        if same_currency:
+            exchange_rate = ONE
+        else:
+            raise CommitmentError(
+                "A cross-currency allocation requires an exchange rate.",
+                error_code="CURRENCY_MISMATCH",
+                status_code=422,
+                resolution_steps=[
+                    "Provide the exchange rate from the receipt currency to the commitment currency.",
+                    "Use the exchange-rate endpoint to look up a configured rate for the pair.",
+                ],
+                field_errors={"exchange_rate": ["An exchange rate greater than zero is required for cross-currency allocations."]},
+            )
     try:
         exchange_rate = Decimal(str(exchange_rate))
     except (InvalidOperation, TypeError, ValueError):
@@ -81,17 +100,9 @@ def allocate_to_commitment(
             field_errors={"exchange_rate": ["Exchange rate must be greater than zero."]},
         )
 
-    paid_currency = (currency or commitment.currency or "").strip().upper()
-    if paid_currency != (commitment.currency or "").strip().upper():
-        raise CommitmentError(
-            "A cross-currency allocation requires an exchange rate.",
-            error_code="CURRENCY_MISMATCH",
-            status_code=422,
-            field_errors={"exchange_rate": ["An exchange rate greater than zero is required."]},
-        )
-
+    converted = (amount * exchange_rate).quantize(Decimal("0.01"))
     balance = Decimal(commitment.balance or ZERO)
-    if amount > balance:
+    if converted > balance:
         raise CommitmentError(
             "The payment amount exceeds the outstanding balance of the commitment.",
             error_code="COMMITMENT_OVERPAYMENT",
@@ -106,7 +117,7 @@ def allocate_to_commitment(
     from_status = (from_status or "").strip() or commitment.status
     actor = allocated_by if allocated_by and getattr(allocated_by, "is_authenticated", False) else None
 
-    commitment.amount_paid = Decimal(commitment.amount_paid or ZERO) + amount * exchange_rate
+    commitment.amount_paid = Decimal(commitment.amount_paid or ZERO) + converted
     commitment.recompute_balance()
     if reason:
         commitment.reason_text = reason
@@ -122,6 +133,7 @@ def allocate_to_commitment(
         commitment=commitment,
         receipt_reference=(receipt_reference or f"MANUAL-{commitment.commitment_number}").strip()[:120],
         amount=amount,
+        converted_amount=converted,
         payment_mode=payment_mode or "",
         currency=paid_currency,
         exchange_rate=exchange_rate,

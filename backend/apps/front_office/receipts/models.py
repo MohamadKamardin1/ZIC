@@ -346,6 +346,14 @@ class ReceiptAllocation(AuditedModel):
     amount = models.DecimalField(max_digits=18, decimal_places=2)
     currency = models.CharField(max_length=3, default="TZS")
     exchange_rate = models.DecimalField(max_digits=12, decimal_places=6, default=Decimal("1.000000"))
+    # Multi-currency audit trail (prompt 5): the rate actually applied, its
+    # provenance, and the converted amount in the target currency. ``amount``
+    # stays the original receipt-currency amount; ``converted_amount`` is what
+    # the commitment side books in its own currency.
+    exchange_rate_used = models.DecimalField(max_digits=12, decimal_places=6, default=Decimal("1.000000"))
+    exchange_rate_source = models.CharField(max_length=40, blank=True, default="")
+    converted_amount = models.DecimalField(max_digits=18, decimal_places=2, default=ZERO)
+    converted_currency = models.CharField(max_length=3, blank=True, default="")
     allocation_status = models.CharField(
         max_length=30, choices=ReceiptAllocationStatus.choices, default=ReceiptAllocationStatus.ACTIVE, db_index=True
     )
@@ -377,6 +385,8 @@ class ReceiptAllocation(AuditedModel):
         constraints = [
             models.CheckConstraint(check=Q(amount__gt=0), name="receipt_allocation_amount_positive"),
             models.CheckConstraint(check=Q(exchange_rate__gt=0), name="receipt_allocation_rate_positive"),
+            models.CheckConstraint(check=Q(exchange_rate_used__gt=0), name="receipt_allocation_rate_used_positive"),
+            models.CheckConstraint(check=Q(converted_amount__gte=0), name="receipt_allocation_converted_nonnegative"),
         ]
         indexes = [
             models.Index(fields=["receipt", "target_type", "target_id"], name="receipt_alloc_target_idx"),
@@ -392,6 +402,10 @@ class ReceiptAllocation(AuditedModel):
             errors["amount"] = "Allocation amount must be greater than zero."
         if (self.exchange_rate or ZERO) <= 0:
             errors["exchange_rate"] = "Exchange rate must be greater than zero."
+        if (self.exchange_rate_used or ZERO) <= 0:
+            errors["exchange_rate_used"] = "Exchange rate used must be greater than zero."
+        if (self.converted_amount or ZERO) < 0:
+            errors["converted_amount"] = "Converted amount cannot be negative."
         currency = (self.currency or "").strip().upper()
         if len(currency) != 3 or not currency.isalpha():
             errors["currency"] = "Currency must be a three-letter code."
@@ -522,3 +536,83 @@ class ReceiptStatusHistory(AuditedModel):
 
     def __str__(self):
         return f"{self.receipt.receipt_number}: {self.from_status or '-'} -> {self.to_status}"
+
+
+class ExchangeRate(models.Model):
+    """A configured conversion rate between two currencies, effective from a date.
+
+    Parameterized reference data (prompt 5): same-currency allocations need no
+    rate; a cross-currency allocation either supplies an explicit rate or
+    resolves the most recent active rate for the pair from this table. Rates are
+    always quoted *from_currency -> to_currency* (e.g. USD -> TZS).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    from_currency = models.CharField(max_length=3)
+    to_currency = models.CharField(max_length=3)
+    rate = models.DecimalField(max_digits=18, decimal_places=8)
+    effective_date = models.DateField()
+    source = models.CharField(max_length=40, default="MANUAL")
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "front_office_exchange_rate"
+        verbose_name = "Exchange Rate"
+        verbose_name_plural = "Exchange Rates"
+        ordering = ["-effective_date", "-created_at"]
+        constraints = [
+            models.CheckConstraint(check=Q(rate__gt=0), name="exchange_rate_positive"),
+        ]
+        constraints += [
+            models.UniqueConstraint(
+                fields=["from_currency", "to_currency", "effective_date"],
+                name="exchange_rate_pair_date_unique",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["from_currency", "to_currency", "effective_date"],
+                name="exchange_rate_pair_date_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.from_currency}/{self.to_currency} @ {self.rate} ({self.effective_date})"
+
+    def clean(self):
+        errors = {}
+        from_code = (self.from_currency or "").strip().upper()
+        to_code = (self.to_currency or "").strip().upper()
+        if len(from_code) != 3 or not from_code.isalpha():
+            errors["from_currency"] = "From currency must be a three-letter code."
+        if len(to_code) != 3 or not to_code.isalpha():
+            errors["to_currency"] = "To currency must be a three-letter code."
+        if from_code and from_code == to_code:
+            errors["to_currency"] = "To currency must differ from the from currency."
+        if self.rate is None or self.rate <= 0:
+            errors["rate"] = "Rate must be greater than zero."
+        self.from_currency = from_code
+        self.to_currency = to_code
+        if errors:
+            raise ValidationError(errors)
+
+    @classmethod
+    def resolve(cls, from_currency, to_currency, effective_date=None):
+        """Most recent active rate at or before ``effective_date`` (default today)."""
+        from_code = (from_currency or "").strip().upper()
+        to_code = (to_currency or "").strip().upper()
+        if not from_code or not to_code:
+            return None
+        cutoff = effective_date or timezone.localdate()
+        return (
+            cls.objects.filter(
+                from_currency=from_code,
+                to_currency=to_code,
+                is_active=True,
+                effective_date__lte=cutoff,
+            )
+            .order_by("-effective_date", "-created_at")
+            .first()
+        )
