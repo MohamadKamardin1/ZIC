@@ -2,7 +2,7 @@
 
 - [x] Prompt 1 — Save Prompt Series + Front Office Receipts Domain Foundation
 - [x] Prompt 2 — Implement Receipt Parameters, Numbering & Reference Data
-- [ ] Prompt 3 — Implement Receipt Creation, Draft Editing, Validation & Posting
+- [x] Prompt 3 — Implement Receipt Creation, Draft Editing, Validation & Posting
 - [ ] Prompt 4 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
 - [ ] Prompt 5 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
 - [ ] Prompt 6 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
