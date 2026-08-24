@@ -255,7 +255,7 @@ FINAL OUTPUT: import UX, tests, commit hash, pushed branch.
 
 ---
 
-## [ ] Prompt 8 — Receipt Print Preview and Documents UI
+## [x] Prompt 8 — Receipt Print Preview and Documents UI
 
 ```text
 You are a senior frontend engineer. Continue the ZIC Receipts UI. Execute ONLY Prompt 8.
