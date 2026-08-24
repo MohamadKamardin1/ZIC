@@ -190,7 +190,7 @@ FINAL OUTPUT: modal behavior, first-premium UX, tests, commit hash, pushed branc
 
 ---
 
-## [ ] Prompt 6 — Reversal, Allocation Reversal, and Cancellation UI
+## [x] Prompt 6 — Reversal, Allocation Reversal, and Cancellation UI
 
 ```text
 You are a senior frontend engineer. Continue the ZIC Receipts UI. Execute ONLY Prompt 6.

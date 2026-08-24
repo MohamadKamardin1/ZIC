@@ -101,6 +101,9 @@ export interface ReceiptAllocation {
   exchange_rate?: string | null
   status: string
   reversed_at?: string | null
+  is_first_premium?: boolean
+  proposal_number?: string | null
+  restored_balance?: string | null
 }
 
 export interface ReceiptReversal {

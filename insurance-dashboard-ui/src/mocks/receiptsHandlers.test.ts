@@ -49,6 +49,23 @@ describe("receipts MSW contract", () => {
     expect((await postResponse.json()).data).toMatchObject({ id: created.id, status: "POSTED" })
   })
 
+  it("persists cancellation and reversal lifecycle outcomes", async () => {
+    const draftResponse = await fetch("http://localhost/api/v1/front-office/receipts/", { method: "POST", headers: { "Content-Type": "application/json", "X-Idempotency-Key": "msw-prompt6-draft" }, body: JSON.stringify({ receipt_date: "2026-08-24", branch: "branch-zanzibar", payer: "partner-amani", currency: "TZS", payment_mode: "CASH", receipt_amount: "12000.00" }) })
+    const draft = (await draftResponse.json()).data
+    const cancelResponse = await fetch(`http://localhost/api/v1/front-office/receipts/${draft.id}/cancel/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "Duplicate draft" }) })
+    expect(cancelResponse.status).toBe(200)
+    expect((await cancelResponse.json()).data).toMatchObject({ id: draft.id, status: "CANCELLED", cancelled_reason: "Duplicate draft" })
+    const cancelledDetail = await fetch(`http://localhost/api/v1/front-office/receipts/${draft.id}/`)
+    expect((await cancelledDetail.json()).data).toMatchObject({ status: "CANCELLED", cancelled_reason: "Duplicate draft" })
+
+    const postedDraftResponse = await fetch("http://localhost/api/v1/front-office/receipts/", { method: "POST", headers: { "Content-Type": "application/json", "X-Idempotency-Key": "msw-prompt6-posted" }, body: JSON.stringify({ receipt_date: "2026-08-24", branch: "branch-zanzibar", payer: "partner-amani", currency: "TZS", payment_mode: "CASH", receipt_amount: "18000.00" }) })
+    const postedDraft = (await postedDraftResponse.json()).data
+    await fetch(`http://localhost/api/v1/front-office/receipts/${postedDraft.id}/post/`, { method: "POST", headers: { "X-Idempotency-Key": "msw-prompt6-post" } })
+    const reverseResponse = await fetch(`http://localhost/api/v1/front-office/receipts/${postedDraft.id}/reverse/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "Duplicate payment" }) })
+    expect(reverseResponse.status).toBe(200)
+    expect((await reverseResponse.json()).data).toMatchObject({ id: postedDraft.id, status: "REVERSED", reversed_reason: "Duplicate payment" })
+  })
+
   it("returns an oldest-first auto-allocation summary with first-premium metadata", async () => {
     const response = await fetch("http://localhost/api/v1/front-office/receipts/receipt-demo-1/auto-allocate/", { method: "POST" })
     expect(response.status).toBe(200)

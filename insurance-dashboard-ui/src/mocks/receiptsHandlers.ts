@@ -37,6 +37,8 @@ let receipts: ReceiptRecord[] = [
   },
 ]
 
+const reversedAllocationIds = new Set<string>()
+
 const options = {
   branches: [{ value: ids.branch, label: "Zanzibar Main Branch", meta: { code: "ZNZ-MAIN" } }, { value: "branch-pemba", label: "Pemba Branch", meta: { code: "PEMBA" } }],
   payers: [{ value: ids.payer, label: "Amani Assurance Partner", meta: { partner_type: "AGENT" } }, { value: "partner-zic", label: "ZIC Individual Policyholder", meta: { partner_type: "INDIVIDUAL" } }],
@@ -147,7 +149,8 @@ export const receiptsHandlers = [
   http.get(`*${RECEIPTS_BASE}/:id/allocations/`, ({ params, request }) => {
     const receipt = findReceipt(String(params.id))
     if (!receipt) return error(404, "RECEIPT_NOT_FOUND", "The receipt could not be found.", ["Check the receipt number and try again."])
-    return data(page([{ id: "allocation-1", target_display: "OLC-2026-000001 — OL Proposal OLP-2026-000001", commitment_number: "OLC-2026-000001", source_display: "OL Proposal OLP-2026-000001", amount: "50000.00", currency: receipt.currency, exchange_rate: null, status: "ACTIVE", reversed_at: null }], new URL(request.url)))
+    const allocationReversed = reversedAllocationIds.has("allocation-1")
+    return data(page([{ id: "allocation-1", target_display: "OLC-2026-000001 — OL Proposal OLP-2026-000001", commitment_number: "OLC-2026-000001", source_display: "OL Proposal OLP-2026-000001", amount: "50000.00", currency: receipt.currency, exchange_rate: null, status: allocationReversed ? "REVERSED" : "ACTIVE", reversed_at: allocationReversed ? "2026-08-24T09:10:00Z" : null, is_first_premium: true, proposal_number: "OLP-2026-000001", restored_balance: "50000.00" }], new URL(request.url)))
   }),
   http.get(`*${RECEIPTS_BASE}/:id/bank-account/`, ({ params }) => {
     const receipt = findReceipt(String(params.id))
@@ -186,15 +189,25 @@ export const receiptsHandlers = [
     receipts = receipts.map((item) => item.id === receipt.id ? posted : item)
     return data(posted)
   }),
-  http.post(`*${RECEIPTS_BASE}/:id/reverse/`, ({ params, request }) => {
+  http.post(`*${RECEIPTS_BASE}/:id/reverse/`, async ({ params, request }) => {
     const receipt = findReceipt(String(params.id))
     if (!receipt) return error(404, "RECEIPT_NOT_FOUND", "The receipt could not be found.", ["Check the receipt number and try again."])
-    return data({ ...receipt, status: "REVERSED", reversed_reason: typeof request === "object" ? "Reversal requested by operator" : null })
+    const body = await request.json() as { reason?: string }
+    const reversed = { ...receipt, status: "REVERSED", reversed_reason: body.reason ?? "Reversal requested by operator", allowed_actions: ["view", "print"] } as ReceiptRecord
+    receipts = receipts.map((item) => item.id === receipt.id ? reversed : item)
+    return data(reversed)
   }),
-  http.post(`*${RECEIPTS_BASE}/:id/allocations/:allocationId/reverse/`, ({ params }) => data({ id: String(params.allocationId), target_display: "OLC-2026-000001 — OL Proposal OLP-2026-000001", amount: "50000.00", currency: "TZS", status: "REVERSED", reversed_at: "2026-08-24T09:10:00Z" })),
-  http.post(`*${RECEIPTS_BASE}/:id/cancel/`, ({ params }) => {
+  http.post(`*${RECEIPTS_BASE}/:id/allocations/:allocationId/reverse/`, ({ params }) => {
+    reversedAllocationIds.add(String(params.allocationId))
+    return data({ id: String(params.allocationId), target_display: "OLC-2026-000001 — OL Proposal OLP-2026-000001", amount: "50000.00", currency: "TZS", status: "REVERSED", reversed_at: "2026-08-24T09:10:00Z", restored_balance: "50000.00", is_first_premium: true, proposal_number: "OLP-2026-000001" })
+  }),
+  http.post(`*${RECEIPTS_BASE}/:id/cancel/`, async ({ params, request }) => {
     const receipt = findReceipt(String(params.id))
-    return receipt ? data({ ...receipt, status: "CANCELLED", cancelled_reason: "Cancelled by operator" }) : error(404, "RECEIPT_NOT_FOUND", "The receipt could not be found.", ["Check the receipt number and try again."])
+    if (!receipt) return error(404, "RECEIPT_NOT_FOUND", "The receipt could not be found.", ["Check the receipt number and try again."])
+    const body = await request.json() as { reason?: string }
+    const cancelled = { ...receipt, status: "CANCELLED", cancelled_reason: body.reason ?? "Cancelled by operator", allowed_actions: ["view", "print"] } as ReceiptRecord
+    receipts = receipts.map((item) => item.id === receipt.id ? cancelled : item)
+    return data(cancelled)
   }),
   http.get(`*${RECEIPTS_BASE}/:id/`, ({ params }) => {
     const receipt = findReceipt(String(params.id))

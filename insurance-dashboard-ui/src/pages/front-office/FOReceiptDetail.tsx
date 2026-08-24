@@ -5,11 +5,12 @@ import { Link, useNavigate, useParams } from "react-router-dom"
 import { ErrorCoach } from "../../components/ErrorCoach"
 import { AllocationProgressBar, AmountCell, PaymentModeBadge } from "../../components/receipts/ReceiptPrimitives"
 import { ReceiptAllocationModal } from "../../components/receipts/ReceiptAllocationModal"
+import { AllocationReversalModal, CancelDraftModal, ReceiptReversalModal } from "../../components/receipts/ReceiptLifecycleModals"
 import { InfoBanner } from "../../components/ui/Overlays"
 import { MasterDetailPage } from "../../components/ui/Patterns"
 import { useAccess } from "../../lib/access"
 import { ApiClientError } from "../../lib/apiClient"
-import { receiptsApi, type ReceiptAuditEvent, type ReceiptDocument, type ReceiptRecord, type ReceiptReversal } from "../../lib/receipts-api"
+import { receiptsApi, type ReceiptAllocation, type ReceiptAuditEvent, type ReceiptDocument, type ReceiptRecord, type ReceiptReversal } from "../../lib/receipts-api"
 import { receiptRowActionEnabled } from "./FOReceipts"
 
 const DETAIL_TABS = [
@@ -80,6 +81,9 @@ export default function FOReceiptDetail() {
   const [revealError, setRevealError] = useState<unknown>(null)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const [allocationModalOpen, setAllocationModalOpen] = useState(false)
+  const [receiptReversalOpen, setReceiptReversalOpen] = useState(false)
+  const [cancelDraftOpen, setCancelDraftOpen] = useState(false)
+  const [allocationForReversal, setAllocationForReversal] = useState<ReceiptAllocation | null>(null)
 
   const hasPermission = useCallback((permission: string) => isSuperAdmin || Boolean(accessHasPermission?.(permission)), [accessHasPermission, isSuperAdmin])
   const receiptQuery = useQuery({ queryKey: ["receipts", "detail", id], queryFn: () => receiptsApi.get(id as string), enabled: Boolean(id), retry: false })
@@ -119,7 +123,24 @@ export default function FOReceiptDetail() {
       setAllocationModalOpen(true)
       return
     }
+    if (key === "reverse") {
+      setReceiptReversalOpen(true)
+      return
+    }
+    if (key === "cancel") {
+      setCancelDraftOpen(true)
+      return
+    }
     setActionMessage(`${actionLabel(key)} is available from this receipt. The dedicated action screen will open when that workflow is enabled for your role.`)
+  }
+
+  const refreshAfterLifecycleAction = () => {
+    if (!id) return
+    void queryClient.invalidateQueries({ queryKey: ["receipts", "detail", id] })
+    void queryClient.invalidateQueries({ queryKey: ["receipts", "detail", id, "allocations"] })
+    void queryClient.invalidateQueries({ queryKey: ["receipts", "detail", id, "reversals"] })
+    void queryClient.invalidateQueries({ queryKey: ["receipts", "detail", id, "audit"] })
+    setActiveTab("audit")
   }
 
   if (!id) return <div className="space-y-4 p-4 md:p-6"><Link to="/front-office/receipts" className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--primary)]"><ArrowLeft size={16} aria-hidden="true" />Back to receipts</Link><DetailError title="Receipt reference is missing" error={new Error("Open the receipt from the Receipts Work Queue so its reference can be loaded.")} /></div>
@@ -141,8 +162,8 @@ export default function FOReceiptDetail() {
       actions={<div className="flex flex-wrap gap-2">{actionAvailability.map((action) => <button key={action.key} type="button" className={action.tone === "primary" ? "button-primary" : action.tone === "danger" ? "inline-flex min-h-10 items-center justify-center rounded-[10px] bg-[var(--destructive)] px-3 text-sm font-bold text-white transition hover:opacity-90" : "button-secondary"} onClick={() => selectAction(action.key)}>{action.key === "print" ? <Printer size={15} aria-hidden="true" /> : action.key === "reverse" ? <RotateCcw size={15} aria-hidden="true" /> : action.key === "auto_allocate" ? <RefreshCw size={15} aria-hidden="true" /> : null}{action.label}</button>)}</div>}
     >
       <div className="space-y-5">
-        {status === "REVERSED" && <InfoBanner title="Receipt reversed"><span>{textValue(receipt.reversed_reason, "This receipt has been reversed and is no longer available for allocation.")}</span></InfoBanner>}
-        {status === "CANCELLED" && <InfoBanner title="Receipt cancelled"><span>{textValue(receipt.cancelled_reason, "This receipt has been cancelled and is no longer editable.")}</span></InfoBanner>}
+        {status === "REVERSED" && <InfoBanner title="Receipt reversed"><span>{textValue(receipt.reversed_reason, "This receipt has been reversed and is no longer available for allocation.")} Printed copies will carry a REVERSED watermark.</span></InfoBanner>}
+        {status === "CANCELLED" && <InfoBanner title="Receipt cancelled"><span>{textValue(receipt.cancelled_reason, "This receipt has been cancelled and is no longer editable.")} Printed copies will carry a CANCELLED watermark.</span></InfoBanner>}
         {actionMessage && <InfoBanner title="Action entry point"><span className="flex flex-wrap items-center gap-2">{actionMessage}<button type="button" className="font-bold text-[var(--primary)] underline-offset-2 hover:underline" onClick={() => setActionMessage(null)}>Dismiss</button></span></InfoBanner>}
         {revealError !== null && <DetailError title="Bank account could not be revealed" error={revealError} />}
 
@@ -157,7 +178,8 @@ export default function FOReceiptDetail() {
 
         <nav className="surface-card flex gap-1 overflow-x-auto p-1" aria-label="Receipt detail tabs">{DETAIL_TABS.map((tab) => <button key={tab.id} type="button" className={`whitespace-nowrap rounded-[9px] px-4 py-2.5 text-sm font-bold transition ${activeTab === tab.id ? "bg-[var(--primary)] text-[var(--primary-foreground)]" : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"}`} aria-current={activeTab === tab.id ? "page" : undefined} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}</nav>
 
-        {activeTab === "allocations" && <section className="surface-card overflow-hidden" aria-labelledby="allocations-heading"><div className="border-b px-5 py-4"><h2 id="allocations-heading" className="font-bold">Allocations</h2><p className="mt-1 text-sm text-[var(--muted-foreground)]">Commitments and source transactions receiving this payment.</p></div>{allocationsQuery.isLoading && <div className="p-6 text-sm text-[var(--muted-foreground)]" role="status">Loading allocations…</div>}{allocationsQuery.isError && <div className="p-5"><DetailError title="Allocations could not be loaded" error={allocationsQuery.error} /></div>}{!allocationsQuery.isLoading && !allocationsQuery.isError && !allocationsQuery.data?.results.length && <div className="p-5"><EmptyTab title="No allocations recorded" description="This receipt currently has no allocation rows. The next permitted action may be Allocate or Auto-Allocate." /></div>}{!allocationsQuery.isLoading && !allocationsQuery.isError && Boolean(allocationsQuery.data?.results.length) && <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><caption className="sr-only">Receipt allocations</caption><thead className="bg-[var(--muted)]/45 text-xs uppercase tracking-[0.08em] text-[var(--muted-foreground)]"><tr><th className="px-5 py-3">Target / source</th><th className="px-5 py-3">Amount</th><th className="px-5 py-3">Currency</th><th className="px-5 py-3">Exchange rate</th><th className="px-5 py-3">Status</th><th className="px-5 py-3">Action</th></tr></thead><tbody className="divide-y divide-[var(--border)]">{allocationsQuery.data?.results.map((allocation) => <tr key={allocation.id}><td className="px-5 py-3"><p className="font-semibold">{getAllocationTarget(allocation)}</p><p className="text-xs text-[var(--muted-foreground)]">{textValue(allocation.source_display)}</p></td><td className="px-5 py-3"><AmountCell amount={allocation.amount} currency={allocation.currency} /></td><td className="px-5 py-3">{allocation.currency}</td><td className="px-5 py-3">{isCrossCurrency(allocation.currency) ? textValue(allocation.exchange_rate) : "—"}</td><td className="px-5 py-3"><span className="rounded-full bg-[var(--secondary)] px-2.5 py-1 text-xs font-bold">{allocation.status}</span></td><td className="px-5 py-3">{allocation.reversed_at && <span className="text-xs text-[var(--muted-foreground)]">Reversed {formatDateTime(allocation.reversed_at)}</span>}{!allocation.reversed_at && hasPermission("front_office.receipts.reverse_allocation") && <button type="button" className="inline-flex items-center gap-1 text-xs font-bold text-[var(--primary)] hover:underline" onClick={() => setActionMessage("Allocation reversal is available from the allocation workflow.")}>Reverse allocation<ChevronRight size={13} aria-hidden="true" /></button>}</td></tr>)}</tbody></table></div>}</section>}
+        {activeTab === "allocations" && <section className="surface-card overflow-hidden" aria-labelledby="allocations-heading"><div className="border-b px-5 py-4"><h2 id="allocations-heading" className="font-bold">Allocations</h2><p className="mt-1 text-sm text-[var(--muted-foreground)]">Commitments and source transactions receiving this payment.</p></div>{allocationsQuery.isLoading && <div className="p-6 text-sm text-[var(--muted-foreground)]" role="status">Loading allocations…</div>}{allocationsQuery.isError && <div className="p-5"><DetailError title="Allocations could not be loaded" error={allocationsQuery.error} /></div>}{!allocationsQuery.isLoading && !allocationsQuery.isError && !allocationsQuery.data?.results.length && <div className="p-5"><EmptyTab title="No allocations recorded" description="This receipt currently has no allocation rows. The next permitted action may be Allocate or Auto-Allocate." /></div>}{!allocationsQuery.isLoading && !allocationsQuery.isError && Boolean(allocationsQuery.data?.results.length) && <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><caption className="sr-only">Receipt allocations</caption><thead className="bg-[var(--muted)]/45 text-xs uppercase tracking-[0.08em] text-[var(--muted-foreground)]"><tr><th className="px-5 py-3">Target / source</th><th className="px-5 py-3">Amount</th><th className="px-5 py-3">Currency</th><th className="px-5 py-3">Exchange rate</th><th className="px-5 py-3">Status</th><th className="px-5 py-3">Action</th></tr></thead><tbody className="divide-y divide-[var(--border)]">{allocationsQuery.data?.results.map((allocation) => <tr key={allocation.id}><td className="px-5 py-3"><p className="font-semibold">{getAllocationTarget(allocation)}</p><p className="text-xs text-[var(--muted-foreground)]">{textValue(allocation.source_display)}</p></td><td className="px-5 py-3"><AmountCell amount={allocation.amount} currency={allocation.currency} /></td><td className="px-5 py-3">{allocation.currency}</td><td className="px-5 py-3">{isCrossCurrency(allocation.currency) ? textValue(allocation.exchange_rate) : "—"}</td><td className="px-5 py-3"><span className="rounded-full bg-[var(--secondary)] px-2.5 py-1 text-xs font-bold">{allocation.status}</span></td><td className="px-5 py-3">{allocation.reversed_at && <span className="text-xs text-[var(--muted-foreground)]">Reversed {formatDateTime(allocation.reversed_at)}</span>}{!allocation.reversed_at && hasPermission("front_office.receipts.reverse_allocation") && <button type="button" className="inline-flex items-center gap-1 text-xs font-bold text-[var(--primary)] hover:underline" onClick={() => setAllocationForReversal(allocation)}
+>Reverse allocation<ChevronRight size={13} aria-hidden="true" /></button>}</td></tr>)}</tbody></table></div>}</section>}
 
         {activeTab === "reversals" && <section className="surface-card overflow-hidden" aria-labelledby="reversals-heading"><div className="border-b px-5 py-4"><h2 id="reversals-heading" className="font-bold">Reversal history</h2><p className="mt-1 text-sm text-[var(--muted-foreground)]">Immutable reversal records linked to this receipt.</p></div>{reversalsQuery.isLoading && <div className="p-6 text-sm text-[var(--muted-foreground)]" role="status">Loading reversals…</div>}{reversalsQuery.isError && <div className="p-5"><DetailError title="Reversal history could not be loaded" error={reversalsQuery.error} /></div>}{!reversalsQuery.isLoading && !reversalsQuery.isError && !reversalsQuery.data?.results.length && <div className="p-5"><EmptyTab title="No reversals recorded" description="No reversal has been posted for this receipt." /></div>}{!reversalsQuery.isLoading && !reversalsQuery.isError && Boolean(reversalsQuery.data?.results.length) && <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm"><caption className="sr-only">Receipt reversal history</caption><thead className="bg-[var(--muted)]/45 text-xs uppercase tracking-[0.08em] text-[var(--muted-foreground)]"><tr><th className="px-5 py-3">Reversal number</th><th className="px-5 py-3">Reason</th><th className="px-5 py-3">Created by / at</th><th className="px-5 py-3">Source channel</th></tr></thead><tbody className="divide-y divide-[var(--border)]">{reversalsQuery.data?.results.map((reversal: ReceiptReversal) => <tr key={reversal.id}><td className="px-5 py-3 font-semibold">{reversal.reversal_number}</td><td className="px-5 py-3">{reversal.reason}</td><td className="px-5 py-3">{reversal.created_by_display} · {formatDateTime(reversal.created_at)}</td><td className="px-5 py-3">{textValue(reversal.source_channel)}</td></tr>)}</tbody></table></div>}</section>}
 
@@ -170,5 +192,8 @@ export default function FOReceiptDetail() {
       void queryClient.invalidateQueries({ queryKey: ["receipts", "detail", id] })
       void queryClient.invalidateQueries({ queryKey: ["receipts", "detail", id, "allocations"] })
     }} />
+    <ReceiptReversalModal open={receiptReversalOpen} receipt={receipt} onClose={() => setReceiptReversalOpen(false)} onSuccess={() => refreshAfterLifecycleAction()} />
+    <CancelDraftModal open={cancelDraftOpen} receipt={receipt} onClose={() => setCancelDraftOpen(false)} onSuccess={() => refreshAfterLifecycleAction()} />
+    <AllocationReversalModal open={Boolean(allocationForReversal)} receipt={receipt} allocation={allocationForReversal} onClose={() => setAllocationForReversal(null)} onSuccess={() => refreshAfterLifecycleAction()} />
   </div>
 }
