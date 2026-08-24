@@ -37,6 +37,9 @@ export interface ReceiptRecord {
   posted_by_display?: string | null
   posted_at?: string | null
   bank_account_display?: string | null
+  bank_account_id?: string | null
+  source_reference?: string | null
+  source_reference_display?: string | null
   allowed_actions?: string[]
   amount_in_words?: string
   reversed_reason?: string | null
@@ -98,6 +101,26 @@ export interface ReceiptAllocation {
   exchange_rate?: string | null
   status: string
   reversed_at?: string | null
+}
+
+export interface ReceiptReversal {
+  id: string
+  reversal_number: string
+  reason: string
+  created_by_display: string
+  created_at: string
+  source_channel?: string | null
+}
+
+export interface ReceiptAuditEvent {
+  id: string
+  action: string
+  actor_display: string
+  occurred_at: string
+  before_summary?: string | null
+  after_summary?: string | null
+  reason?: string | null
+  source_channel?: string | null
 }
 
 export interface ReceiptImportBatch {
@@ -181,6 +204,10 @@ export const receiptsApi = {
   create: (payload: ReceiptWritePayload, idempotencyKey: string = crypto.randomUUID()) => readJsonRequest<ReceiptRecord>(`${RECEIPTS_BASE}/`, jsonOptions("POST", payload, { "X-Idempotency-Key": idempotencyKey })),
   patchDraft: (id: string, payload: Partial<ReceiptWritePayload>, idempotencyKey: string = crypto.randomUUID()) => readJsonRequest<ReceiptRecord>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/`, jsonOptions("PATCH", payload, { "X-Idempotency-Key": idempotencyKey })),
   post: (id: string, idempotencyKey: string = crypto.randomUUID()) => readJsonRequest<ReceiptRecord>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/post/`, jsonOptions("POST", undefined, { "X-Idempotency-Key": idempotencyKey })),
+  revealBankAccount: (id: string) => readJsonRequest<{ bank_account_display: string }>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/bank-account/`),
+  allocations: (id: string) => readJsonRequest<Paginated<ReceiptAllocation>>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/allocations/`),
+  reversals: (id: string) => readJsonRequest<Paginated<ReceiptReversal>>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/reversals/`),
+  auditTimeline: (id: string) => readJsonRequest<Paginated<ReceiptAuditEvent>>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/audit-timeline/`),
   allocationOptions: (id: string, query: { search?: string } = {}) => readJsonRequest<Paginated<ReceiptAllocationOption>>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/allocation-options/${toQuery(query)}`),
   allocate: (id: string, payload: AllocationPayload) => readJsonRequest<{ receipt: ReceiptRecord; allocations: ReceiptAllocation[] }>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/allocate/`, jsonOptions("POST", payload)),
   autoAllocate: (id: string) => readJsonRequest<{ receipt: ReceiptRecord; allocations: ReceiptAllocation[]; remaining_unallocated_amount: string }>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/auto-allocate/`, jsonOptions("POST")),

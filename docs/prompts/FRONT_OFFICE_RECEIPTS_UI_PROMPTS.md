@@ -120,7 +120,7 @@ FINAL OUTPUT: form behavior, rule mapping, tests, commit hash, pushed branch.
 
 ---
 
-## [ ] Prompt 4 — Receipt Detail Page with Tabs and Audit Timeline
+## [x] Prompt 4 — Receipt Detail Page with Tabs and Audit Timeline
 
 ```text
 You are a senior frontend engineer. Continue the ZIC Receipts UI. Execute ONLY Prompt 4.

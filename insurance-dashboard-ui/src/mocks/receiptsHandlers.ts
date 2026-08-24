@@ -126,6 +126,33 @@ export const receiptsHandlers = [
     if (!form.get("file")) return error(400, "RECEIPT_IMPORT_ROW_INVALID", "Attach a CSV file before committing an import.", ["Upload the completed receipt CSV template."], undefined, { file: ["This file is required."] })
     return data({ dry_run: false, imported: 2, created: 2, errors: [] }, 201)
   }),
+  http.get(`*${RECEIPTS_BASE}/:id/audit-timeline/`, ({ params }) => {
+    const receipt = findReceipt(String(params.id))
+    if (!receipt) return error(404, "RECEIPT_NOT_FOUND", "The receipt could not be found.", ["Check the receipt number and try again."])
+    return data(page([
+      { id: "audit-create-1", action: "create", actor_display: receipt.created_by_display, occurred_at: "2026-08-24T08:00:00Z", before_summary: null, after_summary: "Draft receipt created", reason: "Payment captured at front office", source_channel: "UI" },
+      { id: "audit-post-1", action: "post", actor_display: receipt.posted_by_display ?? "Sultan Admin", occurred_at: "2026-08-24T08:30:00Z", before_summary: "DRAFT", after_summary: "POSTED", reason: "Payment verified", source_channel: "UI" },
+      { id: "audit-allocate-1", action: "allocate", actor_display: "Sultan Admin", occurred_at: "2026-08-24T08:45:00Z", before_summary: "TZS 150,000 unallocated", after_summary: "TZS 50,000 allocated", reason: "First premium commitment selected", source_channel: "UI" },
+      { id: "audit-reverse-1", action: "reverse", actor_display: "Sultan Admin", occurred_at: "2026-08-24T09:00:00Z", before_summary: "POSTED", after_summary: "REVERSED", reason: "Correction requested", source_channel: "UI" },
+      { id: "audit-cancel-1", action: "cancel", actor_display: "Sultan Admin", occurred_at: "2026-08-24T09:15:00Z", before_summary: "DRAFT", after_summary: "CANCELLED", reason: "Duplicate draft", source_channel: "UI" },
+      { id: "audit-print-1", action: "print", actor_display: "Sultan Admin", occurred_at: "2026-08-24T09:30:00Z", before_summary: "No document", after_summary: "Official Receipt v1 generated", reason: "Receipt print requested", source_channel: "UI" },
+    ], new URL("http://mock.local/?page=1&page_size=25")))
+  }),
+  http.get(`*${RECEIPTS_BASE}/:id/reversals/`, ({ params, request }) => {
+    const receipt = findReceipt(String(params.id))
+    if (!receipt) return error(404, "RECEIPT_NOT_FOUND", "The receipt could not be found.", ["Check the receipt number and try again."])
+    const reversals = receipt.status === "REVERSED" ? [{ id: "reversal-1", reversal_number: "REV-2026-000001", reason: receipt.reversed_reason ?? "Correction requested", created_by_display: "Sultan Admin", created_at: "2026-08-24T09:00:00Z", source_channel: "UI" }] : []
+    return data(page(reversals, new URL(request.url)))
+  }),
+  http.get(`*${RECEIPTS_BASE}/:id/allocations/`, ({ params, request }) => {
+    const receipt = findReceipt(String(params.id))
+    if (!receipt) return error(404, "RECEIPT_NOT_FOUND", "The receipt could not be found.", ["Check the receipt number and try again."])
+    return data(page([{ id: "allocation-1", target_display: "OLC-2026-000001 — OL Proposal OLP-2026-000001", commitment_number: "OLC-2026-000001", source_display: "OL Proposal OLP-2026-000001", amount: "50000.00", currency: receipt.currency, exchange_rate: null, status: "ACTIVE", reversed_at: null }], new URL(request.url)))
+  }),
+  http.get(`*${RECEIPTS_BASE}/:id/bank-account/`, ({ params }) => {
+    const receipt = findReceipt(String(params.id))
+    return receipt ? data({ bank_account_display: "CRDB Zanzibar Operations · Account ending 0042" }) : error(404, "RECEIPT_NOT_FOUND", "The receipt could not be found.", ["Check the receipt number and try again."])
+  }),
   http.get(`*${RECEIPTS_BASE}/:id/documents/`, ({ params }) => {
     const receipt = findReceipt(String(params.id))
     return receipt ? data(page([documentFor(receipt)], new URL("http://mock.local/?page=1&page_size=25"))) : error(404, "RECEIPT_NOT_FOUND", "The receipt could not be found.", ["Check the receipt number and try again."])

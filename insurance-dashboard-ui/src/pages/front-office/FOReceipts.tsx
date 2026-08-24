@@ -164,6 +164,7 @@ export default function FOReceipts() {
     tone: action.tone,
     onSelect: (row) => {
       if (action.key === "view") navigate(`/front-office/receipts/${row.id}`)
+      else if (action.key === "edit" || action.key === "post") navigate(`/front-office/receipts/${row.id}/edit?action=${encodeURIComponent(action.key)}`)
       else navigate(`/front-office/receipts/${row.id}?action=${encodeURIComponent(action.key)}`)
     },
   })), [navigate])

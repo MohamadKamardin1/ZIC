@@ -227,7 +227,7 @@ export default function FOReceiptForm() {
         navigate(`/front-office/receipts/${posted.id}`)
       } else {
         toast({ title: "Receipt draft saved", message: `${saved.receipt_number} is available in the Receipts Work Queue.`, tone: "success" })
-        navigate(`/front-office/receipts/${saved.id}?action=edit`)
+        navigate(`/front-office/receipts/${saved.id}/edit?action=edit`)
       }
     } catch (error) {
       setSubmitError(error)
