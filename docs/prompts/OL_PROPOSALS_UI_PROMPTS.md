@@ -11,7 +11,7 @@ Kits in use: design system, DataTable, SmartSelect, ErrorCoach, ReasonField, Con
 - [x] Prompt 6 — Beneficiaries Management Tab
 - [x] Prompt 7 — Documents Requirements Workspace and Health & Underwriting Tab
 - [x] Prompt 8 — Payment Readiness, First Premium, Policy Conversion, Cancel and Print
-- [ ] Prompt 9 — [pending prompt text]
+- [x] Prompt 9 — Partner Portal Proposals, Dashboard Cards and Notifications
 - [ ] Prompt 10 — [pending prompt text]
 
 ---
@@ -243,3 +243,28 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: BR-03 gating behavior, cancel/print flows, generated documents tab, tests, commit hash, pushed branch.
+
+## Prompt 9/10 — Partner Portal Proposals, Dashboard Cards and Notifications
+
+You are a senior frontend engineer. Continue the ZIC Proposals UI. Execute ONLY Prompt 9.
+
+MANDATORY RULES:
+- Portal is strictly read-only and partner-scoped; errors sanitized.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. Partner portal route /portal/proposals: read-only list of own proposals (number, product, status, premium, expiry); read-only detail limited to Overview, First Premium status, and Documents view; no action buttons; info banner "For changes, contact your ZIC representative or raise a ticket." with Raise Ticket shortcut.
+2. Staff dashboard cards: Awaiting First Premium (count + amount), Expiring in 7 Days, Pending Underwriting, each deep-linking to the filtered proposals list via ?preset= URL params.
+3. Notification center entries for ProposalPaymentReady, ProposalConverted, ProposalExpiringSoon with deep links (module feed merged into the bell alongside the dashboard inbox).
+
+TESTS:
+- Portal user sees only own proposals and no actions
+- Portal errors sanitized (no internal codes leakage beyond coach-safe shape)
+- Dashboard deep links apply filters
+- Notification deep links navigate
+
+GIT:
+- commit: "feat(web): proposals portal view dashboard and notifications"
+- push; tick checkbox
+
+FINAL OUTPUT: portal and dashboard behavior, tests, commit hash, pushed branch.
