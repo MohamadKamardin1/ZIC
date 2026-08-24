@@ -168,15 +168,16 @@ export const receiptsHandlers = [
   }),
   http.post(`*${RECEIPTS_BASE}/:id/allocate/`, async ({ params, request }) => {
     const receipt = findReceipt(String(params.id))
-    const body = await request.json() as { allocations?: Array<{ amount?: string; exchange_rate?: string }> }
+    const body = await request.json() as { allocations?: Array<{ commitment?: string; amount?: string; exchange_rate?: string }> }
     const total = (body.allocations ?? []).reduce((sum, row) => sum + Number(row.amount ?? 0), 0)
     if (!receipt) return error(404, "RECEIPT_NOT_FOUND", "The receipt could not be found.", ["Check the receipt number and try again."])
     if (total > Number(receipt.unallocated_amount)) return error(422, "RECEIPT_OVERALLOCATION", "The allocation total exceeds the unallocated receipt balance.", ["Reduce the allocation total.", "Confirm each commitment balance before saving."])
-    return data({ receipt: { ...receipt, allocated_amount: String(Number(receipt.allocated_amount) + total), unallocated_amount: String(Number(receipt.unallocated_amount) - total) }, allocations: body.allocations ?? [] })
+    const firstPremiumCommitment = (body.allocations ?? []).find((allocation) => allocation.commitment === "commitment-1" && Number(allocation.amount ?? 0) >= 50000)
+    return data({ receipt: { ...receipt, allocated_amount: String(Number(receipt.allocated_amount) + total), unallocated_amount: String(Number(receipt.unallocated_amount) - total) }, allocations: body.allocations ?? [], remaining_unallocated_amount: String(Number(receipt.unallocated_amount) - total), ...(firstPremiumCommitment ? { first_premium_completed: true, first_premium_proposal_number: "OLP-2026-000001" } : {}) })
   }),
   http.post(`*${RECEIPTS_BASE}/:id/auto-allocate/`, ({ params }) => {
     const receipt = findReceipt(String(params.id))
-    return receipt ? data({ receipt: { ...receipt, allocated_amount: receipt.receipt_amount, unallocated_amount: "0.00", status: "ALLOCATED" }, allocations: [{ id: "allocation-1", target_display: "OLC-2026-000001 — OL Proposal OLP-2026-000001", amount: receipt.unallocated_amount, currency: receipt.currency, status: "ACTIVE" }], remaining_unallocated_amount: "0.00" }) : error(404, "RECEIPT_NOT_FOUND", "The receipt could not be found.", ["Check the receipt number and try again."])
+    return receipt ? data({ receipt: { ...receipt, allocated_amount: receipt.receipt_amount, unallocated_amount: "0.00", status: "ALLOCATED" }, allocations: [{ id: "allocation-1", target_display: "OLC-2026-000001 — OL Proposal OLP-2026-000001", amount: receipt.unallocated_amount, currency: receipt.currency, status: "ACTIVE", is_first_premium: true, proposal_number: "OLP-2026-000001" }], remaining_unallocated_amount: "0.00", first_premium_completed: true, first_premium_proposal_number: "OLP-2026-000001" }) : error(404, "RECEIPT_NOT_FOUND", "The receipt could not be found.", ["Check the receipt number and try again."])
   }),
   http.post(`*${RECEIPTS_BASE}/:id/post/`, ({ params }) => {
     const receipt = findReceipt(String(params.id))

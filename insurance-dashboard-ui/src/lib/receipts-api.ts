@@ -177,6 +177,14 @@ export interface AllocationPayload {
   allocations: Array<{ commitment: string; amount: string; exchange_rate?: string }>
 }
 
+export interface ReceiptAllocationResult {
+  receipt: ReceiptRecord
+  allocations: Array<{ id?: string; target_display?: string; commitment?: string; amount: string; currency?: string; exchange_rate?: string | null; is_first_premium?: boolean; proposal_number?: string | null }>
+  remaining_unallocated_amount: string
+  first_premium_completed?: boolean
+  first_premium_proposal_number?: string | null
+}
+
 export interface ActionPayload {
   reason?: string
 }
@@ -209,8 +217,8 @@ export const receiptsApi = {
   reversals: (id: string) => readJsonRequest<Paginated<ReceiptReversal>>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/reversals/`),
   auditTimeline: (id: string) => readJsonRequest<Paginated<ReceiptAuditEvent>>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/audit-timeline/`),
   allocationOptions: (id: string, query: { search?: string } = {}) => readJsonRequest<Paginated<ReceiptAllocationOption>>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/allocation-options/${toQuery(query)}`),
-  allocate: (id: string, payload: AllocationPayload) => readJsonRequest<{ receipt: ReceiptRecord; allocations: ReceiptAllocation[] }>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/allocate/`, jsonOptions("POST", payload)),
-  autoAllocate: (id: string) => readJsonRequest<{ receipt: ReceiptRecord; allocations: ReceiptAllocation[]; remaining_unallocated_amount: string }>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/auto-allocate/`, jsonOptions("POST")),
+  allocate: (id: string, payload: AllocationPayload) => readJsonRequest<ReceiptAllocationResult>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/allocate/`, jsonOptions("POST", payload)),
+  autoAllocate: (id: string) => readJsonRequest<ReceiptAllocationResult>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/auto-allocate/`, jsonOptions("POST")),
   reverse: (id: string, payload: ActionPayload) => readJsonRequest<ReceiptRecord>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/reverse/`, jsonOptions("POST", payload)),
   reverseAllocation: (id: string, allocationId: string, payload: ActionPayload) => readJsonRequest<ReceiptAllocation>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/allocations/${encodeURIComponent(allocationId)}/reverse/`, jsonOptions("POST", payload)),
   cancel: (id: string, payload: ActionPayload) => readJsonRequest<ReceiptRecord>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/cancel/`, jsonOptions("POST", payload)),

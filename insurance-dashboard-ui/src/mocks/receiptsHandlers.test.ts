@@ -49,6 +49,14 @@ describe("receipts MSW contract", () => {
     expect((await postResponse.json()).data).toMatchObject({ id: created.id, status: "POSTED" })
   })
 
+  it("returns an oldest-first auto-allocation summary with first-premium metadata", async () => {
+    const response = await fetch("http://localhost/api/v1/front-office/receipts/receipt-demo-1/auto-allocate/", { method: "POST" })
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.data).toMatchObject({ remaining_unallocated_amount: "0.00", first_premium_completed: true, first_premium_proposal_number: "OLP-2026-000001", receipt: { status: "ALLOCATED" } })
+    expect(body.data.allocations[0]).toMatchObject({ is_first_premium: true, proposal_number: "OLP-2026-000001" })
+  })
+
   it("returns the structured teachable over-allocation error", async () => {
     const response = await fetch("http://localhost/api/v1/front-office/receipts/receipt-demo-1/allocate/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ allocations: [{ commitment: "commitment-1", amount: "999999.00" }] }) })
     expect(response.status).toBe(422)

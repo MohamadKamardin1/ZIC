@@ -1,9 +1,10 @@
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowLeft, ChevronRight, Download, Eye, EyeOff, FileText, LockKeyhole, Printer, RefreshCw, RotateCcw, ShieldCheck } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 import { ErrorCoach } from "../../components/ErrorCoach"
 import { AllocationProgressBar, AmountCell, PaymentModeBadge } from "../../components/receipts/ReceiptPrimitives"
+import { ReceiptAllocationModal } from "../../components/receipts/ReceiptAllocationModal"
 import { InfoBanner } from "../../components/ui/Overlays"
 import { MasterDetailPage } from "../../components/ui/Patterns"
 import { useAccess } from "../../lib/access"
@@ -71,12 +72,14 @@ function DetailError({ title, error }: { title: string; error: unknown }) {
 export default function FOReceiptDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const { isSuperAdmin, hasPermission: accessHasPermission } = useAccess()
   const [activeTab, setActiveTab] = useState<DetailTab>("allocations")
   const [accountRevealed, setAccountRevealed] = useState(false)
   const [revealedAccount, setRevealedAccount] = useState("")
   const [revealError, setRevealError] = useState<unknown>(null)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
+  const [allocationModalOpen, setAllocationModalOpen] = useState(false)
 
   const hasPermission = useCallback((permission: string) => isSuperAdmin || Boolean(accessHasPermission?.(permission)), [accessHasPermission, isSuperAdmin])
   const receiptQuery = useQuery({ queryKey: ["receipts", "detail", id], queryFn: () => receiptsApi.get(id as string), enabled: Boolean(id), retry: false })
@@ -109,7 +112,11 @@ export default function FOReceiptDetail() {
   const selectAction = (key: string) => {
     if (!id) return
     if (key === "edit" || key === "post") {
-      navigate(`/front-office/receipts/${id}?action=${key}`)
+      navigate(`/front-office/receipts/${id}/edit?action=${key}`)
+      return
+    }
+    if (key === "allocate" || key === "auto_allocate") {
+      setAllocationModalOpen(true)
       return
     }
     setActionMessage(`${actionLabel(key)} is available from this receipt. The dedicated action screen will open when that workflow is enabled for your role.`)
@@ -159,5 +166,9 @@ export default function FOReceiptDetail() {
         {activeTab === "audit" && <section className="surface-card p-5" aria-labelledby="audit-heading"><div className="border-b pb-4"><h2 id="audit-heading" className="font-bold">Audit Timeline</h2><p className="mt-1 text-sm text-[var(--muted-foreground)]">Every receipt lifecycle event is shown with its actor, source channel, reason, and before/after summary.</p></div>{auditQuery.isLoading && <div className="py-6 text-sm text-[var(--muted-foreground)]" role="status">Loading audit timeline…</div>}{auditQuery.isError && <div className="py-5"><DetailError title="Audit timeline could not be loaded" error={auditQuery.error} /></div>}{!auditQuery.isLoading && !auditQuery.isError && !auditQuery.data?.results.length && <div className="pt-5"><EmptyTab title="No audit events returned" description="The service did not return lifecycle history for this receipt." /></div>}{!auditQuery.isLoading && !auditQuery.isError && Boolean(auditQuery.data?.results.length) && <ol className="mt-5 space-y-5">{auditQuery.data?.results.map((event: ReceiptAuditEvent) => <li key={event.id} className="relative pl-8"><span className="absolute left-0 top-1.5 h-3 w-3 rounded-full bg-[var(--primary)] ring-4 ring-[var(--primary)]/10" aria-hidden="true" /><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-bold">{actionLabel(event.action)}</p><p className="mt-1 text-xs text-[var(--muted-foreground)]">{event.actor_display} · {formatDateTime(event.occurred_at)}</p></div><span className="rounded-full bg-[var(--secondary)] px-2.5 py-1 text-xs font-bold">{textValue(event.source_channel)}</span></div><div className="mt-3 grid gap-3 md:grid-cols-2"><div className="rounded-[9px] border border-[var(--border)] bg-[var(--muted)]/20 p-3"><p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--muted-foreground)]">Before</p><p className="mt-1 text-sm">{textValue(event.before_summary, "No prior state")}</p></div><div className="rounded-[9px] border border-[var(--border)] bg-[var(--muted)]/20 p-3"><p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--muted-foreground)]">After</p><p className="mt-1 text-sm">{textValue(event.after_summary, "No after-state summary")}</p></div></div>{event.reason && <p className="mt-2 text-sm text-[var(--muted-foreground)]"><span className="font-semibold">Reason:</span> {event.reason}</p>}</li>)}</ol>}</section>}
       </div>
     </MasterDetailPage>
+    <ReceiptAllocationModal open={allocationModalOpen} receipt={receipt} onClose={() => setAllocationModalOpen(false)} onSuccess={() => {
+      void queryClient.invalidateQueries({ queryKey: ["receipts", "detail", id] })
+      void queryClient.invalidateQueries({ queryKey: ["receipts", "detail", id, "allocations"] })
+    }} />
   </div>
 }

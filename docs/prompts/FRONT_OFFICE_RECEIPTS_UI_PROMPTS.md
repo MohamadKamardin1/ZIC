@@ -154,7 +154,7 @@ FINAL OUTPUT: page structure, tests, commit hash, pushed branch.
 
 ---
 
-## [ ] Prompt 5 — Allocation and Auto-Allocation UI (First Premium Aware)
+## [x] Prompt 5 — Allocation and Auto-Allocation UI (First Premium Aware)
 
 ```text
 You are a senior frontend engineer. Continue the ZIC Receipts UI. Execute ONLY Prompt 5.
