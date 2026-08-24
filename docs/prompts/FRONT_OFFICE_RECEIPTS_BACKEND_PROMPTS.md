@@ -6,7 +6,7 @@
 - [x] Prompt 4 — Implement Receipt Allocation to OL Commitments & First Premium
 - [x] Prompt 5 — Implement Multi-Currency Receipt & Allocation Behavior
 - [x] Prompt 6 — Implement Receipt Reversal, Allocation Reversal & Draft Cancellation
-- [ ] Prompt 7 — Implement Receipt List, Detail, Work Queue & Export APIs
+- [x] Prompt 7 — Implement Receipt List, Detail, Work Queue & Export APIs
 - [ ] Prompt 8 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
 - [ ] Prompt 9 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
 - [ ] Prompt 10 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
