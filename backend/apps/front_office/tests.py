@@ -33,7 +33,7 @@ class FrontOfficeTests(TestCase):
         )
 
     def test_list_receipts(self):
-        response = self.client.get("/api/v1/front-office/receipts/")
+        response = self.client.get("/api/v1/front-office/legacy/receipts/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         # Checking actual length since this tests the model setup properly
         # Django Rest Framework usually paginates, check results or directly if no pagination

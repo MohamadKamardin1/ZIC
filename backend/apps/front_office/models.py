@@ -106,3 +106,13 @@ class FOParameter(models.Model):
 
     def __str__(self):
         return f"{self.key}: {self.value}"
+
+
+# Front Office Receipts bounded context (see apps.front_office.receipts).
+from apps.front_office.receipts.models import (  # noqa: E402,F401
+    Receipt,
+    ReceiptAllocation,
+    ReceiptDocument,
+    ReceiptReversal,
+    ReceiptStatusHistory,
+)

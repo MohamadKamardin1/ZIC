@@ -1,0 +1,187 @@
+# ZIC Front Office Receipts — Design
+
+Authoritative design for the Front Office Receipts bounded context (Django app
+`front_office` → module `apps.front_office.receipts`). This document is the
+`doc_ref` cited by every structured error raised from the module.
+
+## 1. The receipt concept
+
+A receipt is the front-office write path for premium collections. It records
+*who paid, when, how much, in what currency, by what instrument, against which
+source record*, and it carries the full lifecycle of that collection until the
+money is allocated and the record is closed.
+
+```
+DRAFT -> POSTED -> PARTIALLY_ALLOCATED -> FULLY_ALLOCATED
+   |         |                                  |
+   +-- CANCELLED   +----------------------------+-- REVERSED
+```
+
+Status machine rules:
+
+- **DRAFT** — created from a quotation/proposal or manually. Fully editable.
+  A draft has never touched the money trail.
+- **POSTED** — the collection is confirmed (cash counted, bank credited).
+  Amount fields are locked; allocations may begin.
+- **PARTIALLY_ALLOCATED** — at least one allocation exists but money remains.
+- **FULLY_ALLOCATED** — every shilling is allocated; the record is closed.
+- **CANCELLED** — only from DRAFT, before any money is confirmed.
+- **REVERSED** — from any posted state, via a first-class reversal record.
+
+Amount invariants are enforced in the model and again at the database level:
+`receipt_amount > 0`, `exchange_rate > 0`, `allocated_amount >= 0`,
+`unallocated_amount >= 0`, and `unallocated = receipt - allocated` is recomputed
+on every save.
+
+## 2. Identities and naming
+
+- `receipt_number` (e.g. `RCT-2026-000123`) is the unique human identifier
+  shown in every API response, list, and notification — **never** the UUID.
+- `idempotency_key` guards duplicate submission of the same financial event;
+  a repeated key returns the existing receipt instead of creating a duplicate.
+- `partner_name_snapshot`, `branch_name_snapshot`, and `bank_account_snapshot`
+  freeze the name at capture time so history survives later renames.
+
+## 3. First premium flow
+
+The primary business driver is the first premium of an OL proposal.
+
+1. The OL Proposals module signals that a first premium is due (via the
+   proposals-receipts seam — see section 10).
+2. Front Office creates a **DRAFT** receipt with
+   `source_module = OL_PROPOSAL`, `source_reference_type = PROPOSAL_NUMBER`,
+   and `source_reference_id = <proposal_number>`. The model validates that the
+   referenced proposal exists.
+3. Money is confirmed; the receipt is **POSTED** (prompt 3 in the series).
+4. An allocation is created against the matching OL Commitment
+   (`target_type = OL_COMMITMENT`). The allocation write path owns the
+   OL Commitment accounting (the proposals module only reads).
+5. When the first premium allocation lands, the module emits
+   `FirstPremiumReceived` into the durable outbox so proposals, policies,
+   reports, and the portal can reconcile asynchronously.
+
+## 4. Allocation flow
+
+- An allocation applies a portion of a receipt to a target
+  (commitment, proposal, policy, or manual).
+- `ReceiptAllocation.allocation_status` is `ACTIVE` by default; `allocated_amount`
+  is the sum of active non-reversal allocations.
+- Allocating more than the `unallocated_amount` raises `RECEIPT_OVERALLOCATION`.
+- A currency mismatch between payment and target raises `RECEIPT_CURRENCY_MISMATCH`.
+- Each allocation records `allocated_by`, `allocated_at`, and `source_channel`,
+  and the receipt emits `ReceiptAllocated` (and `ReceiptFullyAllocated` when the
+  balance reaches zero).
+
+## 5. Reversal flow
+
+- Reversals are first-class, auditable records (`ReceiptReversal`), not a status
+  flag on the receipt.
+- A reversal carries `reason`, `reversal_number`, a frozen
+  `reversed_allocations` snapshot, and the acting user.
+- Each reversed allocation is voided and linked via `reversal_of` to its original
+  row, keeping the money trail fully reconstructible.
+- Only a posted/allocated receipt can be reversed; an already-reversed receipt
+  raises `RECEIPT_ALREADY_REVERSED`. The receipt emits `ReceiptReversed`.
+
+## 6. Multi-currency assumptions
+
+- The functional currency is **TZS** (parameter `RECEIPT_DEFAULT_CURRENCY`).
+- Receipts may be captured in foreign currency with an `exchange_rate` to the
+  functional currency (default `1.000000`).
+- Amounts are stored in the receipt currency; conversion happens at allocation
+  and reporting time using the stored rate.
+- A payment in a currency different from the target raises
+  `RECEIPT_CURRENCY_MISMATCH` unless a valid exchange rate is supplied.
+
+## 7. Payment mode assumptions
+
+- Payment modes are parameterized (`RECEIPT_PAYMENT_MODES`); the resolvers
+  return the configured list with a documented fallback:
+  `CASH, BANK_TRANSFER, CHEQUE, M-PESA, MOBILE_MONEY, OTHER`.
+- Every API response renders `payment_mode_label` (a name), never a bare code.
+- The payment instrument references (`payment_reference`, `bank_account`) are
+  snapshotted at capture time.
+
+## 8. Future seams (designed now, wired later)
+
+### 8.1 Government control number (e.g. TRA)
+
+`ReceiptDocument.document_number` is reserved for the government control
+number. When the TRA integration is active, posting (prompt 3) will mint a
+control number, persist it as a `ReceiptDocument` of type `RECEIPT`, and make
+the receipt printable only when the control number exists.
+
+### 8.2 Bank / payment gateway
+
+`bank_account` and `payment_reference` already model the instrument. A gateway
+integration will bind a `POSTED` receipt to a settlement reference and reconcile
+against the bank statement; no schema change is expected.
+
+### 8.3 ERP / GL
+
+Receipts are posted to the general ledger asynchronously through the outbox
+(`ReceiptPosted`, `FirstPremiumReceived`). A GL adapter will consume these
+events and map to ledger journals; receipts never write to the ledger directly.
+
+## 9. Integration with OL Commitments
+
+- The receipts module **owns** the allocation writes against an OL Commitment
+  (the `target_id` on an `OL_COMMITMENT` allocation is the commitment number).
+- Allocating money updates the commitment's paid balance and status through the
+  allocation service (prompt 5 in the series).
+- The commitment is read-only from the OL Proposals side of this seam.
+
+## 10. Integration with OL Proposals (the receipts seam)
+
+Full contract lives in `docs/OL_PROPOSALS_RECEIPTS_SEAM.md`. Summary:
+
+- Front Office Receipts owns the receipt lifecycle and the allocation writes.
+- OL Proposals consumes receipt state read-only through `first_premium_posted`
+  and `first_premium_status`.
+- Material transitions emit durable outbox events; `FirstPremiumReceived`
+  carries the `PremiumReceived` payload shape so proposals/policies/reports can
+  reconcile without coupling to receipt internals.
+
+## 11. Domain events (durable outbox)
+
+| Event | Emitted when |
+| --- | --- |
+| `ReceiptCreated` | A draft receipt is created |
+| `ReceiptPosted` | Money confirmed; receipt posted |
+| `ReceiptAllocated` | An allocation is applied |
+| `ReceiptFullyAllocated` | Unallocated balance reaches zero |
+| `ReceiptReversed` | A posted receipt is reversed |
+| `ReceiptCancelled` | A draft receipt is cancelled |
+| `FirstPremiumReceived` | First premium of an OL proposal is allocated |
+
+## 12. Permissions
+
+Module `front_office.receipts`, actions
+`view, create, post, allocate, reverse, cancel, print, import, configure`.
+Seeded by `seed_receipt_permissions` together with role groups
+`RECEIPT_VIEWER`, `RECEIPT_HANDLER`, `RECEIPT_ADMINISTRATOR`.
+
+## 13. Structured errors (Error Coach shape)
+
+All module faults render the platform structured shape with a registry code and
+resolution steps. Registry (10 codes):
+
+`RECEIPT_NOT_FOUND`, `RECEIPT_INVALID_STATUS`, `RECEIPT_AMOUNT_INVALID`,
+`RECEIPT_ALLOCATION_INVALID`, `RECEIPT_OVERALLOCATION`, `RECEIPT_ALREADY_POSTED`,
+`RECEIPT_ALREADY_REVERSED`, `RECEIPT_CURRENCY_MISMATCH`,
+`RECEIPT_PERMISSION_DENIED`, `RECEIPT_PARAMETER_MISSING`.
+
+## 14. Prompt 1 scope
+
+Implemented and tested in this prompt:
+
+- Domain models: `Receipt`, `ReceiptAllocation`, `ReceiptReversal`,
+  `ReceiptDocument`, `ReceiptStatusHistory`.
+- Permissions registration (9 codes + role groups).
+- Durable outbox events (7 types).
+- Central audit via signal receivers for all five models.
+- Parameterized resolvers (currency, payment modes, source modules, numbering).
+- API skeleton: list, create draft, retrieve, update draft, options.
+- Structured error registry with the 10 codes above.
+- Tests: model creation, amount computations, status enum behavior, permissions
+  registered, structured error shape, audit on create/update.
