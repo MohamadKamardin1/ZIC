@@ -1,7 +1,7 @@
 # FRONT OFFICE RECEIPTS BACKEND — PROMPT SERIES (12 prompts)
 
 - [x] Prompt 1 — Save Prompt Series + Front Office Receipts Domain Foundation
-- [ ] Prompt 2 — Implement Receipt Parameters, Numbering & Reference Data
+- [x] Prompt 2 — Implement Receipt Parameters, Numbering & Reference Data
 - [ ] Prompt 3 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
 - [ ] Prompt 4 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
 - [ ] Prompt 5 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
