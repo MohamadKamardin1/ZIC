@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { render, screen, waitFor } from "@testing-library/react"
+import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import { MemoryRouter } from "react-router-dom"
 import { describe, expect, it, vi, beforeEach } from "vitest"
 import { Sidebar } from "./Sidebar"
@@ -51,6 +51,18 @@ describe("Sidebar access rendering", () => {
     await waitFor(() => expect(screen.getByText("Quotations")).toBeInTheDocument())
     expect(screen.queryByText("Partner On-boarding")).not.toBeInTheDocument()
     expect(screen.queryByText("Group Life")).not.toBeInTheDocument()
+  })
+
+  it("gates Front Office Receipts by the exact view permission", async () => {
+    mockedFetchAccessMetadata.mockResolvedValue({ visibleModules: ["front_office"], permissions: [], groups: [] })
+    renderSidebar()
+    await waitFor(() => expect(screen.getByText("Front Office")).toBeInTheDocument())
+    expect(screen.queryByText("Receipts")).not.toBeInTheDocument()
+
+    cleanup()
+    mockedFetchAccessMetadata.mockResolvedValue({ visibleModules: ["front_office"], permissions: [{ module: "front_office.receipts", action: "view" }], groups: [] })
+    renderSidebar()
+    await waitFor(() => expect(screen.getByText("Receipts")).toBeInTheDocument())
   })
 
   it("shows Ordinary Life for a SUPER_ADMIN when access metadata is unavailable", async () => {

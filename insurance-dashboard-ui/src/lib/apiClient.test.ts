@@ -45,6 +45,20 @@ describe("api client", () => {
     })
   })
 
+  it("normalizes structured receipts errors with resolution steps and deep links", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ errorCode: "RECEIPT_OVERALLOCATION", message: "The allocation total exceeds the unallocated receipt balance.", resolutionSteps: ["Reduce the allocation total."], deepLink: "/front-office/receipts", fieldErrors: {} }),
+      { status: 422, headers: { "Content-Type": "application/json" } },
+    )))
+
+    await expect(request("/api/v1/front-office/receipts/receipt-1/allocate/", { method: "POST", body: JSON.stringify({}) })).rejects.toMatchObject({
+      status: 422,
+      code: "RECEIPT_OVERALLOCATION",
+      resolutionSteps: ["Reduce the allocation total."],
+      deepLink: "/front-office/receipts",
+    })
+  })
+
   it("preserves top-level quick-create errors when data is null", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
       JSON.stringify({

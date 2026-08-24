@@ -12,6 +12,8 @@ export interface NormalizedApiErrorShape {
   fieldErrors: Record<string, string[]>
   correlationId?: string
   details?: unknown
+  resolutionSteps?: string[]
+  deepLink?: string
 }
 
 export class ApiClientError extends Error implements NormalizedApiErrorShape {
@@ -20,6 +22,8 @@ export class ApiClientError extends Error implements NormalizedApiErrorShape {
   fieldErrors: Record<string, string[]>
   correlationId?: string
   details?: unknown
+  resolutionSteps?: string[]
+  deepLink?: string
 
   constructor(error: NormalizedApiErrorShape) {
     super(error.message)
@@ -29,6 +33,8 @@ export class ApiClientError extends Error implements NormalizedApiErrorShape {
     this.fieldErrors = error.fieldErrors
     this.correlationId = error.correlationId
     this.details = error.details
+    this.resolutionSteps = error.resolutionSteps
+    this.deepLink = error.deepLink
   }
 }
 
@@ -113,10 +119,20 @@ export async function normalizeResponseError(response: Response): Promise<ApiCli
           : Object.values(fieldErrors).flat()[0] ?? `Request failed (${response.status}).`
   const code = typeof envelopeError.code === "string"
     ? envelopeError.code
-    : typeof bodyRecord.code === "string"
-      ? bodyRecord.code
-      : typeof record.code === "string" ? record.code : `HTTP_${response.status}`
-  return new ApiClientError({ status: response.status, code, message, fieldErrors, correlationId, details: body })
+    : typeof envelopeError.errorCode === "string"
+      ? envelopeError.errorCode
+      : typeof bodyRecord.code === "string"
+        ? bodyRecord.code
+        : typeof bodyRecord.errorCode === "string"
+          ? bodyRecord.errorCode
+          : typeof record.code === "string"
+            ? record.code
+            : typeof record.errorCode === "string" ? record.errorCode : `HTTP_${response.status}`
+  const rawResolutionSteps = envelopeError.resolutionSteps ?? bodyRecord.resolutionSteps ?? record.resolutionSteps
+  const resolutionSteps = Array.isArray(rawResolutionSteps) ? rawResolutionSteps.filter((step): step is string => typeof step === "string") : undefined
+  const rawDeepLink = envelopeError.deepLink ?? bodyRecord.deepLink ?? record.deepLink
+  const deepLink = typeof rawDeepLink === "string" ? rawDeepLink : undefined
+  return new ApiClientError({ status: response.status, code, message, fieldErrors, correlationId, details: body, resolutionSteps, deepLink })
 }
 
 export interface ApiRequestOptions extends RequestInit {

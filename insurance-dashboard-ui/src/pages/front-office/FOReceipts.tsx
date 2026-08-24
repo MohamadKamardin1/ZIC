@@ -1,9 +1,12 @@
 import { useState, useEffect } from "react";
-import { FileText, Plus, Search, Edit2, Trash2, X, Loader2, AlertCircle } from "lucide-react";
+import { FileText, Plus, Search, Edit2, Trash2, X, Loader2 } from "lucide-react";
 import { foCore } from "../../lib/fo-api";
+import { receiptsApi, type ReceiptRecord } from "../../lib/receipts-api";
+import { AmountCell, AllocationProgressBar, PaymentModeBadge, ReceiptStatusBadge } from "../../components/receipts/ReceiptPrimitives";
+import { ErrorCoach } from "../../components/ErrorCoach";
 
 export default function FOReceipts() {
-  const [items, setItems] = useState<any[]>([]);
+  const [items, setItems] = useState<ReceiptRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -15,8 +18,8 @@ export default function FOReceipts() {
   const fetchItems = async () => {
     try {
       setLoading(true);
-      const data = await foCore.listReceipts();
-      setItems(data);
+      const data = await receiptsApi.list();
+      setItems(data.results ?? []);
     } catch (err: any) {
       setError(err.message || "Failed to load data.");
     } finally {
@@ -89,12 +92,7 @@ export default function FOReceipts() {
         </button>
       </div>
 
-      {error && (
-        <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl flex items-center text-destructive">
-          <AlertCircle className="w-5 h-5 mr-3" />
-          {error}
-        </div>
-      )}
+      {error && <ErrorCoach title="Receipts could not be loaded" message={`${error} Refresh the page after checking the Front Office Receipts permission and API connection.`} />}
 
       <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
         <div className="p-4 border-b border-border flex justify-between items-center bg-secondary/30">
@@ -113,10 +111,11 @@ export default function FOReceipts() {
             <thead className="bg-secondary/30 text-muted-foreground border-b border-border">
               <tr>
                 <th className="px-6 py-4 font-semibold uppercase tracking-wider text-xs">Receipt No.</th>
+                <th className="px-6 py-4 font-semibold uppercase tracking-wider text-xs">Payer</th>
+                <th className="px-6 py-4 font-semibold uppercase tracking-wider text-xs">Branch</th>
+                <th className="px-6 py-4 font-semibold uppercase tracking-wider text-xs">Payment Mode</th>
                 <th className="px-6 py-4 font-semibold uppercase tracking-wider text-xs">Amount</th>
-                <th className="px-6 py-4 font-semibold uppercase tracking-wider text-xs">Payment Method</th>
-                <th className="px-6 py-4 font-semibold uppercase tracking-wider text-xs">Payment Date</th>
-                <th className="px-6 py-4 font-semibold uppercase tracking-wider text-xs">Reference</th>
+                <th className="px-6 py-4 font-semibold uppercase tracking-wider text-xs">Allocation</th>
                 <th className="px-6 py-4 font-semibold uppercase tracking-wider text-xs">Status</th>
                 <th className="px-6 py-4 font-semibold uppercase tracking-wider text-right">Actions</th>
               </tr>
@@ -139,11 +138,12 @@ export default function FOReceipts() {
                 items.map((item) => (
                   <tr key={item.id} className="hover:bg-secondary/20 transition-colors">
                     <td className="px-6 py-4">{item.receipt_number}</td>
-                    <td className="px-6 py-4">{item.amount}</td>
-                    <td className="px-6 py-4">{item.payment_method}</td>
-                    <td className="px-6 py-4">{item.payment_date}</td>
-                    <td className="px-6 py-4">{item.reference}</td>
-                    <td className="px-6 py-4">{item.status}</td>
+                    <td className="px-6 py-4">{item.payer_display}</td>
+                    <td className="px-6 py-4">{item.branch_display}</td>
+                    <td className="px-6 py-4"><PaymentModeBadge mode={item.payment_mode} label={item.payment_mode_display} /></td>
+                    <td className="px-6 py-4"><AmountCell amount={item.receipt_amount} currency={item.currency} amountInWords={item.amount_in_words} /></td>
+                    <td className="px-6 py-4"><AllocationProgressBar allocated={item.allocated_amount} total={item.receipt_amount} currency={item.currency} /></td>
+                    <td className="px-6 py-4"><ReceiptStatusBadge status={item.status} /></td>
                     <td className="px-6 py-4 text-right">
                       <button onClick={() => openModal(item)} className="text-muted-foreground hover:text-primary p-1.5 rounded-lg hover:bg-secondary mr-2 transition-colors">
                         <Edit2 className="w-4 h-4" />

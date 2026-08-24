@@ -258,7 +258,16 @@ export default function App() {
         <Route path="group-credit/borrowers" element={<GCBorrowers />} />
         <Route path="group-credit/claims" element={<GCClaims />} />
         <Route path="group-credit/medical-uw" element={<GCMedicalUW />} />
-        <Route path="front-office/receipts" element={<FOReceipts />} />
+        <Route
+          path="front-office/receipts"
+          element={
+            <RequirePermission permission="front_office.receipts.view">
+              <AccessGate>
+                <FOReceipts />
+              </AccessGate>
+            </RequirePermission>
+          }
+        />
         <Route path="front-office/commissions" element={<FOCommissions />} />
         <Route path="front-office/commission-statements" element={<FOCommissionStatements />} />
         <Route path="front-office/requisitions" element={<FORequisitions />} />

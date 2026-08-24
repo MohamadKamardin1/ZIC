@@ -44,14 +44,14 @@ function renderSidebar(initialEntries = ["/ordinary-life/quotations"]) {
   )
 }
 
-function renderGate() {
+function renderGate(permission = "ol_commitments.view", label = "Commitments panel") {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
         <AccessProvider>
-          <RequirePermission permission="ol_commitments.view">
-            <div>Commitments panel</div>
+          <RequirePermission permission={permission}>
+            <div>{label}</div>
           </RequirePermission>
         </AccessProvider>
       </MemoryRouter>
@@ -70,6 +70,13 @@ describe("RequirePermission (route gating)", () => {
     })
     renderGate()
     expect(await screen.findByText("Commitments panel")).toBeInTheDocument()
+  })
+
+  it("gates Front Office Receipts by the exact view permission", async () => {
+    mockedFetchAccessMetadata.mockResolvedValue({ visibleModules: ["front_office"], permissions: [], groups: [] })
+    renderGate("front_office.receipts.view", "Receipts panel")
+    expect(await screen.findByText("Access restricted")).toBeInTheDocument()
+    expect(screen.queryByText("Receipts panel")).not.toBeInTheDocument()
   })
 
   it("shows AccessDenied without the permission", async () => {

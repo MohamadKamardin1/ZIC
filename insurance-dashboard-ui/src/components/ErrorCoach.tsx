@@ -5,10 +5,11 @@ export interface ErrorCoachProps {
   message: string
   loginUrl?: string
   actionLabel?: string
+  resolutionSteps?: string[]
   onDismiss?: () => void
 }
 
-export function ErrorCoach({ title = "Document action needs attention", message, loginUrl, actionLabel = "Sign in again", onDismiss }: ErrorCoachProps) {
+export function ErrorCoach({ title = "Document action needs attention", message, loginUrl, actionLabel = "Sign in again", resolutionSteps = [], onDismiss }: ErrorCoachProps) {
   return (
     <div className="rounded-[10px] border border-red-200 bg-red-50 p-4 text-sm text-red-950 shadow-sm" role="alert">
       <div className="flex items-start gap-3">
@@ -16,6 +17,7 @@ export function ErrorCoach({ title = "Document action needs attention", message,
         <div className="min-w-0 flex-1">
           <p className="font-bold">{title}</p>
           <p className="mt-1 leading-6">{message}</p>
+          {resolutionSteps.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5 leading-5">{resolutionSteps.map((step) => <li key={step}>{step}</li>)}</ul>}
           {loginUrl && (
             <a className="mt-3 inline-flex items-center gap-2 font-bold text-red-800 underline underline-offset-2 focus:outline-none focus:ring-2 focus:ring-red-600 focus:ring-offset-2" href={loginUrl}>
               <LogIn size={15} aria-hidden="true" />

@@ -1,6 +1,6 @@
 # FRONT OFFICE RECEIPTS UI — FULL SERIES
 
-## [ ] Prompt 1 — Save Series File + Foundation + Contract-First API Layer
+## [x] Prompt 1 — Save Series File + Foundation + Contract-First API Layer
 
 ```text
 You are a senior frontend engineer for the ZIC Life Insurance Platform. The Front Office Receipts backend is being built in parallel by another agent from docs/prompts/FRONT_OFFICE_RECEIPTS_BACKEND_PROMPTS.md. Build the receipts frontend contract-first. The user pasted the FULL 10-prompt series at once.

@@ -11,6 +11,7 @@ import { AIProvider } from "./components/ai/AIContext"
 import { ThemeProvider } from "./theme/ThemeProvider"
 import { LanguageProvider } from "./lib/language"
 import { ToastProvider } from "./components/ui/Toast"
+import { startReceiptMocks } from "./mocks/start"
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -21,8 +22,10 @@ const queryClient = new QueryClient({
   },
 })
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
+async function bootstrap() {
+  await startReceiptMocks()
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <ThemeProvider>
@@ -40,5 +43,8 @@ createRoot(document.getElementById("root")!).render(
         </ThemeProvider>
       </BrowserRouter>
     </QueryClientProvider>
-  </StrictMode>,
-)
+    </StrictMode>,
+  )
+}
+
+void bootstrap()
