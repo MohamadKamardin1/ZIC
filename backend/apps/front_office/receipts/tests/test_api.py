@@ -1,6 +1,7 @@
 from datetime import date
 
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
@@ -13,6 +14,7 @@ BASE = "/api/v1/front-office/receipts"
 
 class ReceiptApiTests(APITestCase):
     def setUp(self):
+        call_command("seed_receipt_parameters")
         self.admin = User.objects.create_superuser(
             username="receipt_admin", password="Password@12345", email="receipt_admin@zic.tz"
         )
@@ -103,7 +105,9 @@ class ReceiptApiTests(APITestCase):
         response = self.client.get(f"{BASE}/options/")
         self.assertEqual(response.status_code, 200)
         data = response.data["data"]
-        self.assertIn("DRAFT", data["statuses"])
-        self.assertIn("TZS", data["currencies"])
-        codes = {mode["code"] for mode in data["payment_modes"]}
-        self.assertIn("CASH", codes)
+        status_values = {entry["value"] for entry in data["receipt_statuses"]}
+        self.assertIn("DRAFT", status_values)
+        currency_values = {entry["value"] for entry in data["currencies"]}
+        self.assertIn("TZS", currency_values)
+        mode_values = {entry["value"] for entry in data["payment_modes"]}
+        self.assertIn("CASH", mode_values)

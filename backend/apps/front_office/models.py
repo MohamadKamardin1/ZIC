@@ -116,3 +116,8 @@ from apps.front_office.receipts.models import (  # noqa: E402,F401
     ReceiptReversal,
     ReceiptStatusHistory,
 )
+from apps.front_office.receipts.config_models import (  # noqa: E402,F401
+    CompanyBankAccount,
+    ReceiptNumberingRule,
+    ReceiptPaymentModeRule,
+)

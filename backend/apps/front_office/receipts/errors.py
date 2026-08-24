@@ -11,6 +11,16 @@ from apps.core.exceptions import ZICAPIException
 
 DOC_REF = "docs/FRONT_OFFICE_RECEIPTS_DESIGN.md"
 
+# Deep-link navigation paths for parameter-driven behavior. Each key is a
+# parameter label that ``parameter_missing`` resolves to a configured location.
+RECEIPT_PARAMETER_NAVIGATION = {
+    "RECEIPT_BRANCHES": "System Parameters > Branches",
+    "RECEIPT_CURRENCIES": "System Parameters > Currencies",
+    "RECEIPT_PAYMENT_MODES": "System Parameters > Payment Modes",
+    "RECEIPT_NUMBERING_RULE": "Front Office Parameters > Receipt Numbering",
+    "RECEIPT_COMPANY_BANK_ACCOUNTS": "Front Office Parameters > Company Bank Accounts",
+}
+
 
 class ReceiptError(ZICAPIException):
     """Base structured exception for the Front Office Receipts module."""
@@ -172,7 +182,10 @@ def permission_denied(action):
 
 
 def parameter_missing(parameter_label, navigation_path=None):
-    path = navigation_path or "System Parameters"
+    path = (
+        navigation_path
+        or RECEIPT_PARAMETER_NAVIGATION.get(parameter_label, "System Parameters")
+    )
     return registry_error(
         "RECEIPT_PARAMETER_MISSING",
         message=f"The required parameter '{parameter_label}' is missing or inactive. Configure it under {path}.",

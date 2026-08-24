@@ -1,5 +1,10 @@
 from django.contrib import admin
 
+from apps.front_office.receipts.config_models import (
+    CompanyBankAccount,
+    ReceiptNumberingRule,
+    ReceiptPaymentModeRule,
+)
 from apps.front_office.receipts.models import (
     Receipt,
     ReceiptAllocation,
@@ -187,3 +192,48 @@ class ReceiptStatusHistoryAdmin(admin.ModelAdmin):
     search_fields = ("receipt__receipt_number", "reason")
     ordering = ("-changed_at",)
     readonly_fields = ("id", "changed_at", "created_at", "updated_at", "created_by", "updated_by")
+
+
+@admin.register(ReceiptNumberingRule)
+class ReceiptNumberingRuleAdmin(admin.ModelAdmin):
+    list_display = (
+        "code",
+        "name",
+        "branch",
+        "prefix",
+        "sequence_padding",
+        "next_sequence",
+        "reset_frequency",
+        "effective_from",
+        "effective_to",
+        "is_active",
+    )
+    list_filter = ("is_active", "reset_frequency", "branch")
+    search_fields = ("code", "name", "prefix")
+    ordering = ("code",)
+    readonly_fields = ("id", "created_at", "updated_at", "created_by", "updated_by")
+
+
+@admin.register(CompanyBankAccount)
+class CompanyBankAccountAdmin(admin.ModelAdmin):
+    list_display = ("code", "bank_name", "account_name", "currency", "branch", "is_default", "is_active")
+    list_filter = ("is_active", "is_default", "currency", "branch")
+    search_fields = ("code", "bank_name", "account_name", "account_number")
+    ordering = ("code",)
+    readonly_fields = ("id", "masked_account_number", "created_at", "updated_at", "created_by", "updated_by")
+
+
+@admin.register(ReceiptPaymentModeRule)
+class ReceiptPaymentModeRuleAdmin(admin.ModelAdmin):
+    list_display = (
+        "payment_mode",
+        "requires_reference",
+        "requires_bank_account",
+        "min_amount",
+        "max_amount",
+        "is_active",
+    )
+    list_filter = ("is_active", "requires_reference", "requires_bank_account", "allows_cash", "allows_bank_transfer")
+    search_fields = ("payment_mode",)
+    ordering = ("payment_mode",)
+    readonly_fields = ("id", "created_at", "updated_at", "created_by", "updated_by")

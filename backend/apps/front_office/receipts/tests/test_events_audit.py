@@ -2,6 +2,7 @@ from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.test import TestCase
 
 from apps.common.models import DomainEvent
@@ -15,6 +16,7 @@ User = get_user_model()
 
 class ReceiptEventTests(TestCase):
     def setUp(self):
+        call_command("seed_receipt_parameters")
         self.user = User.objects.create_user(
             username="receipt_eventer", password="Password@12345", email="receipt_eventer@zic.tz"
         )
@@ -77,6 +79,7 @@ class ReceiptEventTests(TestCase):
 
 class ReceiptAuditTests(TestCase):
     def setUp(self):
+        call_command("seed_receipt_parameters")
         self.user = User.objects.create_user(
             username="receipt_auditor", password="Password@12345", email="receipt_auditor@zic.tz"
         )
@@ -112,6 +115,7 @@ class ReceiptAuditTests(TestCase):
 
 class FirstPremiumEventTests(TestCase):
     def setUp(self):
+        call_command("seed_receipt_parameters")
         self.user = User.objects.create_user(
             username="receipt_premium", password="Password@12345", email="receipt_premium@zic.tz"
         )

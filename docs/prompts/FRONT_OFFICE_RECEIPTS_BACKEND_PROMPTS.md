@@ -1,7 +1,7 @@
 # FRONT OFFICE RECEIPTS BACKEND — PROMPT SERIES (12 prompts)
 
 - [x] Prompt 1 — Save Prompt Series + Front Office Receipts Domain Foundation
-- [ ] Prompt 2 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
+- [ ] Prompt 2 — Implement Receipt Parameters, Numbering & Reference Data
 - [ ] Prompt 3 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
 - [ ] Prompt 4 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
 - [ ] Prompt 5 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
@@ -163,4 +163,99 @@ GIT:
 
 FINAL OUTPUT:
 Return design summary, models, permissions, events, tests, assumptions, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 2/12 — Implement Receipt Parameters, Numbering & Reference Data
+
+```text
+You are a senior Django finance configuration engineer. Continue the Front Office Receipts backend. Execute ONLY Prompt 2 from docs/prompts/FRONT_OFFICE_RECEIPTS_BACKEND_PROMPTS.md.
+
+MANDATORY RULES:
+- All receipt behavior must be parameterized.
+- Do not hardcode branches, currencies, payment modes, numbering, statuses, or bank accounts.
+- Commit and push; tick Prompt 2 after completion.
+
+OBJECTIVE:
+Implement receipt parameters, receipt numbering, and reference-data integration.
+
+SCOPE:
+1. Create receipt configuration models or extend system_config:
+   - ReceiptNumberingRule
+   - ReceiptStatusParameter if not using model choices only
+   - CompanyBankAccount
+   - ReceiptPaymentModeRule
+2. ReceiptNumberingRule fields:
+   - code
+   - name
+   - branch optional
+   - prefix
+   - sequence_padding
+   - next_sequence
+   - reset_frequency: NEVER, YEARLY, MONTHLY, DAILY
+   - effective_from
+   - effective_to
+   - is_active
+3. CompanyBankAccount fields:
+   - code
+   - bank_name
+   - account_name
+   - account_number masked in responses
+   - currency
+   - branch optional
+   - is_default
+   - is_active
+4. ReceiptPaymentModeRule fields:
+   - payment_mode
+   - requires_reference
+   - requires_bank_account
+   - allows_cash
+   - allows_card
+   - allows_mobile_money
+   - allows_bank_transfer
+   - allows_cheque
+   - min_amount optional
+   - max_amount optional
+   - active status
+5. Seed baseline data:
+   - at least one receipt numbering rule
+   - active company bank account
+   - rules for CASH, BANK_TRANSFER, MOBILE_MONEY, CARD, CHEQUE if payment modes exist
+6. Implement receipt number service:
+   - branch-aware
+   - concurrency-safe
+   - idempotent on retry
+7. Implement options endpoints:
+   - branches
+   - currencies
+   - payment modes
+   - company bank accounts
+   - receipt statuses
+8. All option payloads must be:
+   - value
+   - label
+   - meta
+9. Add structured PARAMETER_MISSING errors with deep links to:
+   - System Parameters > Branches
+   - System Parameters > Currencies
+   - System Parameters > Payment Modes
+   - Front Office Parameters > Receipt Numbering
+   - Front Office Parameters > Company Bank Accounts
+10. Admin tables for all receipt parameters.
+
+TESTS:
+- receipt number generation
+- concurrent uniqueness
+- missing numbering rule error
+- masked bank account response
+- option endpoint labels
+- payment mode rule validation
+
+GIT:
+- commit: "feat(receipts): implement receipt parameters numbering and reference data"
+- push; tick Prompt 2 checkbox
+
+FINAL OUTPUT:
+Return parameter models, seed data, numbering contract, options endpoints, tests, commit hash, pushed branch.
 ```

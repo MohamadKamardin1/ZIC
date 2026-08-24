@@ -18,6 +18,12 @@ NUMBERING_CODE = "RCT"
 FALLBACK_PAYMENT_MODES = ["CASH", "BANK_TRANSFER", "CHEQUE", "M-PESA", "MOBILE_MONEY", "OTHER"]
 FALLBACK_SOURCE_MODULES = ["OL_PROPOSAL", "OL_POLICY", "GROUP_CREDIT", "MANUAL", "OTHER"]
 FALLBACK_STATUSES = ["DRAFT", "POSTED", "PARTIALLY_ALLOCATED", "FULLY_ALLOCATED", "REVERSED", "CANCELLED"]
+FALLBACK_CURRENCIES = ["TZS", "USD", "KES"]
+
+
+def option(value, label, **meta):
+    """Reference-data option payload: ``{value, label, meta}``."""
+    return {"value": value, "label": label, "meta": meta or {}}
 
 
 def configured_payment_modes():
@@ -40,6 +46,14 @@ def configured_statuses():
     if isinstance(value, list) and value:
         return [str(item).strip().upper() for item in value if str(item).strip()]
     return list(FALLBACK_STATUSES)
+
+
+def configured_currencies():
+    """Currencies from ``RECEIPT_CURRENCIES`` parameter (JSON list)."""
+    value = ConfigurationService.get_json_parameter("RECEIPT_CURRENCIES", None)
+    if isinstance(value, list) and value:
+        return [str(item).strip().upper() for item in value if str(item).strip()]
+    return list(FALLBACK_CURRENCIES)
 
 
 def is_valid_payment_mode(mode):

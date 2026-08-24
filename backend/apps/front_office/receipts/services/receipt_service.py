@@ -15,16 +15,14 @@ from django.utils import timezone
 from apps.front_office.receipts import events as receipt_events
 from apps.front_office.receipts.errors import ReceiptError, invalid_status, not_found
 from apps.front_office.receipts.models import Receipt, ReceiptStatus, ReceiptStatusHistory
-from apps.front_office.receipts.services.parameter_resolver import default_currency, receipt_numbering_code
-from apps.system_parameters.services.numbering_service import NumberingEngine
+from apps.front_office.receipts.services.parameter_resolver import default_currency
+from apps.front_office.receipts.services.receipt_numbering import ReceiptNumberingService
 
 ZERO = Decimal("0.00")
 
 
-def _receipt_number():
-    return NumberingEngine.generate_number(
-        receipt_numbering_code(), Receipt, field_name="receipt_number"
-    )
+def _receipt_number(branch_id=None):
+    return ReceiptNumberingService.next_number(branch_id=branch_id)
 
 
 def record_status_history(
@@ -94,7 +92,7 @@ def create_draft(*, actor=None, request=None, source_channel="API", **fields):
 
     actor_instance = actor if actor and getattr(actor, "is_authenticated", False) else None
     receipt = Receipt(
-        receipt_number=fields.get("receipt_number") or _receipt_number(),
+        receipt_number=fields.get("receipt_number") or _receipt_number(branch_id=fields.get("branch_id")),
         idempotency_key=idempotency_key,
         receipt_date=fields.get("receipt_date") or timezone.localdate(),
         branch_id=fields.get("branch_id"),

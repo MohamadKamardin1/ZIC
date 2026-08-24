@@ -157,23 +157,74 @@ class ReceiptOptionsView(APIView):
     permission_classes = [MustViewReceiptsPermission]
 
     def get(self, request):
+        from apps.front_office.receipts.config_models import CompanyBankAccount, ReceiptPaymentModeRule
         from apps.front_office.receipts.services.parameter_resolver import (
+            configured_currencies,
             configured_payment_modes,
             configured_source_modules,
             configured_statuses,
-            default_currency,
+            option,
             payment_mode_label,
         )
+        from apps.partner_onboarding.models import Branch
+
+        branches = [
+            option(str(branch.pk), branch.name, code=branch.code)
+            for branch in Branch.objects.filter(is_active=True).order_by("name")
+        ]
+
+        company_accounts = list(CompanyBankAccount.objects.filter(is_active=True).order_by("code"))
+        currency_codes = list(dict.fromkeys(configured_currencies()))
+        if company_accounts:
+            currency_codes = list(dict.fromkeys([acc.currency for acc in company_accounts] + currency_codes))
+        currencies = [option(code, code) for code in currency_codes]
+
+        rules = list(ReceiptPaymentModeRule.objects.filter(is_active=True).order_by("payment_mode"))
+        if rules:
+            payment_modes = [
+                option(
+                    rule.payment_mode,
+                    payment_mode_label(rule.payment_mode),
+                    requires_reference=rule.requires_reference,
+                    requires_bank_account=rule.requires_bank_account,
+                    allows_cash=rule.allows_cash,
+                    allows_card=rule.allows_card,
+                    allows_mobile_money=rule.allows_mobile_money,
+                    allows_bank_transfer=rule.allows_bank_transfer,
+                    allows_cheque=rule.allows_cheque,
+                    min_amount=str(rule.min_amount) if rule.min_amount is not None else None,
+                    max_amount=str(rule.max_amount) if rule.max_amount is not None else None,
+                )
+                for rule in rules
+            ]
+        else:
+            payment_modes = [option(code, payment_mode_label(code)) for code in configured_payment_modes()]
+
+        company_bank_accounts = [
+            option(
+                str(account.pk),
+                f"{account.bank_name} - {account.account_name}",
+                code=account.code,
+                currency=account.currency,
+                account_number=account.masked_account_number,
+                is_default=account.is_default,
+            )
+            for account in company_accounts
+        ]
+
+        statuses = [option(code, code.replace("_", " ").title()) for code in configured_statuses()]
+        source_modules = [option(code, code.replace("_", " ").title()) for code in configured_source_modules()]
 
         return Response(
             {
                 "data": {
-                    "statuses": configured_statuses(),
-                    "source_modules": configured_source_modules(),
-                    "payment_modes": [
-                        {"code": code, "name": payment_mode_label(code)} for code in configured_payment_modes()
-                    ],
-                    "currencies": [default_currency(), "TZS", "USD", "KES"],
+                    "branches": branches,
+                    "currencies": currencies,
+                    "payment_modes": payment_modes,
+                    "company_bank_accounts": company_bank_accounts,
+                    "receipt_statuses": statuses,
+                    "statuses": statuses,
+                    "source_modules": source_modules,
                 }
             }
         )
