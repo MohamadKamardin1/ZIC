@@ -137,11 +137,24 @@ export interface ReceiptImportBatch {
   status: string
 }
 
+export interface ReceiptImportRowResult {
+  row: number
+  status: "OK" | "ERROR" | string
+  field_errors: Record<string, string[]>
+  resolution_steps?: string[]
+}
+
 export interface ReceiptImportResult {
   dry_run: boolean
   imported: number
   created: number
-  errors: Array<{ row: number; status?: string; field_errors: Record<string, string[]>; resolution_steps?: string[] }>
+  total_rows?: number
+  ok_count?: number
+  error_count?: number
+  batch_id?: string
+  status?: string
+  rows?: ReceiptImportRowResult[]
+  errors: ReceiptImportRowResult[]
 }
 
 export interface ReceiptListQuery {
@@ -240,6 +253,7 @@ export const receiptsApi = {
   },
   imports: (query: { page?: number; page_size?: number } = {}) => readJsonRequest<Paginated<ReceiptImportBatch>>(`${RECEIPTS_BASE}/imports/${toQuery(query)}`),
   importDetail: (id: string) => readJsonRequest<ReceiptImportBatch & { errors: ReceiptImportResult["errors"] }>(`${RECEIPTS_BASE}/imports/${encodeURIComponent(id)}/`),
+  importReprocess: (id: string) => readJsonRequest<ReceiptImportResult>(`${RECEIPTS_BASE}/imports/${encodeURIComponent(id)}/reprocess/`, jsonOptions("POST")),
   kpis: (query: { date_from?: string; date_to?: string } = {}) => readJsonRequest<ReceiptKpis>(`${RECEIPTS_BASE}/kpis/${toQuery(query)}`),
   exchangeRate: (currency: string, date?: string) => readJsonRequest<{ from_currency: string; to_currency: string; rate: string; effective_date: string }>(`${RECEIPTS_BASE}/exchange-rate/${toQuery({ currency, date })}`),
   downloadCsvTemplate: async () => {

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useNavigate } from "react-router-dom"
 import { Banknote, CalendarDays, FilePlus2, Receipt, RotateCcw, Upload, WalletCards } from "lucide-react"
@@ -108,10 +108,6 @@ export default function FOReceipts() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [listError, setListError] = useState<unknown>(null)
   const [listCount, setListCount] = useState<number | null>(null)
-  const [importError, setImportError] = useState<unknown>(null)
-  const [importMessage, setImportMessage] = useState<string | null>(null)
-  const fileRef = useRef<HTMLInputElement>(null)
-
   const hasPermission = useCallback((permission: string) => isSuperAdmin || Boolean(accessHasPermission?.(permission)), [accessHasPermission, isSuperAdmin])
   const permissionKeys = useMemo(() => access.permissions.map((permission) => `${permission.module}.${permission.action}`.toLowerCase()), [access.permissions])
 
@@ -144,18 +140,6 @@ export default function FOReceipts() {
       })
       return next
     })
-  }
-
-  const handleImport = async (file: File) => {
-    setImportError(null)
-    setImportMessage(null)
-    try {
-      const result = await receiptsApi.importDryRun(file)
-      setImportMessage(`Dry-run complete: ${result.imported} rows checked, ${result.errors.length} blocking errors.`)
-      if (result.errors.length > 0) setImportError(new Error("The CSV contains rows that need correction before import."))
-    } catch (error) {
-      setImportError(error)
-    }
   }
 
   const actions: RowAction<ReceiptListRow>[] = useMemo(() => ACTION_META.map((action) => ({
@@ -215,8 +199,7 @@ export default function FOReceipts() {
         stats={stats}
         actions={
           <>
-            <button type="button" className="button-secondary" onClick={() => fileRef.current?.click()} disabled={!hasPermission("front_office.receipts.import")}><Upload size={16} aria-hidden="true" />Import CSV</button>
-            <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void handleImport(file); event.target.value = "" }} />
+            <button type="button" className="button-secondary" onClick={() => navigate("/front-office/receipts/imports")} disabled={!hasPermission("front_office.receipts.import")}><Upload size={16} aria-hidden="true" />Import CSV</button>
             <button type="button" className="button-primary" onClick={() => navigate("/front-office/receipts/new")} disabled={!hasPermission("front_office.receipts.create")}><FilePlus2 size={16} aria-hidden="true" />New Receipt</button>
           </>
         }
@@ -234,8 +217,6 @@ export default function FOReceipts() {
           <FilterBar definitions={filterDefinitions} value={filters} onChange={(key, value) => setFilters((current) => ({ ...current, [key]: value }))} onReset={() => { setFilters({}); setChip(null) }} />
 
           {(listError || kpisQuery.error || branchesQuery.error || currenciesQuery.error || paymentModesQuery.error || statusesQuery.error) && <ErrorCoach title="Receipts need attention" {...errorCoachProps(listError ?? kpisQuery.error ?? branchesQuery.error ?? currenciesQuery.error ?? paymentModesQuery.error ?? statusesQuery.error)} />}
-          {importMessage && <InfoBanner title="Receipt CSV dry-run"><p>{importMessage}</p></InfoBanner>}
-          {importError !== null && <ErrorCoach title="Receipt import needs correction" {...errorCoachProps(importError)} />}
           {!listError && listCount === 0 && <InfoBanner title="No receipts match the current view"><p>Try clearing filters, changing the date range, or create a new receipt when a payment is received.</p></InfoBanner>}
 
           <DataTable<ReceiptListRow>

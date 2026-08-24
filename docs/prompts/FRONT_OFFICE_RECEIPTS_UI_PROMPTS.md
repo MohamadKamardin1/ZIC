@@ -224,7 +224,7 @@ FINAL OUTPUT: modal behaviors, tests, commit hash, pushed branch.
 
 ---
 
-## [ ] Prompt 7 — Bulk Receipt Import UI
+## [x] Prompt 7 — Bulk Receipt Import UI
 
 ```text
 You are a senior frontend engineer. Continue the ZIC Receipts UI. Execute ONLY Prompt 7.

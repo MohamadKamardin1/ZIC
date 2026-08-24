@@ -85,6 +85,7 @@ import GCRenewals from "./pages/group-credit/GCRenewals"
 import FOReceipts from "./pages/front-office/FOReceipts"
 import FOReceiptForm from "./pages/front-office/FOReceiptForm"
 import FOReceiptDetail from "./pages/front-office/FOReceiptDetail"
+import FOReceiptImports from "./pages/front-office/FOReceiptImports"
 import FOCommissions from "./pages/front-office/FOCommissions"
 import FOCommissionStatements from "./pages/front-office/FOCommissionStatements"
 import FORequisitions from "./pages/front-office/FORequisitions"
@@ -260,6 +261,7 @@ export default function App() {
         <Route path="group-credit/borrowers" element={<GCBorrowers />} />
         <Route path="group-credit/claims" element={<GCClaims />} />
         <Route path="group-credit/medical-uw" element={<GCMedicalUW />} />
+        <Route path="front-office/receipts/imports" element={<RequirePermission permission="front_office.receipts.import"><AccessGate><FOReceiptImports /></AccessGate></RequirePermission>} />
         <Route path="front-office/receipts/new" element={<RequirePermission permission="front_office.receipts.create"><AccessGate><FOReceiptForm /></AccessGate></RequirePermission>} />
         <Route path="front-office/receipts/:id/edit" element={<RequirePermission permission="front_office.receipts.view"><AccessGate><FOReceiptForm /></AccessGate></RequirePermission>} />
         <Route path="front-office/receipts/:id" element={<RequirePermission permission="front_office.receipts.view"><AccessGate><FOReceiptDetail /></AccessGate></RequirePermission>} />

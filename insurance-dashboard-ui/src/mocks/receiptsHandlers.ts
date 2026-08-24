@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw"
-import { RECEIPTS_BASE, RECEIPTS_OPTIONS_BASE, PORTAL_RECEIPTS_BASE, type ReceiptRecord } from "../lib/receipts-api"
+import { RECEIPTS_BASE, RECEIPTS_OPTIONS_BASE, PORTAL_RECEIPTS_BASE, type ReceiptImportBatch, type ReceiptImportRowResult, type ReceiptRecord } from "../lib/receipts-api"
 
 const ids = {
   receipt: "receipt-demo-1",
@@ -38,6 +38,10 @@ let receipts: ReceiptRecord[] = [
 ]
 
 const reversedAllocationIds = new Set<string>()
+let importBatches: ReceiptImportBatch[] = [{ id: "import-batch-demo-1", file_name: "receipts-2026-08-24.csv", uploaded_by_display: "Sultan Admin", uploaded_at: "2026-08-24T10:00:00Z", total_rows: 2, ok_count: 1, error_count: 1, status: "PARTIAL_FAILURE" }]
+const importBatchErrors: Record<string, ReceiptImportRowResult[]> = {
+  "import-batch-demo-1": [{ row: 3, status: "ERROR", field_errors: { receipt_amount: ["Enter a positive decimal amount."] }, resolution_steps: ["Correct receipt_amount to a positive number.", "Run the dry-run again before reprocessing."] }],
+}
 
 const options = {
   branches: [{ value: ids.branch, label: "Zanzibar Main Branch", meta: { code: "ZNZ-MAIN" } }, { value: "branch-pemba", label: "Pemba Branch", meta: { code: "PEMBA" } }],
@@ -226,6 +230,42 @@ export const receiptsHandlers = [
     const receipt: ReceiptRecord = { ...receipts[0], ...body, id: `receipt-${Date.now()}`, receipt_number: `RCT-2026-${String(receipts.length + 1).padStart(6, "0")}`, status: "DRAFT", allocated_amount: "0.00", unallocated_amount: String(body.receipt_amount ?? "0.00"), created_by_display: "Sultan Admin", payer_display: String(body.payer ?? "Selected payer"), branch_display: String(body.branch ?? "Selected branch"), payment_mode_display: String(body.payment_mode ?? "Selected payment mode"), currency_display: String(body.currency ?? "TZS") } as ReceiptRecord
     receipts = [receipt, ...receipts]
     return data(receipt, 201)
+  }),
+  http.get(`*${RECEIPTS_BASE}/import/template/`, () => new HttpResponse("receipt_date,branch,payer,source_module,source_reference,currency,payment_mode,payment_reference,bank_account,receipt_amount,narration\n2026-08-24,branch-zanzibar,partner-amani,OL_PROPOSAL,proposal-1,TZS,MOBILE_MONEY,MPESA-001,,50000.00,First premium\n", { status: 200, headers: { "Content-Type": "text/csv" } })),
+  http.post(`*${RECEIPTS_BASE}/import/dry-run/`, async ({ request }) => {
+    const form = await request.formData()
+    const file = form.get("file")
+    const fileName = file instanceof File ? file.name : "receipts.csv"
+    const rows = fileName.toLowerCase().includes("clean")
+      ? [{ row: 2, status: "OK", field_errors: {}, resolution_steps: [] }, { row: 3, status: "OK", field_errors: {}, resolution_steps: [] }]
+      : [{ row: 2, status: "OK", field_errors: {}, resolution_steps: [] }, { row: 3, status: "ERROR", field_errors: { receipt_amount: ["Enter a positive decimal amount."] }, resolution_steps: ["Correct receipt_amount to a positive number with no currency symbol.", "Run the dry-run again before committing."] }]
+    const errors = rows.filter((row) => row.status === "ERROR")
+    return data({ dry_run: true, imported: rows.length, created: 0, total_rows: rows.length, ok_count: rows.length - errors.length, error_count: errors.length, rows, errors })
+  }),
+  http.post(`*${RECEIPTS_BASE}/import/commit/`, async ({ request }) => {
+    const form = await request.formData()
+    const file = form.get("file")
+    const mode = String(form.get("mode") ?? "CREATE_DRAFTS")
+    const fileName = file instanceof File ? file.name : "receipts.csv"
+    const partial = !fileName.toLowerCase().includes("clean")
+    const errors = partial ? [{ row: 3, status: "ERROR", field_errors: { receipt_amount: ["Enter a positive decimal amount."] }, resolution_steps: ["Correct the amount and reprocess this batch."] }] : []
+    const result = { dry_run: false, imported: partial ? 1 : 2, created: partial ? 1 : 2, total_rows: 2, ok_count: partial ? 1 : 2, error_count: errors.length, batch_id: `import-batch-${Date.now()}`, status: errors.length ? "PARTIAL_FAILURE" : "COMPLETED", rows: [{ row: 2, status: "OK", field_errors: {}, resolution_steps: [] }, ...errors], errors }
+    importBatches = [{ id: result.batch_id, file_name: fileName, uploaded_by_display: "Sultan Admin", uploaded_at: "2026-08-24T10:00:00Z", total_rows: result.total_rows, ok_count: result.ok_count, error_count: result.error_count, status: `${mode}_${result.status}` }, ...importBatches]
+    importBatchErrors[result.batch_id] = errors
+    return data(result, 201)
+  }),
+  http.get(`*${RECEIPTS_BASE}/imports/`, ({ request }) => data(page(importBatches, new URL(request.url)))),
+  http.get(`*${RECEIPTS_BASE}/imports/:id/`, ({ params }) => {
+    const batch = importBatches.find((item) => item.id === String(params.id))
+    return batch ? data({ ...batch, errors: importBatchErrors[String(params.id)] ?? [] }) : error(404, "RECEIPT_IMPORT_NOT_FOUND", "The import batch could not be found.", ["Return to import history and select an available batch."])
+  }),
+  http.post(`*${RECEIPTS_BASE}/imports/:id/reprocess/`, ({ params }) => {
+    const batch = importBatches.find((item) => item.id === String(params.id))
+    if (!batch) return error(404, "RECEIPT_IMPORT_NOT_FOUND", "The import batch could not be found.", ["Return to import history and select an available batch."])
+    const result = { dry_run: false, imported: batch.total_rows, created: batch.total_rows, total_rows: batch.total_rows, ok_count: batch.total_rows, error_count: 0, batch_id: batch.id, status: "COMPLETED", rows: Array.from({ length: batch.total_rows }, (_, index) => ({ row: index + 2, status: "OK", field_errors: {}, resolution_steps: [] })), errors: [] }
+    importBatches = importBatches.map((item) => item.id === batch.id ? { ...item, ok_count: item.total_rows, error_count: 0, status: "COMPLETED" } : item)
+    importBatchErrors[batch.id] = []
+    return data(result)
   }),
   http.get(`*${RECEIPTS_BASE}/`, ({ request }) => {
     const url = new URL(request.url)
