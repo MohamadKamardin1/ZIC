@@ -3,7 +3,7 @@
 - [x] Prompt 1 — Save Prompt Series + Front Office Receipts Domain Foundation
 - [x] Prompt 2 — Implement Receipt Parameters, Numbering & Reference Data
 - [x] Prompt 3 — Implement Receipt Creation, Draft Editing, Validation & Posting
-- [ ] Prompt 4 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
+- [x] Prompt 4 — Implement Receipt Allocation to OL Commitments & First Premium
 - [ ] Prompt 5 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
 - [ ] Prompt 6 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
 - [ ] Prompt 7 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
@@ -333,4 +333,84 @@ GIT:
 
 FINAL OUTPUT:
 Return endpoints, validation rules, idempotency behavior, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 4/12 — Implement Receipt Allocation to OL Commitments & First Premium
+
+```text
+You are a senior Django insurance finance engineer. Continue the Front Office Receipts backend. Execute ONLY Prompt 4.
+
+MANDATORY RULES:
+- Allocation must integrate with OL Commitments and close BR-03 for OL Proposals.
+- Commit and push; tick Prompt 4 after completion.
+
+OBJECTIVE:
+Implement allocation of posted receipts to OL commitments, including first premium commitments for proposals.
+
+SCOPE:
+1. API endpoints:
+   - GET /api/v1/front-office/receipts/{id}/allocation-options/
+   - POST /api/v1/front-office/receipts/{id}/allocate/
+   - POST /api/v1/front-office/receipts/{id}/auto-allocate/
+2. Allocation options should return open commitments for the receipt partner/payer:
+   - commitment_number
+   - source_type
+   - source_display
+   - proposal_number if applicable
+   - policy_number if applicable
+   - product/plan display
+   - due_date
+   - amount_due
+   - amount_paid
+   - balance
+   - currency
+   - status
+3. Manual allocation payload:
+   - target_type = OL_COMMITMENT
+   - target_id
+   - amount
+   - narration
+4. Allocation logic:
+   - receipt must be POSTED or PARTIALLY_ALLOCATED
+   - cannot allocate more than unallocated receipt amount
+   - cannot allocate more than commitment balance
+   - call existing OLCommitment allocation service instead of duplicating logic
+   - create ReceiptAllocation linked to OLCommitmentAllocation
+   - update receipt allocated_amount and unallocated_amount
+   - if unallocated_amount = 0, status FULLY_ALLOCATED
+   - otherwise PARTIALLY_ALLOCATED
+5. First premium behavior:
+   - if commitment source_type = PROPOSAL and installment_number = 1
+   - and commitment becomes completed
+   - emit FirstPremiumReceived and/or PremiumReceived
+   - proposal first_premium_posted guard must return true
+6. Auto-allocation:
+   - allocate oldest due commitments first by due date
+   - same currency first
+   - stop when amount exhausted
+   - return detailed allocation result
+7. Structured errors:
+   - RECEIPT_OVERALLOCATION
+   - RECEIPT_ALLOCATION_INVALID
+   - RECEIPT_INVALID_STATUS
+   - RECEIPT_CURRENCY_MISMATCH
+8. Audit receipt and commitment side consistently.
+
+TESTS:
+- allocate full amount to one commitment
+- partial allocation
+- over-allocation blocked
+- allocation updates commitment balance
+- first premium completion unlocks proposal guard
+- auto-allocation oldest-first
+- audit/event assertions
+
+GIT:
+- commit: "feat(receipts): implement allocation engine to commitments and first premium"
+- push; tick Prompt 4 checkbox
+
+FINAL OUTPUT:
+Return allocation contract, BR-03 integration evidence, tests, commit hash, pushed branch.
 ```
