@@ -24,9 +24,12 @@ import {
   getProposalHistory,
   getProposalKPIs,
   getProposalOptions,
+  getPortalProposal,
+  getProposalDashboardKpis,
   listGeneratedDocuments,
   listProposals,
   listProposalDocuments,
+  listPortalProposals,
   markPaymentReady,
   normalizeFirstPremium,
   normalizeHealthQuestions,
@@ -294,6 +297,36 @@ export function useProposalOptions(kind: string, enabled = true) {
     queryKey: proposalOptionsKey(kind),
     queryFn: () => getProposalOptions(kind),
     staleTime: 5 * 60 * 1000,
+    enabled,
+  })
+}
+
+// Partner portal (read-only, partner-scoped on the backend)
+
+export function usePortalProposals(enabled = true) {
+  return useQuery({
+    queryKey: ["proposals", "portal", "list"],
+    queryFn: listPortalProposals,
+    enabled,
+    staleTime: 60 * 1000,
+  })
+}
+
+export function usePortalProposal(id?: string | null, enabled = true) {
+  return useQuery({
+    queryKey: ["proposals", "portal", "detail", id ?? "none"],
+    queryFn: async () => (id ? getPortalProposal(id) : null),
+    enabled: Boolean(id) && enabled,
+    staleTime: 60 * 1000,
+  })
+}
+
+export const proposalDashboardKpisKey = ["proposals", "dashboard-kpis"] as const
+
+export function useProposalDashboardKpis(enabled = true) {
+  return useQuery({
+    queryKey: proposalDashboardKpisKey,
+    queryFn: getProposalDashboardKpis,
     enabled,
   })
 }

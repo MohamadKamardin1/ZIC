@@ -267,3 +267,47 @@ class PartnerPortalTests(DRFTestCase):
         self.assertNotIn("allowed_actions", data)
         self.assertNotIn("enrich", data)
         self.assertEqual(data["proposal_number"], "OLP-2026-I030")
+
+    def test_portal_detail_exposes_read_only_documents(self):
+        from apps.ol_proposals.models import OLProposalDocument
+
+        OLProposalDocument.objects.create(
+            proposal=self.proposal_a,
+            document_type="NATIONAL_ID",
+            file_reference="DMS-77",
+            mandatory=True,
+            status="APPROVED",
+        )
+        self.client.force_authenticate(self.user_a)
+        response = self.client.get(f"/api/v1/ol-proposals/proposals/portal/{self.proposal_a.pk}/")
+        self.assertEqual(response.status_code, 200)
+        documents = response.data["data"]["documents"]
+        self.assertEqual(len(documents), 1)
+        self.assertEqual(documents[0]["document_type"], "NATIONAL_ID")
+        self.assertNotIn("allowed_actions", response.data["data"])
+
+    def test_notifications_feed_lists_events_with_deep_links(self):
+        from apps.ol_proposals.services.notification_service import notify_converted, notify_payment_ready
+
+        notify_payment_ready(proposal=self.proposal_a)
+        notify_converted(proposal=self.proposal_a)
+
+        staff = User.objects.create_user(
+            username="feed_staff", password="Password@12345", email="feed_staff@example.com", is_superuser=True
+        )
+        self.client.force_authenticate(staff)
+        response = self.client.get("/api/v1/ol-proposals/proposals/notifications/")
+        self.assertEqual(response.status_code, 200)
+        results = response.data["data"]["results"]
+        self.assertGreaterEqual(len(results), 2)
+        titles = " | ".join(item["title"] for item in results)
+        self.assertIn("OLP-2026-I030 is payment ready", titles)
+        self.assertIn("OLP-2026-I030 converted to policy", titles)
+        for item in results:
+            self.assertEqual(item["deep_link"], f"/ordinary-life/proposals/{self.proposal_a.pk}")
+            self.assertNotIn(str(self.proposal_a.pk), item["message"])
+
+    def test_notifications_feed_requires_view_permission(self):
+        self.client.force_authenticate(self.user_none)
+        response = self.client.get("/api/v1/ol-proposals/proposals/notifications/")
+        self.assertEqual(response.status_code, 403)

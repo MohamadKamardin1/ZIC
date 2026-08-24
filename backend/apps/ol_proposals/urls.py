@@ -22,6 +22,7 @@ from apps.ol_proposals.views import (
     ProposalKpisView,
     ProposalListView,
     ProposalMarkPaymentReadyView,
+    ProposalNotificationsView,
     ProposalPaymentReadinessView,
     ProposalPrintView,
     ProposalReactivateView,
@@ -32,6 +33,7 @@ from apps.ol_proposals.views import (
 urlpatterns = [
     path("proposals/", ProposalListView.as_view(), name="ol-proposals-list"),
     path("proposals/kpis/", ProposalKpisView.as_view(), name="ol-proposals-kpis"),
+    path("proposals/notifications/", ProposalNotificationsView.as_view(), name="ol-proposals-notifications"),
     path("proposals/dashboard-kpis/", ProposalDashboardKpisView.as_view(), name="ol-proposals-dashboard-kpis"),
     path("proposals/reporting/dataset/", ProposalReportingDatasetView.as_view(), name="ol-proposals-reporting-dataset"),
     path("proposals/export/", ProposalExportView.as_view(), name="ol-proposals-export"),

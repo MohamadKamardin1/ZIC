@@ -1051,3 +1051,193 @@ export async function listGeneratedDocuments(id: string): Promise<GeneratedDocum
 export async function getProposalOptions(kind: string) {
   return request<unknown>(`${BASE}/proposals/options/${encodeURIComponent(kind)}/`)
 }
+
+// ---------------------------------------------------------------------------
+// Partner portal (strictly read-only, partner-scoped on the backend)
+// ---------------------------------------------------------------------------
+
+export interface PortalBeneficiaryRecord {
+  id: string
+  personName: string
+  sharePercent: number
+  isPrimary: boolean
+  relationship?: string
+}
+
+export interface PortalFirstPremiumStatus {
+  linked: boolean
+  posted: boolean
+  commitmentNumber?: string
+  status?: string
+  amountDue?: number | null
+  amountPaid?: number | null
+  balance?: number | null
+  currency?: string
+}
+
+export interface PortalDocumentRecord {
+  id: string
+  documentType: string
+  fileReference?: string
+  mandatory?: boolean
+  status: string
+  uploadedAt?: string | null
+}
+
+export interface PortalProposalRecord {
+  id: string
+  proposalNumber: string
+  policyholder: string
+  product: string
+  plan: string
+  totalPremium: number | null
+  currency: string
+  statusCode: string
+  statusName: string
+  expiryDate: string | null
+  createdAt: string | null
+}
+
+export interface PortalProposalDetail extends PortalProposalRecord {
+  quotationNumber?: string
+  beneficiaries: PortalBeneficiaryRecord[]
+  documents: PortalDocumentRecord[]
+  firstPremium: PortalFirstPremiumStatus
+}
+
+export function normalizePortalProposal(raw: unknown): PortalProposalRecord {
+  const record = asRecord(raw)
+  const badge = asRecord(record.status_badge)
+  return {
+    id: str(record, "id") ?? "",
+    proposalNumber: str(record, "proposal_number") ?? "—",
+    policyholder: str(record, "policyholder") ?? "—",
+    product: str(record, "product") ?? "—",
+    plan: str(record, "plan") ?? "—",
+    totalPremium: num(record, "total_premium"),
+    currency: str(record, "currency") ?? "",
+    statusCode: str(badge, "code") ?? str(record, "status") ?? "",
+    statusName: str(badge, "name") ?? str(record, "status") ?? "—",
+    expiryDate: str(record, "expiry_date") ?? null,
+    createdAt: str(record, "created_at") ?? null,
+  }
+}
+
+export function normalizePortalProposalDetail(raw: unknown): PortalProposalDetail {
+  const base = normalizePortalProposal(raw)
+  const record = asRecord(raw)
+  const firstPremiumRaw = asRecord(record.first_premium)
+  const firstPremiumCommitmentLinked = bool(firstPremiumRaw, "linked")
+  return {
+    ...base,
+    quotationNumber: str(record, "quotation_number"),
+    beneficiaries: rowsOf(record, "beneficiaries").map((row) => ({
+      id: str(row, "id") ?? "",
+      personName: str(row, "person_name", "full_name") ?? "—",
+      sharePercent: num(row, "share_percent") ?? 0,
+      isPrimary: bool(row, "is_primary"),
+      relationship: str(row, "relationship"),
+    })),
+    documents: rowsOf(record, "documents").map((row) => ({
+      id: str(row, "id") ?? "",
+      documentType: str(row, "document_type") ?? "",
+      fileReference: str(row, "file_reference"),
+      mandatory: bool(row, "mandatory"),
+      status: str(row, "status") ?? "",
+      uploadedAt: str(row, "uploaded_at") ?? null,
+    })),
+    firstPremium: {
+      linked: firstPremiumCommitmentLinked,
+      posted: bool(firstPremiumRaw, "first_premium_posted"),
+      commitmentNumber: firstPremiumCommitmentLinked ? str(firstPremiumRaw, "commitment_number") : undefined,
+      status: firstPremiumCommitmentLinked ? str(firstPremiumRaw, "status") : undefined,
+      amountDue: num(firstPremiumRaw, "amount_due"),
+      amountPaid: num(firstPremiumRaw, "amount_paid"),
+      balance: num(firstPremiumRaw, "balance"),
+      currency: str(record, "currency"),
+    },
+  }
+}
+
+export interface PortalPage<T> {
+  results: T[]
+  count: number
+}
+
+export async function listPortalProposals(): Promise<PortalPage<PortalProposalRecord>> {
+  const payload = await request<unknown>(`${BASE}/proposals/portal/`)
+  const record = asRecord(payload)
+  const results = Array.isArray(record.results) ? record.results : []
+  const count = typeof record.count === "number" ? record.count : results.length
+  return { results: results.map(normalizePortalProposal), count }
+}
+
+export async function getPortalProposal(id: string): Promise<PortalProposalDetail> {
+  const payload = await request<unknown>(`${BASE}/proposals/portal/${id}/`)
+  return normalizePortalProposalDetail(payload)
+}
+
+// ---------------------------------------------------------------------------
+// Staff dashboard KPIs and notification feed
+// ---------------------------------------------------------------------------
+
+export interface ProposalDashboardKpis {
+  awaitingFirstPremium: number
+  awaitingFirstPremiumAmount: number
+  expiringIn7Days: number
+  pendingUnderwriting: number
+}
+
+export function normalizeProposalDashboardKpis(raw: unknown): ProposalDashboardKpis {
+  const record = asRecord(raw)
+  return {
+    awaitingFirstPremium: num(record, "awaiting_first_premium") ?? 0,
+    awaitingFirstPremiumAmount: num(record, "awaiting_first_premium_amount") ?? 0,
+    expiringIn7Days: num(record, "expiring_in_7_days") ?? 0,
+    pendingUnderwriting: num(record, "pending_underwriting") ?? 0,
+  }
+}
+
+export async function getProposalDashboardKpis(): Promise<ProposalDashboardKpis> {
+  const payload = await request<unknown>(`${BASE}/proposals/dashboard-kpis/`)
+  return normalizeProposalDashboardKpis(payload)
+}
+
+export interface ProposalNotificationItem {
+  id: number | string
+  kind: string
+  title: string
+  message: string
+  status: string
+  route: string
+  entityType: string
+  entityId: string
+  isRead: boolean
+  createdAt: string
+  deepLink: string
+}
+
+export function normalizeProposalNotification(raw: unknown): ProposalNotificationItem {
+  const record = asRecord(raw)
+  const deepLink = str(record, "deep_link", "deepLink") ?? "/ordinary-life/proposals"
+  return {
+    id: str(record, "id") ?? "",
+    kind: "ol-proposals",
+    title: str(record, "title") ?? "Proposal update",
+    message: str(record, "message") ?? "",
+    status: "UNREAD",
+    route: deepLink,
+    entityType: "OLProposal",
+    entityId: str(record, "id") ?? "",
+    isRead: false,
+    createdAt: str(record, "created_at", "createdAt") ?? "",
+    deepLink,
+  }
+}
+
+export async function listProposalNotifications(): Promise<ProposalNotificationItem[]> {
+  const payload = await request<unknown>(`${BASE}/proposals/notifications/`)
+  const record = asRecord(payload)
+  const results = Array.isArray(record.results) ? record.results : []
+  return results.map(normalizeProposalNotification)
+}

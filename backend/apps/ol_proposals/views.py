@@ -608,6 +608,57 @@ class PartnerPortalProposalDetailView(APIView):
         return Response({"data": PartnerPortalProposalDetailSerializer(proposal, context={"request": request}).data})
 
 
+class ProposalNotificationsView(APIView):
+    """GET /api/v1/ol-proposals/proposals/notifications/ — staff notification feed.
+
+    Mirrors the commitments overdue feed contract: DashboardNotification-shaped
+    items with deep links into the proposals UI, derived from the proposal
+    notification outbox (payment ready, converted, expiring soon).
+    """
+
+    permission_classes = [MustViewProposalsPermission]
+
+    EVENT_COPY = {
+        "ProposalPaymentReady": (
+            "is payment ready",
+            "Payment readiness confirmed; the first premium commitment awaits receipt allocation.",
+        ),
+        "ProposalConverted": (
+            "converted to policy",
+            "The proposal was converted to a policy; the first premium is fully posted.",
+        ),
+        "ProposalExpiringSoon": (
+            "expires soon",
+            "The proposal expiry date is approaching; follow up on renewal or conversion.",
+        ),
+    }
+
+    def get(self, request):
+        from apps.ol_proposals.models import OLProposalNotificationLog
+
+        logs = OLProposalNotificationLog.objects.select_related("proposal").order_by("-created_at")[:30]
+        items = []
+        for log in logs:
+            suffix, message = self.EVENT_COPY.get(
+                log.event_type,
+                (log.event_type.replace("_", " ").lower(), "A proposal event needs your attention."),
+            )
+            number = getattr(log.proposal, "proposal_number", "") or ""
+            expiry = getattr(log.proposal, "expiry_date", None)
+            if expiry and log.event_type == "ProposalExpiringSoon":
+                message = f"{message} Expiry {expiry:%d %b %Y}."
+            items.append(
+                {
+                    "id": str(log.pk),
+                    "title": f"Proposal {number} {suffix}".strip(),
+                    "message": message,
+                    "deep_link": f"/ordinary-life/proposals/{log.proposal_id}",
+                    "created_at": log.created_at,
+                }
+            )
+        return Response({"data": {"results": items}})
+
+
 class ProposalExportView(APIView):
     """GET /api/v1/ol-proposals/proposals/export/ — CSV export respecting list filters."""
 

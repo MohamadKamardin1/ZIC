@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query"
 import { CheckCircle2, Download, FilePlus2, Minus, Search, ShieldAlert, ShieldCheck } from "lucide-react"
 import { useAccess } from "../../lib/access"
@@ -545,12 +545,19 @@ function ConvertQuotationModal({ open, onClose, onCreated }: ConvertQuotationMod
 
 export default function OLProposals() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const { access, isSuperAdmin, canAccess } = useAccess()
 
-  const [filters, setFilters] = useState<FilterValues>({})
-  const [presetKey, setPresetKey] = useState<PresetKey | null>(null)
+  // Deep links (dashboard cards, notifications) may carry ?preset=<key> so the
+  // register opens already filtered; the preset stays shareable in the URL.
+  const urlPresetParam = searchParams.get("preset")
+  const initialPreset: PresetKey | null =
+    urlPresetParam && urlPresetParam in PRESET_FILTERS ? (urlPresetParam as PresetKey) : null
+
+  const [filters, setFilters] = useState<FilterValues>(initialPreset ? { ...PRESET_FILTERS[initialPreset] } : {})
+  const [presetKey, setPresetKey] = useState<PresetKey | null>(initialPreset)
   const [refreshKey, setRefreshKey] = useState(0)
   const [listError, setListError] = useState<unknown>(null)
   const [resultCount, setResultCount] = useState<number | null>(null)
@@ -828,10 +835,12 @@ export default function OLProposals() {
     if (!key || presetKey === key) {
       setFilters({})
       setPresetKey(null)
+      setSearchParams({}, { replace: true })
       return
     }
     setFilters({ ...PRESET_FILTERS[key] })
     setPresetKey(key)
+    setSearchParams({ preset: key }, { replace: true })
   }
 
   const handleExport = async () => {

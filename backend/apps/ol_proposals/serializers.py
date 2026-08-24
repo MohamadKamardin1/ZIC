@@ -330,6 +330,7 @@ class PartnerPortalProposalListSerializer(serializers.ModelSerializer):
 class PartnerPortalProposalDetailSerializer(PartnerPortalProposalListSerializer):
     quotation_number = serializers.CharField(source="quotation.quote_number", read_only=True)
     beneficiaries = OLProposalBeneficiarySerializer(many=True, read_only=True)
+    documents = OLProposalDocumentSerializer(many=True, read_only=True)
     first_premium = serializers.SerializerMethodField()
 
     def get_first_premium(self, obj):
@@ -353,6 +354,7 @@ class PartnerPortalProposalDetailSerializer(PartnerPortalProposalListSerializer)
         fields = PartnerPortalProposalListSerializer.Meta.fields + (
             "quotation_number",
             "beneficiaries",
+            "documents",
             "first_premium",
         )
 

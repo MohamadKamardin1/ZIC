@@ -44,10 +44,13 @@ vi.mock("../../lib/proposals", async (importOriginal) => {
 
 vi.mock("react-router-dom", () => ({
   useNavigate: () => navigateMock,
+  useSearchParams: () => [initialSearchParams, setSearchParamsMock],
   Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
 }))
 
 let grantedPermissions: string[]
+let initialSearchParams: URLSearchParams
+const setSearchParamsMock = vi.fn()
 
 vi.mock("../../lib/access", () => ({
   useAccess: () => ({
@@ -114,6 +117,8 @@ function renderPage() {
 
 beforeEach(() => {
   navigateMock.mockReset()
+  setSearchParamsMock.mockReset()
+  initialSearchParams = new URLSearchParams()
   listProposalsMock.mockReset()
   kpisMock.mockReset()
   optionsMock.mockReset()
@@ -222,6 +227,16 @@ describe("OL Proposals register", () => {
       expect(listProposalsMock).toHaveBeenCalledWith(
         expect.objectContaining({ status: "AWAITING_FIRST_PREMIUM", product: "OL001" }),
       ),
+    )
+  })
+
+  it("applies a ?preset deep link from the dashboard cards on load", async () => {
+    initialSearchParams = new URLSearchParams("preset=pending_underwriting")
+    renderPage()
+
+    expect(await screen.findByText("OLP-2026-000001")).toBeInTheDocument()
+    await waitFor(() =>
+      expect(listProposalsMock).toHaveBeenCalledWith(expect.objectContaining({ status: "PENDING_UNDERWRITING" })),
     )
   })
 
