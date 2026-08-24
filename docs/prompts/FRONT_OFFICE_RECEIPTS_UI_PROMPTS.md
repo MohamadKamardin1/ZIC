@@ -46,7 +46,7 @@ FINAL OUTPUT: client surface, mock coverage, primitives, tests, commit hash, pus
 
 ---
 
-## [ ] Prompt 2 — Receipts List Page and Work Queue
+## [x] Prompt 2 — Receipts List Page and Work Queue
 
 ```text
 You are a senior frontend engineer. Continue the ZIC Receipts UI. Execute ONLY Prompt 2 from the saved series file.

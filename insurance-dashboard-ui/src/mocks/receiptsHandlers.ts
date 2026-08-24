@@ -166,7 +166,31 @@ export const receiptsHandlers = [
     const url = new URL(request.url)
     const search = (url.searchParams.get("search") ?? "").toLowerCase()
     const status = url.searchParams.get("status")
-    const filtered = receipts.filter((receipt) => (!status || receipt.status === status) && (!search || [receipt.receipt_number, receipt.payer_display, receipt.payment_reference, receipt.source_module].some((value) => String(value ?? "").toLowerCase().includes(search))))
+    const branch = url.searchParams.get("branch")
+    const currency = url.searchParams.get("currency")
+    const paymentMode = url.searchParams.get("payment_mode")
+    const payer = (url.searchParams.get("payer") ?? "").toLowerCase()
+    const sourceModule = (url.searchParams.get("source_module") ?? "").toLowerCase()
+    const dateFrom = url.searchParams.get("date_from")
+    const dateTo = url.searchParams.get("date_to")
+    const unallocatedOnly = url.searchParams.get("unallocated_only") === "true"
+    const reversedOnly = url.searchParams.get("reversed_only") === "true"
+    const todayOnly = url.searchParams.get("today") === "true"
+    const filtered = receipts.filter((receipt) => {
+      const searchValues = [receipt.receipt_number, receipt.payer_display, receipt.payment_reference, receipt.source_module]
+      return (!status || receipt.status === status)
+        && (!branch || receipt.branch_id === branch)
+        && (!currency || receipt.currency === currency)
+        && (!paymentMode || receipt.payment_mode === paymentMode)
+        && (!payer || receipt.payer_display.toLowerCase().includes(payer))
+        && (!sourceModule || String(receipt.source_module ?? "").toLowerCase().includes(sourceModule))
+        && (!dateFrom || receipt.receipt_date >= dateFrom)
+        && (!dateTo || receipt.receipt_date <= dateTo)
+        && (!unallocatedOnly || Number(receipt.unallocated_amount) > 0)
+        && (!reversedOnly || receipt.status === "REVERSED")
+        && (!todayOnly || receipt.receipt_date === "2026-08-24")
+        && (!search || searchValues.some((value) => String(value ?? "").toLowerCase().includes(search)))
+    })
     return data(page(filtered, url))
   }),
   ...Object.entries(options).map(([entity, values]) => {
