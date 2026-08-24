@@ -581,6 +581,39 @@ export async function listCommitmentOverdueNotifications(): Promise<DashboardNot
   })
 }
 
+/**
+ * Module feed for the top-bar bell: recent proposal lifecycle events
+ * (payment ready, converted, expiring soon) with deep links into the
+ * proposals UI. Backed by the OL Proposals module.
+ */
+export async function listProposalNotifications(): Promise<DashboardNotificationRecord[]> {
+  const res = await apiFetchAuth("/api/v1/ol-proposals/proposals/notifications/")
+  const json = await res.json().catch(() => null)
+  if (!res.ok) throw new Error(extractError(res, json))
+  const record = json && typeof json === "object" ? (json as Record<string, unknown>) : {}
+  const results = Array.isArray(record.results)
+    ? record.results
+    : record.data && typeof record.data === "object" && Array.isArray((record.data as { results?: unknown }).results)
+      ? (record.data as { results: unknown[] }).results
+      : []
+  return results.map((raw) => {
+    const item = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}
+    return {
+      id: String(item.id ?? ""),
+      kind: "ol-proposals",
+      title: String(item.title ?? "Proposal update"),
+      message: String(item.message ?? ""),
+      status: "UNREAD",
+      route: typeof item.deep_link === "string" ? item.deep_link : "/ordinary-life/proposals",
+      entityType: "OLProposal",
+      entityId: String(item.id ?? ""),
+      isRead: false,
+      createdAt: String(item.created_at ?? item.createdAt ?? ""),
+      deepLink: typeof item.deep_link === "string" ? item.deep_link : "/ordinary-life/proposals",
+    }
+  })
+}
+
 export async function markDashboardNotificationRead(id: number): Promise<DashboardNotificationRecord> {
   return dashboardRequest<DashboardNotificationRecord>(`/api/v1/dashboard/notifications/${id}/read/`, { method: "POST" })
 }

@@ -62,7 +62,9 @@ const OLQuotationWizard = lazy(() => import("./pages/ordinary-life/OLQuotationWi
 import OLCommitments from "./pages/ordinary-life/OLCommitments"
 import CommitmentDetailPage from "./pages/ordinary-life/CommitmentDetail"
 import PartnerCommitments, { PartnerCommitmentDetail } from "./pages/portal/PartnerCommitments"
+import { PartnerProposals, PartnerProposalDetail } from "./pages/portal/PartnerProposals"
 import OLProposals from "./pages/ordinary-life/OLProposals"
+import OLProposalDetail from "./pages/ordinary-life/OLProposalDetail"
 import OLPolicies from "./pages/ordinary-life/OLPolicies"
 import OLLoans from "./pages/ordinary-life/OLLoans"
 import OLWithdrawals from "./pages/ordinary-life/OLWithdrawals"
@@ -193,7 +195,16 @@ export default function App() {
             </RequirePermission>
           }
         />
-        <Route path="ordinary-life/proposals" element={<OLProposals />} />
+        <Route path="ordinary-life/proposals" element={
+          <RequirePermission permission="ol_proposals.view">
+            <OLProposals />
+          </RequirePermission>
+        } />
+        <Route path="ordinary-life/proposals/:id" element={
+          <RequirePermission permission="ol_proposals.view">
+            <OLProposalDetail />
+          </RequirePermission>
+        } />
         <Route path="ordinary-life/policies" element={<OLPolicies />} />
         <Route path="ordinary-life/loans" element={<OLLoans />} />
         <Route path="ordinary-life/withdrawals" element={<OLWithdrawals />} />
@@ -216,6 +227,22 @@ export default function App() {
           element={
             <RequirePermission permission="ol_commitments.view">
               <PartnerCommitmentDetail />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="portal/proposals"
+          element={
+            <RequirePermission permission="ol_proposals.view">
+              <PartnerProposals />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="portal/proposals/:id"
+          element={
+            <RequirePermission permission="ol_proposals.view">
+              <PartnerProposalDetail />
             </RequirePermission>
           }
         />

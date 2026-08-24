@@ -932,6 +932,78 @@ class OLGracePeriod(OLEffectiveDateModel):
                 raise ValidationError({"code": "An active grace-period row overlaps an existing row in the same scope."})
 
 
+class OLProposalStatus(OLParameterBaseModel):
+    """Configurable proposal lifecycle status and outgoing transition metadata."""
+
+    display_order = models.PositiveIntegerField(default=0)
+    applies_to = models.CharField(max_length=40, default="PROPOSAL", db_index=True)
+    is_terminal = models.BooleanField(default=False)
+    allowed_transitions = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ["applies_to", "display_order", "name", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_proposal_status_code_uq"),
+        ]
+        indexes = [
+            models.Index(fields=["applies_to", "is_active", "display_order"], name="ol_proposal_status_idx"),
+            models.Index(fields=["is_terminal", "is_active"], name="ol_prop_status_terminal_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        self.code = (self.code or "").strip().upper()
+        self.applies_to = (self.applies_to or "PROPOSAL").strip().upper()
+        transitions = self.allowed_transitions if self.allowed_transitions is not None else []
+        if not isinstance(transitions, list):
+            raise ValidationError({"allowed_transitions": "Allowed transitions must be a JSON list of status codes."})
+        normalized = []
+        for transition in transitions:
+            if not isinstance(transition, str) or not transition.strip():
+                raise ValidationError({"allowed_transitions": "Each transition must be a non-empty status code."})
+            target = transition.strip().upper()
+            if target != self.code.upper() and target not in normalized:
+                normalized.append(target)
+        self.allowed_transitions = normalized
+
+
+class OLProposalDocumentRequirement(OLParameterBaseModel):
+    """Per-product/plan mandatory document requirements for proposals (BR-12)."""
+
+    product = models.ForeignKey(
+        "ol_parameters.OLProduct",
+        on_delete=models.PROTECT,
+        related_name="proposal_document_requirements",
+        null=True,
+        blank=True,
+    )
+    plan = models.ForeignKey(
+        "ordinary_life.OLPlan",
+        on_delete=models.PROTECT,
+        related_name="proposal_document_requirements",
+        null=True,
+        blank=True,
+    )
+    document_type = models.CharField(max_length=120, db_index=True)
+    mandatory = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        ordering = ["name", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["code"], name="ol_proposal_doc_req_code_uq"),
+        ]
+        indexes = [
+            models.Index(fields=["product", "plan", "document_type"], name="ol_prop_doc_req_scope_idx"),
+            models.Index(fields=["mandatory", "is_active"], name="ol_prop_doc_req_mand_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        self.document_type = (self.document_type or "").strip().upper()
+        if not self.document_type:
+            raise ValidationError({"document_type": "A document type is required."})
+
+
 class OLPolicyStatus(OLParameterBaseModel):
     """Configurable policy lifecycle status and outgoing transition metadata."""
 

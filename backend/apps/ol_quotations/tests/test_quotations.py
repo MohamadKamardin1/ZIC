@@ -2772,7 +2772,7 @@ class OLQuotationAPITests(TestCase):
         data = response.data["data"]
         proposal = OLProposal.objects.get(pk=data["id"])
         self.assertTrue(data["proposal_number"].startswith("OLP-"))
-        self.assertEqual(data["status"], "DRAFT")
+        self.assertEqual(data["status"], "ENRICHMENT")
         self.assertEqual(proposal.quotation_id, quotation.pk)
         self.assertIsNotNone(proposal.quotation_version_id)
         self.assertEqual(proposal.quotation_version.status, QuotationStatus.FINALIZED)
@@ -2832,7 +2832,7 @@ class OLQuotationAPITests(TestCase):
             format="json",
         )
         self.assertEqual(converted.status_code, 200, converted.data)
-        self.assertEqual(converted.data["data"]["status"], "DRAFT")
+        self.assertEqual(converted.data["data"]["status"], "ENRICHMENT")
         self.assertEqual(
             OLQuotation.objects.get(pk=draft["id"]).status,
             QuotationStatus.CONVERTED,

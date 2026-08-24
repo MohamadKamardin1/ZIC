@@ -11,6 +11,7 @@
  */
 
 import type { ApiClientError } from "./apiClient"
+import { proposalDeepLink } from "./proposals"
 
 export const ERROR_COACH_DOC_REF = "docs/OL_COMMITMENTS_USER_GUIDE.md"
 
@@ -45,7 +46,13 @@ const NOT_RETRYABLE = new Set([
   "UNAUTHORIZED",
   "FORBIDDEN",
   "COMMITMENT_NOT_FOUND",
+  "PROPOSAL_PARTNER_NOT_VERIFIED",
+  "PROPOSAL_INVALID_TRANSITION",
+  "PROPOSAL_ALREADY_CONVERTED",
+  "PROPOSAL_EXPIRED",
 ])
+
+export const PROPOSAL_DOC_REF = "docs/OL_PROPOSALS_USER_GUIDE.md"
 
 /** Teach-first resolution instructions by code family. */
 const RESOLUTION_REGISTRY: Record<string, string[]> = {
@@ -90,6 +97,20 @@ const RESOLUTION_REGISTRY: Record<string, string[]> = {
   PERMISSION_DENIED: [
     "Request the required OL Commitments permission from an administrator.",
     "The administrator can assign a role group under User Management.",
+  ],
+  PROPOSAL_NOT_PAYMENT_READY: [
+    "Open the proposal's Payment Readiness panel.",
+    "Resolve each failed checklist item using its deep link.",
+    "Retry Mark as payment-ready once every item passes.",
+  ],
+  PROPOSAL_FIRST_PREMIUM_NOT_POSTED: [
+    "Record the receipt in Front Office.",
+    "Allocate the receipt against the linked first premium commitment.",
+    "Convert to policy once the balance is zero.",
+  ],
+  PROPOSAL_UNDERWRITING_PENDING: [
+    "Open the Underwriting decision panel.",
+    "Record a clear, load, or decline decision before converting.",
   ],
   VALIDATION_ERROR: [
     "Fix the highlighted fields, then submit again.",
@@ -188,6 +209,37 @@ function statusOf(raw: unknown): number | undefined {
   return typeof statusCode === "number" ? statusCode : undefined
 }
 
+function isProposalCode(code: string): boolean {
+  return code.startsWith("PROPOSAL_")
+}
+
+/** First unresolved checklist deep link from a PROPOSAL_NOT_PAYMENT_READY payload. */
+function checklistDeepLink(raw: Record<string, unknown>): string | undefined {
+  const nested = isRecord(raw.error) ? raw.error : {}
+  const nestedDetails = isRecord(nested.details) ? nested.details : {}
+  const checklist = Array.isArray(raw.checklist) ? raw.checklist : Array.isArray(nestedDetails.checklist) ? nestedDetails.checklist : []
+  for (const rawItem of checklist) {
+    if (isRecord(rawItem) && rawItem.passed !== true) {
+      const link = pick(rawItem, "deep_link", "deepLink")
+      if (typeof link === "string" && link.trim()) return link.trim()
+    }
+  }
+  return undefined
+}
+
+function proposalExistingReference(raw: unknown, code: string): ExistingReference | undefined {
+  if (code !== "PROPOSAL_ALREADY_CONVERTED" || !isRecord(raw)) return undefined
+  const nested = isRecord(raw.error) ? raw.error : {}
+  const details = isRecord(raw.details) ? raw.details : isRecord(nested?.details) ? nested.details : {}
+  const policyId = String(pick(details, "converted_policy_id", "policy_id", "policyId") ?? "")
+  const policyNumber = String(pick(details, "policy_number", "policyNumber") ?? "")
+  if (!policyId && !policyNumber) return undefined
+  const href = policyId
+    ? `/ordinary-life/policies/${policyId}`
+    : `/ordinary-life/policies?policy_number=${encodeURIComponent(policyNumber)}`
+  return { label: "View policy", href, number: policyNumber || undefined }
+}
+
 export function toStructuredError(input: unknown, fallbackMessage?: string): StructuredError {
   let code = "UNKNOWN"
   let message = fallbackMessage ?? "The request could not be completed."
@@ -231,19 +283,27 @@ export function toStructuredError(input: unknown, fallbackMessage?: string): Str
   }
 
   const details = isRecord(raw) ? raw : {}
+  const proposalCode = isProposalCode(code)
   const resolutionSteps =
     extractResolutionSteps(details) ?? RESOLUTION_REGISTRY[code] ?? RESOLUTION_REGISTRY.DEFAULT
   const normalizedFieldErrors = extractFieldErrors(details, fieldErrors)
+  const proposalLink = proposalCode
+    ? extractDeepLink(details) ?? checklistDeepLink(details)
+    : undefined
+  const parameterLink = code === "PARAMETER_MISSING" ? extractDeepLink(details) ?? "/ordinary-life/parameters/policy-setup" : undefined
+  const deepLinkValue = proposalCode
+    ? proposalDeepLink(proposalLink)
+    : parameterLink
 
   return {
     code,
     message,
     resolutionSteps,
     fieldErrors: normalizedFieldErrors,
-    docRef: extractDocRef(details) ?? ERROR_COACH_DOC_REF,
-    deepLink: code === "PARAMETER_MISSING" ? extractDeepLink(details) ?? "/ordinary-life/parameters/policy-setup" : undefined,
-    deepLinkLabel: "Open configuration",
-    existing: extractExisting(details, code),
+    docRef: extractDocRef(details) ?? (proposalCode ? PROPOSAL_DOC_REF : ERROR_COACH_DOC_REF),
+    deepLink: deepLinkValue,
+    deepLinkLabel: proposalCode ? "Open checklist item" : "Open configuration",
+    existing: proposalExistingReference(details, code) ?? extractExisting(details, code),
     retryable: !NOT_RETRYABLE.has(code),
     status,
     raw: input,

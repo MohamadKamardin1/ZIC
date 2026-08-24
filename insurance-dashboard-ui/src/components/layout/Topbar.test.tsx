@@ -3,9 +3,10 @@ import { MemoryRouter } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { Topbar } from "./Topbar"
 
-const { listDashboardMock, listOverdueMock, markReadMock, markAllMock, searchMock, navigateMock } = vi.hoisted(() => ({
+const { listDashboardMock, listOverdueMock, listProposalNoticeMock, markReadMock, markAllMock, searchMock, navigateMock } = vi.hoisted(() => ({
   listDashboardMock: vi.fn(),
   listOverdueMock: vi.fn(),
+  listProposalNoticeMock: vi.fn(),
   markReadMock: vi.fn(),
   markAllMock: vi.fn(),
   searchMock: vi.fn(),
@@ -20,6 +21,7 @@ vi.mock("react-router-dom", async (importOriginal) => {
 vi.mock("../../lib/api", () => ({
   listDashboardNotifications: listDashboardMock,
   listCommitmentOverdueNotifications: listOverdueMock,
+  listProposalNotifications: listProposalNoticeMock,
   markDashboardNotificationRead: markReadMock,
   markAllDashboardNotificationsRead: markAllMock,
   searchDashboard: searchMock,
@@ -52,12 +54,14 @@ function renderTopbar() {
 beforeEach(() => {
   listDashboardMock.mockReset()
   listOverdueMock.mockReset()
+  listProposalNoticeMock.mockReset()
   markReadMock.mockReset()
   markAllMock.mockReset()
   searchMock.mockReset()
   navigateMock.mockReset()
   listDashboardMock.mockResolvedValue([DASH_NOTICE])
   listOverdueMock.mockResolvedValue([OVERDUE_NOTICE])
+  listProposalNoticeMock.mockResolvedValue([])
   searchMock.mockResolvedValue([])
 })
 
@@ -73,5 +77,31 @@ describe("Topbar bell notification center integration", () => {
 
     fireEvent.click(item)
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/ordinary-life/commitments/9"))
+  })
+
+  it("surfaces proposal lifecycle notifications with deep links that navigate", async () => {
+    listProposalNoticeMock.mockResolvedValue([
+      {
+        id: "prop-evt-7",
+        kind: "ol-proposals",
+        title: "Proposal OLP-2026-000042 converted to policy",
+        message: "The proposal was converted to a policy; the first premium is fully posted.",
+        status: "UNREAD",
+        route: "/ordinary-life/proposals/prop-uuid-0001",
+        entityType: "OLProposal",
+        entityId: "prop-evt-7",
+        isRead: false,
+        createdAt: new Date().toISOString(),
+        deepLink: "/ordinary-life/proposals/prop-uuid-0001",
+      },
+    ])
+
+    renderTopbar()
+
+    fireEvent.click(await screen.findByRole("button", { name: "notifications" }))
+
+    const item = await screen.findByText("Proposal OLP-2026-000042 converted to policy")
+    fireEvent.click(item)
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/ordinary-life/proposals/prop-uuid-0001"))
   })
 })

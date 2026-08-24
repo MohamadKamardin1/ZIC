@@ -33,6 +33,8 @@ export type SmartSelectProps = FormFieldProps & {
   emptyEntityLabel?: string
   allowedValues?: string[]
   className?: string
+  optionsUrl?: string
+  rememberLastUsed?: boolean
 }
 
 type OptionListPayload = {
@@ -57,17 +59,26 @@ function normalizeOption(value: unknown): SmartOption | null {
   return { value: String(optionValue), label: String(label), meta }
 }
 
+function unwrapEnvelope(payload: unknown): OptionListPayload | unknown[] {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload as OptionListPayload
+  const data = (payload as Record<string, unknown>).data
+  if (data && typeof data === "object" && !Array.isArray(data)) return data as OptionListPayload
+  return payload as OptionListPayload
+}
+
 function normalizeOptions(payload: unknown): SmartOption[] {
-  if (Array.isArray(payload)) return payload.map(normalizeOption).filter((item): item is SmartOption => Boolean(item))
-  if (!payload || typeof payload !== "object") return []
-  const record = payload as OptionListPayload
+  const unwrapped = unwrapEnvelope(payload)
+  if (Array.isArray(unwrapped)) return unwrapped.map(normalizeOption).filter((item): item is SmartOption => Boolean(item))
+  if (!unwrapped || typeof unwrapped !== "object") return []
+  const record = unwrapped as OptionListPayload
   const items = record.items ?? record.results ?? record.options ?? []
   return Array.isArray(items) ? items.map(normalizeOption).filter((item): item is SmartOption => Boolean(item)) : []
 }
 
 function getPayloadTotal(payload: unknown, fallback: number): number {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return fallback
-  const record = payload as OptionListPayload
+  const unwrapped = unwrapEnvelope(payload)
+  if (!unwrapped || typeof unwrapped !== "object" || Array.isArray(unwrapped)) return fallback
+  const record = unwrapped as OptionListPayload
   return Number(record.count ?? record.total ?? fallback)
 }
 
@@ -108,6 +119,8 @@ export function SmartSelect({
   emptyEntityLabel,
   allowedValues,
   className = "",
+  optionsUrl,
+  rememberLastUsed = true,
 }: SmartSelectProps) {
   const { access } = useAccess()
   const { toast } = useToast()
@@ -127,8 +140,12 @@ export function SmartSelect({
   const lastUsedKey = `zic.smart-select.last-used.${entity}`
 
   const optionsQuery = useQuery({
-    queryKey: ["ol-options", entity, debouncedQuery, pageSize],
-    queryFn: () => request<OptionListPayload | unknown[]>(`/api/v1/ol/options/${encodeURIComponent(entity)}/?q=${encodeURIComponent(debouncedQuery)}&page=1&page_size=${pageSize}`),
+    queryKey: ["ol-options", entity, optionsUrl ?? "", debouncedQuery, pageSize],
+    queryFn: () => {
+      const base = optionsUrl ?? `/api/v1/ol/options/${encodeURIComponent(entity)}/`
+      const separator = base.includes("?") ? "&" : "?"
+      return request<OptionListPayload | unknown[]>(`${base}${separator}q=${encodeURIComponent(debouncedQuery)}&page=1&page_size=${pageSize}`)
+    },
     enabled: !disabled,
     staleTime: 30_000,
   })
@@ -149,7 +166,8 @@ export function SmartSelect({
     ? selectedOptions.length ? selectedOptions.map((option) => option.label).join(", ") : placeholder
     : selectedOptions[0]?.label ?? placeholder
 
-  const rememberLastUsed = (option: SmartOption) => {
+  const rememberLastUsedOption = (option: SmartOption) => {
+    if (!rememberLastUsed) return
     try {
       window.sessionStorage.setItem(lastUsedKey, JSON.stringify({ value: option.value, label: option.label, meta: option.meta }))
     } catch {
@@ -162,7 +180,7 @@ export function SmartSelect({
     lastUsedAppliedRef.current = false
   }, [entity])
   useEffect(() => {
-    if (multiple || value || !onChange || lastUsedAppliedRef.current || optionsQuery.isLoading || options.length === 0) return
+    if (!rememberLastUsed || multiple || value || !onChange || lastUsedAppliedRef.current || optionsQuery.isLoading || options.length === 0) return
     lastUsedAppliedRef.current = true
     try {
       const raw = window.sessionStorage.getItem(lastUsedKey)
@@ -175,7 +193,7 @@ export function SmartSelect({
     } catch {
       // Ignore malformed or unavailable session storage.
     }
-  }, [lastUsedKey, multiple, onChange, onOptionChange, options, optionsQuery.isLoading, value])
+  }, [lastUsedKey, multiple, onChange, onOptionChange, options, optionsQuery.isLoading, rememberLastUsed, value])
 
   useEffect(() => {
     if (!open) return undefined
@@ -206,7 +224,7 @@ export function SmartSelect({
   }, [open])
 
   const choose = (option: SmartOption) => {
-    rememberLastUsed(option)
+    rememberLastUsedOption(option)
     if (multiple) {
       const next = selectedValues.includes(option.value)
         ? selectedValues.filter((selectedValue) => selectedValue !== option.value)
@@ -226,7 +244,7 @@ export function SmartSelect({
   }
 
   const handleCreated = (option: QuickCreateOption) => {
-    rememberLastUsed(option)
+    rememberLastUsedOption(option)
     setCreatedOptions((current) => [...current.filter((item) => item.value !== option.value), option])
     queryClient.invalidateQueries({ queryKey: ["ol-options", entity] })
     if (multiple) onValuesChange?.([...selectedValues, option.value])

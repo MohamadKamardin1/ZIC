@@ -1,0 +1,118 @@
+{
+  "module": "ol_proposals",
+  "generated_at": "2026-08-23",
+  "command": "seed_ol_proposal_scenarios",
+  "proofs": [
+    {
+      "scenario_id": "F1",
+      "action": "convert unverified partner",
+      "caught": true,
+      "http_status": 422,
+      "error_code": "PROPOSAL_PARTNER_NOT_VERIFIED",
+      "message": "Khamis faki (seed-pf1) is not partner-verified for this quotation.",
+      "resolution_steps": [
+        "Verify the partner under Partner Onboarding.",
+        "Re-run the preference after verification."
+      ],
+      "field_errors": {},
+      "details": {}
+    },
+    {
+      "scenario_id": "F2",
+      "action": "mark payment ready with missing documents",
+      "caught": true,
+      "http_status": 409,
+      "error_code": "PROPOSAL_NOT_PAYMENT_READY",
+      "message": "This proposal is not payment-ready; resolve each failed checklist item.",
+      "resolution_steps": [
+        "Open each failed item using its deep link.",
+        "Resolve it, then re-run payment readiness."
+      ],
+      "field_errors": {},
+      "details": {
+        "checklist": [
+          {
+            "key": "enrichment_complete",
+            "passed": false,
+            "error_code": "PROPOSAL_ENRICHMENT_INCOMPLETE",
+            "message": "Enrichment sections are incomplete.",
+            "resolution_steps": [
+              "Complete the declarations (PEP/AML) and bank details for the policyholder.",
+              "Confirm the required enrichment sections show a green check on the proposal."
+            ],
+            "deep_link": "/proposals/42158073-1e89-4641-aa8b-c253f4ea1086/enrichment"
+          },
+          {
+            "key": "beneficiaries_valid",
+            "passed": false,
+            "error_code": "PROPOSAL_BENEFICIARY_SHARES_INVALID",
+            "message": "Beneficiaries are missing or invalid.",
+            "resolution_steps": [
+              "Add at least one primary beneficiary.",
+              "Make the share percentages sum to exactly 100%.",
+              "Attach a guardian to every minor beneficiary."
+            ],
+            "deep_link": "/proposals/42158073-1e89-4641-aa8b-c253f4ea1086/beneficiaries"
+          },
+          {
+            "key": "mandatory_documents_complete",
+            "passed": false,
+            "error_code": "PROPOSAL_MANDATORY_DOCUMENTS_MISSING",
+            "message": "One or more mandatory documents are missing.",
+            "resolution_steps": [
+              "Upload every required document (identity document, signature, KYC form as applicable).",
+              "Confirm each uploaded document has status Uploaded."
+            ],
+            "deep_link": "/proposals/42158073-1e89-4641-aa8b-c253f4ea1086/documents"
+          }
+        ],
+        "status": "ENRICHMENT"
+      }
+    },
+    {
+      "scenario_id": "F3",
+      "action": "replace beneficiaries with shares not totalling 100%",
+      "caught": true,
+      "http_status": 422,
+      "error_code": "PROPOSAL_BENEFICIARY_SHARES_INVALID",
+      "message": "Beneficiary shares must total 100%, currently 50.00%.",
+      "resolution_steps": [
+        "Adjust each beneficiary share so the total is exactly 100%.",
+        "Mark one beneficiary as primary."
+      ],
+      "field_errors": {
+        "beneficiaries": [
+          "Shares must total 100%."
+        ]
+      },
+      "details": {}
+    },
+    {
+      "scenario_id": "F4",
+      "action": "convert to policy before first premium posted",
+      "caught": true,
+      "http_status": 422,
+      "error_code": "PROPOSAL_FIRST_PREMIUM_NOT_POSTED",
+      "message": "The first premium has not been posted against this proposal.",
+      "resolution_steps": [
+        "Open the proposal commitment in OL Commitments.",
+        "Record the first-premium payment, then retry conversion."
+      ],
+      "field_errors": {},
+      "details": {}
+    },
+    {
+      "scenario_id": "F5",
+      "action": "transition a terminal proposal to PAYMENT_READY",
+      "caught": true,
+      "http_status": 422,
+      "error_code": "PROPOSAL_INVALID_TRANSITION",
+      "message": "Cannot 'transition' from proposal status 'CANCELLED'.",
+      "resolution_steps": [
+        "'transition' is not allowed while the proposal is 'CANCELLED'."
+      ],
+      "field_errors": {},
+      "details": {}
+    }
+  ]
+}

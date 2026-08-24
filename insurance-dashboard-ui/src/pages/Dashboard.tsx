@@ -16,6 +16,7 @@ import { DashboardSkeleton } from "../components/shared/Skeleton"
 import { getDashboard } from "../lib/api"
 import { useAuth } from "../lib/auth"
 import { CommitmentDashboardCards } from "../components/commitments/CommitmentDashboardCards"
+import { OLProposalDashboardCards } from "../components/proposals/OLProposalDashboardCards"
 import type { DashboardData } from "../lib/types"
 
 export default function Dashboard() {
@@ -58,6 +59,8 @@ export default function Dashboard() {
           <HeroBanner stats={data.hero} />
 
           <CommitmentDashboardCards />
+
+          <OLProposalDashboardCards />
 
           <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
             <DashboardWidgetLink label="Open ordinary-life policies" route="/ordinary-life/policies" onNavigate={navigate}><PoliciesCard data={data.policies} /></DashboardWidgetLink>

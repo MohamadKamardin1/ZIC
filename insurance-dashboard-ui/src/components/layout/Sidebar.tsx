@@ -100,7 +100,7 @@ const NAV: NavItem[] = [
   { label: "Ordinary Life", icon: Users, expandable: true, children: [
     { label: "Quotations", icon: FileText, path: "/ordinary-life/quotations" },
     { label: "Commitments", icon: FileText, path: "/ordinary-life/commitments", permission: { module: "ol_commitments", action: "view" } },
-    { label: "Proposals", icon: FileText, path: "/ordinary-life/proposals" },
+    { label: "Proposals", icon: FileText, path: "/ordinary-life/proposals", permission: { module: "ol_proposals", action: "view" } },
     { label: "Policies", icon: ShieldCheck, path: "/ordinary-life/policies" },
     { label: "Loans", icon: FileText, path: "/ordinary-life/loans" },
     { label: "Withdrawals", icon: FileText, path: "/ordinary-life/withdrawals" },

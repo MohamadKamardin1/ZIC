@@ -13,7 +13,6 @@ from apps.governance.services.audit_service import AuditService
 from apps.partner_onboarding.models import ApplicationPartnerType, PartnerApplication
 from apps.partner_onboarding.services.application_service import ApplicationService
 from apps.partners.models import Partner, PartnerType
-from apps.ol_proposals.models import OLProposal, ProposalStatus
 from apps.system_parameters.services.config_service import ConfigurationService
 from apps.system_parameters.services.numbering_service import NumberingEngine
 
@@ -2709,41 +2708,17 @@ class QuotationService:
                 reason="Finalized quotation snapshot preserved for proposal conversion.",
                 status=QuotationStatus.FINALIZED,
             )
-        full_snapshot = source_version.snapshot or QuotationService.version_snapshot(locked)
-        children = full_snapshot.get("children", {}) if isinstance(full_snapshot, dict) else {}
-        plans_snapshot = children.get("ol_quotations.olquotationplanconfiguration", [])
-        if not plans_snapshot:
-            plans_snapshot = children.get("ol_quotations.olquotationproduct", [])
-        financial_snapshot = full_snapshot.get("financial_summary") or {}
-        proposal = OLProposal.objects.create(
+        from apps.ol_proposals.services.conversion_service import convert_quotation_to_proposal
+
+        result = convert_quotation_to_proposal(
             quotation=locked,
-            quotation_version=source_version,
-            proposal_number=NumberingEngine.generate_number(
-                numbering_code="OL_PROPOSAL",
-                model_class=OLProposal,
-                field_name="proposal_number",
-            ),
-            status=ProposalStatus.DRAFT,
-            prospect_snapshot={
-                "quote_number": locked.quote_number,
-                "quote_name": locked.quote_name,
-                "quote_date": locked.quote_date.isoformat() if locked.quote_date else None,
-                "identity_type": locked.identity_type,
-                "identity_number": locked.identity_number,
-                "date_of_birth": locked.date_of_birth.isoformat() if locked.date_of_birth else None,
-                "age_at_quote": locked.age_at_quote,
-                "gender": locked.gender,
-                "smoker_status": locked.smoker_status,
-                "location": locked.location,
-                "address": locked.address,
-                "currency": locked.currency,
-                "partner_id": str(locked.partner_id or locked.linked_partner_id) if (locked.partner_id or locked.linked_partner_id) else None,
-            },
-            plans_snapshot=plans_snapshot,
-            financial_summary_snapshot=financial_snapshot,
-            created_by=QuotationService.actor(actor),
+            actor=actor,
+            request=request,
+            version_number=source_version.version_number,
+            source_channel="API",
+            notes=notes,
         )
-        AuditService.log_create(proposal, actor=actor, request=request)
+        proposal = result.proposal
         before = QuotationService.snapshot(locked)
         locked.status = QuotationStatus.CONVERTED
         locked.current_version_number += 1
@@ -2773,18 +2748,6 @@ class QuotationService:
             before_state=before,
             after_state=after,
             request=request,
-        )
-        DomainEvent.objects.create(
-            event_type="ProposalCreated",
-            aggregate_type="OLProposal",
-            aggregate_id=str(proposal.pk),
-            payload={
-                "proposal_id": str(proposal.pk),
-                "proposal_number": proposal.proposal_number,
-                "quotation_id": str(locked.pk),
-                "quote_number": locked.quote_number,
-                "quotation_version_id": str(source_version.pk),
-            },
         )
         return proposal
 

@@ -5,7 +5,7 @@ import { useAuth } from "../../lib/auth"
 import { useTheme } from "../../theme/ThemeProvider"
 import { useAI } from "../ai/AIContext"
 import { useLanguage, languageOptions } from "../../lib/language"
-import { listCommitmentOverdueNotifications, listDashboardNotifications, markAllDashboardNotificationsRead, markDashboardNotificationRead, searchDashboard } from "../../lib/api"
+import { listCommitmentOverdueNotifications, listDashboardNotifications, listProposalNotifications, markAllDashboardNotificationsRead, markDashboardNotificationRead, searchDashboard } from "../../lib/api"
 import type { DashboardNotificationRecord, GlobalSearchResult } from "../../lib/types"
 
 interface TopbarProps { onToggleSidebar: () => void }
@@ -43,12 +43,13 @@ export function Topbar({ onToggleSidebar }: TopbarProps) {
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [notifications, setNotifications] = useState<DashboardNotificationRecord[]>([])
   const [commitmentNotifications, setCommitmentNotifications] = useState<DashboardNotificationRecord[]>([])
+  const [proposalNotifications, setProposalNotifications] = useState<DashboardNotificationRecord[]>([])
   const [notificationLoading, setNotificationLoading] = useState(false)
   const searchRef = useRef<HTMLDivElement>(null)
   const nextTheme = theme === "dark" ? "light" : "dark"
   const d = now.getDate(); const y = now.getFullYear(); const monthAbbr = MONTHS[now.getMonth()]
   const hh = String(now.getHours()).padStart(2, "0"), mm = String(now.getMinutes()).padStart(2, "0"), ss = String(now.getSeconds()).padStart(2, "0")
-  const allNotifications = [...notifications, ...commitmentNotifications]
+  const allNotifications = [...notifications, ...commitmentNotifications, ...proposalNotifications]
   const unreadCount = allNotifications.filter((notification) => !notification.isRead).length
 
   useEffect(() => {
@@ -68,12 +69,14 @@ export function Topbar({ onToggleSidebar }: TopbarProps) {
 
   async function loadNotifications() {
     setNotificationLoading(true)
-    const [dashboardItems, commitmentItems] = await Promise.all([
+    const [dashboardItems, commitmentItems, proposalItems] = await Promise.all([
       listDashboardNotifications().catch(() => [] as DashboardNotificationRecord[]),
       listCommitmentOverdueNotifications().catch(() => [] as DashboardNotificationRecord[]),
+      listProposalNotifications().catch(() => [] as DashboardNotificationRecord[]),
     ])
     setNotifications(dashboardItems)
     setCommitmentNotifications(commitmentItems)
+    setProposalNotifications(proposalItems)
     setNotificationLoading(false)
   }
 
