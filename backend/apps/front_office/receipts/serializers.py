@@ -10,6 +10,7 @@ from apps.front_office.receipts.models import (
     ReceiptReversal,
     ReceiptStatusHistory,
 )
+from apps.front_office.receipts.permissions import has_receipt_permission
 from apps.front_office.receipts.services.parameter_resolver import payment_mode_label
 
 _ALLOWED_BY_STATUS = {
@@ -21,9 +22,33 @@ _ALLOWED_BY_STATUS = {
     "CANCELLED": [],
 }
 
+# The entitlement that gates each action (mirrors ReceiptPermission.ACTION_TO_CODE).
+_ACTION_PERMISSION = {
+    "update": "create",
+    "post": "post",
+    "cancel": "cancel",
+    "allocate": "allocate",
+    "reverse": "reverse",
+}
 
-def allowed_actions(receipt):
-    return list(_ALLOWED_BY_STATUS.get(receipt.status, []))
+
+def allowed_actions(receipt, user=None):
+    """State-aware and permission-aware actions for a receipt.
+
+    Status decides the candidate actions; the requesting user's entitlements
+    then prune them. Without a user (or with an unauthenticated actor) the
+    status-derived set is returned so non-API consumers keep a stable contract.
+    """
+    actions = list(_ALLOWED_BY_STATUS.get(receipt.status, []))
+    if user is None or not getattr(user, "is_authenticated", False):
+        return actions
+    if getattr(user, "is_superuser", False):
+        return actions
+    return [
+        action
+        for action in actions
+        if has_receipt_permission(user, _ACTION_PERMISSION.get(action, action))
+    ]
 
 
 def _actor_name(actor):
@@ -173,9 +198,12 @@ class ReceiptBaseSerializer(serializers.ModelSerializer):
     allowed_actions = serializers.SerializerMethodField()
     branch_display = serializers.SerializerMethodField()
     partner_display = serializers.SerializerMethodField()
+    payer_display = serializers.SerializerMethodField()
     currency_display = serializers.SerializerMethodField()
     payment_mode_display = serializers.SerializerMethodField()
     bank_account_display = serializers.SerializerMethodField()
+    status_display = serializers.SerializerMethodField()
+    source_module_display = serializers.SerializerMethodField()
     created_by_display = serializers.SerializerMethodField()
     posted_by_display = serializers.SerializerMethodField()
 
@@ -192,8 +220,10 @@ class ReceiptBaseSerializer(serializers.ModelSerializer):
             "partner_name",
             "partner_display",
             "payer_name",
+            "payer_display",
             "payer_identity",
             "source_module",
+            "source_module_display",
             "source_reference_type",
             "source_reference_id",
             "currency",
@@ -211,6 +241,7 @@ class ReceiptBaseSerializer(serializers.ModelSerializer):
             "bank_account_display",
             "narration",
             "status",
+            "status_display",
             "posted_at",
             "posted_by",
             "posted_by_name",
@@ -247,6 +278,9 @@ class ReceiptBaseSerializer(serializers.ModelSerializer):
     def get_partner_display(self, obj):
         return obj.partner_name_snapshot or (str(obj.partner) if obj.partner_id else None)
 
+    def get_payer_display(self, obj):
+        return obj.payer_name or obj.display_partner
+
     def get_currency_display(self, obj):
         return obj.currency
 
@@ -255,6 +289,12 @@ class ReceiptBaseSerializer(serializers.ModelSerializer):
 
     def get_bank_account_display(self, obj):
         return obj.bank_account_snapshot or (str(obj.bank_account) if obj.bank_account_id else None)
+
+    def get_status_display(self, obj):
+        return obj.get_status_display()
+
+    def get_source_module_display(self, obj):
+        return obj.get_source_module_display()
 
     def get_created_by_display(self, obj):
         return _actor_name(obj.created_by)
@@ -275,7 +315,8 @@ class ReceiptBaseSerializer(serializers.ModelSerializer):
         return _actor_name(obj.reversed_by)
 
     def get_allowed_actions(self, obj):
-        return allowed_actions(obj)
+        request = self.context.get("request") if self.context else None
+        return allowed_actions(obj, getattr(request, "user", None) if request else None)
 
 
 class ReceiptDetailSerializer(ReceiptBaseSerializer):
@@ -283,6 +324,7 @@ class ReceiptDetailSerializer(ReceiptBaseSerializer):
     reversals = ReceiptReversalSerializer(many=True, read_only=True)
     documents = ReceiptDocumentSerializer(many=True, read_only=True)
     status_history = ReceiptStatusHistorySerializer(many=True, read_only=True)
+    audit_timeline = serializers.SerializerMethodField()
 
     class Meta(ReceiptBaseSerializer.Meta):
         fields = ReceiptBaseSerializer.Meta.fields + (
@@ -290,7 +332,13 @@ class ReceiptDetailSerializer(ReceiptBaseSerializer):
             "reversals",
             "documents",
             "status_history",
+            "audit_timeline",
         )
+
+    def get_audit_timeline(self, obj):
+        from apps.front_office.receipts.services.work_queue import audit_timeline
+
+        return audit_timeline(obj)
 
 
 class ReceiptDraftSerializer(serializers.ModelSerializer):

@@ -1,4 +1,7 @@
-from django.db.models import Q
+import csv
+
+from django.http import HttpResponse
+from django.utils import timezone
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -15,10 +18,12 @@ from apps.front_office.receipts.serializers import (
     ReceiptReversalSerializer,
 )
 from apps.front_office.receipts.services.receipt_service import get_receipt_or_404, post_receipt
-
-
-def _true(value):
-    return value in ("true", "1", "True")
+from apps.front_office.receipts.services.work_queue import (
+    LIST_COLUMNS,
+    apply_ordering,
+    filter_receipts,
+    receipt_kpis,
+)
 
 
 def _paginate(query, request):
@@ -28,13 +33,23 @@ def _paginate(query, request):
     start = (page - 1) * page_size
     rows = query[start : start + page_size]
     return {
-        "results": ReceiptBaseSerializer(rows, many=True).data,
+        "results": ReceiptBaseSerializer(rows, many=True, context={"request": request}).data,
         "count": total,
         "page": page,
         "page_size": page_size,
         "next": page * page_size < total,
         "previous": page > 1,
     }
+
+
+def _csv_cell(value):
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        return " | ".join(str(item) for item in value)
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
 
 
 class MustViewReceiptsPermission(IsAuthenticated):
@@ -67,67 +82,11 @@ class ReceiptListView(APIView):
 
     def get(self, request):
         params = request.query_params
-        queryset = Receipt.objects.select_related("branch", "partner", "bank_account").all()
-
-        status = params.get("status")
-        if status:
-            queryset = queryset.filter(status__iexact=status)
-        branch = params.get("branch")
-        if branch:
-            queryset = queryset.filter(branch_id=branch)
-        partner = params.get("partner")
-        if partner:
-            queryset = queryset.filter(partner_id=partner)
-        source_module = params.get("source_module")
-        if source_module:
-            queryset = queryset.filter(source_module__iexact=source_module)
-        currency = params.get("currency")
-        if currency:
-            queryset = queryset.filter(currency__iexact=currency)
-        payment_mode = params.get("payment_mode")
-        if payment_mode:
-            queryset = queryset.filter(payment_mode__iexact=payment_mode)
-        date_from = params.get("receipt_date_from")
-        if date_from:
-            queryset = queryset.filter(receipt_date__gte=date_from)
-        date_to = params.get("receipt_date_to")
-        if date_to:
-            queryset = queryset.filter(receipt_date__lte=date_to)
-        if _true(params.get("unallocated_only")):
-            queryset = queryset.filter(unallocated_amount__gt=0)
-        if _true(params.get("allocated_only")):
-            queryset = queryset.filter(allocated_amount__gt=0)
-
-        search = params.get("search")
-        if search:
-            queryset = queryset.filter(
-                Q(receipt_number__icontains=search)
-                | Q(payer_name__icontains=search)
-                | Q(partner_name_snapshot__icontains=search)
-                | Q(payment_reference__icontains=search)
-                | Q(source_reference_id__icontains=search)
-            )
-
-        ordering = params.get("ordering", "-receipt_date")
-        order_map = {
-            "receipt_number": "receipt_number",
-            "receipt_date": "receipt_date",
-            "status": "status",
-            "receipt_amount": "receipt_amount",
-            "allocated_amount": "allocated_amount",
-            "unallocated_amount": "unallocated_amount",
-            "created_at": "created_at",
-        }
-        if ordering.startswith("-"):
-            key = order_map.get(ordering[1:])
-            if key:
-                ordering = f"-{key}"
-        else:
-            key = order_map.get(ordering)
-            if key:
-                ordering = key
-        queryset = queryset.order_by(ordering, "-created_at")
-
+        queryset = Receipt.objects.select_related(
+            "branch", "partner", "bank_account", "created_by", "posted_by"
+        ).all()
+        queryset = filter_receipts(queryset, params)
+        queryset = apply_ordering(queryset, params)
         return Response({"data": _paginate(queryset, request)})
 
     def post(self, request):
@@ -142,9 +101,50 @@ class ReceiptListView(APIView):
         receipt = serializer.save()
         created = getattr(serializer, "_created", True)
         return Response(
-            {"data": ReceiptDetailSerializer(receipt).data},
+            {"data": ReceiptDetailSerializer(receipt, context={"request": request}).data},
             status=201 if created else 200,
         )
+
+
+class ReceiptKpisView(APIView):
+    """GET /front-office/receipts/kpis/ — work-queue aggregates over the filters."""
+
+    permission_classes = [MustViewReceiptsPermission]
+
+    def get(self, request):
+        params = request.query_params
+        queryset = Receipt.objects.all()
+        queryset = filter_receipts(queryset, params)
+        kpis = receipt_kpis(queryset)
+        kpis["period"] = {
+            "receipt_date_from": params.get("receipt_date_from") or params.get("date_from"),
+            "receipt_date_to": params.get("receipt_date_to") or params.get("date_to"),
+        }
+        return Response({"data": kpis})
+
+
+class ReceiptExportView(APIView):
+    """GET /front-office/receipts/export/ — CSV export respecting the same filters."""
+
+    permission_classes = [MustViewReceiptsPermission]
+
+    def get(self, request):
+        queryset = Receipt.objects.select_related(
+            "branch", "partner", "bank_account", "created_by", "posted_by"
+        ).all()
+        queryset = filter_receipts(queryset, request.query_params)
+        queryset = apply_ordering(queryset, request.query_params)
+        rows = ReceiptBaseSerializer(queryset, many=True, context={"request": request}).data
+
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = (
+            f'attachment; filename="receipts_{timezone.localdate().isoformat()}.csv"'
+        )
+        writer = csv.writer(response)
+        writer.writerow(LIST_COLUMNS)
+        for row in rows:
+            writer.writerow([_csv_cell(row.get(column)) for column in LIST_COLUMNS])
+        return response
 
 
 class ReceiptDetailView(APIView):
@@ -157,14 +157,14 @@ class ReceiptDetailView(APIView):
 
     def get(self, request, receipt_id):
         receipt = get_receipt_or_404(receipt_id)
-        return Response({"data": ReceiptDetailSerializer(receipt).data})
+        return Response({"data": ReceiptDetailSerializer(receipt, context={"request": request}).data})
 
     def patch(self, request, receipt_id):
         receipt = get_receipt_or_404(receipt_id)
         serializer = ReceiptDraftSerializer(receipt, data=request.data, partial=True, context={"request": request})
         serializer.is_valid(raise_exception=True)
         receipt = serializer.save()
-        return Response({"data": ReceiptDetailSerializer(receipt).data})
+        return Response({"data": ReceiptDetailSerializer(receipt, context={"request": request}).data})
 
 
 class ReceiptPostView(APIView):
@@ -177,7 +177,7 @@ class ReceiptPostView(APIView):
         receipt = get_receipt_or_404(receipt_id)
         reason = ((request.data or {}).get("reason") or "").strip()
         receipt = post_receipt(receipt, actor=request.user, reason=reason, source_channel="API")
-        return Response({"data": ReceiptDetailSerializer(receipt).data})
+        return Response({"data": ReceiptDetailSerializer(receipt, context={"request": request}).data})
 
 
 class ReceiptAllocationOptionsView(APIView):
@@ -194,7 +194,7 @@ class ReceiptAllocationOptionsView(APIView):
         return Response(
             {
                 "data": {
-                    "receipt": ReceiptBaseSerializer(receipt).data,
+                    "receipt": ReceiptBaseSerializer(receipt, context={"request": request}).data,
                     "commitments": options,
                 }
             }
@@ -225,7 +225,7 @@ class ReceiptAllocateView(APIView):
             actor=request.user,
             source_channel="API",
         )
-        response_data = {"data": ReceiptDetailSerializer(receipt).data}
+        response_data = {"data": ReceiptDetailSerializer(receipt, context={"request": request}).data}
         if warning:
             response_data["warning"] = warning
         return Response(
@@ -248,7 +248,7 @@ class ReceiptAutoAllocateView(APIView):
         return Response(
             {
                 "data": {
-                    "receipt": ReceiptDetailSerializer(receipt).data,
+                    "receipt": ReceiptDetailSerializer(receipt, context={"request": request}).data,
                     "allocations": result["allocations"],
                     "total_allocated": result["total_allocated"],
                     "remaining_unallocated": result["remaining_unallocated"],
@@ -333,7 +333,7 @@ class ReceiptReverseView(APIView):
         )
         return Response(
             {
-                "data": ReceiptDetailSerializer(receipt).data,
+                "data": ReceiptDetailSerializer(receipt, context={"request": request}).data,
                 "reversal": ReceiptReversalSerializer(reversal_record).data,
             }
         )
@@ -367,7 +367,7 @@ class ReceiptAllocationReverseView(APIView):
         )
         return Response(
             {
-                "data": ReceiptDetailSerializer(receipt).data,
+                "data": ReceiptDetailSerializer(receipt, context={"request": request}).data,
                 "allocation": ReceiptAllocationSerializer(reversal_row).data,
             }
         )
@@ -391,7 +391,7 @@ class ReceiptCancelView(APIView):
             actor=request.user,
             source_channel="API",
         )
-        return Response({"data": ReceiptDetailSerializer(receipt).data})
+        return Response({"data": ReceiptDetailSerializer(receipt, context={"request": request}).data})
 
 
 class ReceiptOptionsView(APIView):

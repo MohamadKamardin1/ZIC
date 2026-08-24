@@ -6,7 +6,7 @@
 - [x] Prompt 4 — Implement Receipt Allocation to OL Commitments & First Premium
 - [x] Prompt 5 — Implement Multi-Currency Receipt & Allocation Behavior
 - [x] Prompt 6 — Implement Receipt Reversal, Allocation Reversal & Draft Cancellation
-- [ ] Prompt 7 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
+- [ ] Prompt 7 — Implement Receipt List, Detail, Work Queue & Export APIs
 - [ ] Prompt 8 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
 - [ ] Prompt 9 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
 - [ ] Prompt 10 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
@@ -537,4 +537,84 @@ GIT:
 
 FINAL OUTPUT:
 Return reversal behavior, constraints, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 7/12 — Implement Receipt List, Detail, Work Queue & Export APIs
+
+```text
+You are a senior Django API engineer. Continue the Front Office Receipts backend. Execute ONLY Prompt 7.
+
+MANDATORY RULES:
+- Table-first API responses.
+- Names never UUIDs.
+- Allowed actions must be state-aware and permission-aware.
+- Commit and push; tick Prompt 7 after completion.
+
+OBJECTIVE:
+Implement complete receipt list/detail/work queue APIs.
+
+SCOPE:
+1. List endpoint columns:
+   - receipt_number
+   - receipt_date
+   - payer_display
+   - branch_display
+   - payment_mode_display
+   - currency_display
+   - receipt_amount
+   - allocated_amount
+   - unallocated_amount
+   - status badge
+   - source_module
+   - created_by_display
+   - posted_by_display
+   - created_at
+   - allowed_actions
+2. Filters:
+   - status
+   - branch
+   - currency
+   - payment_mode
+   - payer
+   - source_module
+   - date range
+   - unallocated_only
+   - reversed_only
+3. Search:
+   - receipt number
+   - payer name
+   - payment reference
+   - source reference
+4. KPI endpoint:
+   - total_received_period
+   - total_allocated_period
+   - total_unallocated
+   - receipt_count
+   - reversed_amount
+5. Detail endpoint:
+   - receipt header
+   - allocations
+   - reversal history
+   - documents
+   - audit timeline
+   - allowed actions
+6. CSV export respecting filters.
+7. Admin list mirrors key columns and filters.
+
+TESTS:
+- list columns and display names
+- filters/search
+- KPI math
+- allowed actions by status/permission
+- CSV export respects filters
+- detail includes allocations/reversal/audit timeline
+
+GIT:
+- commit: "feat(receipts): implement receipt list detail work queue and export APIs"
+- push; tick Prompt 7 checkbox
+
+FINAL OUTPUT:
+Return endpoint contract, KPI rules, tests, commit hash, pushed branch.
 ```

@@ -77,9 +77,19 @@ class ReceiptAdmin(admin.ModelAdmin):
         "status",
         "source_channel",
         "created_by",
+        "posted_by",
         "created_at",
     )
-    list_filter = ("status", "source_module", "currency", "payment_mode", "source_channel", "receipt_date", "created_at")
+    list_filter = (
+        "status",
+        "branch",
+        "source_module",
+        "currency",
+        "payment_mode",
+        "source_channel",
+        "receipt_date",
+        "created_at",
+    )
     search_fields = (
         "receipt_number",
         "payer_name",

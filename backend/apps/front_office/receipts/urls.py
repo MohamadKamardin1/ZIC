@@ -8,6 +8,8 @@ from apps.front_office.receipts.views import (
     ReceiptAutoAllocateView,
     ReceiptCancelView,
     ReceiptDetailView,
+    ReceiptExportView,
+    ReceiptKpisView,
     ReceiptListView,
     ReceiptOptionsView,
     ReceiptPostView,
@@ -16,6 +18,8 @@ from apps.front_office.receipts.views import (
 
 urlpatterns = [
     path("", ReceiptListView.as_view(), name="receipts-list"),
+    path("kpis/", ReceiptKpisView.as_view(), name="receipts-kpis"),
+    path("export/", ReceiptExportView.as_view(), name="receipts-export"),
     path("options/", ReceiptOptionsView.as_view(), name="receipts-options"),
     path("exchange-rate/", ExchangeRateView.as_view(), name="receipts-exchange-rate"),
     path("<uuid:receipt_id>/allocation-options/", ReceiptAllocationOptionsView.as_view(), name="receipts-allocation-options"),

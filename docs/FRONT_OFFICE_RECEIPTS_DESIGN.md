@@ -311,3 +311,60 @@ governing the reversal/cancellation behavior:
   before/after state, actor (`reversed_by`/`created_by`), reason, and the linked
   commitment allocation reversal references. `CommitmentPaymentReversed` is
   emitted on the commitments side for every reversed commitment allocation.
+
+## 17. Prompt 7 — list, detail, work queue & export APIs
+
+The read-side contract is table-first: every row is a flat object of the list
+columns below, display names are surfaced (never UUIDs), and `allowed_actions`
+is both state-aware and permission-aware.
+
+- **List endpoint** `GET /api/v1/front-office/receipts/` returns paginated rows
+  (`data.results`, `data.count/page/page_size/next/previous`) with columns:
+  `receipt_number`, `receipt_date`, `payer_display`, `branch_display`,
+  `payment_mode_display`, `currency_display`, `receipt_amount`,
+  `allocated_amount`, `unallocated_amount`, `status` (code) + `status_display`
+  (badge label), `source_module` + `source_module_display`,
+  `created_by_display`, `posted_by_display`, `created_at`, and
+  `allowed_actions`. `payer_display`, `branch_display`,
+  `payment_mode_display`, `currency_display`, and the actor displays are names,
+  never UUIDs.
+- **Filters.** The list, KPI, and export endpoints share one filter pipeline
+  (`filter_receipts`): `status`, `branch`, `currency`, `payment_mode`, `payer`
+  (payer/partner name substring), `partner` (FK), `source_module`,
+  `receipt_date_from`/`receipt_date_to` (aliases `date_from`/`date_to`),
+  `unallocated_only`, `allocated_only`, `reversed_only`, and `search`
+  (receipt number, payer name, payment reference, source reference).
+  `apply_ordering` resolves the allow-listed `ordering` parameter
+  (`-receipt_date` default).
+- **Allowed actions are state- and permission-aware.** `allowed_actions(receipt,
+  user)` derives the candidate set from status (DRAFT → update/post/cancel;
+  POSTED/PARTIALLY_ALLOCATED → allocate/reverse; FULLY_ALLOCATED → reverse;
+  REVERSED/CANCELLED → none) and prunes it by the actor's entitlements
+  (`update`→create, `post`→post, `cancel`→cancel, `allocate`→allocate,
+  `reverse`→reverse). A view-only operator therefore sees `allowed_actions: []`
+  even on a DRAFT. The list/detail serializers receive the request context so
+  the pruning is per-user.
+- **KPI endpoint** `GET /api/v1/front-office/receipts/kpis/` returns work-queue
+  aggregates over the *same* filters as the list: `total_received_period`
+  (sum of `receipt_amount`), `total_allocated_period` (sum of `allocated_amount`),
+  `total_unallocated` (sum of `unallocated_amount` restricted to open statuses —
+  DRAFT/POSTED/PARTIALLY_ALLOCATED/FULLY_ALLOCATED — so reversed/cancelled
+  receipts never inflate it), `receipt_count`, and `reversed_amount` (sum of
+  `receipt_amount` over REVERSED receipts). Amounts are quantized to two decimal
+  places; the applied date period is echoed as `data.period`.
+- **CSV export** `GET /api/v1/front-office/receipts/export/` streams
+  `text/csv` (attachment `receipts_YYYY-MM-DD.csv`) with the same list columns
+  in the same order, and respects the same filters/ordering as the list.
+  `allowed_actions` is serialized as a pipe-joined string; dates use ISO format.
+- **Detail endpoint** `GET /api/v1/front-office/receipts/{id}/` returns the
+  receipt header plus `allocations`, `reversals` (reversal history),
+  `documents`, `status_history`, `allowed_actions`, and `audit_timeline` — the
+  central audit entries for the receipt *and* its related records (allocations,
+  reversals, documents, status-history rows), newest first, each with action,
+  entity, actor name, changed fields, reason, and source channel.
+- **Admin list** mirrors the API columns (receipt number, branch, payer,
+  source, currency, amounts, payment, status, posted_by, timestamps) and adds
+  `branch` to `list_filter`, so the admin and the work queue tell the same
+  story.
+- **Permissions.** List, detail, KPI, and export all require
+  `front_office.receipts.view` (`MustViewReceiptsPermission`).
