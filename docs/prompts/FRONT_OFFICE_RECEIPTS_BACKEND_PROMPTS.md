@@ -4,7 +4,7 @@
 - [x] Prompt 2 — Implement Receipt Parameters, Numbering & Reference Data
 - [x] Prompt 3 — Implement Receipt Creation, Draft Editing, Validation & Posting
 - [x] Prompt 4 — Implement Receipt Allocation to OL Commitments & First Premium
-- [ ] Prompt 5 — Implement Multi-Currency Receipt & Allocation Behavior
+- [x] Prompt 5 — Implement Multi-Currency Receipt & Allocation Behavior
 - [ ] Prompt 6 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
 - [ ] Prompt 7 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
 - [ ] Prompt 8 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
