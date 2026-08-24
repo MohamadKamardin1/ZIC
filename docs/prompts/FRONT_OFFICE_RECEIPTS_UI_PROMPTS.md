@@ -79,7 +79,7 @@ FINAL OUTPUT: page behavior, tests, commit hash, pushed branch.
 
 ---
 
-## [ ] Prompt 3 — Receipt Creation and Posting
+## [x] Prompt 3 — Receipt Creation and Posting
 
 ```text
 You are a senior frontend engineer. Continue the ZIC Receipts UI. Execute ONLY Prompt 3.

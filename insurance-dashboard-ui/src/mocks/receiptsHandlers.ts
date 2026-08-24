@@ -39,6 +39,9 @@ let receipts: ReceiptRecord[] = [
 
 const options = {
   branches: [{ value: ids.branch, label: "Zanzibar Main Branch", meta: { code: "ZNZ-MAIN" } }, { value: "branch-pemba", label: "Pemba Branch", meta: { code: "PEMBA" } }],
+  payers: [{ value: ids.payer, label: "Amani Assurance Partner", meta: { partner_type: "AGENT" } }, { value: "partner-zic", label: "ZIC Individual Policyholder", meta: { partner_type: "INDIVIDUAL" } }],
+  proposals: [{ value: "proposal-1", label: "OLP-2026-000001 — Amani Assurance Partner", meta: { status: "FIRST_PREMIUM_DUE", status_hint: "First premium due" } }, { value: "proposal-2", label: "OLP-2026-000002 — ZIC Individual Policyholder", meta: { status: "FIRST_PREMIUM_PAID", status_hint: "First premium already paid" } }],
+  sourceModules: [{ value: "DIRECT", label: "Direct payment" }, { value: "OL_PROPOSAL", label: "Ordinary Life proposal" }, { value: "POLICY", label: "Policy" }, { value: "COMMITMENT", label: "Commitment" }],
   currencies: [{ value: "TZS", label: "TZS — Tanzanian Shilling", meta: { symbol: "TSh" } }, { value: "USD", label: "USD — United States Dollar", meta: { symbol: "$" } }],
   paymentModes: [{ value: "CASH", label: "Cash", meta: { requires_reference: false, requires_bank_account: false } }, { value: "MOBILE_MONEY", label: "Mobile Money", meta: { requires_reference: true, requires_bank_account: false } }, { value: "BANK_TRANSFER", label: "Bank Transfer", meta: { requires_reference: true, requires_bank_account: true } }],
   bankAccounts: [{ value: "bank-1", label: "CRDB — Zanzibar Operations — **** 0042", meta: { account_name: "ZIC Zanzibar Operations", masked: true } }],
@@ -88,6 +91,22 @@ function documentFor(receipt: ReceiptRecord) {
 
 export const receiptsHandlers = [
   http.get(`*${RECEIPTS_BASE}/import/template/`, () => new HttpResponse("receipt_number,receipt_date,branch,payer,currency,payment_mode,receipt_amount,payment_reference,bank_account,narration\n", { status: 200, headers: { "Content-Type": "text/csv", "Content-Disposition": "attachment; filename=receipt-import-template.csv" } })),
+  http.get(`*${RECEIPTS_OPTIONS_BASE}/branches/quick-create-schema/`, () => data({ entity: "branches", permission: "front_office.receipts.create", fields: [{ name: "code", type: "text", required: true }, { name: "name", type: "text", required: true }] })),
+  http.post(`*${RECEIPTS_OPTIONS_BASE}/branches/quick-create/`, async ({ request }) => {
+    const body = await request.json() as { code?: string; name?: string }
+    if (!body.code || !body.name) return error(400, "OPTION_INVALID", "Branch code and name are required.", ["Enter both the branch code and the branch name."], undefined, { code: ["Branch code is required."], name: ["Branch name is required."] })
+    const option = { value: `branch-${body.code.toLowerCase()}`, label: `${body.code} — ${body.name}`, meta: { code: body.code } }
+    options.branches.unshift(option)
+    return data({ option }, 201)
+  }),
+  http.get(`*${RECEIPTS_OPTIONS_BASE}/payers/quick-create-schema/`, () => data({ entity: "payers", permission: "partners.create", fields: [{ name: "legal_name", type: "text", required: true }, { name: "national_id", type: "text", required: true }, { name: "phone", type: "text", required: true }] })),
+  http.post(`*${RECEIPTS_OPTIONS_BASE}/payers/quick-create/`, async ({ request }) => {
+    const body = await request.json() as { legal_name?: string; national_id?: string; phone?: string }
+    if (!body.legal_name || !body.national_id || !body.phone) return error(400, "OPTION_INVALID", "Payer details are incomplete.", ["Provide the legal name, national ID, and phone number."], undefined, { legal_name: ["Legal name is required."], national_id: ["National ID is required."], phone: ["Phone is required."] })
+    const option = { value: `payer-${Date.now()}`, label: body.legal_name, meta: { partner_type: "INDIVIDUAL", national_id: body.national_id, phone: body.phone } }
+    options.payers.unshift(option)
+    return data({ option }, 201)
+  }),
   http.get(`*${RECEIPTS_BASE}/kpis/`, () => data({ received_today: "150000.00", allocated_in_period: "50000.00", unallocated_amount: "100000.00", receipt_count: receipts.length, reversed_amount: "0.00" })),
   http.get(`*${RECEIPTS_BASE}/exchange-rate/`, ({ request }) => {
     const url = new URL(request.url)
@@ -134,7 +153,10 @@ export const receiptsHandlers = [
   }),
   http.post(`*${RECEIPTS_BASE}/:id/post/`, ({ params }) => {
     const receipt = findReceipt(String(params.id))
-    return receipt ? data({ ...receipt, status: "POSTED", posted_by_display: "Sultan Admin", posted_at: "2026-08-24T09:00:00Z" }) : error(404, "RECEIPT_NOT_FOUND", "The receipt could not be found.", ["Check the receipt number and try again."])
+    if (!receipt) return error(404, "RECEIPT_NOT_FOUND", "The receipt could not be found.", ["Check the receipt number and try again."])
+    const posted = { ...receipt, status: "POSTED", posted_by_display: "Sultan Admin", posted_at: "2026-08-24T09:00:00Z" }
+    receipts = receipts.map((item) => item.id === receipt.id ? posted : item)
+    return data(posted)
   }),
   http.post(`*${RECEIPTS_BASE}/:id/reverse/`, ({ params, request }) => {
     const receipt = findReceipt(String(params.id))
@@ -153,7 +175,9 @@ export const receiptsHandlers = [
   http.patch(`*${RECEIPTS_BASE}/:id/`, async ({ params, request }) => {
     const receipt = findReceipt(String(params.id))
     if (!receipt) return error(404, "RECEIPT_NOT_FOUND", "The receipt could not be found.", ["Check the receipt number and try again."])
-    return data({ ...receipt, ...(await request.json() as Record<string, unknown>) })
+    const updated = { ...receipt, ...(await request.json() as Record<string, unknown>) } as ReceiptRecord
+    receipts = receipts.map((item) => item.id === receipt.id ? updated : item)
+    return data(updated)
   }),
   http.post(`*${RECEIPTS_BASE}/`, async ({ request }) => {
     if (request.headers.get("X-Idempotency-Key") === "duplicate-demo") return error(409, "RECEIPT_DUPLICATE", "This submission was already received.", ["Open the existing receipt and continue from there."], "/front-office/receipts/receipt-demo-1")

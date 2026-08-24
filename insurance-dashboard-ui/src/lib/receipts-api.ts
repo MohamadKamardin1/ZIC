@@ -179,7 +179,7 @@ export const receiptsApi = {
   list: (query: ReceiptListQuery = {}) => readJsonRequest<Paginated<ReceiptRecord>>(`${RECEIPTS_BASE}/${toQuery(query)}`),
   get: (id: string) => readJsonRequest<ReceiptRecord>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/`),
   create: (payload: ReceiptWritePayload, idempotencyKey: string = crypto.randomUUID()) => readJsonRequest<ReceiptRecord>(`${RECEIPTS_BASE}/`, jsonOptions("POST", payload, { "X-Idempotency-Key": idempotencyKey })),
-  patchDraft: (id: string, payload: Partial<ReceiptWritePayload>) => readJsonRequest<ReceiptRecord>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/`, jsonOptions("PATCH", payload)),
+  patchDraft: (id: string, payload: Partial<ReceiptWritePayload>, idempotencyKey: string = crypto.randomUUID()) => readJsonRequest<ReceiptRecord>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/`, jsonOptions("PATCH", payload, { "X-Idempotency-Key": idempotencyKey })),
   post: (id: string, idempotencyKey: string = crypto.randomUUID()) => readJsonRequest<ReceiptRecord>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/post/`, jsonOptions("POST", undefined, { "X-Idempotency-Key": idempotencyKey })),
   allocationOptions: (id: string, query: { search?: string } = {}) => readJsonRequest<Paginated<ReceiptAllocationOption>>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/allocation-options/${toQuery(query)}`),
   allocate: (id: string, payload: AllocationPayload) => readJsonRequest<{ receipt: ReceiptRecord; allocations: ReceiptAllocation[] }>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/allocate/`, jsonOptions("POST", payload)),
@@ -211,6 +211,9 @@ export const receiptsApi = {
   },
   options: {
     branches: (query = "") => readJsonRequest<Paginated<DisplayOption>>(`${RECEIPTS_OPTIONS_BASE}/branches/${toQuery({ q: query })}`),
+    payers: (query = "") => readJsonRequest<Paginated<DisplayOption>>(`${RECEIPTS_OPTIONS_BASE}/payers/${toQuery({ q: query })}`),
+    proposals: (query = "") => readJsonRequest<Paginated<DisplayOption>>(`${RECEIPTS_OPTIONS_BASE}/proposals/${toQuery({ q: query })}`),
+    sourceModules: (query = "") => readJsonRequest<Paginated<DisplayOption>>(`${RECEIPTS_OPTIONS_BASE}/source-modules/${toQuery({ q: query })}`),
     currencies: (query = "") => readJsonRequest<Paginated<DisplayOption>>(`${RECEIPTS_OPTIONS_BASE}/currencies/${toQuery({ q: query })}`),
     paymentModes: (query = "") => readJsonRequest<Paginated<DisplayOption>>(`${RECEIPTS_OPTIONS_BASE}/payment-modes/${toQuery({ q: query })}`),
     bankAccounts: (query = "") => readJsonRequest<Paginated<DisplayOption>>(`${RECEIPTS_OPTIONS_BASE}/bank-accounts/${toQuery({ q: query })}`),

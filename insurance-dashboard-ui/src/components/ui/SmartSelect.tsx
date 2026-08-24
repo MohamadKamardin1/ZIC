@@ -34,6 +34,8 @@ export type SmartSelectProps = FormFieldProps & {
   allowedValues?: string[]
   className?: string
   optionsUrl?: string
+  quickCreateSchemaUrl?: string
+  quickCreateUrl?: string
   rememberLastUsed?: boolean
 }
 
@@ -120,6 +122,8 @@ export function SmartSelect({
   allowedValues,
   className = "",
   optionsUrl,
+  quickCreateSchemaUrl,
+  quickCreateUrl,
   rememberLastUsed = true,
 }: SmartSelectProps) {
   const { access } = useAccess()
@@ -303,7 +307,7 @@ export function SmartSelect({
       {resolvedManageHref && canCreate && <a href={resolvedManageHref} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-md text-xs font-semibold text-[var(--primary)] outline-none transition hover:underline focus-visible:ring-2 focus-visible:ring-[var(--ring)]">{manageLabel}<ExternalLink size={12} aria-hidden="true" /></a>}
       {error && <p id={`${name}-error`} className="mt-1 text-xs font-medium text-[var(--destructive)]" role="alert">{error}</p>}
       {optionsQuery.isError && !open && <p className="text-xs text-[var(--destructive)]" role="alert">{getErrorMessage(optionsQuery.error)}</p>}
-      <QuickCreateModal open={quickCreateOpen} entity={entity} entityLabel={entityLabel} permissionCode={permissionCode} manageHref={resolvedManageHref} parameterScreenLabel={parameterScreenLabel} onClose={() => setQuickCreateOpen(false)} onCreated={handleCreated} />
+      <QuickCreateModal open={quickCreateOpen} entity={entity} entityLabel={entityLabel} permissionCode={permissionCode} manageHref={resolvedManageHref} parameterScreenLabel={parameterScreenLabel} schemaUrl={quickCreateSchemaUrl} createUrl={quickCreateUrl} onClose={() => setQuickCreateOpen(false)} onCreated={handleCreated} />
     </div>
   )
 }
