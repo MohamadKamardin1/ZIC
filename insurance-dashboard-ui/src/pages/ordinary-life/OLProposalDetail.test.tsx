@@ -69,10 +69,21 @@ vi.mock("../../lib/apiClient", async (importOriginal) => {
   return { ...actual, request: requestMock }
 })
 
+const routerState: { params: Record<string, string | undefined>; search: string } = {
+  params: { id: "prop-uuid-0001" },
+  search: "",
+}
+
 vi.mock("react-router-dom", () => ({
-  useParams: () => ({ id: "prop-uuid-0001" }),
+  useParams: () => routerState.params,
   useNavigate: () => navigateMock,
-  Link: ({ children, to }: { children: React.ReactNode; to?: string }) => <a data-href={to}>{children}</a>,
+  useSearchParams: () => [
+    new URLSearchParams(routerState.search),
+    (next: URLSearchParams) => {
+      routerState.search = next.toString()
+    },
+  ],
+  Link: ({ children, ...rest }: { children: React.ReactNode; to?: string }) => <a {...rest}>{children}</a>,
 }))
 
 let grantedPermissions: string[]
@@ -353,6 +364,8 @@ function healthQuestionsFixture() {
 
 beforeEach(() => {
   navigateMock.mockReset()
+  routerState.params = { id: "prop-uuid-0001" }
+  routerState.search = ""
   getProposalMock.mockReset()
   getHistoryMock.mockReset()
   getSnapshotMock.mockReset()
@@ -559,6 +572,26 @@ describe("OL Proposal detail page", () => {
     // The deep link routes to the screen where the failure is fixed.
     fireEvent.click(within(failedItem).getByTestId("checklist-link-mandatory_documents_complete"))
     expect(navigateMock).toHaveBeenCalledWith("/ordinary-life/proposals/prop-uuid-0001/documents")
+  })
+
+  it("activates the tab carried by the :tab path segment", async () => {
+    routerState.params = { id: "prop-uuid-0001", tab: "documents" }
+    renderPage()
+
+    await screen.findByTestId("proposal-detail-header")
+    expect(screen.getByTestId("tab-documents")).toBeInTheDocument()
+    expect(screen.queryByTestId("tab-overview")).not.toBeInTheDocument()
+  })
+
+  it("fires the row-action deep link once and strips ?action= afterwards", async () => {
+    routerState.search = "?action=convert"
+    renderPage()
+
+    await screen.findByTestId("proposal-detail-header")
+    expect(await screen.findByTestId("br03-summary")).toBeInTheDocument()
+
+    const next = new URLSearchParams(routerState.search)
+    expect(next.get("action")).toBeNull()
   })
 
   it("shows the first premium commitment with due, paid, balance and receipt hint while partially paid", async () => {

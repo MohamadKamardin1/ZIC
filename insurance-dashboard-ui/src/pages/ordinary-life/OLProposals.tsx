@@ -798,7 +798,7 @@ export default function OLProposals() {
       {
         key: "enrich",
         label: "Enrich",
-        onSelect: (row) => navigate(`/ordinary-life/proposals/${row.id}?tab=enrichment`),
+        onSelect: (row) => navigate(`/ordinary-life/proposals/${row.id}?action=enrich`),
       },
       {
         key: "mark_payment_ready",
