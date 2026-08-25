@@ -314,6 +314,16 @@ def post_receipt(receipt, *, actor=None, reason="", source_channel=None):
         reason=reason or "Receipt posted.",
         source_channel=source_channel,
     )
+    from apps.front_office.receipts.services.gl_seam import emit_gl_posting
+    from apps.front_office.receipts.services.notification_service import notify_receipt_posted
+
+    emit_gl_posting(
+        receipt,
+        actor=actor_instance,
+        reason=reason or "Receipt posted.",
+        source_channel=source_channel,
+    )
+    notify_receipt_posted(receipt=receipt, actor=actor_instance, source_channel=source_channel)
     record_status_history(
         receipt,
         from_status=from_status,

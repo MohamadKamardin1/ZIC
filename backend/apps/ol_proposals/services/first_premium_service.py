@@ -210,3 +210,44 @@ def first_premium_status(proposal):
         "first_premium_posted": posted,
         "next_actions": next_actions,
     }
+
+
+def proposal_receipt_references(proposal, limit=5):
+    """Latest receipt references for a proposal (read-only).
+
+    Includes receipts that directly reference the proposal (``source_module``
+    ``OL_PROPOSAL`` with the proposal number) plus receipts that allocated
+    against the proposal's first-premium commitment, newest first. Never writes
+    to the receipts module — it is the read-side complement to the seam.
+    """
+    from django.db.models import Q
+
+    from apps.front_office.receipts.models import Receipt, ReceiptSourceModule
+
+    query = Q(source_module=ReceiptSourceModule.OL_PROPOSAL, source_reference_id=proposal.proposal_number)
+    commitment_id = proposal.first_premium_commitment_id
+    if commitment_id:
+        query |= Q(allocations__commitment_id=commitment_id)
+    receipts = (
+        Receipt.objects.filter(query)
+        .select_related("branch", "partner")
+        .order_by("-receipt_date", "-created_at")
+        .distinct()[:limit]
+    )
+    return [
+        {
+            "receipt_id": str(receipt.pk),
+            "receipt_number": receipt.receipt_number,
+            "receipt_date": receipt.receipt_date.isoformat(),
+            "status": receipt.status,
+            "currency": receipt.currency,
+            "amount": str(receipt.receipt_amount),
+            "allocated_amount": str(receipt.allocated_amount),
+            "unallocated_amount": str(receipt.unallocated_amount),
+            "payment_mode": receipt.payment_mode,
+            "source_module": receipt.source_module,
+            "branch": receipt.branch_name_snapshot or (str(receipt.branch) if receipt.branch_id else ""),
+            "payer": receipt.payer_name or "",
+        }
+        for receipt in receipts
+    ]

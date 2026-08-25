@@ -2,6 +2,8 @@ from django.urls import path
 
 from apps.front_office.receipts.views import (
     ExchangeRateView,
+    PartnerPortalReceiptDetailView,
+    PartnerPortalReceiptListView,
     ReceiptAllocateView,
     ReceiptAllocationOptionsView,
     ReceiptAllocationReverseView,
@@ -21,6 +23,7 @@ from apps.front_office.receipts.views import (
     ReceiptOptionsView,
     ReceiptPostView,
     ReceiptPrintView,
+    ReceiptReportingDatasetView,
     ReceiptReverseView,
 )
 
@@ -30,6 +33,9 @@ urlpatterns = [
     path("export/", ReceiptExportView.as_view(), name="receipts-export"),
     path("options/", ReceiptOptionsView.as_view(), name="receipts-options"),
     path("exchange-rate/", ExchangeRateView.as_view(), name="receipts-exchange-rate"),
+    path("reporting/dataset/", ReceiptReportingDatasetView.as_view(), name="receipts-reporting-dataset"),
+    path("portal/", PartnerPortalReceiptListView.as_view(), name="receipts-portal-list"),
+    path("portal/<uuid:receipt_id>/", PartnerPortalReceiptDetailView.as_view(), name="receipts-portal-detail"),
     path("import/template/", ReceiptImportTemplateView.as_view(), name="receipts-import-template"),
     path("import/dry-run/", ReceiptImportDryRunView.as_view(), name="receipts-import-dry-run"),
     path("import/commit/", ReceiptImportCommitView.as_view(), name="receipts-import-commit"),

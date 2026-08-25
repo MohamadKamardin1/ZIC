@@ -7,7 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.front_office.receipts.errors import import_batch_not_found, import_row_invalid
+from apps.front_office.receipts.errors import import_batch_not_found, import_row_invalid, not_found
 from apps.front_office.receipts.models import (
     Receipt,
     ReceiptAllocation,
@@ -17,6 +17,8 @@ from apps.front_office.receipts.models import (
 )
 from apps.front_office.receipts.permissions import has_receipt_permission
 from apps.front_office.receipts.serializers import (
+    PartnerPortalReceiptDetailSerializer,
+    PartnerPortalReceiptListSerializer,
     ReceiptAllocationRequestSerializer,
     ReceiptAllocationSerializer,
     ReceiptBaseSerializer,
@@ -737,3 +739,64 @@ class ReceiptImportBatchDetailView(APIView):
                 }
             }
         )
+
+
+class ReceiptReportingDatasetView(APIView):
+    """GET /front-office/receipts/reporting/dataset/ — reporting module contract."""
+
+    permission_classes = [MustViewReceiptsPermission]
+
+    def get(self, request):
+        from apps.front_office.receipts.services.reporting_service import register
+
+        return Response({"data": register()})
+
+
+class PartnerPortalReceiptListView(APIView):
+    """GET /front-office/receipts/portal/ — read-only receipts for the linked partner.
+
+    Scoped to the partner's own receipts only; no internal audit state is
+    exposed (see ``PartnerPortalReceiptListSerializer``).
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        partner = request.user.current_partner() if hasattr(request.user, "current_partner") else None
+        if partner is None:
+            return Response({"data": {"results": [], "count": 0}})
+        queryset = (
+            Receipt.objects.select_related("branch", "partner").filter(partner=partner).order_by("-receipt_date", "-created_at")
+        )
+        return Response(
+            {
+                "data": {
+                    "results": PartnerPortalReceiptListSerializer(queryset[:200], many=True).data,
+                    "count": queryset.count(),
+                }
+            }
+        )
+
+
+class PartnerPortalReceiptDetailView(APIView):
+    """GET /front-office/receipts/portal/<uuid>/ — scoped read-only receipt detail.
+
+    Only the linked partner's own receipt resolves; another partner's receipt
+    (or a nonexistent one) returns the same 404 so no cross-partner probing is
+    possible. Allocations shown are the receipt's own.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, receipt_id):
+        partner = request.user.current_partner() if hasattr(request.user, "current_partner") else None
+        receipt = None
+        if partner is not None:
+            receipt = (
+                Receipt.objects.select_related("branch", "partner")
+                .filter(pk=receipt_id, partner=partner)
+                .first()
+            )
+        if receipt is None:
+            raise not_found()
+        return Response({"data": PartnerPortalReceiptDetailSerializer(receipt).data})

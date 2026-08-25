@@ -418,15 +418,27 @@ def _emit_allocation_events(
     )
     now_settled = Decimal(commitment.balance or ZERO) <= 0
     if is_first_premium and now_settled and not commitment_was_settled:
+        proposal = _resolve_source(commitment)
         receipt_events.emit_first_premium_received(
             receipt,
             allocation=allocation,
             commitment=commitment,
-            proposal=_resolve_source(commitment),
+            proposal=proposal,
             actor=actor,
             from_status=from_status,
             to_status=receipt.status,
             reason=narration or "First premium received.",
+            source_channel=source_channel,
+        )
+        from apps.front_office.receipts.services.notification_service import (
+            notify_first_premium_received,
+        )
+
+        notify_first_premium_received(
+            receipt=receipt,
+            proposal_number=getattr(proposal, "proposal_number", "") if proposal is not None else "",
+            commitment_number=commitment.commitment_number,
+            actor=actor,
             source_channel=source_channel,
         )
 

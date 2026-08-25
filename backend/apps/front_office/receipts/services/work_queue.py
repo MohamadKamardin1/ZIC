@@ -8,6 +8,7 @@ filters as the list endpoint so the queue totals always match the visible rows.
 from decimal import Decimal
 
 from django.db.models import Q, Sum
+from django.utils import timezone
 
 from apps.front_office.receipts.models import (
     Receipt,
@@ -138,10 +139,16 @@ def receipt_kpis(queryset):
 
     ``total_unallocated`` sums the unallocated balance of open (non-reversed,
     non-cancelled) receipts; ``reversed_amount`` sums only reversed receipts.
-    Amounts are quantized to two decimal places to match stored column scale.
+    ``receipts_today``/``amount_received_today`` scope to the local calendar day
+    and power the front-office dashboard KPI hook; ``unallocated_receipts`` and
+    ``reversed_receipts`` are the open-balance and reversed counts. Amounts are
+    quantized to two decimal places to match stored column scale.
     """
     def _money(value):
         return str((value or ZERO).quantize(Decimal("0.01")))
+
+    today = timezone.localdate()
+    today_queryset = queryset.filter(receipt_date=today)
 
     total_received_period = queryset.aggregate(value=Sum("receipt_amount"))["value"] or ZERO
     total_allocated_period = queryset.aggregate(value=Sum("allocated_amount"))["value"] or ZERO
@@ -151,12 +158,19 @@ def receipt_kpis(queryset):
     reversed_amount = (
         queryset.filter(status=ReceiptStatus.REVERSED).aggregate(value=Sum("receipt_amount"))["value"] or ZERO
     )
+    amount_received_today = today_queryset.aggregate(value=Sum("receipt_amount"))["value"] or ZERO
     return {
         "total_received_period": _money(total_received_period),
         "total_allocated_period": _money(total_allocated_period),
         "total_unallocated": _money(total_unallocated),
         "receipt_count": queryset.count(),
         "reversed_amount": _money(reversed_amount),
+        "receipts_today": today_queryset.count(),
+        "amount_received_today": _money(amount_received_today),
+        "unallocated_receipts": queryset.filter(
+            status__in=_OPEN_STATUSES, unallocated_amount__gt=0
+        ).count(),
+        "reversed_receipts": queryset.filter(status=ReceiptStatus.REVERSED).count(),
     }
 
 

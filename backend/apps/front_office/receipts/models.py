@@ -27,6 +27,11 @@ from django.db.models import Q
 from django.utils import timezone
 
 from apps.common.models import AuditedModel
+from apps.ol_commitments.models import (
+    NotificationChannel,
+    NotificationDispatchStatus,
+    NotificationRecipientType,
+)
 
 ZERO = Decimal("0.00")
 
@@ -829,3 +834,66 @@ class ReceiptImportRow(AuditedModel):
 
     def __str__(self):
         return f"{self.batch.batch_number}:row{self.row_number} ({self.status})"
+
+
+class ReceiptNotificationLog(AuditedModel):
+    """Notification dispatch log for a receipt.
+
+    Mirrors the commitments/proposals notification logs so receipts publish
+    into the same notification-center contract. ``ReceiptPosted``,
+    ``ReceiptReversed``, and ``FirstPremiumReceived`` are the event types this
+    seam owns; the unique constraint guarantees one row per event run.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    receipt = models.ForeignKey(Receipt, on_delete=models.CASCADE, related_name="notification_logs")
+    event_type = models.CharField(max_length=150, db_index=True)
+    dispatch_on = models.DateField(null=True, blank=True, db_index=True)
+    notification_channel = models.CharField(
+        max_length=30, choices=NotificationChannel.choices, default=NotificationChannel.SYSTEM
+    )
+    recipient_type = models.CharField(
+        max_length=30, choices=NotificationRecipientType.choices, default=NotificationRecipientType.STAFF
+    )
+    recipient_identifier = models.CharField(max_length=200, blank=True, default="")
+    template_code = models.CharField(max_length=100, blank=True, default="")
+    status = models.CharField(
+        max_length=20,
+        choices=NotificationDispatchStatus.choices,
+        default=NotificationDispatchStatus.PENDING,
+        db_index=True,
+    )
+    payload = models.JSONField(default=dict, blank=True)
+    dispatched_at = models.DateTimeField(null=True, blank=True)
+    source_channel = models.CharField(
+        max_length=30, choices=ReceiptSourceChannel.choices, default=ReceiptSourceChannel.SYSTEM
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "front_office_receipt_notification_log"
+        verbose_name = "Receipt Notification"
+        verbose_name_plural = "Receipt Notifications"
+        ordering = ["-dispatch_on", "-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["receipt", "event_type", "dispatch_on", "notification_channel", "recipient_type"],
+                name="receipt_notification_unique",
+            ),
+            models.CheckConstraint(
+                check=Q(status__in=[choice for choice, _ in NotificationDispatchStatus.choices]),
+                name="receipt_notify_status_valid",
+            ),
+            models.CheckConstraint(
+                check=Q(notification_channel__in=[choice for choice, _ in NotificationChannel.choices]),
+                name="receipt_notify_channel_valid",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["receipt", "status", "dispatch_on"], name="receipt_notify_state_idx"),
+            models.Index(fields=["event_type", "dispatch_on"], name="receipt_notify_type_date_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.receipt.receipt_number or self.receipt.pk}:{self.event_type}@{self.dispatch_on}"

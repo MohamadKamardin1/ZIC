@@ -249,6 +249,17 @@ def reverse_receipt(receipt, *, reason="", actor=None, source_channel="API"):
             source_channel=source_channel,
             metadata={"reversal_number": reversal_record.reversal_number},
         )
+        from apps.front_office.receipts.services.gl_seam import emit_gl_reversal
+        from apps.front_office.receipts.services.notification_service import notify_receipt_reversed
+
+        emit_gl_reversal(
+            receipt,
+            actor=actor_instance,
+            reason=reason,
+            source_channel=source_channel,
+            metadata={"reversal_number": reversal_record.reversal_number},
+        )
+        notify_receipt_reversed(receipt=receipt, actor=actor_instance, reason=reason, source_channel=source_channel)
         record_status_history(
             receipt,
             from_status=from_status,

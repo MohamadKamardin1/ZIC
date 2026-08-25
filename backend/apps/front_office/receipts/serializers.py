@@ -507,3 +507,95 @@ class ReceiptImportBatchSerializer(serializers.ModelSerializer):
 
     def get_created_by_name(self, obj):
         return obj.created_by.username if obj.created_by_id else None
+
+
+class PartnerPortalReceiptAllocationSerializer(serializers.ModelSerializer):
+    """Portal-safe allocation view: no internal audit fields, only the linked
+    commitment display plus economic amounts the partner is entitled to see."""
+
+    commitment_number = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ReceiptAllocation
+        fields = (
+            "id",
+            "target_type",
+            "target_display",
+            "commitment_number",
+            "amount",
+            "converted_amount",
+            "converted_currency",
+            "allocation_status",
+            "allocated_at",
+            "narration",
+        )
+
+    def get_commitment_number(self, obj):
+        if obj.commitment_id:
+            return obj.commitment.commitment_number
+        return obj.target_display or obj.target_id or None
+
+
+class PartnerPortalReceiptListSerializer(serializers.ModelSerializer):
+    """Read-only partner-scoped receipt: own receipts only, no internal audit.
+
+    Deliberately excludes ``allowed_actions``, ``audit_timeline``,
+    ``created_by_display``, and internal identifiers so the portal never leaks
+    front-office audit/internal state.
+    """
+
+    branch_name = serializers.SerializerMethodField()
+    payer_display = serializers.SerializerMethodField()
+    payment_mode_display = serializers.SerializerMethodField()
+    status_display = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Receipt
+        fields = (
+            "id",
+            "receipt_number",
+            "receipt_date",
+            "branch",
+            "branch_name",
+            "payer_name",
+            "payer_display",
+            "currency",
+            "receipt_amount",
+            "allocated_amount",
+            "unallocated_amount",
+            "payment_mode",
+            "payment_mode_display",
+            "payment_reference",
+            "source_module",
+            "source_reference_type",
+            "source_reference_id",
+            "narration",
+            "status",
+            "status_display",
+            "created_at",
+        )
+
+    def get_branch_name(self, obj):
+        return obj.branch_name_snapshot or (str(obj.branch) if obj.branch_id else None)
+
+    def get_payer_display(self, obj):
+        return obj.payer_name or obj.display_partner
+
+    def get_payment_mode_display(self, obj):
+        return payment_mode_label(obj.payment_mode)
+
+    def get_status_display(self, obj):
+        return obj.get_status_display()
+
+
+class PartnerPortalReceiptDetailSerializer(PartnerPortalReceiptListSerializer):
+    """Portal detail: own allocations only, still no internal audit leakage."""
+
+    allocations = PartnerPortalReceiptAllocationSerializer(many=True, read_only=True)
+
+    class Meta(PartnerPortalReceiptListSerializer.Meta):
+        fields = PartnerPortalReceiptListSerializer.Meta.fields + (
+            "exchange_rate",
+            "allocations",
+            "updated_at",
+        )

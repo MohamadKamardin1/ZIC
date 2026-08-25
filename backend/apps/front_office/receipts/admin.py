@@ -15,6 +15,7 @@ from apps.front_office.receipts.models import (
     ReceiptDocument,
     ReceiptImportBatch,
     ReceiptImportRow,
+    ReceiptNotificationLog,
     ReceiptPrintTemplate,
     ReceiptReversal,
     ReceiptStatusHistory,
@@ -371,4 +372,22 @@ class ReceiptImportRowAdmin(admin.ModelAdmin):
     list_filter = ("status", "error_code", "batch__import_mode", "committed_at")
     search_fields = ("batch__batch_number", "row_hash", "error_code")
     ordering = ("-batch__created_at", "row_number")
+    readonly_fields = ("id", "created_at", "updated_at", "created_by", "updated_by")
+
+
+@admin.register(ReceiptNotificationLog)
+class ReceiptNotificationLogAdmin(admin.ModelAdmin):
+    list_display = (
+        "receipt",
+        "event_type",
+        "dispatch_on",
+        "notification_channel",
+        "recipient_type",
+        "recipient_identifier",
+        "status",
+        "created_at",
+    )
+    list_filter = ("event_type", "notification_channel", "recipient_type", "status", "dispatch_on")
+    search_fields = ("receipt__receipt_number", "event_type", "recipient_identifier")
+    ordering = ("-dispatch_on", "-created_at")
     readonly_fields = ("id", "created_at", "updated_at", "created_by", "updated_by")

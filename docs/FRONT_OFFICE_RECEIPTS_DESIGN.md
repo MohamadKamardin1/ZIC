@@ -477,3 +477,67 @@ outcomes so failed rows stay reprocessable.
   `RECEIPT_IMPORT_BATCH_NOT_FOUND` (404).
 - **Audit.** `IMPORT_DRY_RUN` is logged at dry-run (totals + import mode) and
   `IMPORT_COMMIT` at commit (status, committed/failed counts) on the batch.
+
+## 20. Prompt 10 — integrations around receipts
+
+Prompt 10 wires the receipts module into its neighbours through clean,
+event-driven seams (no tight coupling — the receipts module keeps owning its
+write path; every other module consumes it read-only or via the durable
+outbox).
+
+- **OL Proposals (Scope 1).** `first_premium_status` already reads the linked
+  commitment's allocations; the proposal **detail** payload now also exposes a
+  `receipts` array (`proposal_receipt_references` in
+  `ol_proposals/services/first_premium_service.py`) listing the latest receipts
+  that reference the proposal directly (`source_module=OL_PROPOSAL`) or that
+  allocated against its first-premium commitment — newest first, capped at 5.
+  `first_premium_posted` remains the single BR-03 truth: it flips to `True` the
+  moment a posted receipt is fully allocated against the commitment (status
+  `COMPLETED` + `amount_paid + amount_waived >= premium_amount`).
+- **OL Commitments (Scope 2).** Commitment detail already serialises its
+  allocations, each carrying `receipt_reference`; `CommitmentPaymentAllocated`
+  already embeds `receipt_reference` when the source is a receipt. No change was
+  needed on the commitments side — the seam contract
+  (`docs/OL_PROPOSALS_RECEIPTS_SEAM.md`) already guarantees receipts write
+  `OLCommitmentAllocation` rows in the same DB transaction.
+- **Dashboard (Scope 3).** `receipt_kpis` (front-office KPI hook) now returns
+  four additional aggregates scoped to the same filters as the list: receipts
+  today (`receipts_today`), amount received today (`amount_received_today`),
+  count of open receipts still carrying unallocated balance
+  (`unallocated_receipts`), and count of reversed receipts
+  (`reversed_receipts`). Amounts stay quantized to two decimal places.
+- **Reporting (Scope 4).** New `reporting_service.py` idempotently registers
+  the `FRONT_OFFICE_RECEIPTS` report category and the
+  `front-office-receipts-report` dataset registry (slug, `parameter_group`
+  `REPORT`, permission `front_office.receipts.view`), and `GET
+  /front-office/receipts/reporting/dataset/` exposes the field contract:
+  `receipt_number`, `date`, `branch`, `payer`, `payment_mode`, `currency`,
+  `amount`, `allocated`, `unallocated`, `status`, `cashier`, `source_module`.
+- **Portal (Scope 5).** `GET /front-office/receipts/portal/` and
+  `/portal/{receipt_id}/` are partner-scoped, read-only endpoints: the actor's
+  `current_partner()` gates the queryset, so a partner only ever sees their own
+  receipts and their own allocations, and a foreign/nonexistent receipt returns
+  the same 404. The portal serializers deliberately exclude internal audit
+  state (`allowed_actions`, `audit_timeline`, `created_by_display`, status
+  history, reversals, documents) so no internal leakage is possible.
+- **Notifications (Scope 6).** New `ReceiptNotificationLog` model mirrors the
+  commitments/proposals notification contract. `notification_service.py`
+  emits `ReceiptPosted` (on post), `ReceiptReversed` (on reversal, with the
+  reason), and `FirstPremiumReceived` (when a PROPOSAL first-premium commitment
+  is discharged by a receipt allocation), each idempotent via the
+  `(receipt, event_type, dispatch_on, channel, recipient)` unique constraint.
+- **ERP/GL seam (Scope 7).** New `gl_seam.py` writes durable `DomainEvent`
+  outbox payloads — `GLReceiptPosting` on post and `GLReceiptReversal` on
+  reversal — for a future GL consumer to post. The documented DR/CR mapping
+  assumption (posting: DR `BANK_OR_CASH`, CR `PREMIUM_SUSPENSE`; reversal:
+  mirrored) is carried in each payload's `mapping` key for the accounting team
+  to review. Allocation's suspense-clearing transition stays owned by the
+  commitments module (`PremiumReceived`), so the GL seam deliberately stops at
+  posting/reversal.
+- **Tests.** `apps/front_office/receipts/tests/test_integrations.py` covers:
+  proposal first-premium status reflects a receipt allocation (service + API),
+  proposal detail exposes latest receipt references, commitment detail includes
+  the receipt reference (model + API + `CommitmentPaymentAllocated` event),
+  portal scoping denies other partners and leaks no audit state, dashboard KPI
+  math, report category/dataset registration, GL outbox events on post and
+  reversal, and the three notification log rows.
