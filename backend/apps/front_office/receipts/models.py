@@ -206,6 +206,7 @@ class Receipt(AuditedModel):
             models.Index(fields=["source_module", "source_reference_id"], name="receipt_source_ref_idx"),
             models.Index(fields=["partner", "receipt_date"], name="receipt_partner_date_idx"),
             models.Index(fields=["currency", "receipt_date"], name="receipt_currency_date_idx"),
+            models.Index(fields=["payment_mode", "receipt_date"], name="receipt_payment_mode_date_idx"),
         ]
 
     def __str__(self):
