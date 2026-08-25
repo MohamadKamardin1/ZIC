@@ -113,7 +113,12 @@ export const receiptsHandlers = [
     options.payers.unshift(option)
     return data({ option }, 201)
   }),
-  http.get(`*${RECEIPTS_BASE}/kpis/`, () => data({ received_today: "150000.00", allocated_in_period: "50000.00", unallocated_amount: "100000.00", receipt_count: receipts.length, reversed_amount: "0.00" })),
+  http.get(`*${RECEIPTS_BASE}/kpis/`, () => data({ received_today: "150000.00", allocated_in_period: "50000.00", unallocated_amount: "100000.00", receipt_count: receipts.length, receipts_today: 1, unallocated_receipt_count: 1, reversed_amount: "0.00", currency: "TZS" })),
+  http.get(`*${RECEIPTS_BASE}/notifications/`, () => data({ results: [
+    { id: "receipt-event-posted", type: "ReceiptPosted", title: "Receipt RCT-2026-000001 posted", message: "The receipt was posted and is ready for allocation.", status: "UNREAD", receipt_id: ids.receipt, deep_link: `/front-office/receipts/${ids.receipt}`, created_at: "2026-08-24T08:30:00Z" },
+    { id: "receipt-event-reversed", type: "ReceiptReversed", title: "Receipt RCT-2026-000001 reversed", message: "The receipt was reversed by Sultan Admin.", status: "UNREAD", receipt_id: ids.receipt, deep_link: `/front-office/receipts/${ids.receipt}?tab=reversals`, created_at: "2026-08-24T09:00:00Z" },
+    { id: "receipt-event-first-premium", type: "FirstPremiumReceived", title: "First premium received", message: "The first premium for OLP-2026-000001 was received.", status: "UNREAD", receipt_id: ids.receipt, deep_link: `/front-office/receipts/${ids.receipt}?tab=allocations`, created_at: "2026-08-24T08:45:00Z" },
+  ] })),
   http.get(`*${RECEIPTS_BASE}/exchange-rate/`, ({ request }) => {
     const url = new URL(request.url)
     if (url.searchParams.get("currency") === "BAD") return error(422, "RECEIPT_CURRENCY_MISMATCH", "No exchange rate is configured for this currency.", ["Choose a supported currency.", "Configure the exchange rate before retrying."], "/front-office/parameters/exchange-rates")
@@ -308,7 +313,7 @@ export const receiptsHandlers = [
   }),
   http.get(`*${PORTAL_RECEIPTS_BASE}/:id/`, ({ params }) => {
     const receipt = findReceipt(String(params.id))
-    return receipt ? data({ ...receipt, allowed_actions: [], bank_account_display: null }) : error(404, "RECEIPT_NOT_FOUND", "The receipt could not be found.", ["Check the receipt number and try again."])
+    return receipt ? data({ ...receipt, allocations: [{ id: "portal-allocation-1", commitment_display: "OLC-2026-000001 — Elimu Bora Growth", amount: "50000.00", currency: receipt.currency, payment_mode_display: receipt.payment_mode_display, receipt_reference: receipt.receipt_number, allocated_at: "2026-08-24T08:45:00Z" }], allowed_actions: [], bank_account_display: null }) : error(404, "RECEIPT_NOT_FOUND", "The receipt could not be found.", ["Check the receipt number and try again."])
   }),
   http.get(`*${PORTAL_RECEIPTS_BASE}/`, ({ request }) => data(page(receipts.map((receipt) => ({ ...receipt, allowed_actions: [], bank_account_display: null })), new URL(request.url)))),
 ]

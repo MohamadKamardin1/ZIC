@@ -614,6 +614,35 @@ export async function listProposalNotifications(): Promise<DashboardNotification
   })
 }
 
+export async function listReceiptNotifications(): Promise<DashboardNotificationRecord[]> {
+  const res = await apiFetchAuth("/api/v1/front-office/receipts/notifications/")
+  const json = await res.json().catch(() => null)
+  if (!res.ok) throw new Error(extractError(res, json))
+  const record = json && typeof json === "object" ? (json as Record<string, unknown>) : {}
+  const results = Array.isArray(record.results)
+    ? record.results
+    : record.data && typeof record.data === "object" && Array.isArray((record.data as { results?: unknown }).results)
+      ? (record.data as { results: unknown[] }).results
+      : []
+  return results.map((raw) => {
+    const item = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}
+    const deepLink = typeof item.deep_link === "string" ? item.deep_link : typeof item.deepLink === "string" ? item.deepLink : "/front-office/receipts"
+    return {
+      id: String(item.id ?? ""),
+      kind: "front-office-receipts",
+      title: String(item.title ?? "Receipt update"),
+      message: String(item.message ?? ""),
+      status: String(item.status ?? "UNREAD"),
+      route: deepLink,
+      entityType: "Receipt",
+      entityId: String(item.receipt_id ?? item.entity_id ?? item.id ?? ""),
+      isRead: Boolean(item.is_read ?? item.isRead ?? false),
+      createdAt: String(item.created_at ?? item.createdAt ?? ""),
+      deepLink,
+    }
+  })
+}
+
 export async function markDashboardNotificationRead(id: number): Promise<DashboardNotificationRecord> {
   return dashboardRequest<DashboardNotificationRecord>(`/api/v1/dashboard/notifications/${id}/read/`, { method: "POST" })
 }

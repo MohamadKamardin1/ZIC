@@ -53,6 +53,23 @@ export interface ReceiptKpis {
   unallocated_amount: string
   receipt_count: number
   reversed_amount: string
+  receipts_today?: number
+  unallocated_receipt_count?: number
+  currency?: string
+}
+
+export interface PortalReceiptAllocation {
+  id: string
+  commitment_display: string
+  amount: string
+  currency: string
+  payment_mode_display: string
+  receipt_reference: string
+  allocated_at: string
+}
+
+export interface PortalReceiptRecord extends ReceiptRecord {
+  allocations?: PortalReceiptAllocation[]
 }
 
 export interface Paginated<T> {
@@ -272,7 +289,7 @@ export const receiptsApi = {
     statuses: (query = "") => readJsonRequest<Paginated<DisplayOption>>(`${RECEIPTS_OPTIONS_BASE}/statuses/${toQuery({ q: query })}`),
   },
   portal: {
-    list: (query: ReceiptListQuery = {}) => readJsonRequest<Paginated<ReceiptRecord>>(`${PORTAL_RECEIPTS_BASE}/${toQuery(query)}`),
-    get: (id: string) => readJsonRequest<ReceiptRecord>(`${PORTAL_RECEIPTS_BASE}/${encodeURIComponent(id)}/`),
+    list: (query: ReceiptListQuery = {}) => readJsonRequest<Paginated<PortalReceiptRecord>>(`${PORTAL_RECEIPTS_BASE}/${toQuery(query)}`),
+    get: (id: string) => readJsonRequest<PortalReceiptRecord>(`${PORTAL_RECEIPTS_BASE}/${encodeURIComponent(id)}/`),
   },
 }

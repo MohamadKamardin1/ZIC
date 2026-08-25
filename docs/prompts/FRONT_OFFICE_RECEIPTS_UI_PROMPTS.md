@@ -286,7 +286,7 @@ FINAL OUTPUT: preview behavior, tests, commit hash, pushed branch.
 
 ---
 
-## [ ] Prompt 9 — Portal Receipts, Dashboard KPIs, Notifications
+## [x] Prompt 9 — Portal Receipts, Dashboard KPIs, Notifications
 
 ```text
 You are a senior frontend engineer. Continue the ZIC Receipts UI. Execute ONLY Prompt 9.

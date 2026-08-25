@@ -86,6 +86,7 @@ import FOReceipts from "./pages/front-office/FOReceipts"
 import FOReceiptForm from "./pages/front-office/FOReceiptForm"
 import FOReceiptDetail from "./pages/front-office/FOReceiptDetail"
 import FOReceiptImports from "./pages/front-office/FOReceiptImports"
+import { PortalReceiptDetail, PortalReceipts } from "./pages/portal/PortalReceipts"
 import FOCommissions from "./pages/front-office/FOCommissions"
 import FOCommissionStatements from "./pages/front-office/FOCommissionStatements"
 import FORequisitions from "./pages/front-office/FORequisitions"
@@ -217,6 +218,22 @@ export default function App() {
         <Route path="ordinary-life/notes" element={<OLNotes />} />
         <Route path="ordinary-life/approvals" element={<OLApprovals />} />
         <Route path="ordinary-life/audit-history" element={<OLAuditHistory />} />
+        <Route
+          path="portal/receipts"
+          element={
+            <RequirePermission permission="front_office.receipts.view">
+              <PortalReceipts />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="portal/receipts/:id"
+          element={
+            <RequirePermission permission="front_office.receipts.view">
+              <PortalReceiptDetail />
+            </RequirePermission>
+          }
+        />
         <Route
           path="portal/commitments"
           element={
