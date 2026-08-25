@@ -1,18 +1,20 @@
 import csv
 
+from django.core.files.storage import default_storage
 from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.front_office.receipts.models import Receipt, ReceiptAllocation
+from apps.front_office.receipts.models import Receipt, ReceiptAllocation, ReceiptDocument
 from apps.front_office.receipts.permissions import has_receipt_permission
 from apps.front_office.receipts.serializers import (
     ReceiptAllocationRequestSerializer,
     ReceiptAllocationSerializer,
     ReceiptBaseSerializer,
     ReceiptDetailSerializer,
+    ReceiptDocumentSerializer,
     ReceiptDraftSerializer,
     ReceiptReasonSerializer,
     ReceiptReversalSerializer,
@@ -469,3 +471,117 @@ class ReceiptOptionsView(APIView):
                 }
             }
         )
+
+
+class ReceiptPrintView(APIView):
+    """POST /front-office/receipts/<uuid>/print/ — generate a receipt printout.
+
+    Print rules (Prompt 8): DRAFT prints a preview only; posted states print an
+    official receipt; REVERSED/CANCELLED print with the matching watermark. The
+    endpoint is gated on the ``front_office.receipts.print`` permission and the
+    response carries signed download tickets (never the public media URL).
+    """
+
+    def get_permissions(self):
+        return [MustActionPermission(action="print")]
+
+    def post(self, request, receipt_id):
+        from apps.front_office.receipts.services.print_service import ReceiptPrintService
+
+        receipt = get_receipt_or_404(receipt_id)
+        template_code = (request.data or {}).get("template_code")
+        preview = bool((request.data or {}).get("preview"))
+        document = ReceiptPrintService.generate(
+            receipt=receipt,
+            actor=request.user,
+            request=request,
+            template_code=template_code,
+            preview=preview,
+        )
+        return Response(
+            {
+                "data": {
+                    "id": str(document.pk),
+                    "receipt_number": receipt.receipt_number,
+                    "document_type": document.document_type,
+                    "status": document.status,
+                    "template_code": document.template.code if document.template_id else None,
+                    "template_version": document.template_version,
+                    "watermark": (document.metadata or {}).get("watermark", ""),
+                    "preview": (document.metadata or {}).get("preview", False),
+                    "generated_at": document.generated_at.isoformat() if document.generated_at else None,
+                    "urls": ReceiptPrintService.document_urls(document, request),
+                }
+            },
+            status=201,
+        )
+
+
+class ReceiptDocumentsView(APIView):
+    """GET /front-office/receipts/<uuid>/documents/ — document register for a receipt."""
+
+    permission_classes = [MustViewReceiptsPermission]
+
+    def get(self, request, receipt_id):
+        receipt = get_receipt_or_404(receipt_id)
+        documents = ReceiptDocument.objects.filter(receipt=receipt).order_by("-uploaded_at", "-created_at")
+        return Response(
+            {
+                "data": {
+                    "receipt_number": receipt.receipt_number,
+                    "results": ReceiptDocumentSerializer(
+                        documents, many=True, context={"request": request}
+                    ).data,
+                }
+            }
+        )
+
+
+class ReceiptDocumentDownloadView(APIView):
+    """GET /front-office/receipts/documents/<uuid>/download/?ticket=... — signed download.
+
+    The ticket is issued by the print pipeline (bound to the requesting user,
+    document, and purpose) and validated here; the stream is audited as a
+    DOWNLOAD on the source receipt.
+    """
+
+    def get_permissions(self):
+        return [MustActionPermission(action="print")]
+
+    def get(self, request, document_id):
+        from apps.front_office.receipts.errors import document_not_found, file_missing
+        from apps.front_office.receipts.services.print_ticket import validate_download_ticket
+
+        validate_download_ticket(
+            (request.query_params.get("ticket") or ""),
+            document_id=document_id,
+            user_id=request.user.pk,
+        )
+        document = ReceiptDocument.objects.filter(pk=document_id).first()
+        if document is None:
+            raise document_not_found()
+        if not document.file_reference or not default_storage.exists(document.file_reference):
+            raise file_missing()
+        content = default_storage.open(document.file_reference, "rb").read()
+
+        from apps.governance.services.audit_service import AuditService
+
+        AuditService.log_action(
+            action="DOWNLOAD",
+            instance=document.receipt,
+            actor=request.user,
+            request=request,
+            after_state={
+                "document_id": str(document.pk),
+                "document_type": document.document_type,
+                "template_code": (document.metadata or {}).get("template_code"),
+                "template_version": document.template_version,
+                "watermark": (document.metadata or {}).get("watermark", ""),
+            },
+            reason="Receipt document downloaded.",
+            changed_fields=[],
+        )
+        response = HttpResponse(content, content_type=document.mime_type or "application/pdf")
+        filename = document.filename or f"{document.receipt.receipt_number or 'receipt'}.pdf"
+        response["Content-Disposition"] = f'inline; filename="{filename}"'
+        return response

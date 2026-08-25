@@ -164,6 +164,30 @@ RECEIPT_ERROR_REGISTRY = {
             "Re-run the receipt operation once the parameter is active.",
         ],
     ),
+    "RECEIPT_DOCUMENT_NOT_FOUND": (
+        "The requested receipt document could not be found.",
+        404,
+        [
+            "Verify the document identifier is correct.",
+            "Generate the receipt printout again and retry the download.",
+        ],
+    ),
+    "RECEIPT_TICKET_INVALID": (
+        "The download ticket is invalid or has expired.",
+        403,
+        [
+            "Re-open the receipt printout and use the fresh download link.",
+            "If the link was shared, request a new one from the receipt print screen.",
+        ],
+    ),
+    "RECEIPT_FILE_MISSING": (
+        "The generated file is missing from storage.",
+        404,
+        [
+            "Regenerate the receipt printout.",
+            "Contact operations if the media file was removed.",
+        ],
+    ),
 }
 
 
@@ -289,3 +313,15 @@ def bank_account_required():
         "RECEIPT_BANK_ACCOUNT_REQUIRED",
         field_errors={"bank_account": ["A bank account is required for this payment mode."]},
     )
+
+
+def document_not_found():
+    return registry_error("RECEIPT_DOCUMENT_NOT_FOUND")
+
+
+def ticket_invalid(message=None):
+    return registry_error("RECEIPT_TICKET_INVALID", message=message)
+
+
+def file_missing():
+    return registry_error("RECEIPT_FILE_MISSING")

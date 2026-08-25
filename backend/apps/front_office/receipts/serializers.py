@@ -144,6 +144,11 @@ class ReceiptReversalSerializer(serializers.ModelSerializer):
 class ReceiptDocumentSerializer(serializers.ModelSerializer):
     uploaded_by = serializers.SerializerMethodField()
     uploaded_by_name = serializers.SerializerMethodField()
+    template = serializers.UUIDField(source="template_id", allow_null=True, required=False)
+    template_code = serializers.SerializerMethodField()
+    generated_by = serializers.SerializerMethodField()
+    generated_by_name = serializers.SerializerMethodField()
+    urls = serializers.SerializerMethodField()
 
     class Meta:
         model = ReceiptDocument
@@ -152,12 +157,21 @@ class ReceiptDocumentSerializer(serializers.ModelSerializer):
             "document_type",
             "document_number",
             "file_reference",
+            "html_reference",
             "filename",
             "mime_type",
             "status",
+            "template",
+            "template_code",
+            "template_version",
+            "metadata",
+            "generated_by",
+            "generated_by_name",
+            "generated_at",
             "uploaded_at",
             "uploaded_by",
             "uploaded_by_name",
+            "urls",
         )
 
     def get_uploaded_by(self, obj):
@@ -165,6 +179,23 @@ class ReceiptDocumentSerializer(serializers.ModelSerializer):
 
     def get_uploaded_by_name(self, obj):
         return _actor_name(obj.uploaded_by)
+
+    def get_template_code(self, obj):
+        return (obj.metadata or {}).get("template_code") if isinstance(obj.metadata, dict) else None
+
+    def get_generated_by(self, obj):
+        return getattr(obj, "generated_by_id", None)
+
+    def get_generated_by_name(self, obj):
+        return _actor_name(obj.generated_by)
+
+    def get_urls(self, obj):
+        from apps.front_office.receipts.services.print_service import ReceiptPrintService
+
+        request = self.context.get("request") if self.context else None
+        if request is None:
+            return None
+        return ReceiptPrintService.document_urls(obj, request)
 
 
 class ReceiptStatusHistorySerializer(serializers.ModelSerializer):

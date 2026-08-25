@@ -13,6 +13,7 @@ from apps.front_office.receipts.models import (
     Receipt,
     ReceiptAllocation,
     ReceiptDocument,
+    ReceiptPrintTemplate,
     ReceiptReversal,
     ReceiptStatusHistory,
 )
@@ -243,11 +244,32 @@ class ReceiptReversalAdmin(admin.ModelAdmin):
 
 @admin.register(ReceiptDocument)
 class ReceiptDocumentAdmin(admin.ModelAdmin):
-    list_display = ("receipt", "document_type", "document_number", "filename", "mime_type", "status", "uploaded_by", "uploaded_at")
-    list_filter = ("document_type", "status", "uploaded_at")
+    list_display = (
+        "receipt",
+        "document_type",
+        "document_number",
+        "filename",
+        "mime_type",
+        "status",
+        "template",
+        "template_version",
+        "uploaded_by",
+        "generated_by",
+        "uploaded_at",
+    )
+    list_filter = ("document_type", "status", "uploaded_at", "generated_at")
     search_fields = ("receipt__receipt_number", "document_number", "filename")
     ordering = ("-uploaded_at",)
     readonly_fields = ("id", "uploaded_at", "created_at", "updated_at", "created_by", "updated_by")
+
+
+@admin.register(ReceiptPrintTemplate)
+class ReceiptPrintTemplateAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "version", "is_active", "effective_from", "effective_to", "updated_at")
+    list_filter = ("code", "is_active", "effective_from", "effective_to")
+    search_fields = ("code", "name", "description")
+    ordering = ("code", "-version")
+    readonly_fields = ("id", "created_at", "updated_at")
 
 
 @admin.register(ReceiptStatusHistory)

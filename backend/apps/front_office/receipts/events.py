@@ -20,6 +20,7 @@ RECEIPT_ALLOCATED = "ReceiptAllocated"
 RECEIPT_FULLY_ALLOCATED = "ReceiptFullyAllocated"
 RECEIPT_REVERSED = "ReceiptReversed"
 RECEIPT_CANCELLED = "ReceiptCancelled"
+RECEIPT_PRINT_GENERATED = "ReceiptPrintGenerated"
 PREMIUM_RECEIVED = "PremiumReceived"
 FIRST_PREMIUM_RECEIVED = "FirstPremiumReceived"
 
@@ -30,6 +31,7 @@ EVENT_TYPES = (
     RECEIPT_FULLY_ALLOCATED,
     RECEIPT_REVERSED,
     RECEIPT_CANCELLED,
+    RECEIPT_PRINT_GENERATED,
     PREMIUM_RECEIVED,
     FIRST_PREMIUM_RECEIVED,
 )
@@ -155,6 +157,36 @@ def emit_cancelled(receipt, *, actor=None, from_status="", reason="", source_cha
         reason=reason,
         source_channel=source_channel,
         metadata=metadata,
+    )
+
+
+def emit_print_generated(
+    receipt,
+    *,
+    actor=None,
+    document=None,
+    template_code="",
+    template_version=None,
+    preview=False,
+    watermark="",
+    source_channel=None,
+):
+    """``ReceiptPrintGenerated`` outbox event (Prompt 8)."""
+    return DomainEvent.objects.create(
+        event_type=RECEIPT_PRINT_GENERATED,
+        aggregate_type=AGGREGATE_TYPE,
+        aggregate_id=str(receipt.pk),
+        payload={
+            "receipt_id": str(receipt.pk),
+            "receipt_number": receipt.receipt_number,
+            "document_id": str(document.pk) if document is not None else None,
+            "template_code": template_code,
+            "template_version": template_version,
+            "preview": bool(preview),
+            "watermark": watermark,
+            "actor_id": str(actor.pk) if actor and getattr(actor, "pk", None) else None,
+            "source_channel": source_channel or getattr(receipt, "source_channel", ""),
+        },
     )
 
 

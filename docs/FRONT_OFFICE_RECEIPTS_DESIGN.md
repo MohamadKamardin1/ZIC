@@ -368,3 +368,59 @@ is both state-aware and permission-aware.
   story.
 - **Permissions.** List, detail, KPI, and export all require
   `front_office.receipts.view` (`MustViewReceiptsPermission`).
+
+## 18. Prompt 8 — receipt printout & document integration
+
+- **Unified print/PDF engine.** Receipt printouts reuse the same engine that
+  OL proposals use: a versioned HTML template (`ReceiptPrintTemplate`, code
+  `RECEIPT`, v1 seeded on first use) is rendered with a Django context, turned
+  into a PDF by WeasyPrint, persisted via `default_storage` under
+  `front_office_receipts/{receipt_number}/{timestamp}.html|pdf`, and recorded
+  as a `ReceiptDocument` row (status `GENERATED`, `mime_type
+  application/pdf`). Each generated document retains its source transaction
+  (FK `ReceiptDocument.receipt`) and the template version that produced it
+  (`template_version`, cross-checked against `template.version` on save), then
+  the pipeline writes a `PRINT` audit entry and emits the durable
+  `ReceiptPrintGenerated` domain event. `html_reference` keeps the raw markup
+  for re-printing / inspection.
+- **Template variables** (`ReceiptPrintService.VARIABLES`):
+  - `company` — logo + company details (name, address, phone, email, tax id).
+  - `receipt` — receipt number, date, branch, source module/reference,
+    payment mode, payment reference, currency, status.
+  - `payer` — payer name, identity, and partner/identity number.
+  - `money` — amount in figures (`TZS 100,000.00`) and amount in words
+    (whole + fractional subunit, rounded half-up to two decimals).
+  - `allocations` — allocated commitments table (commitment number,
+    narration, amount, converted amount/currency when multi-currency,
+    allocation status) plus the unallocated-amount row.
+  - `generated` — print-generation trace (`by` actor, `at` timestamp).
+  - `cashier` — created-by display; `posted_by` — posting actor display.
+  - `watermark` — `REVERSED` / `CANCELLED` overlay for non-clean printouts.
+  - `preview` — true for DRAFT preview printouts.
+  - `template_version` — footer `Template v{version}`.
+- **Print rules.** `DRAFT` → preview only (requires `preview: true`, else
+  `RECEIPT_INVALID_STATUS` 422; the permission gate still applies).
+  `POSTED` / `PARTIALLY_ALLOCATED` / `FULLY_ALLOCATED` → official receipt
+  (no watermark). `REVERSED` → official receipt with a reversal watermark.
+  `CANCELLED` → official receipt with a cancelled watermark. Any other status
+  is rejected with `RECEIPT_INVALID_STATUS`.
+- **API.** `POST /api/v1/front-office/receipts/{id}/print/` generates and
+  returns the document payload (incl. signed `pdf_url`/`html_url`), gated by
+  `front_office.receipts.print` (`MustActionPermission("print")`);
+  `GET /api/v1/front-office/receipts/{id}/documents/` returns the document
+  register for a receipt (view permission); `GET
+  /api/v1/front-office/receipts/documents/{id}/download/?ticket=...` streams
+  the generated PDF.
+- **Signed-ticket download.** The media backend is public in DEBUG, so
+  generated files are never served from `/media/`. `document_urls` issues an
+  HMAC-SHA256 ticket over a base64url JSON payload
+  `{purpose, document_id, user_id, expires}` (15-minute TTL) bound to the
+  requesting user; the download view validates it with constant-time
+  comparison and streams the file (`Content-Disposition: inline`), auditing a
+  `DOWNLOAD` entry on the source receipt. Tickets cannot be replayed across
+  users or documents.
+- **Audit.** `PRINT` is logged at generation (document id, template code and
+  version, watermark, preview flag) and `DOWNLOAD` is logged per streamed
+  file, both on the receipt entity via `AuditService`. The receipt document
+  serializer exposes template, template version, generated-by, generated-at,
+  and the signed download URLs so the front end can deep-link prints.
