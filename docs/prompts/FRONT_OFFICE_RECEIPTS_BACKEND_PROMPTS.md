@@ -7,7 +7,7 @@
 - [x] Prompt 5 — Implement Multi-Currency Receipt & Allocation Behavior
 - [x] Prompt 6 — Implement Receipt Reversal, Allocation Reversal & Draft Cancellation
 - [x] Prompt 7 — Implement Receipt List, Detail, Work Queue & Export APIs
-- [ ] Prompt 8 — Implement Receipt Printout & Document Integration
+- [x] Prompt 8 — Implement Receipt Printout & Document Integration
 - [ ] Prompt 9 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
 - [ ] Prompt 10 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
 - [ ] Prompt 11 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
