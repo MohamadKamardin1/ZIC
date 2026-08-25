@@ -10,7 +10,7 @@
 - [x] Prompt 8 — Implement Receipt Printout & Document Integration
 - [x] Prompt 9 — Implement Bulk Receipt Import
 - [x] Prompt 10 — Complete All Integrations Around Receipts
-- [ ] Prompt 11 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
+- [x] Prompt 11 — Full Backend Test Matrix & Security Hardening
 - [ ] Prompt 12 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
@@ -799,3 +799,58 @@ GIT:
 
 FINAL OUTPUT:
 Return integration map, events, tests, commit hash, pushed branch.
+
+## Prompt 11/12 — Full Backend Test Matrix & Security Hardening
+
+You are a senior Django QA/security engineer. Continue the Front Office Receipts backend. Execute ONLY Prompt 11.
+
+MANDATORY RULES:
+- Every money flow must be tested.
+- No skipped tests.
+- Commit and push; tick Prompt 11 after completion.
+
+OBJECTIVE:
+Add full backend test matrix and harden security.
+
+SCOPE:
+1. Unit/integration test matrix:
+   - draft creation
+   - draft editing
+   - posting
+   - payment mode validation
+   - allocation partial/full
+   - auto allocation
+   - over-allocation
+   - multi-currency allocation
+   - exchange-rate missing
+   - reversal full
+   - reversal partial
+   - cancellation
+   - print receipt
+   - import dry-run/commit
+   - portal scoping
+   - dashboard/report dataset
+2. Permission matrix:
+   - each receipt permission tested for allow/deny
+3. Audit matrix:
+   - create, post, allocate, reverse, cancel, import, print all produce audit rows
+4. Idempotency matrix:
+   - create retry
+   - post retry
+   - allocation retry
+   - import retry
+5. Security:
+   - partner user cannot see other partner receipts
+   - unauthorized user receives structured 403
+   - no UUID leaks in response fields without display labels
+   - posted receipt immutability enforced
+6. Performance:
+   - list endpoint indexed and paginated
+   - add indexes for common filters
+
+GIT:
+- commit: "test(receipts): full receipt flow security audit and idempotency matrix"
+- push; tick Prompt 11 checkbox
+
+FINAL OUTPUT:
+Return coverage summary, security findings fixed, audit evidence, commit hash, pushed branch.
