@@ -9,7 +9,7 @@
 - [x] Prompt 7 — Implement Receipt List, Detail, Work Queue & Export APIs
 - [x] Prompt 8 — Implement Receipt Printout & Document Integration
 - [x] Prompt 9 — Implement Bulk Receipt Import
-- [ ] Prompt 10 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
+- [x] Prompt 10 — Complete All Integrations Around Receipts
 - [ ] Prompt 11 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
 - [ ] Prompt 12 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
 
@@ -742,3 +742,60 @@ GIT:
 FINAL OUTPUT:
 Return import contract, CSV template fields, tests, commit hash, pushed branch.
 ```
+## Prompt 10/12 — Complete All Integrations Around Receipts
+
+You are a senior Django integration engineer. Continue the Front Office Receipts backend. Execute ONLY Prompt 10.
+
+MANDATORY RULES:
+- Use clean seams/events, avoid tight coupling.
+- Commit and push; tick Prompt 10 after completion.
+
+OBJECTIVE:
+Complete all integrations around receipts.
+
+SCOPE:
+1. OL Proposals:
+   - first premium status endpoint must reflect receipt allocations via commitments
+   - proposal detail payload must show latest receipt references where applicable
+2. OL Commitments:
+   - commitment detail should show linked receipt allocations
+   - commitment allocation events should include receipt reference if source is receipt
+3. Dashboard:
+   - front-office KPI hook:
+     - receipts today
+     - amount received today
+     - unallocated receipts
+     - reversed receipts
+4. Reporting:
+   - register report category "Front Office Receipts"
+   - expose report dataset fields:
+     receipt_number, date, branch, payer, payment_mode, currency, amount, allocated, unallocated, status, cashier, source_module
+5. Portal:
+   - partner-scoped read-only receipts endpoint:
+     - own receipts only
+     - own allocations only
+     - no internal audit leakage
+6. Notifications:
+   - ReceiptPosted
+   - ReceiptReversed
+   - FirstPremiumReceived
+7. ERP/GL seam:
+   - create OutboxEvent payloads for future accounting postings:
+     - receipt posting
+     - receipt reversal
+   - document mapping assumptions
+
+TESTS:
+- proposal first premium status reflects receipt
+- commitment detail includes receipt refs
+- portal scoping denies other partners
+- dashboard KPI math
+- report dataset registered
+- GL outbox events emitted
+
+GIT:
+- commit: "feat(receipts): integrate proposals commitments dashboard reports portal and gl seam"
+- push; tick Prompt 10 checkbox
+
+FINAL OUTPUT:
+Return integration map, events, tests, commit hash, pushed branch.
