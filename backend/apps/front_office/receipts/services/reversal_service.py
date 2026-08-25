@@ -9,7 +9,6 @@ consistently; and the receipt carries a first-class ``ReceiptReversal`` record
 with a frozen snapshot and the acting user's mandatory reason.
 """
 
-from decimal import Decimal
 
 from django.db import transaction
 from django.utils import timezone

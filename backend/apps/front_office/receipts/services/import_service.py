@@ -11,7 +11,6 @@ import hashlib
 import io
 import json
 import uuid
-
 from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
@@ -30,7 +29,7 @@ from apps.front_office.receipts.models import (
     ReceiptSourceModule,
     ReceiptStatus,
 )
-from apps.front_office.receipts.services.allocation_service import allocate, _terminal_codes
+from apps.front_office.receipts.services.allocation_service import _terminal_codes, allocate
 from apps.front_office.receipts.services.parameter_resolver import (
     configured_currencies,
     default_currency,
@@ -96,7 +95,7 @@ def parse_csv(file):
         raise import_row_invalid(
             message="The CSV file must be UTF-8 encoded.",
             field_errors={"file": ["The CSV file must be UTF-8 encoded."]},
-        )
+        ) from None
     reader = csv.DictReader(io.StringIO(text))
     raw_headers = [(h or "") for h in (reader.fieldnames or [])]
     header_map = {h.strip().lower(): h for h in raw_headers if h.strip()}

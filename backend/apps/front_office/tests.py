@@ -1,8 +1,11 @@
 from django.test import TestCase
-from rest_framework.test import APIClient
 from rest_framework import status
-from .models import FOReceipt, FOCommission, FORequisition
+from rest_framework.test import APIClient
+
 from apps.users.models import User
+
+from .models import FOCommission, FOReceipt, FORequisition
+
 
 class FrontOfficeTests(TestCase):
     def setUp(self):

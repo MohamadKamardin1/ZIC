@@ -1,8 +1,7 @@
 """Prompt 10 — integration tests across proposals, commitments, dashboard,
 reporting, portal, notifications, and the ERP/GL outbox seam."""
 
-from datetime import date, timedelta
-from decimal import Decimal
+from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
@@ -10,7 +9,7 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.common.models import DomainEvent
-from apps.front_office.receipts.models import Receipt, ReceiptNotificationLog
+from apps.front_office.receipts.models import ReceiptNotificationLog
 from apps.ol_commitments.models import OLCommitment, OLCommitmentAllocation
 from apps.ol_parameters.models import OLCommitmentStatus, OLParameterTableRegistry
 from apps.ol_proposals.models import OLProposal
@@ -246,7 +245,7 @@ class ReceiptIntegrationTests(APITestCase):
             source_channel="API",
         )
         # A: today, posted, unallocated.
-        receipt_a = self._create_and_post(amount="100000.00", receipt_date=today)
+        _receipt_a = self._create_and_post(amount="100000.00", receipt_date=today)
         # B: today, posted, fully allocated.
         receipt_b = self._create_and_post(amount="50000.00", receipt_date=today)
         self._allocate(receipt_b["id"], commitment.commitment_number, "50000.00")

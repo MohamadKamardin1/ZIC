@@ -6,7 +6,7 @@ Shillings Only". The currency is parameterized; the unit/subunit names come from
 a small reference map with a sensible default for unknown codes.
 """
 
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
 _ONES = (
     "",

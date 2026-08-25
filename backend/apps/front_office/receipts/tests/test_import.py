@@ -381,7 +381,7 @@ class ReceiptImportApiTests(APITestCase):
         self.assertEqual(listing.data["data"]["count"], 1)
 
     def test_import_rows_persist_validation_trail(self):
-        response = self._dry_run([make_row(branch_code="XXX")])
+        _response = self._dry_run([make_row(branch_code="XXX")])
         row = ReceiptImportRow.objects.get()
         self.assertEqual(row.status, ReceiptImportRowStatus.INVALID)
         self.assertEqual(row.error_code, "RECEIPT_IMPORT_ROW_INVALID")

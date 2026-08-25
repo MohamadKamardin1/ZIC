@@ -56,7 +56,7 @@ def validate_download_ticket(token, *, purpose=DOWNLOAD_PURPOSE, document_id=Non
     try:
         payload = json.loads(_b64url_decode(raw).decode("utf-8"))
     except (ValueError, TypeError, UnicodeDecodeError):
-        raise ticket_invalid()
+        raise ticket_invalid() from None
     if not isinstance(payload, dict):
         raise ticket_invalid()
     if payload.get("purpose") != purpose:

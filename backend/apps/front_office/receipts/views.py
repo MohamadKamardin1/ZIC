@@ -316,7 +316,7 @@ class ExchangeRateView(APIView):
                 raise currency_mismatch(
                     message="The date must use the ISO format YYYY-MM-DD.",
                     field_errors={"date": ["Enter a date in YYYY-MM-DD format."]},
-                )
+                ) from None
 
         payload = lookup_payload(from_currency, to_currency, effective_date)
         if payload is None:

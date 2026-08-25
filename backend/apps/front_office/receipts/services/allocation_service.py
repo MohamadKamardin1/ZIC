@@ -146,7 +146,7 @@ def _validate_allocation_amount(amount):
         raise allocation_invalid(
             message="The allocation amount is not valid.",
             field_errors={"amount": ["Enter a valid allocation amount."]},
-        )
+        ) from None
     if amount <= 0:
         raise allocation_invalid(
             message="The allocation amount must be greater than zero.",
@@ -176,7 +176,7 @@ def _validate_exchange_rate(rate):
         raise allocation_invalid(
             message="The exchange rate is not valid.",
             field_errors={"exchange_rate": ["Enter a valid exchange rate."]},
-        )
+        ) from None
     if rate <= 0:
         raise allocation_invalid(
             message="The exchange rate must be greater than zero.",

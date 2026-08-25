@@ -1,6 +1,6 @@
 import csv
 import io
-from datetime import date, timedelta
+from datetime import date
 
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
@@ -222,7 +222,7 @@ class ReceiptWorkQueueApiTests(APITestCase):
     def test_kpis_math(self):
         a = self._create_and_post(amount="100000.00", receipt_date=date(2026, 8, 20))
         self._allocate(a["id"], self.commitment.commitment_number, "100000.00")
-        b = self._create_and_post(amount="50000.00", receipt_date=date(2026, 8, 21))
+        _b = self._create_and_post(amount="50000.00", receipt_date=date(2026, 8, 21))
         c = self._create_and_post(amount="25000.00", receipt_date=date(2026, 8, 22))
         self._reverse(c["id"])
 
@@ -296,7 +296,7 @@ class ReceiptWorkQueueApiTests(APITestCase):
     def test_csv_export_respects_filters(self):
         a = self._create_and_post(amount="100000.00")
         self._allocate(a["id"], self.commitment.commitment_number, "100000.00")
-        b = self._create_and_post(amount="50000.00", payment_mode="CHEQUE", payment_reference="CHQ-2026-001")
+        _b = self._create_and_post(amount="50000.00", payment_mode="CHEQUE", payment_reference="CHQ-2026-001")
         c = self._create_and_post(amount="25000.00")
         self._reverse(c["id"])
 

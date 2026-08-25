@@ -285,7 +285,7 @@ class ReceiptPrintApiTests(APITestCase):
 
     def test_download_missing_document_is_404(self):
         receipt = self._create_and_post()
-        data = self._print(receipt["id"]).data["data"]
+        _data = self._print(receipt["id"]).data["data"]
         other = Receipt.objects.create(
             payer_name="Ghost Payer",
             receipt_date=date(2026, 8, 20),

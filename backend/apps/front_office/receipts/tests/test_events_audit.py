@@ -7,7 +7,7 @@ from django.test import TestCase
 
 from apps.common.models import DomainEvent
 from apps.front_office.receipts import events as receipt_events
-from apps.front_office.receipts.models import Receipt, ReceiptStatus, ReceiptStatusHistory
+from apps.front_office.receipts.models import ReceiptStatus, ReceiptStatusHistory
 from apps.front_office.receipts.services.receipt_service import create_draft, update_draft
 from apps.governance.models import AuditLog
 

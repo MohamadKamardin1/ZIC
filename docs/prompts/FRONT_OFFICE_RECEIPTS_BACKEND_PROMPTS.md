@@ -11,7 +11,7 @@
 - [x] Prompt 9 — Implement Bulk Receipt Import
 - [x] Prompt 10 — Complete All Integrations Around Receipts
 - [x] Prompt 11 — Full Backend Test Matrix & Security Hardening
-- [ ] Prompt 12 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
+- [x] Prompt 12 — Seed Scenarios, Document & Release Receipts Backend
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–12 will be appended `EXACTLY as provided` when the user
@@ -854,3 +854,74 @@ GIT:
 
 FINAL OUTPUT:
 Return coverage summary, security findings fixed, audit evidence, commit hash, pushed branch.
+
+## Prompt 12/12 — Seed Scenarios, Document & Release Receipts Backend
+
+You are a senior Django release engineer. Complete the Front Office Receipts backend. Execute ONLY Prompt 12.
+
+MANDATORY RULES:
+- Seed realistic data through different approaches.
+- Prove BR-03 is closed.
+- Commit and push; tick final checkbox.
+
+OBJECTIVE:
+Seed scenarios, document, and release the receipts backend.
+
+SCOPE:
+1. Seed exactly 10 receipt scenarios:
+   1 draft manual receipt
+   2 posted unallocated cash receipt
+   3 posted partially allocated receipt
+   4 fully allocated first premium receipt for OL proposal
+   5 bank transfer receipt with payment reference
+   6 mobile money receipt
+   7 multi-currency receipt allocation
+   8 reversed receipt
+   9 cancelled draft receipt
+   10 CSV-imported receipt
+2. Attempt and catch failure scenarios with proof payloads:
+   - missing payment reference
+   - over-allocation
+   - cross-currency without exchange rate
+   - allocation to completed commitment
+   - reversal after lock period
+3. Verify BR-03:
+   - proposal cannot convert before first premium receipt allocation
+   - after full first premium allocation, proposal can convert to policy
+   - after reversal, guard becomes false again unless policy already issued; document post-policy reversal assumption
+4. Documentation:
+   - docs/FRONT_OFFICE_RECEIPTS_USER_GUIDE.md
+   - docs/FRONT_OFFICE_RECEIPTS_ADMIN_GUIDE.md
+   - docs/FRONT_OFFICE_RECEIPTS_API.md
+   - docs/FRONT_OFFICE_RECEIPTS_ERROR_CODES.md
+   - update docs/OL_PROPOSALS_RECEIPTS_SEAM.md
+5. Run final verification:
+   - migrations
+   - lint
+   - typecheck/static analysis if configured
+   - backend tests
+   - PDF receipt tests
+6. Mark all 12 checkboxes complete in docs/prompts/FRONT_OFFICE_RECEIPTS_BACKEND_PROMPTS.md.
+
+GIT:
+- commit: "feat(receipts): seed scenarios docs and release front office receipts backend"
+- push; if blocked create feature/front-office-receipts-complete and push
+- tag v1.0.0-front-office-receipts-backend if tagging convention exists
+
+FINAL OUTPUT:
+Return the FULL receipts backend summary:
+- models
+- endpoints
+- permissions
+- parameters consumed
+- BR-03 enforcement proof
+- integration points
+- seed scenario results
+- failure proof payloads
+- audit consistency result
+- test results
+- docs added
+- all 12 checkboxes ticked
+- commit hash/tag
+- pushed branch
+- next recommended module: Front Office Receipts UI, then OL Policies backend.

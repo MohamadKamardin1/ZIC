@@ -1,4 +1,3 @@
-import re
 import threading
 from decimal import Decimal
 

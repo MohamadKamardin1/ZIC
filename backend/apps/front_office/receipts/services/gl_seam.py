@@ -23,7 +23,6 @@ from datetime import date
 from decimal import Decimal
 
 from apps.common.models import DomainEvent
-from apps.front_office.receipts.models import Receipt, ReceiptStatus
 
 AGGREGATE_TYPE = "Receipt"
 

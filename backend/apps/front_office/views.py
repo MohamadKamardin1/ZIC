@@ -1,23 +1,23 @@
-from rest_framework import viewsets
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import filters
+from rest_framework import filters, viewsets
 
 from .models import (
-    FOReceipt,
     FOCommission,
     FOCommissionStatement,
-    FORequisition,
-    FOPayment,
     FOParameter,
+    FOPayment,
+    FOReceipt,
+    FORequisition,
 )
 from .serializers import (
-    FOReceiptSerializer,
     FOCommissionSerializer,
     FOCommissionStatementSerializer,
-    FORequisitionSerializer,
-    FOPaymentSerializer,
     FOParameterSerializer,
+    FOPaymentSerializer,
+    FOReceiptSerializer,
+    FORequisitionSerializer,
 )
+
 
 class FOReceiptViewSet(viewsets.ModelViewSet):
     queryset = FOReceipt.objects.all()

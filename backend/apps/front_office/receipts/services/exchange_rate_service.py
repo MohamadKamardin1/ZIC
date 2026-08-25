@@ -8,8 +8,8 @@ older than that many days is flagged but never blocks a write (explicit rate
 wins and is authoritative).
 """
 
+
 from django.utils import timezone
-from decimal import Decimal
 
 from apps.front_office.receipts.models import ExchangeRate
 from apps.system_parameters.services.config_service import ConfigurationService

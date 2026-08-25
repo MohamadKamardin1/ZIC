@@ -1,5 +1,7 @@
 import uuid
+
 from django.db import models
+
 
 class FOReceipt(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -109,15 +111,15 @@ class FOParameter(models.Model):
 
 
 # Front Office Receipts bounded context (see apps.front_office.receipts).
+from apps.front_office.receipts.config_models import (  # noqa: E402,F401
+    CompanyBankAccount,
+    ReceiptNumberingRule,
+    ReceiptPaymentModeRule,
+)
 from apps.front_office.receipts.models import (  # noqa: E402,F401
     Receipt,
     ReceiptAllocation,
     ReceiptDocument,
     ReceiptReversal,
     ReceiptStatusHistory,
-)
-from apps.front_office.receipts.config_models import (  # noqa: E402,F401
-    CompanyBankAccount,
-    ReceiptNumberingRule,
-    ReceiptPaymentModeRule,
 )

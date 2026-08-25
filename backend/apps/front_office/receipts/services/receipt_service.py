@@ -92,7 +92,7 @@ def _validate_amount(amount):
             error_code="RECEIPT_AMOUNT_INVALID",
             status_code=422,
             field_errors={"receipt_amount": ["Enter a valid number."]},
-        )
+        ) from None
     if amount <= ZERO:
         raise ReceiptError(
             "The receipt amount must be greater than zero.",
@@ -150,7 +150,7 @@ def create_draft(*, actor=None, request=None, source_channel="API", **fields):
             error_code="RECEIPT_AMOUNT_INVALID" if "receipt_amount" in getattr(exc, "message_dict", {}) else "VALIDATION_ERROR",
             status_code=422,
             field_errors=exc.message_dict,
-        )
+        ) from exc
     try:
         with transaction.atomic():
             receipt.save()
@@ -214,7 +214,7 @@ def update_draft(receipt, *, actor=None, source_channel=None, **fields):
             error_code="VALIDATION_ERROR",
             status_code=422,
             field_errors=exc.message_dict,
-        )
+        ) from exc
     receipt.save()
     return receipt
 
@@ -305,7 +305,7 @@ def post_receipt(receipt, *, actor=None, reason="", source_channel=None):
             error_code="VALIDATION_ERROR",
             status_code=422,
             field_errors=exc.message_dict,
-        )
+        ) from exc
     receipt.save()
     receipt_events.emit_posted(
         receipt,
