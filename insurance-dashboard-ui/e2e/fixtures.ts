@@ -325,9 +325,15 @@ export async function mockUnifiedDocumentApi(page: Page, options: { expireFirstD
     await route.fulfill({ json: { data: {} } })
   })
 
-  await page.route("**/api/v1/ordinary-life/core/proposals/**", async (route) => {
-    await route.fulfill({ json: { data: { count: 1, results: [{ id: "proposal-1", proposal_number: "OLP-E2E-0001", quotation_number: "Q-E2E-0001", underwriting_status: "READY", status: "ACTIVE", created_at: "2026-08-19T10:00:00Z" }] } } })
-  })
+  const proposal = { id: "proposal-1", proposal_number: "OLP-E2E-0001", quotation_number: "Q-E2E-0001", underwriting_status: "READY", status: "ACTIVE", created_at: "2026-08-19T10:00:00Z" }
+  const proposalListResponse = { data: { count: 1, results: [proposal] } }
+  const proposalDetailResponse = { data: proposal }
+  const proposalHandler = async (route: import("@playwright/test").Route) => {
+    const path = new URL(route.request().url()).pathname
+    await route.fulfill({ json: path.endsWith("/proposals/") ? proposalListResponse : proposalDetailResponse })
+  }
+  await page.route("**/api/v1/ordinary-life/core/proposals/**", proposalHandler)
+  await page.route("**/api/v1/ol-proposals/proposals/**", proposalHandler)
 
   return { getRefreshCalls: () => refreshCalls }
 }

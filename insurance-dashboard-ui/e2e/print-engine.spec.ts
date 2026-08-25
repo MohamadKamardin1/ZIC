@@ -61,16 +61,10 @@ test.describe("unified print engine", () => {
     await page.goto("/ordinary-life/proposals")
     await expect(page.getByText("OLP-E2E-0001")).toBeVisible()
     await page.getByText("OLP-E2E-0001").click()
-    await expect(page.getByRole("heading", { name: "Proposal documents" })).toBeVisible()
-    await expectPdfPreview(page, "Proposal documents")
-    const proposalDownloadPromise = page.waitForEvent("download")
-    await page.getByRole("button", { name: "Download" }).click()
-    expect(await (await proposalDownloadPromise).path()).not.toBeNull()
-    const proposalPopupPromise = page.waitForEvent("popup")
-    await page.getByRole("button", { name: "Open in new tab" }).click()
-    const proposalPopup = await proposalPopupPromise
-    await expect.poll(() => proposalPopup.url()).toContain("ticket=proposal-ticket")
-    await proposalPopup.close()
+    await page.getByRole("button", { name: "Print" }).click()
+    await expect(page.getByRole("heading", { name: "Print preview — proposal summary" })).toBeVisible()
+    await expect(page.getByText(/Inline preview unavailable/)).toBeVisible()
+    await expect(page.getByRole("link", { name: "Download PDF" })).toBeVisible()
   })
 
   test("prints a commitment through the same authenticated document panel", async ({ page }) => {

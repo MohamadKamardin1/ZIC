@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { Banknote, CalendarDays, FilePlus2, Receipt, RotateCcw, Upload, WalletCards } from "lucide-react"
 import { ErrorCoach } from "../../components/ErrorCoach"
 import { AllocationProgressBar, AmountCell, PaymentModeBadge, ReceiptStatusBadge } from "../../components/receipts/ReceiptPrimitives"
@@ -42,6 +42,29 @@ const CHIP_FILTERS = {
 
 type ReceiptChip = keyof typeof CHIP_FILTERS | null
 type ReceiptListRow = ReceiptRecord & Record<string, unknown>
+
+const URL_FILTER_KEYS = ["status", "branch", "currency", "payment_mode", "payer", "source_module", "search"] as const
+
+export function receiptViewFromSearchParams(searchParams: URLSearchParams): { filters: FilterValues; chip: ReceiptChip } {
+  const filters: FilterValues = {}
+  URL_FILTER_KEYS.forEach((key) => {
+    const value = searchParams.get(key)
+    if (value) filters[key] = value
+  })
+  const dateFrom = searchParams.get("date_from") ?? ""
+  const dateTo = searchParams.get("date_to") ?? ""
+  if (dateFrom || dateTo) filters.receipt_date = { from: dateFrom || undefined, to: dateTo || undefined }
+
+  let chip: ReceiptChip = null
+  ;(Object.keys(CHIP_FILTERS) as Array<Exclude<ReceiptChip, null>>).forEach((key) => {
+    const filterKey = Object.keys(CHIP_FILTERS[key])[0]
+    if (searchParams.get(filterKey) === "true") {
+      filters[filterKey] = "true"
+      if (!chip) chip = key
+    }
+  })
+  return { filters, chip }
+}
 
 function asString(value: unknown): string | undefined {
   if (typeof value === "string" && value) return value
@@ -102,9 +125,11 @@ function defaultKpis(): ReceiptKpis {
 
 export default function FOReceipts() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const initialView = useMemo(() => receiptViewFromSearchParams(searchParams), [searchParams])
   const { access, isSuperAdmin, hasPermission: accessHasPermission } = useAccess()
-  const [filters, setFilters] = useState<FilterValues>({})
-  const [chip, setChip] = useState<ReceiptChip>(null)
+  const [filters, setFilters] = useState<FilterValues>(() => initialView.filters)
+  const [chip, setChip] = useState<ReceiptChip>(() => initialView.chip)
   const [refreshKey, setRefreshKey] = useState(0)
   const [listError, setListError] = useState<unknown>(null)
   const [listCount, setListCount] = useState<number | null>(null)

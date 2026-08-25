@@ -17,7 +17,15 @@ beforeEach(() => {
 describe("receiptsApi contract surface", () => {
   it("maps list filters, pagination, and search to the receipts endpoint", async () => {
     await receiptsApi.list({ page: 2, page_size: 10, search: "Amani", status: "POSTED", unallocated_only: true })
-    expect(mockedRequest.mock.calls[0]?.[0]).toBe("/api/v1/front-office/receipts/?page=2&page_size=10&search=Amani&status=POSTED&unallocated_only=true")
+    expect(mockedRequest.mock.calls[0]?.[0]).toBe("/api/v1/front-office/receipts/?page=2&search=Amani&status=POSTED&unallocated_only=true&per_page=10")
+  })
+
+  it("normalizes the legacy real-backend list into the typed display contract", async () => {
+    mockedRequest.mockResolvedValue([
+      { id: "receipt-1", receiptNumber: "RECEIPT-P10-001", amount: "150000.00", paymentMethod: "MOBILE_MONEY", paymentDate: "2026-08-25", reference: "P10_REAL_BACKEND", status: "COMPLETED" },
+    ] as never)
+    const result = await receiptsApi.list()
+    expect(result).toMatchObject({ count: 1, page: 1, results: [expect.objectContaining({ id: "receipt-1", receipt_number: "RECEIPT-P10-001", receipt_amount: "150000.00", payment_mode: "MOBILE_MONEY", payment_mode_display: "MOBILE_MONEY", payment_reference: "P10_REAL_BACKEND", status: "COMPLETED" })] })
   })
 
   it("covers create, draft patch, post, and idempotency headers", async () => {

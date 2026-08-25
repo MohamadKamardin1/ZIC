@@ -49,9 +49,9 @@ const row: import("../../lib/receipts-api").ReceiptRecord = {
   allowed_actions: ["view", "print"],
 }
 
-function renderPage() {
+function renderPage(initialEntry = "/front-office/receipts") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(<QueryClientProvider client={client}><MemoryRouter><FOReceipts /></MemoryRouter></QueryClientProvider>)
+  return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[initialEntry]}><FOReceipts /></MemoryRouter></QueryClientProvider>)
 }
 
 beforeEach(() => {
@@ -77,6 +77,15 @@ describe("FOReceipts Prompt 2 work queue", () => {
     expect(screen.getAllByText("Zanzibar Main Branch").length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText("Mobile Money").length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText("Partially allocated").length).toBeGreaterThanOrEqual(1)
+  })
+
+  it("hydrates dashboard deep-link filters before the first list request", async () => {
+    renderPage("/front-office/receipts?today=true&branch=branch-1&date_from=2026-08-01&date_to=2026-08-24")
+    await screen.findByText("RCT-2026-000001")
+    await waitFor(() => expect(mockedReceiptsApi.list).toHaveBeenCalledWith(expect.objectContaining({ today: true, branch: "branch-1", date_from: "2026-08-01", date_to: "2026-08-24" })))
+    expect(screen.getByRole("button", { name: "Today" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByLabelText("Receipt date from")).toHaveValue("2026-08-01")
+    expect(screen.getByLabelText("Receipt date to")).toHaveValue("2026-08-24")
   })
 
   it("maps quick chips and filters into the server query", async () => {

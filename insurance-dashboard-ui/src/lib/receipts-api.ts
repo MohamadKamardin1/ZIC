@@ -239,11 +239,92 @@ function toQuery(query: object): string {
   return buildQueryString(params)
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+function firstValue(record: Record<string, unknown>, ...keys: string[]): unknown {
+  return keys.map((key) => record[key]).find((value) => value !== undefined && value !== null)
+}
+
+function asDisplay(value: unknown): string {
+  if (typeof value === "string") return value
+  if (typeof value === "number") return String(value)
+  if (value && typeof value === "object") {
+    const record = asRecord(value)
+    const label = firstValue(record, "label", "name", "display_name", "displayName", "code")
+    if (typeof label === "string") return label
+  }
+  return value == null ? "" : String(value)
+}
+
+export function normalizeReceiptRecord(payload: unknown): ReceiptRecord {
+  const record = asRecord(payload)
+  const amount = asDisplay(firstValue(record, "receipt_amount", "receiptAmount", "amount"))
+  const allocated = asDisplay(firstValue(record, "allocated_amount", "allocatedAmount")) || "0.00"
+  const unallocated = asDisplay(firstValue(record, "unallocated_amount", "unallocatedAmount")) || amount || "0.00"
+  const paymentMode = asDisplay(firstValue(record, "payment_mode", "paymentMode", "payment_method", "paymentMethod"))
+  const currency = asDisplay(firstValue(record, "currency", "currency_code", "currencyCode"))
+  return {
+    id: asDisplay(record.id),
+    receipt_number: asDisplay(firstValue(record, "receipt_number", "receiptNumber")),
+    receipt_date: asDisplay(firstValue(record, "receipt_date", "receiptDate", "payment_date", "paymentDate")),
+    payer_display: asDisplay(firstValue(record, "payer_display", "payerDisplay", "payer")),
+    payer_id: asDisplay(firstValue(record, "payer_id", "payerId")) || null,
+    branch_display: asDisplay(firstValue(record, "branch_display", "branchDisplay", "branch")),
+    branch_id: asDisplay(firstValue(record, "branch_id", "branchId")) || null,
+    payment_mode_display: asDisplay(firstValue(record, "payment_mode_display", "paymentModeDisplay")) || paymentMode,
+    payment_mode: paymentMode,
+    currency_display: asDisplay(firstValue(record, "currency_display", "currencyDisplay")) || currency,
+    currency,
+    receipt_amount: amount,
+    allocated_amount: allocated,
+    unallocated_amount: unallocated,
+    source_module: asDisplay(firstValue(record, "source_module", "sourceModule")) || null,
+    payment_reference: asDisplay(firstValue(record, "payment_reference", "paymentReference")) || asDisplay(record.reference) || null,
+    narration: asDisplay(record.narration) || null,
+    status: asDisplay(record.status),
+    created_by_display: asDisplay(firstValue(record, "created_by_display", "createdByDisplay", "created_by", "createdBy")),
+    posted_by_display: asDisplay(firstValue(record, "posted_by_display", "postedByDisplay", "posted_by", "postedBy")) || null,
+    posted_at: asDisplay(firstValue(record, "posted_at", "postedAt")) || null,
+    bank_account_display: asDisplay(firstValue(record, "bank_account_display", "bankAccountDisplay")) || null,
+    bank_account_id: asDisplay(firstValue(record, "bank_account_id", "bankAccountId")) || null,
+    source_reference: asDisplay(firstValue(record, "source_reference", "sourceReference", "reference")) || null,
+    source_reference_display: asDisplay(firstValue(record, "source_reference_display", "sourceReferenceDisplay")) || null,
+    allowed_actions: Array.isArray(firstValue(record, "allowed_actions", "allowedActions")) ? (firstValue(record, "allowed_actions", "allowedActions") as unknown[]).map(String) : [],
+    amount_in_words: asDisplay(firstValue(record, "amount_in_words", "amountInWords")) || undefined,
+    reversed_reason: asDisplay(firstValue(record, "reversed_reason", "reversedReason")) || null,
+    cancelled_reason: asDisplay(firstValue(record, "cancelled_reason", "cancelledReason")) || null,
+    ...record,
+  }
+}
+
+export function normalizeReceiptListPayload(payload: unknown): Paginated<ReceiptRecord> {
+  if (Array.isArray(payload)) {
+    return { count: payload.length, next: null, previous: null, results: payload.map(normalizeReceiptRecord), page: 1, page_size: payload.length }
+  }
+  const record = asRecord(payload)
+  const pagination = asRecord(record.pagination)
+  const rows = Array.isArray(record.results) ? record.results : []
+  return {
+    count: Number(firstValue(record, "count") ?? firstValue(pagination, "total") ?? rows.length),
+    next: typeof record.next === "string" ? record.next : null,
+    previous: typeof record.previous === "string" ? record.previous : null,
+    results: rows.map(normalizeReceiptRecord),
+    page: Number(firstValue(record, "page") ?? firstValue(pagination, "page") ?? 1),
+    page_size: Number(firstValue(record, "page_size", "pageSize") ?? firstValue(pagination, "per_page", "perPage") ?? rows.length),
+  }
+}
+
 export const receiptsApi = {
-  list: (query: ReceiptListQuery = {}) => readJsonRequest<Paginated<ReceiptRecord>>(`${RECEIPTS_BASE}/${toQuery(query)}`),
-  get: (id: string) => readJsonRequest<ReceiptRecord>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/`),
-  create: (payload: ReceiptWritePayload, idempotencyKey: string = crypto.randomUUID()) => readJsonRequest<ReceiptRecord>(`${RECEIPTS_BASE}/`, jsonOptions("POST", payload, { "X-Idempotency-Key": idempotencyKey })),
-  patchDraft: (id: string, payload: Partial<ReceiptWritePayload>, idempotencyKey: string = crypto.randomUUID()) => readJsonRequest<ReceiptRecord>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/`, jsonOptions("PATCH", payload, { "X-Idempotency-Key": idempotencyKey })),
+  list: async (query: ReceiptListQuery = {}) => {
+    const { page_size, ...rest } = query
+    const payload = await readJsonRequest<unknown>(`${RECEIPTS_BASE}/${toQuery({ ...rest, per_page: page_size })}`)
+    return normalizeReceiptListPayload(payload)
+  },
+  get: async (id: string) => normalizeReceiptRecord(await readJsonRequest<unknown>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/`)),
+  create: async (payload: ReceiptWritePayload, idempotencyKey: string = crypto.randomUUID()) => normalizeReceiptRecord(await readJsonRequest<unknown>(`${RECEIPTS_BASE}/`, jsonOptions("POST", payload, { "X-Idempotency-Key": idempotencyKey }))),
+  patchDraft: async (id: string, payload: Partial<ReceiptWritePayload>, idempotencyKey: string = crypto.randomUUID()) => normalizeReceiptRecord(await readJsonRequest<unknown>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/`, jsonOptions("PATCH", payload, { "X-Idempotency-Key": idempotencyKey }))),
   post: (id: string, idempotencyKey: string = crypto.randomUUID()) => readJsonRequest<ReceiptRecord>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/post/`, jsonOptions("POST", undefined, { "X-Idempotency-Key": idempotencyKey })),
   revealBankAccount: (id: string) => readJsonRequest<{ bank_account_display: string }>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/bank-account/`),
   allocations: (id: string) => readJsonRequest<Paginated<ReceiptAllocation>>(`${RECEIPTS_BASE}/${encodeURIComponent(id)}/allocations/`),
