@@ -7,7 +7,14 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.front_office.receipts.models import Receipt, ReceiptAllocation, ReceiptDocument
+from apps.front_office.receipts.errors import import_batch_not_found, import_row_invalid
+from apps.front_office.receipts.models import (
+    Receipt,
+    ReceiptAllocation,
+    ReceiptDocument,
+    ReceiptImportBatch,
+    ReceiptImportRowStatus,
+)
 from apps.front_office.receipts.permissions import has_receipt_permission
 from apps.front_office.receipts.serializers import (
     ReceiptAllocationRequestSerializer,
@@ -16,8 +23,15 @@ from apps.front_office.receipts.serializers import (
     ReceiptDetailSerializer,
     ReceiptDocumentSerializer,
     ReceiptDraftSerializer,
+    ReceiptImportBatchSerializer,
     ReceiptReasonSerializer,
     ReceiptReversalSerializer,
+)
+from apps.front_office.receipts.services.import_service import (
+    commit_batch,
+    dry_run,
+    import_csv_template,
+    import_row_payload,
 )
 from apps.front_office.receipts.services.receipt_service import get_receipt_or_404, post_receipt
 from apps.front_office.receipts.services.work_queue import (
@@ -585,3 +599,141 @@ class ReceiptDocumentDownloadView(APIView):
         filename = document.filename or f"{document.receipt.receipt_number or 'receipt'}.pdf"
         response["Content-Disposition"] = f'inline; filename="{filename}"'
         return response
+
+
+def _import_rows(batch):
+    return [import_row_payload(row) for row in batch.rows.order_by("row_number")]
+
+
+def _import_summary(batch):
+    duplicates = batch.rows.filter(status=ReceiptImportRowStatus.DUPLICATE).count()
+    return {
+        "total": batch.total_rows,
+        "valid": batch.valid_rows,
+        "invalid": batch.invalid_rows,
+        "committed": batch.committed_rows,
+        "failed": batch.failed_rows,
+        "duplicates": duplicates,
+    }
+
+
+class ReceiptImportTemplateView(APIView):
+    """GET /front-office/receipts/import/template/ — downloadable CSV template."""
+
+    def get_permissions(self):
+        return [MustActionPermission(action="import")]
+
+    def get(self, request):
+        response = HttpResponse(import_csv_template(), content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="receipt_import_template.csv"'
+        return response
+
+
+class ReceiptImportDryRunView(APIView):
+    """POST /front-office/receipts/import/dry-run/ — validate a CSV without creating receipts."""
+
+    def get_permissions(self):
+        return [MustActionPermission(action="import")]
+
+    def post(self, request):
+        file = request.FILES.get("file")
+        if file is None:
+            raise import_row_invalid(
+                message="A CSV file is required.",
+                field_errors={"file": ["Select a CSV file to import."]},
+            )
+        import_mode = ((request.data or {}).get("import_mode") or "DRAFT").strip()
+        batch = dry_run(file=file, import_mode=import_mode, actor=request.user)
+        return Response(
+            {
+                "data": {
+                    "batch": ReceiptImportBatchSerializer(batch).data,
+                    "summary": _import_summary(batch),
+                    "rows": _import_rows(batch),
+                }
+            },
+            status=200,
+        )
+
+
+class ReceiptImportCommitView(APIView):
+    """POST /front-office/receipts/import/commit/ — commit a validated batch.
+
+    Idempotent: committed rows are skipped and FAILED rows are retried, so
+    re-committing the same batch is safe and completes a partial import.
+    """
+
+    def get_permissions(self):
+        return [MustActionPermission(action="import")]
+
+    def post(self, request):
+        batch_id = ((request.data or {}).get("batch_id") or "").strip()
+        if not batch_id:
+            raise import_row_invalid(
+                message="A batch_id is required.",
+                field_errors={"batch_id": ["Select an import batch to commit."]},
+            )
+        batch = ReceiptImportBatch.objects.filter(pk=batch_id).first()
+        if batch is None:
+            raise import_batch_not_found()
+        commit_batch(batch=batch, actor=request.user)
+        failed = batch.failed_rows
+        return Response(
+            {
+                "data": {
+                    "batch": ReceiptImportBatchSerializer(batch).data,
+                    "summary": _import_summary(batch),
+                    "status": batch.status,
+                    "partial_failure": failed > 0,
+                    "error_code": "RECEIPT_IMPORT_PARTIAL_FAILURE" if failed > 0 else None,
+                    "rows": _import_rows(batch),
+                }
+            },
+            status=200,
+        )
+
+
+class ReceiptImportBatchListView(APIView):
+    """GET /front-office/receipts/imports/ — paginated import batch register."""
+
+    permission_classes = [MustViewReceiptsPermission]
+
+    def get(self, request):
+        queryset = ReceiptImportBatch.objects.select_related("created_by").all()
+        page = max(1, int(request.query_params.get("page", 1)))
+        page_size = min(100, max(1, int(request.query_params.get("page_size", 20))))
+        total = queryset.count()
+        start = (page - 1) * page_size
+        rows = queryset[start : start + page_size]
+        return Response(
+            {
+                "data": {
+                    "results": ReceiptImportBatchSerializer(rows, many=True).data,
+                    "count": total,
+                    "page": page,
+                    "page_size": page_size,
+                    "next": page * page_size < total,
+                    "previous": page > 1,
+                }
+            }
+        )
+
+
+class ReceiptImportBatchDetailView(APIView):
+    """GET /front-office/receipts/imports/<uuid>/ — batch header plus all rows."""
+
+    permission_classes = [MustViewReceiptsPermission]
+
+    def get(self, request, batch_id):
+        batch = ReceiptImportBatch.objects.select_related("created_by").filter(pk=batch_id).first()
+        if batch is None:
+            raise import_batch_not_found()
+        return Response(
+            {
+                "data": {
+                    "batch": ReceiptImportBatchSerializer(batch).data,
+                    "summary": _import_summary(batch),
+                    "rows": _import_rows(batch),
+                }
+            }
+        )

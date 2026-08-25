@@ -7,6 +7,7 @@ from apps.front_office.receipts.models import (
     ReceiptAllocation,
     ReceiptAllocationTargetType,
     ReceiptDocument,
+    ReceiptImportBatch,
     ReceiptReversal,
     ReceiptStatusHistory,
 )
@@ -473,3 +474,36 @@ class ReceiptAllocationRequestSerializer(serializers.Serializer):
     )
     exchange_rate_source = serializers.CharField(required=False, allow_blank=True, default="")
     narration = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class ReceiptImportBatchSerializer(serializers.ModelSerializer):
+    """Summary of a bulk import batch; row-level detail is returned separately."""
+
+    created_by = serializers.SerializerMethodField()
+    created_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ReceiptImportBatch
+        fields = (
+            "id",
+            "batch_number",
+            "import_mode",
+            "status",
+            "file_name",
+            "total_rows",
+            "valid_rows",
+            "invalid_rows",
+            "committed_rows",
+            "failed_rows",
+            "summary",
+            "created_by",
+            "created_by_name",
+            "created_at",
+            "updated_at",
+        )
+
+    def get_created_by(self, obj):
+        return str(obj.created_by_id) if obj.created_by_id else None
+
+    def get_created_by_name(self, obj):
+        return obj.created_by.username if obj.created_by_id else None

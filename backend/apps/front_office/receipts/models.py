@@ -721,3 +721,111 @@ class ExchangeRate(models.Model):
             .order_by("-effective_date", "-created_at")
             .first()
         )
+
+
+class ReceiptImportMode(models.TextChoices):
+    DRAFT = "DRAFT", "Draft only"
+    POST = "POST", "Draft and post"
+    ALLOCATE = "ALLOCATE", "Draft, post and allocate"
+
+
+class ReceiptImportBatchStatus(models.TextChoices):
+    PENDING = "PENDING", "Pending"
+    VALIDATED = "VALIDATED", "Validated"
+    COMMITTED = "COMMITTED", "Committed"
+    PARTIAL = "PARTIAL", "Partially committed"
+    FAILED = "FAILED", "Failed"
+
+
+class ReceiptImportRowStatus(models.TextChoices):
+    PENDING = "PENDING", "Pending"
+    VALID = "VALID", "Valid"
+    INVALID = "INVALID", "Invalid"
+    COMMITTED = "COMMITTED", "Committed"
+    FAILED = "FAILED", "Failed"
+    DUPLICATE = "DUPLICATE", "Duplicate"
+
+
+class ReceiptImportBatch(AuditedModel):
+    """A bulk receipt import run: a validated CSV plus the commit trail (prompt 9).
+
+    The batch owns a set of :class:`ReceiptImportRow` records, one per CSV row.
+    Dry-run fills the rows and marks them VALID/INVALID/DUPLICATE without touching
+    ``Receipt``. Commit replays the VALID (and any FAILED) rows into receipts,
+    idempotently, and records the outcome per row so failed rows stay reprocessable.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    batch_number = models.CharField(max_length=60, unique=True, db_index=True)
+    import_mode = models.CharField(
+        max_length=30,
+        choices=ReceiptImportMode.choices,
+        default=ReceiptImportMode.DRAFT,
+    )
+    status = models.CharField(
+        max_length=30,
+        choices=ReceiptImportBatchStatus.choices,
+        default=ReceiptImportBatchStatus.PENDING,
+        db_index=True,
+    )
+    file_name = models.CharField(max_length=255, blank=True, default="")
+    total_rows = models.PositiveIntegerField(default=0)
+    valid_rows = models.PositiveIntegerField(default=0)
+    invalid_rows = models.PositiveIntegerField(default=0)
+    committed_rows = models.PositiveIntegerField(default=0)
+    failed_rows = models.PositiveIntegerField(default=0)
+    summary = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        db_table = "front_office_receipt_import_batch"
+        verbose_name = "Receipt Import Batch"
+        verbose_name_plural = "Receipt Import Batches"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["status", "created_at"], name="imp_batch_status_cat_idx"),
+            models.Index(fields=["import_mode", "status"], name="imp_batch_mode_status_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.batch_number} ({self.status})"
+
+
+class ReceiptImportRow(AuditedModel):
+    """A single CSV row within an import batch, with its validation and commit trail."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    batch = models.ForeignKey(
+        ReceiptImportBatch, on_delete=models.CASCADE, related_name="rows"
+    )
+    row_number = models.PositiveIntegerField(db_index=True)
+    row_hash = models.CharField(max_length=64, db_index=True)
+    data = models.JSONField(default=dict, blank=True)
+    status = models.CharField(
+        max_length=30,
+        choices=ReceiptImportRowStatus.choices,
+        default=ReceiptImportRowStatus.PENDING,
+        db_index=True,
+    )
+    validation_errors = models.JSONField(default=dict, blank=True)
+    error_code = models.CharField(max_length=60, blank=True, default="")
+    error_message = models.TextField(blank=True, default="")
+    receipt = models.ForeignKey(
+        Receipt,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="import_rows",
+    )
+    committed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "front_office_receipt_import_row"
+        verbose_name = "Receipt Import Row"
+        verbose_name_plural = "Receipt Import Rows"
+        ordering = ["batch", "row_number"]
+        indexes = [
+            models.Index(fields=["batch", "status"], name="imp_row_batch_status_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.batch.batch_number}:row{self.row_number} ({self.status})"

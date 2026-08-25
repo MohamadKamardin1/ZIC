@@ -13,6 +13,8 @@ from apps.front_office.receipts.models import (
     Receipt,
     ReceiptAllocation,
     ReceiptDocument,
+    ReceiptImportBatch,
+    ReceiptImportRow,
     ReceiptPrintTemplate,
     ReceiptReversal,
     ReceiptStatusHistory,
@@ -323,4 +325,50 @@ class ReceiptPaymentModeRuleAdmin(admin.ModelAdmin):
     list_filter = ("is_active", "requires_reference", "requires_bank_account", "allows_cash", "allows_bank_transfer")
     search_fields = ("payment_mode",)
     ordering = ("payment_mode",)
+    readonly_fields = ("id", "created_at", "updated_at", "created_by", "updated_by")
+
+
+class ReceiptImportRowInline(admin.TabularInline):
+    model = ReceiptImportRow
+    extra = 0
+    fk_name = "batch"
+    readonly_fields = ("id", "row_number", "status", "error_code", "created_at", "updated_at", "created_by", "updated_by")
+
+
+@admin.register(ReceiptImportBatch)
+class ReceiptImportBatchAdmin(admin.ModelAdmin):
+    list_display = (
+        "batch_number",
+        "import_mode",
+        "status",
+        "file_name",
+        "total_rows",
+        "valid_rows",
+        "invalid_rows",
+        "committed_rows",
+        "failed_rows",
+        "created_by",
+        "created_at",
+    )
+    list_filter = ("import_mode", "status", "created_at")
+    search_fields = ("batch_number", "file_name")
+    ordering = ("-created_at",)
+    readonly_fields = ("id", "created_at", "updated_at", "created_by", "updated_by")
+    inlines = (ReceiptImportRowInline,)
+
+
+@admin.register(ReceiptImportRow)
+class ReceiptImportRowAdmin(admin.ModelAdmin):
+    list_display = (
+        "batch",
+        "row_number",
+        "status",
+        "error_code",
+        "receipt",
+        "committed_at",
+        "created_at",
+    )
+    list_filter = ("status", "error_code", "batch__import_mode", "committed_at")
+    search_fields = ("batch__batch_number", "row_hash", "error_code")
+    ordering = ("-batch__created_at", "row_number")
     readonly_fields = ("id", "created_at", "updated_at", "created_by", "updated_by")

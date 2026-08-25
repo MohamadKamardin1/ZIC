@@ -8,7 +8,7 @@
 - [x] Prompt 6 — Implement Receipt Reversal, Allocation Reversal & Draft Cancellation
 - [x] Prompt 7 — Implement Receipt List, Detail, Work Queue & Export APIs
 - [x] Prompt 8 — Implement Receipt Printout & Document Integration
-- [ ] Prompt 9 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
+- [ ] Prompt 9 — Implement Bulk Receipt Import
 - [ ] Prompt 10 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
 - [ ] Prompt 11 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
 - [ ] Prompt 12 — (pending: prompt text will be appended `EXACTLY as provided` when supplied)
@@ -679,4 +679,66 @@ GIT:
 
 FINAL OUTPUT:
 Return template variables, print rules, tests, commit hash, pushed branch.
+```
+
+## Prompt 9/12 — Implement Bulk Receipt Import
+
+You are a senior Django data-quality engineer. Continue the Front Office Receipts backend. Execute ONLY Prompt 9.
+
+MANDATORY RULES:
+- Bulk upload must be safe, idempotent, and explain every row error.
+- Commit and push; tick Prompt 9 after completion.
+
+OBJECTIVE:
+Implement bulk receipt import.
+
+SCOPE:
+1. Models:
+   - ReceiptImportBatch
+   - ReceiptImportRow
+2. API:
+   - POST /api/v1/front-office/receipts/import/dry-run/
+   - POST /api/v1/front-office/receipts/import/commit/
+   - GET /api/v1/front-office/receipts/imports/
+   - GET /api/v1/front-office/receipts/imports/{id}/
+   - GET CSV template
+3. CSV columns:
+   - receipt_date
+   - branch_code
+   - payer_partner_number
+   - currency_code
+   - payment_mode_code
+   - amount
+   - payment_reference
+   - source_module
+   - target_commitment_number optional
+   - narration
+4. Dry-run:
+   - validates every row
+   - returns row-level and field-level errors
+   - does not create receipts
+5. Commit:
+   - creates receipts and optionally posts/allocates based on import mode
+   - idempotent by import batch + row hash
+   - failed rows remain reprocessable
+6. Structured error codes:
+   - RECEIPT_IMPORT_ROW_INVALID
+   - RECEIPT_IMPORT_DUPLICATE
+   - RECEIPT_IMPORT_PARTIAL_FAILURE
+7. Audit import batch actions.
+
+TESTS:
+- template generation
+- dry-run valid/invalid rows
+- commit creates receipts
+- duplicate row safe reprocessing
+- partial failure behavior
+- row-level error payload shape
+
+GIT:
+- commit: "feat(receipts): implement bulk receipt import and safe reprocessing"
+- push; tick Prompt 9 checkbox
+
+FINAL OUTPUT:
+Return import contract, CSV template fields, tests, commit hash, pushed branch.
 ```

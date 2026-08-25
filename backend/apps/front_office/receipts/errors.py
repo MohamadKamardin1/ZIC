@@ -188,6 +188,38 @@ RECEIPT_ERROR_REGISTRY = {
             "Contact operations if the media file was removed.",
         ],
     ),
+    "RECEIPT_IMPORT_ROW_INVALID": (
+        "The import row could not be processed.",
+        422,
+        [
+            "Review the field-level errors for the row.",
+            "Correct the CSV and re-upload, or fix the underlying reference data.",
+        ],
+    ),
+    "RECEIPT_IMPORT_DUPLICATE": (
+        "The import contains duplicate rows.",
+        409,
+        [
+            "Remove the duplicated rows from the CSV.",
+            "Keep one row per distinct payment event.",
+        ],
+    ),
+    "RECEIPT_IMPORT_PARTIAL_FAILURE": (
+        "The import committed with some rows failing.",
+        422,
+        [
+            "Review the failed rows and their error messages.",
+            "Re-commit the batch to reprocess the failed rows once the underlying issue is resolved.",
+        ],
+    ),
+    "RECEIPT_IMPORT_BATCH_NOT_FOUND": (
+        "The import batch could not be found.",
+        404,
+        [
+            "Verify the batch identifier.",
+            "List import batches to find the correct identifier.",
+        ],
+    ),
 }
 
 
@@ -325,3 +357,19 @@ def ticket_invalid(message=None):
 
 def file_missing():
     return registry_error("RECEIPT_FILE_MISSING")
+
+
+def import_row_invalid(message=None, field_errors=None):
+    return registry_error("RECEIPT_IMPORT_ROW_INVALID", message=message, field_errors=field_errors)
+
+
+def import_duplicate(message=None, field_errors=None):
+    return registry_error("RECEIPT_IMPORT_DUPLICATE", message=message, field_errors=field_errors)
+
+
+def import_partial_failure(message=None, details=None):
+    return registry_error("RECEIPT_IMPORT_PARTIAL_FAILURE", message=message, details=details)
+
+
+def import_batch_not_found():
+    return registry_error("RECEIPT_IMPORT_BATCH_NOT_FOUND")

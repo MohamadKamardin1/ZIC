@@ -424,3 +424,56 @@ is both state-aware and permission-aware.
   file, both on the receipt entity via `AuditService`. The receipt document
   serializer exposes template, template version, generated-by, generated-at,
   and the signed download URLs so the front end can deep-link prints.
+
+## 19. Prompt 9 — bulk receipt import
+
+Bulk receipt import is a two-phase, safe, idempotent pipeline: **dry-run**
+validates every CSV row and explains every error without touching `Receipt`;
+**commit** replays the validated rows into receipts and records per-row
+outcomes so failed rows stay reprocessable.
+
+- **Models.** `ReceiptImportBatch` (batch_number unique, `import_mode`
+  `DRAFT`/`POST`/`ALLOCATE`, status `PENDING`/`VALIDATED`/`COMMITTED`/
+  `PARTIAL`/`FAILED`, row counters, `file_name`, `summary`) owns
+  `ReceiptImportRow` rows (row_number, `row_hash` sha256 content hash, `data`
+  JSON, per-row status `PENDING`/`VALID`/`INVALID`/`COMMITTED`/`FAILED`/
+  `DUPLICATE`, `validation_errors` JSON, `error_code`, `error_message`,
+  optional `receipt` FK, `committed_at`). Both are `AuditedModel`s; batch
+  actions are audited via `AuditService`.
+- **CSV contract** (downloadable template; six required columns, four
+  optional): `receipt_date`, `branch_code`, `payer_partner_number`,
+  `currency_code`, `payment_mode_code`, `amount` (required) plus
+  `payment_reference`, `source_module`, `target_commitment_number`,
+  `narration` (optional). The file must be UTF-8; missing required headers
+  fail the whole upload with a clear field error.
+- **Dry-run.** `POST /import/dry-run/` (multipart `file` + `import_mode`,
+  permission `import`): normalizes each row (dates, currency defaults to the
+  configured default, amount to 2dp), validates branch/partner/currency/
+  payment-mode/amount against active reference data, rejects any
+  `source_module` other than `MANUAL` (receipts are allocated manually
+  afterwards), validates an optional target commitment (exists, not terminal,
+  partner match, and in `ALLOCATE` mode amount ≤ balance and same currency),
+  enforces the payment-mode rule for `POST`/`ALLOCATE` modes (reference /
+  bank-account / min-max), and marks intra-file duplicates `DUPLICATE` via
+  content hash. No receipts are created; every row is persisted with its
+  field-level errors.
+- **Commit.** `POST /import/commit/` (`batch_id`, permission `import`):
+  replays `VALID`/`FAILED`/`PENDING` rows inside a per-row `atomic` block via
+  `create_draft` (idempotency key `IMP:{batch}:{row_hash[:20]}`), then posts
+  when `import_mode` is `POST`/`ALLOCATE` and allocates to the target
+  commitment when `ALLOCATE` + target. A row failure rolls its draft back and
+  marks the row `FAILED` with a structured error code and field errors; the
+  batch ends `COMMITTED`, `PARTIAL` (some failed), or `FAILED` (all failed).
+- **Idempotent reprocessing.** Re-committing a batch skips `COMMITTED` rows
+  and retries only `FAILED` rows, so fixing the underlying cause (e.g.
+  re-activating a branch) and re-committing completes the import without
+  duplicating receipts.
+- **Register.** `GET /imports/` lists batches (view permission, paginated)
+  and `GET /imports/{batch_id}/` returns the batch header plus every row's
+  status/errors/receipt link.
+- **Error codes.** `RECEIPT_IMPORT_ROW_INVALID` (422, row-level field errors),
+  `RECEIPT_IMPORT_DUPLICATE` (409, duplicate content within the file),
+  `RECEIPT_IMPORT_PARTIAL_FAILURE` (422, commit ended with failed rows),
+  `RECEIPT_IMPORT_BATCH_NOT_FOUND` (404).
+- **Audit.** `IMPORT_DRY_RUN` is logged at dry-run (totals + import mode) and
+  `IMPORT_COMMIT` at commit (status, committed/failed counts) on the batch.
