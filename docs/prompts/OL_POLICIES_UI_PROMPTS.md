@@ -43,7 +43,7 @@ FINAL OUTPUT: hooks, primitives, tests, commit hash, pushed branch.
 
 ---
 
-## [ ] Prompt 2/10 — Policy List Page & Dashboard KPIs
+## [x] Prompt 2/10 — Policy List Page & Dashboard KPIs
 
 ```text
 You are a senior frontend engineer. Continue the ZIC Policies UI. Execute ONLY Prompt 2 from the saved series file.
