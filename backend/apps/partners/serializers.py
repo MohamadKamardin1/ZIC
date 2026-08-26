@@ -446,7 +446,7 @@ class PartnerKYCProfileSerializer(serializers.ModelSerializer):
 
 class PartnerTypeAssignmentSetupSerializer(serializers.ModelSerializer):
     setup_summary = serializers.SerializerMethodField()
-    documents = PartnerDocumentSerializer(many=True, read_only=True, source="documents")
+    documents = PartnerDocumentSerializer(many=True, read_only=True)
     field_values = PartnerDynamicFieldValueSerializer(many=True, read_only=True)
     assignment_contacts = PartnerAssignmentContactSerializer(many=True, read_only=True)
     assignment_bank_accounts = PartnerAssignmentBankAccountSerializer(

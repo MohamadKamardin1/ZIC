@@ -19,6 +19,7 @@ from apps.ol_commitments.serializers import (
     CommitmentDetailSerializer,
     ManualCommitmentSerializer,
 )
+from apps.ol_commitments.services.allocation_service import allocate_to_commitment
 from apps.ol_commitments.services.commitment_actions import allowed_actions, is_allowed_action
 from apps.ol_commitments.services.overdue_service import lapse_review_rows, run_overdue_processing
 from apps.ol_parameters.models import OLCommitmentStatus
@@ -340,62 +341,21 @@ def _record_payment(request, commitment):
     data = request.data
     if not is_allowed_action(commitment, "record_payment"):
         raise _invalid_transition(commitment, "record_payment")
-    amount = None
     try:
-        amount = float(data.get("amount"))
-    except (TypeError, ValueError):
-        amount = None
-    if amount is None or amount <= 0:
-        raise CommitmentError("A payment amount greater than zero is required.", error_code="VALIDATION_ERROR", field_errors={"amount": ["Enter an amount greater than zero."]})
-
-    paid_currency = (data.get("currency") or commitment.currency).upper()
-    exchange_rate = 1.0
-    try:
-        exchange_rate = float(data.get("exchange_rate")) if data.get("exchange_rate") else 1.0
-    except (TypeError, ValueError):
-        exchange_rate = None
-    if paid_currency != commitment.currency and (exchange_rate is None or exchange_rate <= 0):
-        raise CommitmentError(
-            "A cross-currency payment requires an exchange rate.",
-            error_code="CURRENCY_MISMATCH",
-            status_code=422,
-            field_errors={"exchange_rate": ["An exchange rate greater than zero is required."]},
+        allocate_to_commitment(
+            commitment,
+            amount=data.get("amount"),
+            receipt_reference=(data.get("receipt_reference") or "").strip(),
+            payment_mode=data.get("payment_mode") or "",
+            currency=data.get("currency") or commitment.currency,
+            exchange_rate=data.get("exchange_rate"),
+            reason=(data.get("reason") or "").strip(),
+            allocated_by=request.user if request.user.is_authenticated else None,
+            source_channel=(data.get("source_channel") or "API"),
+            from_status=(data.get("from_status") or "").strip(),
         )
-
-    balance = float(commitment.balance or 0)
-    if amount > balance + 0.001:
-        raise CommitmentError(
-            "The payment amount exceeds the outstanding balance of the commitment.",
-            error_code="COMMITMENT_OVERPAYMENT",
-            status_code=422,
-            resolution_steps=[
-                "Adjust the amount so it is equal to or below the outstanding balance.",
-                "If you intentionally collected more, record the surplus as a credit.",
-            ],
-            field_errors={"amount": [f"Amount cannot exceed balance of {balance:.2f}."]},
-        )
-
-    contributed = amount * exchange_rate
-    commitment.amount_paid = (commitment.amount_paid or 0) + contributed
-    commitment.recompute_balance()
-    commitment.reason_text = (data.get("reason") or "").strip() or commitment.reason_text
-    commitment.status = _resolve_status("COMPLETED") if commitment.balance <= 0 else _resolve_status("PARTIALLY_PAID") or commitment.status
-    commitment.save()
-
-    allocation = OLCommitmentAllocation.objects.create(
-        commitment=commitment,
-        receipt_reference=(data.get("receipt_reference") or f"MANUAL-{commitment.commitment_number}").strip()[:120],
-        amount=amount,
-        payment_mode=data.get("payment_mode") or "",
-        currency=paid_currency,
-        exchange_rate=exchange_rate,
-        reason=commitment.reason_text,
-        allocated_by=request.user if request.user.is_authenticated else None,
-        source_channel=(data.get("source_channel") or "API"),
-    )
-    events_service.emit_payment_allocated(commitment, allocation=allocation, actor=request.user, from_status=data.get("from_status", ""), reason=commitment.reason_text, source_channel="API")
-    if commitment.balance <= 0:
-        events_service.emit_completed(commitment, actor=request.user, reason="Commitment fully settled.", source_channel="API")
+    except CommitmentError:
+        raise
     return _detail(commitment)
 
 

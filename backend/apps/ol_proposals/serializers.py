@@ -370,11 +370,17 @@ class OLProposalDetailSerializer(OLProposalBaseSerializer):
     documents = OLProposalDocumentSerializer(many=True, read_only=True)
     health_answers = OLProposalHealthAnswerSerializer(many=True, read_only=True)
     first_premium = serializers.SerializerMethodField()
+    receipts = serializers.SerializerMethodField()
 
     def get_first_premium(self, obj):
         from apps.ol_proposals.services.first_premium_service import first_premium_status
 
         return first_premium_status(obj)
+
+    def get_receipts(self, obj):
+        from apps.ol_proposals.services.first_premium_service import proposal_receipt_references
+
+        return proposal_receipt_references(obj)
 
     class Meta(OLProposalBaseSerializer.Meta):
         fields = OLProposalBaseSerializer.Meta.fields + (
@@ -388,4 +394,5 @@ class OLProposalDetailSerializer(OLProposalBaseSerializer):
             "documents",
             "health_answers",
             "first_premium",
+            "receipts",
         )

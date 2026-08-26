@@ -1,8 +1,11 @@
 from django.test import TestCase
-from rest_framework.test import APIClient
 from rest_framework import status
-from .models import FOReceipt, FOCommission, FORequisition
+from rest_framework.test import APIClient
+
 from apps.users.models import User
+
+from .models import FOCommission, FOReceipt, FORequisition
+
 
 class FrontOfficeTests(TestCase):
     def setUp(self):
@@ -33,7 +36,7 @@ class FrontOfficeTests(TestCase):
         )
 
     def test_list_receipts(self):
-        response = self.client.get("/api/v1/front-office/receipts/")
+        response = self.client.get("/api/v1/front-office/legacy/receipts/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         # Checking actual length since this tests the model setup properly
         # Django Rest Framework usually paginates, check results or directly if no pagination

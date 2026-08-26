@@ -1,27 +1,28 @@
+from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django_filters.rest_framework import DjangoFilterBackend
 
 from apps.documents.models import DocumentInstance
 from apps.documents.services.engine import DocumentEngine, DocumentEngineError
 
 from .models import (
-    FOReceipt,
     FOCommission,
     FOCommissionStatement,
-    FORequisition,
-    FOPayment,
     FOParameter,
+    FOPayment,
+    FOReceipt,
+    FORequisition,
 )
 from .serializers import (
-    FOReceiptSerializer,
     FOCommissionSerializer,
     FOCommissionStatementSerializer,
-    FORequisitionSerializer,
-    FOPaymentSerializer,
     FOParameterSerializer,
+    FOPaymentSerializer,
+    FOReceiptSerializer,
+    FORequisitionSerializer,
 )
+
 
 class FOReceiptViewSet(viewsets.ModelViewSet):
     queryset = FOReceipt.objects.all()

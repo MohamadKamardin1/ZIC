@@ -10,3 +10,6 @@ ipython
 pre-commit
 ruff
 mypy
+
+# Receipt printout verification (Prompt 8): PDF text extraction for print tests
+pypdf

@@ -319,6 +319,9 @@ class OLCommitmentAllocation(AuditedModel):
     )
     receipt_reference = models.CharField(max_length=120, db_index=True)
     amount = models.DecimalField(max_digits=18, decimal_places=2)
+    # Amount booked in the commitment's own currency (amount * exchange_rate);
+    # equals ``amount`` for same-currency allocations.
+    converted_amount = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
     payment_mode = models.CharField(max_length=60, blank=True, default="")
     currency = models.CharField(max_length=3, default="TZS")
     exchange_rate = models.DecimalField(max_digits=12, decimal_places=6, default=Decimal("1.000000"))
@@ -357,6 +360,10 @@ class OLCommitmentAllocation(AuditedModel):
             models.CheckConstraint(
                 check=Q(exchange_rate__gt=0),
                 name="ol_commitment_allocation_rate_positive",
+            ),
+            models.CheckConstraint(
+                check=Q(converted_amount__gte=0),
+                name="ol_commitment_allocation_converted_nonnegative",
             ),
             models.UniqueConstraint(
                 fields=["commitment", "receipt_reference"],

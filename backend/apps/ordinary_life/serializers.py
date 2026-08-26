@@ -66,6 +66,14 @@ from apps.ordinary_life.models import (
 )
 
 
+def _read_only_fields(model):
+    """Every model field, for response serializers whose Meta uses
+    ``fields = "__all__"`` and wants every field read-only. Using ``fields``
+    directly would make ``read_only_fields`` the string ``"__all__"``, which
+    Django REST Framework rejects."""
+    return [field.name for field in model._meta.fields]
+
+
 class OLLookupValueSerializer(serializers.ModelSerializer):
     class Meta:
         model = OLLookupValue
@@ -405,7 +413,7 @@ class OLQuotationVersionSerializer(serializers.ModelSerializer):
     class Meta:
         model = OLQuotationVersion
         fields = "__all__"
-        read_only_fields = fields
+        read_only_fields = _read_only_fields(model)
 
 
 class OLQuotationCreateSerializer(serializers.Serializer):
@@ -431,7 +439,7 @@ class OLUnderwritingCaseSerializer(serializers.ModelSerializer):
     class Meta:
         model = OLUnderwritingCase
         fields = "__all__"
-        read_only_fields = fields
+        read_only_fields = _read_only_fields(model)
 
     def get_unresolved_requirement_count(self, obj):
         return obj.medical_requirements.exclude(status__in=["VERIFIED", "WAIVED"]).count()
@@ -449,14 +457,14 @@ class OLHealthDeclarationSerializer(serializers.ModelSerializer):
     class Meta:
         model = OLHealthDeclaration
         fields = "__all__"
-        read_only_fields = fields
+        read_only_fields = _read_only_fields(model)
 
 
 class OLHealthResponseSerializer(serializers.ModelSerializer):
     class Meta:
         model = OLHealthResponse
         fields = "__all__"
-        read_only_fields = fields
+        read_only_fields = _read_only_fields(model)
 
 
 class OLHealthDeclarationCreateSerializer(serializers.Serializer):
@@ -472,7 +480,7 @@ class OLMedicalRequirementSerializer(serializers.ModelSerializer):
     class Meta:
         model = OLMedicalRequirement
         fields = "__all__"
-        read_only_fields = fields
+        read_only_fields = _read_only_fields(model)
 
     def get_result(self, obj):
         result = getattr(obj, "result", None)
@@ -485,7 +493,7 @@ class OLMedicalResultSerializer(serializers.ModelSerializer):
     class Meta:
         model = OLMedicalResult
         fields = "__all__"
-        read_only_fields = fields
+        read_only_fields = _read_only_fields(model)
 
 
 class OLMedicalResultCreateSerializer(serializers.Serializer):
@@ -502,14 +510,14 @@ class OLPaymentObligationSerializer(serializers.ModelSerializer):
     class Meta:
         model = OLPaymentObligation
         fields = "__all__"
-        read_only_fields = fields
+        read_only_fields = _read_only_fields(model)
 
 
 class OLPaymentAllocationSerializer(serializers.ModelSerializer):
     class Meta:
         model = OLPaymentAllocation
         fields = "__all__"
-        read_only_fields = fields
+        read_only_fields = _read_only_fields(model)
 
 
 class OLPaymentAllocationCreateSerializer(serializers.Serializer):
@@ -524,7 +532,7 @@ class OLPolicyPartySerializer(serializers.ModelSerializer):
     class Meta:
         model = OLPolicyParty
         fields = "__all__"
-        read_only_fields = fields
+        read_only_fields = _read_only_fields(model)
 
 
 class OLPremiumScheduleSerializer(serializers.ModelSerializer):
@@ -533,7 +541,7 @@ class OLPremiumScheduleSerializer(serializers.ModelSerializer):
     class Meta:
         model = OLPremiumSchedule
         fields = "__all__"
-        read_only_fields = fields
+        read_only_fields = _read_only_fields(model)
 
 
 class OLPremiumInstallmentSerializer(serializers.ModelSerializer):
@@ -542,7 +550,7 @@ class OLPremiumInstallmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = OLPremiumInstallment
         fields = "__all__"
-        read_only_fields = fields
+        read_only_fields = _read_only_fields(model)
 
 
 class OLPolicyTransactionSerializer(serializers.ModelSerializer):
@@ -552,7 +560,7 @@ class OLPolicyTransactionSerializer(serializers.ModelSerializer):
     class Meta:
         model = OLPolicyTransaction
         fields = "__all__"
-        read_only_fields = fields
+        read_only_fields = _read_only_fields(model)
 
     def get_created_by_name(self, obj):
         if not obj.created_by:
@@ -626,7 +634,7 @@ class OLPolicyStatusHistorySerializer(serializers.ModelSerializer):
     class Meta:
         model = OLPolicyStatusHistory
         fields = "__all__"
-        read_only_fields = fields
+        read_only_fields = _read_only_fields(model)
 
     def get_actor_name(self, obj):
         if not obj.actor:
@@ -696,7 +704,7 @@ class OLBeneficiaryAllocationSerializer(serializers.ModelSerializer):
     class Meta:
         model = OLBeneficiaryAllocation
         fields = "__all__"
-        read_only_fields = fields
+        read_only_fields = _read_only_fields(model)
 
 
 class OLApprovalActionSerializer(serializers.Serializer):
@@ -723,4 +731,4 @@ class OLUnderwritingDecisionEventSerializer(serializers.ModelSerializer):
     class Meta:
         model = OLUnderwritingDecisionEvent
         fields = "__all__"
-        read_only_fields = fields
+        read_only_fields = _read_only_fields(model)

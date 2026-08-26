@@ -1,12 +1,14 @@
 from rest_framework import serializers
+
 from .models import (
-    FOReceipt,
     FOCommission,
     FOCommissionStatement,
-    FORequisition,
-    FOPayment,
     FOParameter,
+    FOPayment,
+    FOReceipt,
+    FORequisition,
 )
+
 
 class FOReceiptSerializer(serializers.ModelSerializer):
     class Meta:

@@ -7,8 +7,8 @@
  * ErrorCoach; payloads carry names — never UUIDs.
  */
 
-import { useMemo, useState, useCallback } from "react"
-import { Link, useNavigate, useParams } from "react-router-dom"
+import { useMemo, useState, useCallback, useEffect, useRef } from "react"
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   ArrowLeft,
@@ -158,13 +158,29 @@ function SnapshotViewer({ snapshot }: { snapshot: Record<string, unknown> }) {
   )
 }
 
+const TAB_IDS = new Set<string>(TABS.map((tab) => tab.id))
+
+function resolveTabId(candidate: string | null | undefined): TabId | null {
+  return candidate && TAB_IDS.has(candidate) ? (candidate as TabId) : null
+}
+
 export default function OLProposalDetail() {
-  const { id } = useParams<{ id: string }>()
+  const { id, tab: tabParam } = useParams<{ id: string; tab?: string }>()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const access = useAccess()
-  const [activeTab, setActiveTab] = useState<TabId>("overview")
+
+  // Tabs are deep-linkable: /proposals/{id}/documents (path style, used by the
+  // readiness checklist) or ?tab=documents (query style). Unknown values fall
+  // back to Overview.
+  const linkedTab = resolveTabId(tabParam) ?? resolveTabId(searchParams.get("tab"))
+  const [activeTab, setActiveTab] = useState<TabId>(linkedTab ?? "overview")
+  useEffect(() => {
+    if (linkedTab) setActiveTab(linkedTab)
+  }, [linkedTab])
+
   const [snapshotVersion, setSnapshotVersion] = useState<number | null>(null)
   const [actionError, setActionError] = useState<unknown>(null)
   const [enrichOpen, setEnrichOpen] = useState(false)
@@ -172,6 +188,19 @@ export default function OLProposalDetail() {
   const [cancelOpen, setCancelOpen] = useState(false)
   const [printOpen, setPrintOpen] = useState(false)
   const [readinessConflict, setReadinessConflict] = useState<ChecklistItem[] | null>(null)
+
+  const changeTab = useCallback(
+    (next: TabId) => {
+      setActiveTab(next)
+      if (!id) return
+      const actionParam = searchParams.get("action")
+      const path = tabParam || searchParams.get("tab") || actionParam
+        ? `/ordinary-life/proposals/${id}/${next}`
+        : `/ordinary-life/proposals/${id}`
+      navigate(path, { replace: true })
+    },
+    [id, navigate, searchParams, tabParam],
+  )
 
   const detailQuery = useProposalDetail(id)
   const detail = detailQuery.data ?? null
@@ -242,6 +271,23 @@ export default function OLProposalDetail() {
     const permission = permissionMap[action]
     return allowed && (!permission || hasPermission(permission))
   }
+
+  // Row-action deep links (?action=enrich|mark-payment-ready|convert|cancel)
+  // fire once on arrival, then the parameter is stripped so a reload or
+  // back-navigation never replays the mutation.
+  const actionParam = searchParams.get("action")
+  const firedActionRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!detail || !actionParam || firedActionRef.current === actionParam) return
+    firedActionRef.current = actionParam
+    if (actionParam === "enrich" && canAct("enrich")) setEnrichOpen(true)
+    else if (actionParam === "convert" && canAct("convert")) setConvertOpen(true)
+    else if (actionParam === "cancel" && canAct("cancel")) setCancelOpen(true)
+    else if (actionParam === "mark-payment-ready" && canAct("mark_payment_ready") && !markReady.isPending) markReady.mutate()
+    const next = new URLSearchParams(searchParams)
+    next.delete("action")
+    setSearchParams(next, { replace: true })
+  }, [detail, actionParam])
 
   if (detailQuery.isLoading) {
     return (
@@ -391,7 +437,7 @@ export default function OLProposalDetail() {
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => changeTab(tab.id)}
                 aria-current={activeTab === tab.id ? "page" : undefined}
                 className={`whitespace-nowrap rounded-[8px] px-4 py-2.5 text-sm font-semibold transition ${
                   activeTab === tab.id

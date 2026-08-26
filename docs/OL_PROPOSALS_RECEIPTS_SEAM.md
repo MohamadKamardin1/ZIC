@@ -180,3 +180,49 @@ payload (`first_premium`) expose only read-only summary:
 
 `next_actions` guides the operator: record a receipt in Front Office while the
 commitment is unsettled, or proceed to conversion once fully allocated.
+
+---
+
+## 7. BR-03 enforcement record (Prompt 12 — receipts backend release)
+
+> **Append-only note:** the sections above are the v1 contract. This section
+> records the **observed enforcement result** of the receipts implementation and
+> the **post-policy reversal assumption** agreed at release time. It does not
+> change any clause above.
+
+### 7.1 Verified end-to-end behavior
+
+The receipts backend was released with a re-runnable verification command
+(`verify_br03_release`) and CI gate
+(`apps/front_office/receipts/tests/test_release_br03.py`). Verified behavior:
+
+1. **Guard blocks before allocation.** A payment-ready proposal with a linked
+   first-premium commitment that has no receipt allocation cannot convert:
+   `convert_proposal_to_policy` raises
+   `PROPOSAL_FIRST_PREMIUM_NOT_POSTED` (guard `first_premium_posted` is `False`).
+2. **Guard opens after full allocation.** When the first-premium receipt fully
+   allocates the linked commitment (commitment `COMPLETED`, balance `0.00`),
+   `first_premium_posted` is `True` and the proposal converts to a policy.
+3. **Guard closes again after reversal.** Reversing the first-premium receipt
+   restores the commitment balance and `first_premium_posted` evaluates `False`
+   again.
+
+### 7.2 Post-policy reversal assumption
+
+Once a proposal has converted to a policy, reversing its first-premium receipt
+restores the commitment balance and makes the BR-03 guard evaluate `False` again,
+but it does **not** revoke the issued policy. Conversion is idempotent — the
+`converted_policy_id` check precedes the guard — so a re-conversion returns the
+existing policy rather than creating a duplicate.
+
+This is a **documented operational assumption, not an enforced block**:
+
+- The policy is a legal/administrative contract; receipts do not un-issue it.
+- Operators **must not** reverse first-premium receipts after policy issue
+  without a compensating adjustment (e.g. a corrective allocation or a policy
+  servicing transaction).
+- Reversal reasons and the full audit trail are preserved, so a compensating
+  adjustment is traceable.
+
+The release verification proves all three guard states above and records this
+assumption in its output (`POST_POLICY_REVERSAL_ASSUMPTION`).
