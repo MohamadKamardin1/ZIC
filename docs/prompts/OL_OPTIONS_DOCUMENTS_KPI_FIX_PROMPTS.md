@@ -200,9 +200,52 @@ FINAL OUTPUT: model/serializer fixes, frontend dropdown binding, validation rule
 
 ---
 
-## [ ] Prompt 5 — Not supplied in the current request
+## [ ] Prompt 5 — Add consistent Manage links to all quotation wizard dropdowns
 
-The exact Prompt 5 text was not included in the current request. It is intentionally not reconstructed.
+```text
+You are a senior frontend engineer. Continue the ZIC fix series. Execute ONLY Prompt 5.
+
+MANDATORY RULES:
+
+- Every foreign-key dropdown in the quotation wizard must offer a "Manage" link to its parameter screen.
+- Links must respect user permissions and never leak internal paths to unauthorized roles.
+- Commit and push; tick checkbox.
+
+OBJECTIVE:
+Add consistent "Manage" links to Product Type, Payment Frequency, Quote Basis, Premium Factor, Rider, Benefit Type, Currency, Branch, Agent, Location, and all other wizard dropdowns.
+
+SCOPE:
+
+1. Extend SmartSelect component to accept `manageRoute?: string` prop.
+2. Render a small "Manage" button/icon beside the select when `manageRoute` is provided and user has `ol_parameters.configure` or submodule equivalent.
+3. Create mapping registry:
+   - product → /ol-parameters/product-setup/products
+   - plan-type → /ol-parameters/product-setup/plan-types
+   - payment-frequency → /ol-parameters/policy-setup/ol-default-system-parameters (or dedicated frequency config)
+   - quote-basis → /ol-parameters/policy-setup/ol-default-system-parameters
+   - premium-factor → /ol-parameters/policy-setup/ol-default-system-parameters
+   - rider → /ol-parameters/rider-setup/ol-riders
+   - benefit-type → /ol-parameters/policy-setup/ol-beneficial-type
+   - currency → /system-parameters/currencies
+   - branch → /system-parameters/branches
+   - agent/intermediary/employer/bank → /partner-onboarding/partners
+4. Ensure navigating to parameter screen preserves wizard state via query params or draft autosave.
+5. Frontend tests for link rendering, permission gating, and navigation.
+
+TESTS:
+
+- each dropdown renders Manage link when permitted
+- click navigates to correct parameter screen
+- unauthorized user sees no link
+- wizard draft preserved across navigation
+
+GIT:
+
+- commit: "feat(web): add manage links to all quotation wizard dropdowns"
+- push; tick checkbox
+
+FINAL OUTPUT: component extension, routing registry, tests, commit hash, pushed branch.
+```
 
 ---
 
