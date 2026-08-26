@@ -97,6 +97,15 @@ def _resolve_source(commitment):
         return None
 
 
+def _first_premium_proposal(commitment):
+    """The proposal whose ``first_premium_commitment`` links to a commitment."""
+    if commitment is None or not commitment.pk:
+        return None
+    from apps.ol_proposals.models import OLProposal
+
+    return OLProposal.objects.filter(first_premium_commitment=commitment).first()
+
+
 def commitment_option(commitment):
     source = _resolve_source(commitment)
     source_type = (commitment.source_type or "").strip().upper()
@@ -110,12 +119,16 @@ def commitment_option(commitment):
         source_display = f"OL Policy {policy_number}" if policy_number else "OL Policy"
     else:
         source_display = commitment.source_reference or "Manual"
+    first_premium_proposal = _first_premium_proposal(commitment)
     return {
         "id": str(commitment.pk),
         "commitment_number": commitment.commitment_number,
         "source_type": source_type,
         "source_display": source_display,
-        "proposal_number": proposal_number,
+        "proposal_number": proposal_number or (
+            getattr(first_premium_proposal, "proposal_number", None) if first_premium_proposal else None
+        ),
+        "is_first_premium": first_premium_proposal is not None,
         "policy_number": policy_number,
         "product_display": commitment.plan_name_snapshot or commitment.product_name_snapshot or "",
         "plan_display": commitment.plan_name_snapshot or "",
@@ -478,6 +491,7 @@ def auto_allocate(receipt, *, actor=None, source_channel="API"):
             actor=actor_instance,
             source_channel=source_channel,
         )
+        first_premium_proposal = _first_premium_proposal(commitment)
         results.append(
             {
                 "commitment_number": commitment.commitment_number,
@@ -492,15 +506,25 @@ def auto_allocate(receipt, *, actor=None, source_channel="API"):
                 "ol_commitment_allocation_id": str(allocation.ol_commitment_allocation_id)
                 if allocation.ol_commitment_allocation_id
                 else None,
+                "is_first_premium": first_premium_proposal is not None,
+                "proposal_number": (
+                    getattr(first_premium_proposal, "proposal_number", None)
+                    if first_premium_proposal
+                    else None
+                ),
             }
         )
         remaining -= amount
 
+    first_premium = next((item for item in results if item["is_first_premium"]), None)
     return {
         "allocations": results,
         "total_allocated": _fmt(receipt.allocated_amount),
         "remaining_unallocated": _fmt(receipt.unallocated_amount),
+        "remaining_unallocated_amount": _fmt(receipt.unallocated_amount),
         "receipt_status": receipt.status,
         "commitments_count": len(results),
         "exhausted": remaining <= 0,
+        "first_premium_completed": first_premium is not None,
+        "first_premium_proposal_number": first_premium["proposal_number"] if first_premium else None,
     }

@@ -53,6 +53,11 @@ def custom_exception_handler(exc, context):
 
     message = _message_for(exc, response.data)
     resolution_steps = list(getattr(exc, "resolution_steps", None) or [])
+    if response.status_code == status.HTTP_401_UNAUTHORIZED and not resolution_steps:
+        resolution_steps = [
+            "Provide a valid Bearer token or an active session with the request.",
+            "Re-authenticate at the login endpoint if your token has expired or was revoked.",
+        ]
     field_errors = getattr(exc, "field_errors", None)
     if not field_errors:
         field_errors = _extract_field_errors(exc, response.data)
@@ -82,6 +87,9 @@ def custom_exception_handler(exc, context):
         "resolution_steps": resolution_steps,
         "field_errors": field_errors,
         "doc_ref": doc_ref,
+        # camelCase aliases consumed by the web frontends (Error Coach).
+        "resolutionSteps": resolution_steps,
+        "deepLink": getattr(exc, "deep_link", None),
         "error": {
             "code": error_code,
             "message": message,

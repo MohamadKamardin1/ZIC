@@ -62,6 +62,29 @@ def _actor_name(actor):
     return getattr(actor, "username", None) or str(actor)
 
 
+def _first_premium_proposal(commitment_id):
+    """The proposal whose ``first_premium_commitment`` matches a commitment, if any.
+
+    Mirrors the seam's authoritative linkage (OLProposal.first_premium_commitment)
+    so allocation options and rows can mark first-premium commitments that, once
+    discharged, unlock proposal conversion.
+    """
+    if not commitment_id:
+        return None
+    from apps.ol_proposals.models import OLProposal
+
+    return OLProposal.objects.filter(first_premium_commitment_id=commitment_id).first()
+
+
+def _is_first_premium_commitment(commitment_id):
+    return _first_premium_proposal(commitment_id) is not None
+
+
+def _first_premium_proposal_number(commitment_id):
+    proposal = _first_premium_proposal(commitment_id)
+    return getattr(proposal, "proposal_number", None) if proposal else None
+
+
 class ReceiptAllocationSerializer(serializers.ModelSerializer):
     allocated_by = serializers.SerializerMethodField()
     allocated_by_name = serializers.SerializerMethodField()
@@ -72,6 +95,12 @@ class ReceiptAllocationSerializer(serializers.ModelSerializer):
     )
     allocation_amount_in_receipt_currency = serializers.SerializerMethodField()
     allocation_amount_in_target_currency = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
+    source_display = serializers.SerializerMethodField()
+    reversed_at = serializers.SerializerMethodField()
+    is_first_premium = serializers.SerializerMethodField()
+    proposal_number = serializers.SerializerMethodField()
+    restored_balance = serializers.SerializerMethodField()
 
     class Meta:
         model = ReceiptAllocation
@@ -93,7 +122,13 @@ class ReceiptAllocationSerializer(serializers.ModelSerializer):
             "converted_amount",
             "converted_currency",
             "allocation_status",
+            "status",
             "reversal_of",
+            "reversed_at",
+            "source_display",
+            "is_first_premium",
+            "proposal_number",
+            "restored_balance",
             "narration",
             "allocated_at",
             "allocated_by",
@@ -118,10 +153,33 @@ class ReceiptAllocationSerializer(serializers.ModelSerializer):
     def get_allocation_amount_in_target_currency(self, obj):
         return str(obj.converted_amount)
 
+    def get_status(self, obj):
+        return obj.allocation_status
+
+    def get_source_display(self, obj):
+        return obj.target_display or obj.target_id or None
+
+    def get_reversed_at(self, obj):
+        reversal = ReceiptAllocation.objects.filter(reversal_of=obj).order_by("-allocated_at").first()
+        return reversal.allocated_at.isoformat() if reversal and reversal.allocated_at else None
+
+    def get_restored_balance(self, obj):
+        reversal = ReceiptAllocation.objects.filter(reversal_of=obj).order_by("-allocated_at").first()
+        return str(reversal.amount) if reversal and reversal.amount is not None else None
+
+    def get_is_first_premium(self, obj):
+        return _is_first_premium_commitment(obj.commitment_id)
+
+    def get_proposal_number(self, obj):
+        return _first_premium_proposal_number(obj.commitment_id)
+
 
 class ReceiptReversalSerializer(serializers.ModelSerializer):
     reversed_by = serializers.SerializerMethodField()
     reversed_by_name = serializers.SerializerMethodField()
+    created_by_display = serializers.SerializerMethodField()
+    created_at = serializers.SerializerMethodField()
+    source_channel = serializers.SerializerMethodField()
 
     class Meta:
         model = ReceiptReversal
@@ -133,6 +191,9 @@ class ReceiptReversalSerializer(serializers.ModelSerializer):
             "reversed_at",
             "reversed_by",
             "reversed_by_name",
+            "created_by_display",
+            "created_at",
+            "source_channel",
         )
 
     def get_reversed_by(self, obj):
@@ -141,15 +202,31 @@ class ReceiptReversalSerializer(serializers.ModelSerializer):
     def get_reversed_by_name(self, obj):
         return _actor_name(obj.reversed_by)
 
+    def get_created_by_display(self, obj):
+        return _actor_name(obj.reversed_by)
+
+    def get_created_at(self, obj):
+        return obj.reversed_at.isoformat() if obj.reversed_at else None
+
+    def get_source_channel(self, obj):
+        receipt = obj.receipt
+        return receipt.source_channel if receipt and receipt.source_channel else None
+
 
 class ReceiptDocumentSerializer(serializers.ModelSerializer):
     uploaded_by = serializers.SerializerMethodField()
     uploaded_by_name = serializers.SerializerMethodField()
     template = serializers.UUIDField(source="template_id", allow_null=True, required=False)
     template_code = serializers.SerializerMethodField()
+    template_name = serializers.SerializerMethodField()
     generated_by = serializers.SerializerMethodField()
     generated_by_name = serializers.SerializerMethodField()
+    generated_by_display = serializers.SerializerMethodField()
+    page_count = serializers.SerializerMethodField()
     urls = serializers.SerializerMethodField()
+    preview_url = serializers.SerializerMethodField()
+    download_url = serializers.SerializerMethodField()
+    signed_download_url = serializers.SerializerMethodField()
 
     class Meta:
         model = ReceiptDocument
@@ -164,15 +241,21 @@ class ReceiptDocumentSerializer(serializers.ModelSerializer):
             "status",
             "template",
             "template_code",
+            "template_name",
             "template_version",
             "metadata",
             "generated_by",
             "generated_by_name",
+            "generated_by_display",
             "generated_at",
             "uploaded_at",
             "uploaded_by",
             "uploaded_by_name",
+            "page_count",
             "urls",
+            "preview_url",
+            "download_url",
+            "signed_download_url",
         )
 
     def get_uploaded_by(self, obj):
@@ -184,19 +267,58 @@ class ReceiptDocumentSerializer(serializers.ModelSerializer):
     def get_template_code(self, obj):
         return (obj.metadata or {}).get("template_code") if isinstance(obj.metadata, dict) else None
 
+    def get_template_name(self, obj):
+        if obj.template_id and obj.template and obj.template.name:
+            return obj.template.name
+        metadata = obj.metadata or {}
+        if isinstance(metadata, dict) and metadata.get("template_name"):
+            return metadata["template_name"]
+        code = self.get_template_code(obj)
+        return code.replace("_", " ").title() if code else obj.document_type
+
     def get_generated_by(self, obj):
         return getattr(obj, "generated_by_id", None)
 
     def get_generated_by_name(self, obj):
         return _actor_name(obj.generated_by)
 
-    def get_urls(self, obj):
+    def get_generated_by_display(self, obj):
+        return _actor_name(obj.generated_by)
+
+    def get_page_count(self, obj):
+        if not obj.file_reference:
+            return 0
+        from django.core.files.storage import default_storage
+
+        if not default_storage.exists(obj.file_reference):
+            return 0
+        try:
+            from pypdf import PdfReader
+
+            with default_storage.open(obj.file_reference, "rb") as handle:
+                return len(PdfReader(handle).pages)
+        except Exception:
+            return 0
+
+    def _document_urls(self, obj):
         from apps.front_office.receipts.services.print_service import ReceiptPrintService
 
         request = self.context.get("request") if self.context else None
         if request is None:
             return None
-        return ReceiptPrintService.document_urls(obj, request)
+        return ReceiptPrintService.document_urls(obj, request) or {}
+
+    def get_urls(self, obj):
+        return self._document_urls(obj) or None
+
+    def get_preview_url(self, obj):
+        return (self._document_urls(obj) or {}).get("html_url")
+
+    def get_download_url(self, obj):
+        return (self._document_urls(obj) or {}).get("pdf_url")
+
+    def get_signed_download_url(self, obj):
+        return (self._document_urls(obj) or {}).get("pdf_url")
 
 
 class ReceiptStatusHistorySerializer(serializers.ModelSerializer):
@@ -231,13 +353,21 @@ class ReceiptBaseSerializer(serializers.ModelSerializer):
     branch_display = serializers.SerializerMethodField()
     partner_display = serializers.SerializerMethodField()
     payer_display = serializers.SerializerMethodField()
+    payer_id = serializers.SerializerMethodField()
+    branch_id = serializers.SerializerMethodField()
     currency_display = serializers.SerializerMethodField()
     payment_mode_display = serializers.SerializerMethodField()
     bank_account_display = serializers.SerializerMethodField()
+    bank_account_id = serializers.SerializerMethodField()
     status_display = serializers.SerializerMethodField()
     source_module_display = serializers.SerializerMethodField()
+    source_reference = serializers.SerializerMethodField()
+    source_reference_display = serializers.SerializerMethodField()
     created_by_display = serializers.SerializerMethodField()
     posted_by_display = serializers.SerializerMethodField()
+    amount_in_words = serializers.SerializerMethodField()
+    reversed_reason = serializers.SerializerMethodField()
+    cancelled_reason = serializers.SerializerMethodField()
 
     class Meta:
         model = Receipt
@@ -248,16 +378,20 @@ class ReceiptBaseSerializer(serializers.ModelSerializer):
             "branch",
             "branch_name",
             "branch_display",
+            "branch_id",
             "partner",
             "partner_name",
             "partner_display",
             "payer_name",
             "payer_display",
+            "payer_id",
             "payer_identity",
             "source_module",
             "source_module_display",
             "source_reference_type",
             "source_reference_id",
+            "source_reference",
+            "source_reference_display",
             "currency",
             "currency_display",
             "exchange_rate",
@@ -271,6 +405,7 @@ class ReceiptBaseSerializer(serializers.ModelSerializer):
             "bank_account",
             "bank_account_name",
             "bank_account_display",
+            "bank_account_id",
             "narration",
             "status",
             "status_display",
@@ -281,7 +416,10 @@ class ReceiptBaseSerializer(serializers.ModelSerializer):
             "reversed_at",
             "reversed_by",
             "reversed_by_name",
+            "reversed_reason",
             "cancellation_reason",
+            "cancelled_reason",
+            "amount_in_words",
             "source_channel",
             "allowed_actions",
             "created_by_display",
@@ -349,6 +487,36 @@ class ReceiptBaseSerializer(serializers.ModelSerializer):
     def get_allowed_actions(self, obj):
         request = self.context.get("request") if self.context else None
         return allowed_actions(obj, getattr(request, "user", None) if request else None)
+
+    def get_payer_id(self, obj):
+        return str(obj.partner_id) if obj.partner_id else None
+
+    def get_branch_id(self, obj):
+        return str(obj.branch_id) if obj.branch_id else None
+
+    def get_bank_account_id(self, obj):
+        return str(obj.bank_account_id) if obj.bank_account_id else None
+
+    def get_source_reference(self, obj):
+        return obj.source_reference_id or None
+
+    def get_source_reference_display(self, obj):
+        if not obj.source_reference_id:
+            return None
+        prefix = obj.source_module.replace("_", " ").title() if obj.source_module else ""
+        return f"{prefix} {obj.source_reference_id}".strip()
+
+    def get_amount_in_words(self, obj):
+        from apps.front_office.receipts.services.amount_in_words import amount_in_words
+
+        return amount_in_words(str(obj.receipt_amount), obj.currency)
+
+    def get_reversed_reason(self, obj):
+        reversal = ReceiptReversal.objects.filter(receipt=obj).order_by("-reversed_at").first()
+        return reversal.reason if reversal else None
+
+    def get_cancelled_reason(self, obj):
+        return obj.cancellation_reason or None
 
 
 class ReceiptDetailSerializer(ReceiptBaseSerializer):
@@ -481,6 +649,10 @@ class ReceiptImportBatchSerializer(serializers.ModelSerializer):
 
     created_by = serializers.SerializerMethodField()
     created_by_name = serializers.SerializerMethodField()
+    uploaded_by_display = serializers.SerializerMethodField()
+    uploaded_at = serializers.SerializerMethodField()
+    ok_count = serializers.SerializerMethodField()
+    error_count = serializers.SerializerMethodField()
 
     class Meta:
         model = ReceiptImportBatch
@@ -495,9 +667,13 @@ class ReceiptImportBatchSerializer(serializers.ModelSerializer):
             "invalid_rows",
             "committed_rows",
             "failed_rows",
+            "ok_count",
+            "error_count",
             "summary",
             "created_by",
             "created_by_name",
+            "uploaded_by_display",
+            "uploaded_at",
             "created_at",
             "updated_at",
         )
@@ -507,6 +683,18 @@ class ReceiptImportBatchSerializer(serializers.ModelSerializer):
 
     def get_created_by_name(self, obj):
         return obj.created_by.username if obj.created_by_id else None
+
+    def get_uploaded_by_display(self, obj):
+        return obj.created_by.username if obj.created_by_id else None
+
+    def get_uploaded_at(self, obj):
+        return obj.created_at.isoformat() if obj.created_at else None
+
+    def get_ok_count(self, obj):
+        return obj.valid_rows
+
+    def get_error_count(self, obj):
+        return obj.invalid_rows
 
 
 class PartnerPortalReceiptAllocationSerializer(serializers.ModelSerializer):

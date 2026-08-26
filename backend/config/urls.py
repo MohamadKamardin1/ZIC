@@ -44,6 +44,7 @@ api_v1_patterns = [
     path('ol-quotations/', include('apps.ol_quotations.urls')),
     path('group-credit/', include('apps.group_credit.urls')),
     path('front-office/', include('apps.front_office.urls')),
+    path('portal/receipts/', include('apps.front_office.receipts.portal_urls')),
 ]
 
 urlpatterns = [

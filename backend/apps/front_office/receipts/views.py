@@ -1,4 +1,5 @@
 import csv
+from decimal import Decimal
 
 from django.core.files.storage import default_storage
 from django.http import HttpResponse
@@ -7,13 +8,20 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.front_office.receipts.errors import import_batch_not_found, import_row_invalid, not_found
+from apps.front_office.receipts.errors import (
+    allocation_invalid,
+    import_batch_not_found,
+    import_row_invalid,
+    not_found,
+)
 from apps.front_office.receipts.models import (
     Receipt,
     ReceiptAllocation,
     ReceiptDocument,
     ReceiptImportBatch,
+    ReceiptImportBatchStatus,
     ReceiptImportRowStatus,
+    ReceiptReversal,
 )
 from apps.front_office.receipts.permissions import has_receipt_permission
 from apps.front_office.receipts.serializers import (
@@ -28,6 +36,8 @@ from apps.front_office.receipts.serializers import (
     ReceiptImportBatchSerializer,
     ReceiptReasonSerializer,
     ReceiptReversalSerializer,
+    _first_premium_proposal_number,
+    _is_first_premium_commitment,
 )
 from apps.front_office.receipts.services.import_service import (
     commit_batch,
@@ -198,8 +208,107 @@ class ReceiptPostView(APIView):
         return Response({"data": ReceiptDetailSerializer(receipt, context={"request": request}).data})
 
 
+class ReceiptAllocationsView(APIView):
+    """GET /front-office/receipts/<uuid>/allocations/ — paginated allocation rows."""
+
+    permission_classes = [MustViewReceiptsPermission]
+
+    def get(self, request, receipt_id):
+        receipt = get_receipt_or_404(receipt_id)
+        queryset = ReceiptAllocation.objects.filter(receipt=receipt).order_by("-allocated_at", "-created_at")
+        page = max(1, int(request.query_params.get("page", 1)))
+        page_size = min(100, max(1, int(request.query_params.get("page_size", 25))))
+        total = queryset.count()
+        start = (page - 1) * page_size
+        rows = queryset[start : start + page_size]
+        return Response(
+            {
+                "data": {
+                    "results": ReceiptAllocationSerializer(
+                        rows, many=True, context={"request": request}
+                    ).data,
+                    "count": total,
+                    "page": page,
+                    "page_size": page_size,
+                    "next": page * page_size < total,
+                    "previous": page > 1,
+                }
+            }
+        )
+
+
+class ReceiptReversalsView(APIView):
+    """GET /front-office/receipts/<uuid>/reversals/ — paginated reversal history."""
+
+    permission_classes = [MustViewReceiptsPermission]
+
+    def get(self, request, receipt_id):
+        receipt = get_receipt_or_404(receipt_id)
+        queryset = ReceiptReversal.objects.filter(receipt=receipt).order_by("-reversed_at", "-created_at")
+        page = max(1, int(request.query_params.get("page", 1)))
+        page_size = min(100, max(1, int(request.query_params.get("page_size", 25))))
+        total = queryset.count()
+        start = (page - 1) * page_size
+        rows = queryset[start : start + page_size]
+        return Response(
+            {
+                "data": {
+                    "results": ReceiptReversalSerializer(rows, many=True, context={"request": request}).data,
+                    "count": total,
+                    "page": page,
+                    "page_size": page_size,
+                    "next": page * page_size < total,
+                    "previous": page > 1,
+                }
+            }
+        )
+
+
+class ReceiptAuditTimelineView(APIView):
+    """GET /front-office/receipts/<uuid>/audit-timeline/ — paginated lifecycle events."""
+
+    permission_classes = [MustViewReceiptsPermission]
+
+    def get(self, request, receipt_id):
+        from apps.front_office.receipts.services.work_queue import audit_timeline
+
+        receipt = get_receipt_or_404(receipt_id)
+        events = audit_timeline(receipt)
+        page = max(1, int(request.query_params.get("page", 1)))
+        page_size = min(100, max(1, int(request.query_params.get("page_size", 25))))
+        total = len(events)
+        start = (page - 1) * page_size
+        return Response(
+            {
+                "data": {
+                    "results": events[start : start + page_size],
+                    "count": total,
+                    "page": page,
+                    "page_size": page_size,
+                    "next": page * page_size < total,
+                    "previous": page > 1,
+                }
+            }
+        )
+
+
+class ReceiptBankAccountView(APIView):
+    """GET /front-office/receipts/<uuid>/bank-account/ — reveal the linked account."""
+
+    permission_classes = [MustViewReceiptsPermission]
+
+    def get(self, request, receipt_id):
+        receipt = get_receipt_or_404(receipt_id)
+        display = receipt.bank_account_snapshot or (str(receipt.bank_account) if receipt.bank_account_id else None)
+        return Response({"data": {"bank_account_display": display}})
+
+
 class ReceiptAllocationOptionsView(APIView):
-    """GET /front-office/receipts/<uuid>/allocation-options/ — open commitments."""
+    """GET /front-office/receipts/<uuid>/allocation-options/ — open commitments.
+
+    Returns a paginated option list (matching the web allocation modal contract);
+    ``?search=`` narrows by commitment number, proposal, or policy reference.
+    """
 
     def get_permissions(self):
         return [MustViewReceiptsPermission()]
@@ -209,46 +318,159 @@ class ReceiptAllocationOptionsView(APIView):
 
         receipt = get_receipt_or_404(receipt_id)
         options = allocation_options(receipt)
+        search = (request.query_params.get("search") or "").strip().lower()
+        if search:
+            options = [
+                option
+                for option in options
+                if search
+                in " ".join(
+                    str(option.get(key) or "")
+                    for key in ("commitment_number", "proposal_number", "policy_number", "source_display")
+                ).lower()
+            ]
+        page = max(1, int(request.query_params.get("page", 1)))
+        page_size = min(100, max(1, int(request.query_params.get("page_size", 25))))
+        total = len(options)
+        start = (page - 1) * page_size
         return Response(
             {
                 "data": {
-                    "receipt": ReceiptBaseSerializer(receipt, context={"request": request}).data,
+                    "results": options[start : start + page_size],
+                    "count": total,
+                    "page": page,
+                    "page_size": page_size,
+                    "next": page * page_size < total,
+                    "previous": page > 1,
                     "commitments": options,
                 }
             }
         )
 
 
+def _allocation_item(allocation, receipt_currency):
+    """Allocation row in the web ``ReceiptAllocationResult.allocations`` shape."""
+    commitment = allocation.commitment
+    return {
+        "id": str(allocation.pk),
+        "target_display": allocation.target_display or allocation.target_id or "",
+        "commitment": str(commitment.pk) if commitment else None,
+        "commitment_number": commitment.commitment_number if commitment else (allocation.target_id or None),
+        "amount": str(allocation.amount),
+        "currency": allocation.currency,
+        "exchange_rate": (
+            str(allocation.exchange_rate)
+            if allocation.currency != receipt_currency and allocation.exchange_rate is not None
+            else None
+        ),
+        "status": allocation.allocation_status,
+        "balance_before": str(allocation.amount),
+        "balance_after": str(commitment.balance) if commitment else None,
+        "is_first_premium": _is_first_premium_commitment(commitment.pk) if commitment else False,
+        "proposal_number": _first_premium_proposal_number(commitment.pk) if commitment else None,
+        "allocation_amount_in_receipt_currency": str(allocation.amount),
+        "allocation_amount_in_target_currency": str(allocation.converted_amount),
+        "exchange_rate_used": str(allocation.exchange_rate_used),
+        "converted_amount": str(allocation.converted_amount),
+        "converted_currency": allocation.converted_currency,
+    }
+
+
 class ReceiptAllocateView(APIView):
-    """POST /front-office/receipts/<uuid>/allocate/ — manual allocation."""
+    """POST /front-office/receipts/<uuid>/allocate/ — manual allocation.
+
+    Accepts the web contract ``{allocations: [{commitment, amount, exchange_rate}]}``
+    and the legacy single-allocation contract ``{target_type, target_id, amount}``.
+    The response is a superset: the receipt detail at the top level (legacy) plus
+    the ``receipt``/``allocations``/``first_premium_*`` envelope (web).
+    """
 
     def get_permissions(self):
         return [MustActionPermission(action="allocate")]
 
     def post(self, request, receipt_id):
-        from apps.front_office.receipts.services.allocation_service import allocate
+        from apps.front_office.receipts.services.allocation_service import (
+            allocate,
+            allocate_to_commitment,
+        )
 
         receipt = get_receipt_or_404(receipt_id)
-        serializer = ReceiptAllocationRequestSerializer(data=request.data or {})
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-        allocation, receipt, created, warning = allocate(
-            receipt,
-            target_type=data["target_type"],
-            target_id=data["target_id"],
-            amount=data["amount"],
-            narration=data.get("narration", ""),
-            exchange_rate=data.get("exchange_rate"),
-            exchange_rate_source=data.get("exchange_rate_source") or None,
-            actor=request.user,
-            source_channel="API",
+        payload = request.data or {}
+        allocations_payload = payload.get("allocations")
+        items = []
+        created_any = False
+        warning = None
+
+        if isinstance(allocations_payload, list):
+            from apps.ol_commitments.models import OLCommitment
+
+            for row in allocations_payload:
+                commitment_id = str(row.get("commitment") or "").strip()
+                if not commitment_id:
+                    raise allocation_invalid(
+                        message="Each allocation row needs a commitment.",
+                        field_errors={"commitment": ["Select a commitment for each allocation."]},
+                    )
+                commitment = OLCommitment.objects.filter(pk=commitment_id).first()
+                if commitment is None:
+                    raise allocation_invalid(
+                        message="The allocation target commitment was not found.",
+                        field_errors={"commitment": ["Commitment not found or not open for allocation."]},
+                    )
+                amount = row.get("amount")
+                allocation, receipt, created, row_warning = allocate_to_commitment(
+                    receipt,
+                    commitment,
+                    amount=amount,
+                    exchange_rate=row.get("exchange_rate"),
+                    exchange_rate_source="API",
+                    actor=request.user,
+                    source_channel="API",
+                )
+                created_any = created_any or created
+                warning = warning or row_warning
+                items.append(_allocation_item(allocation, receipt.currency))
+        else:
+            serializer = ReceiptAllocationRequestSerializer(data=payload)
+            serializer.is_valid(raise_exception=True)
+            data = serializer.validated_data
+            allocation, receipt, created, warning = allocate(
+                receipt,
+                target_type=data["target_type"],
+                target_id=data["target_id"],
+                amount=data["amount"],
+                narration=data.get("narration", ""),
+                exchange_rate=data.get("exchange_rate"),
+                exchange_rate_source=data.get("exchange_rate_source") or None,
+                actor=request.user,
+                source_channel="API",
+            )
+            created_any = created
+            items.append(_allocation_item(allocation, receipt.currency))
+
+        first_premium = next((item for item in items if item["is_first_premium"]), None)
+        response_data = {
+            "data": ReceiptDetailSerializer(receipt, context={"request": request}).data,
+        }
+        response_data["data"].update(
+            {
+                "receipt": dict(response_data["data"]),
+                "allocations": items,
+                "total_allocated": str(receipt.allocated_amount),
+                "remaining_unallocated": str(receipt.unallocated_amount),
+                "remaining_unallocated_amount": str(receipt.unallocated_amount),
+                "receipt_status": receipt.status,
+                "commitments_count": len(items),
+                "exhausted": Decimal(receipt.unallocated_amount) <= 0,
+                "first_premium_completed": first_premium is not None,
+                "first_premium_proposal_number": first_premium["proposal_number"] if first_premium else None,
+            }
         )
-        response_data = {"data": ReceiptDetailSerializer(receipt, context={"request": request}).data}
         if warning:
             response_data["warning"] = warning
         return Response(
             response_data,
-            status=201 if created else 200,
+            status=201 if created_any else 200,
         )
 
 
@@ -270,9 +492,12 @@ class ReceiptAutoAllocateView(APIView):
                     "allocations": result["allocations"],
                     "total_allocated": result["total_allocated"],
                     "remaining_unallocated": result["remaining_unallocated"],
+                    "remaining_unallocated_amount": result.get("remaining_unallocated_amount"),
                     "receipt_status": result["receipt_status"],
                     "commitments_count": result["commitments_count"],
                     "exhausted": result["exhausted"],
+                    "first_premium_completed": result.get("first_premium_completed", False),
+                    "first_premium_proposal_number": result.get("first_premium_proposal_number"),
                 }
             }
         )
@@ -489,6 +714,201 @@ class ReceiptOptionsView(APIView):
         )
 
 
+class ReceiptOptionsResourceView(APIView):
+    """GET /front-office/options/<resource>/ plus quick-create helpers.
+
+    Serves the web SmartSelect contract: a paginated ``{results, count, next,
+    previous, page, page_size}`` list of ``{value, label, meta}`` options per
+    resource, with optional ``?q=`` filtering. Branches and payers additionally
+    expose ``quick-create-schema/`` (GET) and ``quick-create/`` (POST).
+    """
+
+    permission_classes = [MustViewReceiptsPermission]
+
+    def get(self, request, resource):
+        if request.path.rstrip("/").endswith("quick-create-schema"):
+            return Response({"data": self._quick_create_schema(resource)}, status=200)
+        options = self._options_for(resource)
+        q = (request.query_params.get("q") or "").strip().lower()
+        if q:
+            options = [
+                opt
+                for opt in options
+                if q in f"{opt.get('value') or ''} {opt.get('label') or ''} {opt.get('meta') or ''}".lower()
+            ]
+        page = max(1, int(request.query_params.get("page", 1)))
+        page_size = min(100, max(1, int(request.query_params.get("page_size", 25))))
+        total = len(options)
+        start = (page - 1) * page_size
+        return Response(
+            {
+                "data": {
+                    "results": options[start : start + page_size],
+                    "count": total,
+                    "page": page,
+                    "page_size": page_size,
+                    "next": page * page_size < total,
+                    "previous": page > 1,
+                }
+            }
+        )
+
+    def post(self, request, resource):
+        if resource == "branches":
+            return self._quick_create_branch(request)
+        if resource == "payers":
+            return self._quick_create_payer(request)
+        raise not_found()
+
+    def _options_for(self, resource):
+        from apps.front_office.receipts.config_models import CompanyBankAccount, ReceiptPaymentModeRule
+        from apps.front_office.receipts.services.parameter_resolver import (
+            configured_currencies,
+            configured_payment_modes,
+            configured_source_modules,
+            configured_statuses,
+            option,
+            payment_mode_label,
+        )
+        from apps.partner_onboarding.models import Branch
+
+        if resource == "branches":
+            return [
+                option(str(branch.pk), branch.name, code=branch.code)
+                for branch in Branch.objects.filter(is_active=True).order_by("name")
+            ]
+        if resource == "payers":
+            from apps.partners.models import Partner
+
+            return [
+                option(
+                    str(partner.pk),
+                    getattr(partner, "display_name", None) or partner.legal_name or partner.partner_number,
+                    partner_number=partner.partner_number,
+                )
+                for partner in Partner.objects.filter(is_active=True).order_by("legal_name")[:500]
+            ]
+        if resource == "proposals":
+            from apps.ol_proposals.models import OLProposal
+
+            proposals = (
+                OLProposal.objects.filter(
+                    first_premium_commitment__isnull=False
+                )
+                .exclude(status__in=["CONVERTED", "CANCELLED", "EXPIRED"])
+                .order_by("proposal_number")[:500]
+            )
+            return [
+                option(
+                    str(proposal.pk),
+                    proposal.proposal_number,
+                    status_hint=proposal.status or "AWAITING_FIRST_PREMIUM",
+                )
+                for proposal in proposals
+            ]
+        if resource == "source-modules":
+            return [option(code, code.replace("_", " ").title()) for code in configured_source_modules()]
+        if resource == "currencies":
+            return [option(code, code) for code in dict.fromkeys(configured_currencies())]
+        if resource == "payment-modes":
+            rules = list(ReceiptPaymentModeRule.objects.filter(is_active=True).order_by("payment_mode"))
+            if rules:
+                return [
+                    option(
+                        rule.payment_mode,
+                        payment_mode_label(rule.payment_mode),
+                        requires_reference=rule.requires_reference,
+                        requires_bank_account=rule.requires_bank_account,
+                    )
+                    for rule in rules
+                ]
+            return [option(code, payment_mode_label(code)) for code in configured_payment_modes()]
+        if resource == "bank-accounts":
+            return [
+                option(
+                    str(account.pk),
+                    f"{account.bank_name} - {account.account_name}",
+                    code=account.code,
+                    currency=account.currency,
+                    account_number=account.masked_account_number,
+                    is_default=account.is_default,
+                )
+                for account in CompanyBankAccount.objects.filter(is_active=True).order_by("code")
+            ]
+        if resource == "statuses":
+            return [option(code, code.replace("_", " ").title()) for code in configured_statuses()]
+        raise not_found()
+
+    def _quick_create_schema(self, resource):
+        if resource == "branches":
+            return {
+                "entity": "branches",
+                "permission": "front_office.receipts.create",
+                "fields": [
+                    {"name": "code", "type": "text", "required": True},
+                    {"name": "name", "type": "text", "required": True},
+                ],
+            }
+        if resource == "payers":
+            return {
+                "entity": "payers",
+                "permission": "partners.create",
+                "fields": [
+                    {"name": "legal_name", "type": "text", "required": True},
+                    {"name": "national_id", "type": "text", "required": False},
+                    {"name": "phone", "type": "text", "required": False},
+                ],
+            }
+        raise not_found()
+
+    def _quick_create_branch(self, request):
+        if not has_receipt_permission(request.user, "create"):
+            raise not_found()
+        from apps.front_office.receipts.errors import import_row_invalid as invalid_option
+        from apps.partner_onboarding.models import Branch
+
+        code = ((request.data or {}).get("code") or "").strip()
+        name = ((request.data or {}).get("name") or "").strip()
+        if not code or not name:
+            raise invalid_option(
+                message="Branch code and name are required.",
+                field_errors={
+                    "code": [] if code else ["Branch code is required."],
+                    "name": [] if name else ["Branch name is required."],
+                },
+            )
+        branch = Branch.objects.filter(code__iexact=code).first()
+        if branch is None:
+            branch = Branch.objects.create(code=code.upper(), name=name, is_active=True)
+        return Response({"data": {"option": {"value": str(branch.pk), "label": branch.name, "meta": {"code": branch.code}}}}, status=201)
+
+    def _quick_create_payer(self, request):
+        if not has_receipt_permission(request.user, "create"):
+            raise not_found()
+        from apps.front_office.receipts.errors import import_row_invalid as invalid_option
+        from apps.partners.models import Partner
+
+        legal_name = ((request.data or {}).get("legal_name") or "").strip()
+        if not legal_name:
+            raise invalid_option(
+                message="A payer legal name is required.",
+                field_errors={"legal_name": ["A payer legal name is required."]},
+            )
+        partner = Partner.objects.create(legal_name=legal_name, is_active=True)
+        return Response(
+            {
+                "data": {
+                    "option": {
+                        "value": str(partner.pk),
+                        "label": partner.legal_name or partner.partner_number,
+                        "meta": {"partner_number": partner.partner_number},
+                    }
+                }
+            },
+            status=201,
+        )
+
+
 class ReceiptPrintView(APIView):
     """POST /front-office/receipts/<uuid>/print/ — generate a receipt printout.
 
@@ -514,23 +934,16 @@ class ReceiptPrintView(APIView):
             template_code=template_code,
             preview=preview,
         )
-        return Response(
-            {
-                "data": {
-                    "id": str(document.pk),
-                    "receipt_number": receipt.receipt_number,
-                    "document_type": document.document_type,
-                    "status": document.status,
-                    "template_code": document.template.code if document.template_id else None,
-                    "template_version": document.template_version,
-                    "watermark": (document.metadata or {}).get("watermark", ""),
-                    "preview": (document.metadata or {}).get("preview", False),
-                    "generated_at": document.generated_at.isoformat() if document.generated_at else None,
-                    "urls": ReceiptPrintService.document_urls(document, request),
-                }
-            },
-            status=201,
-        )
+        document_data = ReceiptDocumentSerializer(document, context={"request": request}).data
+        data = {
+            "receipt": ReceiptDetailSerializer(receipt, context={"request": request}).data,
+            "document": document_data,
+        }
+        # Legacy compatibility: the document fields used to sit at the top of
+        # the payload. Flatten them (plus the metadata watermark) as a superset.
+        data.update(document_data)
+        data.setdefault("watermark", (document.metadata or {}).get("watermark", ""))
+        return Response({"data": data}, status=201)
 
 
 class ReceiptDocumentsView(APIView):
@@ -619,6 +1032,48 @@ def _import_summary(batch):
     }
 
 
+def _import_errors(batch):
+    error_statuses = (
+        ReceiptImportRowStatus.INVALID,
+        ReceiptImportRowStatus.FAILED,
+        ReceiptImportRowStatus.DUPLICATE,
+    )
+    return [row for row in _import_rows(batch) if row["status"] in error_statuses]
+
+
+def _import_result(batch, *, dry_run):
+    """Flattened import result matching the web ``ReceiptImportResult`` contract.
+
+    Superset: also carries the legacy ``batch`` envelope, ``partial_failure``
+    and ``error_code`` keys the backend import suite asserts on.
+    """
+    rows = _import_rows(batch)
+    errors = _import_errors(batch)
+    committed = batch.committed_rows
+    batch_data = ReceiptImportBatchSerializer(batch).data
+    error_code = None
+    if batch.status == ReceiptImportBatchStatus.PARTIAL:
+        error_code = "RECEIPT_IMPORT_PARTIAL_FAILURE"
+    elif batch.status == ReceiptImportBatchStatus.FAILED:
+        error_code = "RECEIPT_IMPORT_BATCH_FAILED"
+    return {
+        "dry_run": bool(dry_run),
+        "imported": committed if not dry_run else batch.total_rows,
+        "created": committed,
+        "total_rows": batch.total_rows,
+        "ok_count": batch.valid_rows,
+        "error_count": batch.invalid_rows,
+        "batch_id": str(batch.pk),
+        "status": batch.status,
+        "rows": rows,
+        "errors": errors,
+        "summary": _import_summary(batch),
+        "batch": batch_data,
+        "partial_failure": batch.status == ReceiptImportBatchStatus.PARTIAL,
+        "error_code": error_code,
+    }
+
+
 class ReceiptImportTemplateView(APIView):
     """GET /front-office/receipts/import/template/ — downloadable CSV template."""
 
@@ -646,23 +1101,16 @@ class ReceiptImportDryRunView(APIView):
             )
         import_mode = ((request.data or {}).get("import_mode") or "DRAFT").strip()
         batch = dry_run(file=file, import_mode=import_mode, actor=request.user)
-        return Response(
-            {
-                "data": {
-                    "batch": ReceiptImportBatchSerializer(batch).data,
-                    "summary": _import_summary(batch),
-                    "rows": _import_rows(batch),
-                }
-            },
-            status=200,
-        )
+        return Response({"data": _import_result(batch, dry_run=True)}, status=200)
 
 
 class ReceiptImportCommitView(APIView):
-    """POST /front-office/receipts/import/commit/ — commit a validated batch.
+    """POST /front-office/receipts/import/commit/ — commit an import batch.
 
-    Idempotent: committed rows are skipped and FAILED rows are retried, so
-    re-committing the same batch is safe and completes a partial import.
+    Accepts either the web flow (a ``file`` plus ``mode``, re-validated then
+    committed) or the batch flow (an existing ``batch_id``). Idempotent:
+    committed rows are skipped and FAILED rows are retried, so re-committing the
+    same batch is safe and completes a partial import.
     """
 
     def get_permissions(self):
@@ -670,29 +1118,24 @@ class ReceiptImportCommitView(APIView):
 
     def post(self, request):
         batch_id = ((request.data or {}).get("batch_id") or "").strip()
-        if not batch_id:
+        file = request.FILES.get("file")
+        if batch_id:
+            batch = ReceiptImportBatch.objects.filter(pk=batch_id).first()
+            if batch is None:
+                raise import_batch_not_found()
+        elif file is not None:
+            import_mode = ((request.data or {}).get("mode") or "CREATE_DRAFTS").strip()
+            batch = dry_run(file=file, import_mode=import_mode, actor=request.user)
+        else:
             raise import_row_invalid(
-                message="A batch_id is required.",
-                field_errors={"batch_id": ["Select an import batch to commit."]},
+                message="A batch_id or a CSV file is required.",
+                field_errors={
+                    "batch_id": ["Select an import batch to commit."],
+                    "file": ["Upload the receipt CSV to commit."],
+                },
             )
-        batch = ReceiptImportBatch.objects.filter(pk=batch_id).first()
-        if batch is None:
-            raise import_batch_not_found()
         commit_batch(batch=batch, actor=request.user)
-        failed = batch.failed_rows
-        return Response(
-            {
-                "data": {
-                    "batch": ReceiptImportBatchSerializer(batch).data,
-                    "summary": _import_summary(batch),
-                    "status": batch.status,
-                    "partial_failure": failed > 0,
-                    "error_code": "RECEIPT_IMPORT_PARTIAL_FAILURE" if failed > 0 else None,
-                    "rows": _import_rows(batch),
-                }
-            },
-            status=200,
-        )
+        return Response({"data": _import_result(batch, dry_run=False)}, status=200)
 
 
 class ReceiptImportBatchListView(APIView):
@@ -722,7 +1165,11 @@ class ReceiptImportBatchListView(APIView):
 
 
 class ReceiptImportBatchDetailView(APIView):
-    """GET /front-office/receipts/imports/<uuid>/ — batch header plus all rows."""
+    """GET /front-office/receipts/imports/<uuid>/ — batch header plus error rows.
+
+    Returns the batch fields flattened (matching the web batch-detail contract)
+    with an ``errors`` array of the blocked rows.
+    """
 
     permission_classes = [MustViewReceiptsPermission]
 
@@ -730,15 +1177,29 @@ class ReceiptImportBatchDetailView(APIView):
         batch = ReceiptImportBatch.objects.select_related("created_by").filter(pk=batch_id).first()
         if batch is None:
             raise import_batch_not_found()
-        return Response(
-            {
-                "data": {
-                    "batch": ReceiptImportBatchSerializer(batch).data,
-                    "summary": _import_summary(batch),
-                    "rows": _import_rows(batch),
-                }
-            }
-        )
+        data = ReceiptImportBatchSerializer(batch).data
+        data["errors"] = _import_errors(batch)
+        data["rows"] = _import_rows(batch)
+        data["batch"] = ReceiptImportBatchSerializer(batch).data
+        return Response({"data": data})
+
+
+class ReceiptImportReprocessView(APIView):
+    """POST /front-office/receipts/imports/<uuid>/reprocess/ — retry failed rows.
+
+    Re-runs the commit for a batch; committed rows are skipped and FAILED rows
+    are retried, so reprocessing completes a partial import.
+    """
+
+    def get_permissions(self):
+        return [MustActionPermission(action="import")]
+
+    def post(self, request, batch_id):
+        batch = ReceiptImportBatch.objects.select_related("created_by").filter(pk=batch_id).first()
+        if batch is None:
+            raise import_batch_not_found()
+        commit_batch(batch=batch, actor=request.user)
+        return Response({"data": _import_result(batch, dry_run=False)}, status=200)
 
 
 class ReceiptReportingDatasetView(APIView):

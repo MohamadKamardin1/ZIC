@@ -340,7 +340,7 @@ class ReceiptImportApiTests(APITestCase):
         row = response.data["data"]["rows"][0]
         self.assertEqual(
             set(row),
-            {"row_number", "status", "data", "error_code", "errors", "message", "receipt_id", "receipt_number", "committed_at"},
+            {"row_number", "row", "status", "data", "error_code", "errors", "field_errors", "resolution_steps", "message", "receipt_id", "receipt_number", "committed_at"},
         )
         self.assertEqual(row["receipt_id"], None)
         self.assertEqual(row["receipt_number"], None)

@@ -90,6 +90,11 @@ class ReceiptApiTests(APITestCase):
     def test_unauthenticated_request_is_forbidden(self):
         response = self.client.get(f"{BASE}/")
         self.assertEqual(response.status_code, 401)
+        # Teachable Error Coach envelope: a resolution step explains how to authenticate.
+        self.assertFalse(response.data["success"])
+        self.assertIn("resolution_steps", response.data)
+        self.assertTrue(response.data["resolution_steps"])
+        self.assertIn("resolutionSteps", response.data)
 
     def test_plain_user_without_permission_is_forbidden(self):
         self.client.force_authenticate(self.plain)

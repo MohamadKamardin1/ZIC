@@ -7,7 +7,7 @@ filters as the list endpoint so the queue totals always match the visible rows.
 
 from decimal import Decimal
 
-from django.db.models import Q, Sum
+from django.db.models import Count, Q, Sum
 from django.utils import timezone
 
 from apps.front_office.receipts.models import (
@@ -62,6 +62,12 @@ _OPEN_STATUSES = (
 
 def _true(value):
     return str(value or "").strip().lower() in ("true", "1", "yes", "on")
+
+
+def _dominant_currency(queryset):
+    """Most common receipt currency for the set, so KPI cards can label amounts."""
+    row = queryset.values("currency").annotate(count=Count("id")).order_by("-count").first()
+    return row["currency"] if row and row.get("currency") else "TZS"
 
 
 def filter_receipts(queryset, params):
@@ -159,6 +165,7 @@ def receipt_kpis(queryset):
         queryset.filter(status=ReceiptStatus.REVERSED).aggregate(value=Sum("receipt_amount"))["value"] or ZERO
     )
     amount_received_today = today_queryset.aggregate(value=Sum("receipt_amount"))["value"] or ZERO
+    currency = _dominant_currency(queryset)
     return {
         "total_received_period": _money(total_received_period),
         "total_allocated_period": _money(total_allocated_period),
@@ -171,7 +178,29 @@ def receipt_kpis(queryset):
             status__in=_OPEN_STATUSES, unallocated_amount__gt=0
         ).count(),
         "reversed_receipts": queryset.filter(status=ReceiptStatus.REVERSED).count(),
+        # camelCase/display aliases consumed by the web front-end KPI cards.
+        "received_today": _money(amount_received_today),
+        "allocated_in_period": _money(total_allocated_period),
+        "unallocated_amount": _money(total_unallocated),
+        "unallocated_receipt_count": queryset.filter(
+            status__in=_OPEN_STATUSES, unallocated_amount__gt=0
+        ).count(),
+        "currency": currency,
     }
+
+
+def _audit_summary(state, changed_fields):
+    """Compact before/after summary for the timeline, from the audit snapshot."""
+    if not isinstance(state, dict):
+        return None
+    if "status" in state and state.get("status"):
+        return str(state["status"])
+    pieces = []
+    for field in changed_fields or []:
+        value = state.get(field)
+        if value not in (None, "", []):
+            pieces.append(f"{field}: {value}")
+    return ", ".join(pieces) if pieces else None
 
 
 def _actor_display(actor):
@@ -212,6 +241,11 @@ def audit_timeline(receipt):
             "actor_id": str(entry.user_id) if entry.user_id else None,
             "source_channel": entry.source_channel or "",
             "timestamp": entry.timestamp.isoformat(),
+            # camelCase/display aliases consumed by the detail audit timeline.
+            "actor_display": _actor_display(entry.user),
+            "occurred_at": entry.timestamp.isoformat(),
+            "before_summary": _audit_summary(entry.before_state, entry.changed_fields),
+            "after_summary": _audit_summary(entry.after_state, entry.changed_fields),
         }
         for entry in entries
     ]

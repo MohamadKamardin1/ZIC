@@ -490,14 +490,24 @@ def commit_batch(*, batch, actor=None):
     return batch
 
 
+def _resolution_steps_for(error_code):
+    from apps.front_office.receipts.errors import RECEIPT_ERROR_REGISTRY
+
+    entry = RECEIPT_ERROR_REGISTRY.get((error_code or "").strip().upper())
+    return list(entry[2]) if entry else []
+
+
 def import_row_payload(row):
     """Structured per-row payload for the dry-run / commit / detail responses."""
     return {
         "row_number": row.row_number,
+        "row": row.row_number,
         "status": row.status,
         "data": row.data,
         "error_code": row.error_code or None,
         "errors": row.validation_errors or {},
+        "field_errors": row.validation_errors or {},
+        "resolution_steps": _resolution_steps_for(row.error_code),
         "message": row.error_message or None,
         "receipt_id": str(row.receipt_id) if row.receipt_id else None,
         "receipt_number": row.receipt.receipt_number if row.receipt_id else None,
