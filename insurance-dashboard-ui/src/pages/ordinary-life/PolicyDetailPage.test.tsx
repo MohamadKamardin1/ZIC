@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import PolicyDetailPage from "./PolicyDetailPage"
 import { UUID_RE } from "../../lib/display"
 
-const { navigateMock, setSearchParamsMock, searchParamsMock, usePolicyDetailMock, usePolicyOptionsMock, usePolicyMembersMock, usePolicyRidersMock, usePolicyBenefitsMock, usePolicyEndorsementsMock, useCreatePolicyEndorsementMutationMock } = vi.hoisted(() => ({
+const { navigateMock, setSearchParamsMock, searchParamsMock, usePolicyDetailMock, usePolicyOptionsMock, usePolicyMembersMock, usePolicyRidersMock, usePolicyBenefitsMock, usePolicyEndorsementsMock, usePolicyLoansMock, usePolicyWithdrawalsMock, useCreatePolicyEndorsementMutationMock } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
   setSearchParamsMock: vi.fn(),
   searchParamsMock: new URLSearchParams(),
@@ -13,6 +13,8 @@ const { navigateMock, setSearchParamsMock, searchParamsMock, usePolicyDetailMock
   usePolicyRidersMock: vi.fn(),
   usePolicyBenefitsMock: vi.fn(),
   usePolicyEndorsementsMock: vi.fn(),
+  usePolicyLoansMock: vi.fn(),
+  usePolicyWithdrawalsMock: vi.fn(),
   useCreatePolicyEndorsementMutationMock: vi.fn(),
 }))
 
@@ -43,6 +45,8 @@ vi.mock("../../lib/policiesHooks", () => ({
   usePolicyRiders: usePolicyRidersMock,
   usePolicyBenefits: usePolicyBenefitsMock,
   usePolicyEndorsements: usePolicyEndorsementsMock,
+  usePolicyLoans: usePolicyLoansMock,
+  usePolicyWithdrawals: usePolicyWithdrawalsMock,
   useCreatePolicyEndorsementMutation: useCreatePolicyEndorsementMutationMock,
 }))
 
@@ -98,6 +102,8 @@ beforeEach(() => {
   usePolicyRidersMock.mockReturnValue({ data: activePolicy.riders, isPending: false })
   usePolicyBenefitsMock.mockReturnValue({ data: activePolicy.benefits, isPending: false })
   usePolicyEndorsementsMock.mockReturnValue({ data: { results: activePolicy.endorsements, count: activePolicy.endorsements.length }, isPending: false })
+  usePolicyLoansMock.mockReturnValue({ data: { results: [], count: 0 }, isPending: false })
+  usePolicyWithdrawalsMock.mockReturnValue({ data: { results: [], count: 0 }, isPending: false })
   useCreatePolicyEndorsementMutationMock.mockReturnValue({ mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null })
 })
 

@@ -238,7 +238,7 @@ FINAL OUTPUT: tab behavior, modal logic, tests, commit hash, pushed branch.
 
 ---
 
-## [ ] Prompt 7/10 — Loans & Withdrawals Tab (Financial Actions)
+## [x] Prompt 7/10 — Loans & Withdrawals Tab (Financial Actions)
 
 ```text
 You are a senior frontend engineer. Continue the ZIC Policies UI. Execute ONLY Prompt 7.

@@ -4,13 +4,14 @@ import { ArrowLeft, Banknote, CalendarDays, FileText, HandCoins, Landmark, Rotat
 import { ErrorCoach } from "../../components/commitments/ErrorCoach"
 import { InfoBanner, Modal } from "../../components/ui/Overlays"
 import PolicyEndorsementModal from "./PolicyEndorsementModal"
+import PolicyFinancialsTab from "./PolicyFinancialsTab"
 import { MasterDetailPage } from "../../components/ui/Patterns"
 import { StatusBadge } from "../../components/ui/StatusBadge"
 import { MoneyCell, PolicyHeader } from "../../components/policies"
 import { useAccess } from "../../lib/access"
 import { renderFk, sanitizeForDisplay } from "../../lib/display"
 import { dateLabel } from "../../lib/commitmentsDisplay"
-import { usePolicyBenefits, usePolicyDetail, usePolicyEndorsements, usePolicyMembers, usePolicyOptions, usePolicyRiders } from "../../lib/policiesHooks"
+import { usePolicyBenefits, usePolicyDetail, usePolicyEndorsements, usePolicyLoans, usePolicyMembers, usePolicyOptions, usePolicyRiders, usePolicyWithdrawals } from "../../lib/policiesHooks"
 import type { PolicyAuditEntry, PolicyDetail, PolicyEndorsement } from "../../lib/policies"
 
 const ACTION_PERMISSION: Record<string, string> = {
@@ -117,6 +118,8 @@ export default function PolicyDetailPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [endorsementModalOpen, setEndorsementModalOpen] = useState(false)
+  const [loanModalOpen, setLoanModalOpen] = useState(false)
+  const [withdrawalModalOpen, setWithdrawalModalOpen] = useState(false)
   const { access, isSuperAdmin } = useAccess()
   const detailQuery = usePolicyDetail(policyId)
   const statusOptions = usePolicyOptions("statuses", {}, Boolean(detailQuery.data))
@@ -124,6 +127,8 @@ export default function PolicyDetailPage() {
   const riderQuery = usePolicyRiders(policyId, Boolean(detailQuery.data))
   const benefitQuery = usePolicyBenefits(policyId, Boolean(detailQuery.data))
   const endorsementQuery = usePolicyEndorsements(policyId, Boolean(detailQuery.data))
+  const loanQuery = usePolicyLoans(policyId, Boolean(detailQuery.data))
+  const withdrawalQuery = usePolicyWithdrawals(policyId, Boolean(detailQuery.data))
   const policy = detailQuery.data ?? null
   const activeTab = TABS.some((tab) => tab.id === searchParams.get("tab")) ? searchParams.get("tab") ?? "overview" : "overview"
 
@@ -138,7 +143,7 @@ export default function PolicyDetailPage() {
   const lapsed = policy.status.toUpperCase() === "LAPSED"
   const matured = policy.status.toUpperCase().startsWith("MATURED")
   const lapseDate = snapshotPick(policy.contractSnapshot, "lapsed_since", "lapse_date", "lapse_effective_date")
-  const actionSlot = <div className="flex flex-wrap justify-end gap-2">{canAction("endorse") ? <DetailAction label="Endorse" icon={<FileText size={14} aria-hidden="true" />} onClick={() => setEndorsementModalOpen(true)} /> : null}{canAction("loan") ? <DetailAction label="Loan" icon={<Banknote size={14} aria-hidden="true" />} onClick={() => goAction("loan")} /> : null}{canAction("withdraw") ? <DetailAction label="Withdraw" icon={<HandCoins size={14} aria-hidden="true" />} onClick={() => goAction("withdraw")} /> : null}{canAction("surrender") ? <DetailAction label="Surrender" icon={<Landmark size={14} aria-hidden="true" />} onClick={() => goAction("surrender")} /> : null}{canAction("print") ? <DetailAction label="Print" icon={<FileText size={14} aria-hidden="true" />} onClick={() => goAction("print")} /> : null}</div>
+  const actionSlot = <div className="flex flex-wrap justify-end gap-2">{canAction("endorse") ? <DetailAction label="Endorse" icon={<FileText size={14} aria-hidden="true" />} onClick={() => setEndorsementModalOpen(true)} /> : null}{canAction("loan") ? <DetailAction label="Loan" icon={<Banknote size={14} aria-hidden="true" />} onClick={() => setLoanModalOpen(true)} /> : null}{canAction("withdraw") ? <DetailAction label="Withdraw" icon={<HandCoins size={14} aria-hidden="true" />} onClick={() => setWithdrawalModalOpen(true)} /> : null}{canAction("surrender") ? <DetailAction label="Surrender" icon={<Landmark size={14} aria-hidden="true" />} onClick={() => goAction("surrender")} /> : null}{canAction("print") ? <DetailAction label="Print" icon={<FileText size={14} aria-hidden="true" />} onClick={() => goAction("print")} /> : null}</div>
 
   return <><MasterDetailPage eyebrow="Ordinary Life · Policy detail" title={policy.policyNumber} description="Read-only contract overview sourced from the immutable issuance snapshot." status={{ value: policy.statusDisplay, tone: lapsed ? "danger" : matured ? "success" : "info" }} actions={<button type="button" className="button-secondary border-white/30 bg-white/10 text-white hover:bg-white/20" onClick={() => navigate("/ordinary-life/policies")}><ArrowLeft size={15} aria-hidden="true" />Back to policies</button>}>
     <PolicyHeader data={policy} statusOptions={statusOptions.data ?? []} actionSlot={actionSlot} />
@@ -148,7 +153,7 @@ export default function PolicyDetailPage() {
     {activeTab === "overview" && <div className="space-y-4"><SnapshotCard policy={policy} /><LinkedContext policy={policy} /><section className="surface-card p-4" aria-labelledby="history-heading"><div className="mb-4 flex items-center gap-2"><CalendarDays size={17} className="text-[var(--primary)]" aria-hidden="true" /><h2 id="history-heading" className="text-sm font-bold">Status history</h2></div><AuditTimeline entries={policy.auditLogs} /></section></div>}
     {activeTab === "members" && <CompositionTab policy={policy} members={memberQuery.data ?? policy.members} riders={riderQuery.data ?? policy.riders} benefits={benefitQuery.data ?? policy.benefits} canAdd={canAction("endorse")} onAddMember={() => goAction("endorse")} onAddRider={() => goAction("endorse")} />}
     {activeTab === "endorsements" && <EndorsementsTab rows={endorsementQuery.data?.results ?? policy.endorsements} canCreate={canAction("endorse")} onCreate={() => setEndorsementModalOpen(true)} />}
-    {activeTab === "financials" && <InfoBanner title="Financials">Loans, withdrawals, surrender values, and maturity records will appear here in the servicing prompts.</InfoBanner>}
+    {activeTab === "financials" && <PolicyFinancialsTab policy={policy} loans={loanQuery.data?.results ?? []} withdrawals={withdrawalQuery.data?.results ?? []} canRequestLoan={canAction("loan")} canRequestWithdrawal={canAction("withdraw")} loanModalOpen={loanModalOpen} withdrawalModalOpen={withdrawalModalOpen} onLoanModalChange={setLoanModalOpen} onWithdrawalModalChange={setWithdrawalModalOpen} />}
     {activeTab === "documents" && <InfoBanner title="Documents">Policy contract and schedule documents will appear here through the shared authenticated document pipeline.</InfoBanner>}
     {activeTab === "audit" && <section className="surface-card p-4"><h2 className="text-sm font-bold">Audit trail</h2><div className="mt-4"><AuditTimeline entries={policy.auditLogs} /></div></section>}
   </MasterDetailPage><PolicyEndorsementModal open={endorsementModalOpen} policy={policy} onClose={() => setEndorsementModalOpen(false)} /></>
