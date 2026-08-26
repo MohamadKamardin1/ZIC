@@ -1,0 +1,57 @@
+{% extends "documents/base_print.html" %}
+
+{% block document_content %}
+  <section class="meta-grid">
+    <div class="meta-cell"><span class="meta-label">Loan number</span><span class="meta-value">{{ loan.number }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Policy number</span><span class="meta-value">{{ policy.number }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Policyholder</span><span class="meta-value">{{ parties.policyholder }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Schedule status</span><span class="meta-value">{{ loan.status }}</span></div>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title">Loan and policy details</h2>
+    <div class="two-column">
+      <div class="column"><dl class="kv">
+        <div class="kv-row"><dt>Product / plan</dt><dd>{{ policy.product }}</dd></div>
+        <div class="kv-row"><dt>Principal</dt><dd>{{ loan.principal }}</dd></div>
+        <div class="kv-row"><dt>Interest rate</dt><dd>{{ loan.interest_rate }}</dd></div>
+        <div class="kv-row"><dt>Term</dt><dd>{{ term }}</dd></div>
+      </dl></div>
+      <div class="column"><dl class="kv">
+        <div class="kv-row"><dt>Repayment mode</dt><dd>{{ loan.repayment_mode }}</dd></div>
+        <div class="kv-row"><dt>Compounding frequency</dt><dd>{{ loan.compounding_frequency }}</dd></div>
+        <div class="kv-row"><dt>Disbursement date</dt><dd>{{ loan.disbursement_date|date:'Y-m-d'|default:'-' }}</dd></div>
+        <div class="kv-row"><dt>Maturity date</dt><dd>{{ loan.maturity_date|date:'Y-m-d'|default:'-' }}</dd></div>
+      </dl></div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title">Installments</h2>
+    {% if schedule %}
+      <table class="data">
+        <thead><tr><th>#</th><th>Due date</th><th class="numeric">Principal due</th><th class="numeric">Interest due</th><th class="numeric">Penalty due</th><th class="numeric">Amount due</th><th class="numeric">Amount paid</th><th class="numeric">Balance</th><th>Status</th></tr></thead>
+        <tbody>
+          {% for item in schedule %}
+            <tr><td>{{ item.installment_number }}</td><td>{{ item.due_date|date:'Y-m-d' }}</td><td class="numeric">{{ item.principal_due }}</td><td class="numeric">{{ item.interest_due }}</td><td class="numeric">{{ item.penalty_due }}</td><td class="numeric">{{ item.amount_due }}</td><td class="numeric">{{ item.amount_paid }}</td><td class="numeric">{{ item.balance }}</td><td>{{ item.status }}</td></tr>
+          {% endfor %}
+        </tbody>
+        <tfoot><tr class="total"><td colspan="5">Schedule summary</td><td class="numeric">{{ schedule_summary.total_due }}</td><td class="numeric">{{ schedule_summary.total_paid }}</td><td class="numeric">{{ schedule_summary.outstanding }}</td><td>{{ schedule_summary.installment_count }} installments</td></tr></tfoot>
+      </table>
+    {% else %}
+      <p class="muted">No repayment installments have been generated for this loan.</p>
+    {% endif %}
+  </section>
+
+  <section class="terms">
+    <h2 class="section-title">Schedule notes</h2>
+    <p>Installment status and balances are calculated from the ZIC OL Loans ledger. Interest and penalty amounts may change when an authorised accrual or repayment is posted.</p>
+    <p class="muted small">This schedule is an operational statement, not a receipt or policy contract. It does not constitute an offer. Any discrepancy should be referred to ZIC Finance and reconciled against the official ledger.</p>
+  </section>
+{% endblock %}
+
+{% block signature_block %}
+  <footer class="signature-block">
+    {% for signature in signatures %}<div class="signature-party"><strong>{{ signature.label }}</strong><div class="signature-line"></div><div>{{ signature.name }}</div><div class="small muted">Signature &amp; Date</div></div>{% endfor %}
+  </footer>
+{% endblock %}

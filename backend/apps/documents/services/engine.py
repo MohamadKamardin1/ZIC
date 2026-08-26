@@ -601,6 +601,127 @@ def _receipt_context(source, branding: dict[str, Any], template: DocumentTemplat
     }
 
 
+def _loan_schedule_rows(source, currency, money):
+    rows = []
+    for item in source.schedules.all():
+        amount_due = (item.principal_due or Decimal("0")) + (item.interest_due or Decimal("0")) + (item.penalty_due or Decimal("0"))
+        rows.append(
+            {
+                "installment_number": item.installment_number,
+                "due_date": item.due_date,
+                "principal_due": money(item.principal_due, currency),
+                "interest_due": money(item.interest_due, currency),
+                "penalty_due": money(item.penalty_due, currency),
+                "amount_due": money(amount_due, currency),
+                "amount_paid": money(item.amount_paid, currency),
+                "balance": money(item.balance, currency),
+                "status": _safe_document_text(item.get_status_display() if hasattr(item, "get_status_display") else item.status),
+            }
+        )
+    return rows
+
+
+def _loan_document_context(source, branding: dict[str, Any], template: DocumentTemplate):
+    currency = _safe_document_text(source.currency, "TZS").upper()
+    money = QuotationDocumentServiceMoney.format
+    policy = source.policy_ref
+    partner = source.partner
+    agent = getattr(policy, "agent", None)
+    schedule = _loan_schedule_rows(source, currency, money)
+    principal = source.principal_amount or Decimal("0")
+    interest_rate = source.interest_rate or Decimal("0")
+    policy_snapshot = policy.contract_snapshot if isinstance(getattr(policy, "contract_snapshot", None), dict) else {}
+    partner_name = _safe_document_text(getattr(partner, "legal_name", None) or getattr(partner, "partner_number", None), "Not recorded")
+    agent_name = _safe_document_text(getattr(agent, "legal_name", None) or getattr(agent, "partner_number", None), "Not assigned")
+    policy_number = _safe_document_text(getattr(policy, "policy_number", None), "Not recorded")
+    product_name = _safe_document_text(
+        policy_snapshot.get("product_name") or policy_snapshot.get("plan_name") or getattr(policy, "product_plan_ref", None),
+        "Not recorded",
+    )
+    status = _safe_document_text(source.get_status_display() if hasattr(source, "get_status_display") else source.status)
+    status_code = str(source.status or "").upper()
+    parties = {
+        "policyholder": partner_name,
+        "partner_number": _safe_document_text(getattr(partner, "partner_number", None), "-"),
+        "agent": agent_name,
+        "agent_number": _safe_document_text(getattr(agent, "partner_number", None), "-"),
+        "company": _safe_document_text(branding.get("company_name"), "Zanzibar Insurance Corporation"),
+    }
+    policy_context = {
+        "number": policy_number,
+        "status": _safe_document_text(getattr(policy, "get_status_display", lambda: getattr(policy, "status", ""))()),
+        "product": product_name,
+        "currency": currency,
+        "sum_assured": money(getattr(policy, "sum_assured", Decimal("0")), currency),
+        "premium": money(getattr(policy, "premium_amount", Decimal("0")), currency),
+        "premium_frequency": _safe_document_text(getattr(policy, "premium_frequency", None), "-"),
+        "term_years": getattr(policy, "term_years", "-"),
+        "risk_commencement_date": getattr(policy, "risk_commencement_date", None),
+        "maturity_date": getattr(policy, "maturity_date", None),
+    }
+    schedule_total = sum((item.principal_due or Decimal("0")) + (item.interest_due or Decimal("0")) + (item.penalty_due or Decimal("0")) for item in source.schedules.all())
+    schedule_paid = sum((item.amount_paid or Decimal("0")) for item in source.schedules.all())
+    schedule_summary = {
+        "installment_count": len(schedule),
+        "total_due": money(schedule_total, currency),
+        "total_paid": money(schedule_paid, currency),
+        "outstanding": money(source.outstanding_balance, currency),
+    }
+    loan_context = {
+        "number": _safe_document_text(source.loan_number),
+        "status": status,
+        "status_code": status_code,
+        "policy_number": policy_number,
+        "policyholder": partner_name,
+        "currency": currency,
+        "principal": money(principal, currency),
+        "disbursed_amount": money(source.disbursed_amount, currency),
+        "interest_rate": f"{interest_rate * Decimal('100'):.2f}%",
+        "term_months": source.term_months,
+        "compounding_frequency": _safe_document_text(source.compounding_frequency),
+        "repayment_mode": _safe_document_text(source.repayment_mode, "-"),
+        "disbursement_date": source.disbursement_date,
+        "maturity_date": source.maturity_date,
+        "total_repaid": money(source.total_repaid, currency),
+        "outstanding_balance": money(source.outstanding_balance, currency),
+        "reason": _safe_document_text(source.reason, "-"),
+    }
+    signatures = [
+        {"label": "Policyholder / Borrower", "name": partner_name},
+        {"label": "Agent / Intermediary", "name": agent_name},
+        {"label": "Company Representative", "name": _safe_document_text(branding.get("company_name"), "Zanzibar Insurance Corporation")},
+    ]
+    return {
+        "document_title": "LOAN AGREEMENT" if template.document_type == "OL_LOAN_AGREEMENT" else "LOAN REPAYMENT SCHEDULE",
+        "branding": branding,
+        "template_version": template.version,
+        "quote": {"status_watermark": status_code if status_code in {"DEFAULTED", "SETTLED"} else ""},
+        "loan": loan_context,
+        "policy": policy_context,
+        "parties": parties,
+        "principal": loan_context["principal"],
+        "interest_rate": loan_context["interest_rate"],
+        "term": f"{source.term_months} months",
+        "schedule": schedule,
+        "schedule_summary": schedule_summary,
+        "signatures": signatures,
+        "financial": {
+            "principal": loan_context["principal"],
+            "disbursed_amount": loan_context["disbursed_amount"],
+            "total_repaid": loan_context["total_repaid"],
+            "outstanding_balance": loan_context["outstanding_balance"],
+        },
+    }
+
+
+def _loan_agreement_context(source, branding: dict[str, Any], template: DocumentTemplate):
+    return _loan_document_context(source, branding, template)
+
+
+def _loan_schedule_context(source, branding: dict[str, Any], template: DocumentTemplate):
+    return _loan_document_context(source, branding, template)
+
+
 class QuotationDocumentServiceMoney:
     @staticmethod
     def format(value, currency):
@@ -746,6 +867,53 @@ DocumentTypeRegistry.register(
 )
 
 
+DocumentTypeRegistry.register(
+    DocumentTypeDefinition(
+        document_type="OL_LOAN_AGREEMENT",
+        source_app_label="ol_loans",
+        source_model="olloan",
+        template_code="OL_LOAN_AGREEMENT_UNIFIED",
+        layout_template_path="documents/ol_loan_agreement.html",
+        permission="ol_loans.print",
+        context_builder=_loan_agreement_context,
+        title="OL Loan Agreement",
+        variables_schema={
+            "loan": "object",
+            "policy": "object",
+            "parties": "object",
+            "principal": "string",
+            "interest_rate": "string",
+            "term": "string",
+            "schedule": "array",
+            "signatures": "array",
+            "branding": "object",
+        },
+    )
+)
+
+DocumentTypeRegistry.register(
+    DocumentTypeDefinition(
+        document_type="OL_LOAN_SCHEDULE",
+        source_app_label="ol_loans",
+        source_model="olloan",
+        template_code="OL_LOAN_SCHEDULE_UNIFIED",
+        layout_template_path="documents/ol_loan_schedule.html",
+        permission="ol_loans.print",
+        context_builder=_loan_schedule_context,
+        title="OL Loan Repayment Schedule",
+        variables_schema={
+            "loan": "object",
+            "policy": "object",
+            "parties": "object",
+            "schedule": "array",
+            "schedule_summary": "object",
+            "signatures": "array",
+            "branding": "object",
+        },
+    )
+)
+
+
 for _pending_document_type, _pending_title in (
     ("DISCHARGE_VOUCHER", "Discharge Voucher"),
     ("COMMISSION_STATEMENT", "Commission Statement"),
@@ -798,6 +966,10 @@ class DocumentEngine:
             from apps.ol_commitments.permissions import has_ol_commitment_permission
 
             return has_ol_commitment_permission(actor, "view")
+        if permission_code == "ol_loans.print":
+            from apps.ol_loans.permissions import has_ol_loan_permission
+
+            return has_ol_loan_permission(actor, "print")
         if permission_code == "front_office.receipts.print":
             if hasattr(actor, "has_permission") and actor.has_permission("front_office.receipts.print"):
                 return True

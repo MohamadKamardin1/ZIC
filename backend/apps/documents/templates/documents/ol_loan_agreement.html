@@ -1,0 +1,80 @@
+{% extends "documents/base_print.html" %}
+
+{% block document_content %}
+  <section class="meta-grid">
+    <div class="meta-cell"><span class="meta-label">Loan number</span><span class="meta-value">{{ loan.number }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Policy number</span><span class="meta-value">{{ policy.number }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Agreement status</span><span class="meta-value">{{ loan.status }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Generated date</span><span class="meta-value">{{ generated_at|date:'Y-m-d' }}</span></div>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title">Parties to the agreement</h2>
+    <div class="two-column">
+      <div class="column"><dl class="kv">
+        <div class="kv-row"><dt>Policyholder / borrower</dt><dd>{{ parties.policyholder }}</dd></div>
+        <div class="kv-row"><dt>Partner number</dt><dd>{{ parties.partner_number }}</dd></div>
+        <div class="kv-row"><dt>Policy number</dt><dd>{{ policy.number }}</dd></div>
+        <div class="kv-row"><dt>Product / plan</dt><dd>{{ policy.product }}</dd></div>
+      </dl></div>
+      <div class="column"><dl class="kv">
+        <div class="kv-row"><dt>Agent / intermediary</dt><dd>{{ parties.agent }}</dd></div>
+        <div class="kv-row"><dt>Agent number</dt><dd>{{ parties.agent_number }}</dd></div>
+        <div class="kv-row"><dt>Company</dt><dd>{{ parties.company }}</dd></div>
+        <div class="kv-row"><dt>Policy status</dt><dd>{{ policy.status }}</dd></div>
+      </dl></div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title">Loan terms and principal</h2>
+    <table class="data">
+      <tbody>
+        <tr><td>Principal amount</td><td class="numeric"><strong>{{ principal }}</strong></td><td>Currency</td><td>{{ loan.currency }}</td></tr>
+        <tr><td>Disbursed amount</td><td class="numeric">{{ loan.disbursed_amount }}</td><td>Interest rate</td><td>{{ interest_rate }}</td></tr>
+        <tr><td>Term</td><td>{{ term }}</td><td>Compounding frequency</td><td>{{ loan.compounding_frequency }}</td></tr>
+        <tr><td>Repayment mode</td><td>{{ loan.repayment_mode }}</td><td>Disbursement date</td><td>{{ loan.disbursement_date|date:'Y-m-d'|default:'-' }}</td></tr>
+        <tr><td>Maturity date</td><td>{{ loan.maturity_date|date:'Y-m-d'|default:'-' }}</td><td>Current status</td><td>{{ loan.status }}</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title">Repayment schedule summary</h2>
+    <table class="data summary-box">
+      <tbody>
+        <tr><td>Number of installments</td><td class="numeric">{{ schedule_summary.installment_count }}</td></tr>
+        <tr><td>Total scheduled amount</td><td class="numeric">{{ schedule_summary.total_due }}</td></tr>
+        <tr><td>Total paid to date</td><td class="numeric">{{ schedule_summary.total_paid }}</td></tr>
+        <tr class="total"><td>Outstanding balance</td><td class="numeric">{{ schedule_summary.outstanding }}</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  {% if schedule %}
+    <section class="section">
+      <h2 class="section-title">Contractual repayment schedule</h2>
+      <table class="data">
+        <thead><tr><th>#</th><th>Due date</th><th class="numeric">Principal</th><th class="numeric">Interest</th><th class="numeric">Penalty</th><th class="numeric">Amount due</th><th>Status</th></tr></thead>
+        <tbody>
+          {% for item in schedule %}
+            <tr><td>{{ item.installment_number }}</td><td>{{ item.due_date|date:'Y-m-d' }}</td><td class="numeric">{{ item.principal_due }}</td><td class="numeric">{{ item.interest_due }}</td><td class="numeric">{{ item.penalty_due }}</td><td class="numeric">{{ item.amount_due }}</td><td>{{ item.status }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  {% endif %}
+
+  <section class="terms">
+    <h2 class="section-title">Agreement terms and notices</h2>
+    <p>This loan is secured against the policy identified above and is administered under the applicable Zanzibar Insurance Corporation policy-loan rules and approved configuration in force on the disbursement date.</p>
+    <p>The borrower authorises the company to apply eligible policy proceeds, including surrender, maturity, or claim proceeds, toward the outstanding loan balance where the policy terms and approved loan configuration permit such an offset.</p>
+    <p class="muted small">This agreement records the loan transaction and does not replace the underlying policy contract. Amounts remain subject to reconciliation, approved reversals, applicable interest accruals, and the official ZIC ledger. It does not constitute an offer for any additional insurance product.</p>
+  </section>
+{% endblock %}
+
+{% block signature_block %}
+  <footer class="signature-block">
+    {% for signature in signatures %}<div class="signature-party"><strong>{{ signature.label }}</strong><div class="signature-line"></div><div>{{ signature.name }}</div><div class="small muted">Signature &amp; Date</div></div>{% endfor %}
+  </footer>
+{% endblock %}

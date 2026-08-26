@@ -3,6 +3,7 @@ from django.urls import path
 from .approval_views import OLLoanApproveView, OLLoanBulkApproveView, OLLoanBulkRejectView, OLLoanRejectView
 from .balance_views import OLLoanBalanceView
 from .disbursement_views import OLLoanDisburseView
+from .document_views import OLLoanAgreementPrintView, OLLoanSchedulePrintView
 from .repayment_views import OLLoanRepayView
 from .views import OLLoanDetailView, OLLoanExportView, OLLoanKPIView, OLLoanListView, OLLoanOptionsView
 
@@ -15,6 +16,8 @@ urlpatterns = [
     path("loans/export/", OLLoanExportView.as_view(), name="loan-export"),
     path("loans/bulk-approve/", OLLoanBulkApproveView.as_view(), name="loan-bulk-approve"),
     path("loans/bulk-reject/", OLLoanBulkRejectView.as_view(), name="loan-bulk-reject"),
+    path("loans/<uuid:loan_id>/print-agreement/", OLLoanAgreementPrintView.as_view(), name="loan-print-agreement"),
+    path("loans/<uuid:loan_id>/print-schedule/", OLLoanSchedulePrintView.as_view(), name="loan-print-schedule"),
     path("loans/<uuid:loan_id>/approve/", OLLoanApproveView.as_view(), name="loan-approve"),
     path("loans/<uuid:loan_id>/disburse/", OLLoanDisburseView.as_view(), name="loan-disburse"),
     path("loans/<uuid:loan_id>/balance/", OLLoanBalanceView.as_view(), name="loan-balance"),
