@@ -67,6 +67,7 @@ import OLProposals from "./pages/ordinary-life/OLProposals"
 import OLProposalDetail from "./pages/ordinary-life/OLProposalDetail"
 import OLPolicies from "./pages/ordinary-life/OLPolicies"
 import PolicyIssuanceWizard from "./pages/ordinary-life/PolicyIssuanceWizard"
+import PolicyDetailPage from "./pages/ordinary-life/PolicyDetailPage"
 import OLLoans from "./pages/ordinary-life/OLLoans"
 import OLWithdrawals from "./pages/ordinary-life/OLWithdrawals"
 import OLClaims from "./pages/ordinary-life/OLClaims"
@@ -217,6 +218,7 @@ export default function App() {
         } />
         <Route path="ordinary-life/policies" element={<RequirePermission permission="ol_policies.view"><OLPolicies /></RequirePermission>} />
         <Route path="ordinary-life/policies/new" element={<RequirePermission permission="ol_policies.issue"><PolicyIssuanceWizard /></RequirePermission>} />
+        <Route path="ordinary-life/policies/:policyId" element={<RequirePermission permission="ol_policies.view"><PolicyDetailPage /></RequirePermission>} />
         <Route path="ordinary-life/loans" element={<OLLoans />} />
         <Route path="ordinary-life/withdrawals" element={<OLWithdrawals />} />
         <Route path="ordinary-life/claims" element={<OLClaims />} />

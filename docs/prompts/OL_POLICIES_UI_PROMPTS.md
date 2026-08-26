@@ -122,7 +122,7 @@ FINAL OUTPUT: wizard behavior, tests, commit hash, pushed branch.
 
 ---
 
-## [ ] Prompt 4/10 — Policy Detail Page: Header & Overview Tab
+## [x] Prompt 4/10 — Policy Detail Page: Header & Overview Tab
 
 ```text
 You are a senior frontend engineer. Continue the ZIC Policies UI. Execute ONLY Prompt 4.
