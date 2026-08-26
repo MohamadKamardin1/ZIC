@@ -5,6 +5,7 @@ from django.core.files.storage import default_storage
 from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -100,7 +101,20 @@ class MustActionPermission(IsAuthenticated):
         return has_receipt_permission(request.user, self.action)
 
 
-class ReceiptListView(APIView):
+class ReceiptAPIView(APIView):
+    """Base for the receipts domain views.
+
+    The global config renders DRF responses through the camelCase JSON renderer,
+    but the merged web client (receipts-api.ts and its MSW mocks) reads snake_case
+    fields. Pin the receipts views to the plain renderer so the wire format
+    matches the frontend contract. The CamelCaseJSONParser stays active — it
+    tolerates already-snake_case request bodies.
+    """
+
+    renderer_classes = [JSONRenderer]
+
+
+class ReceiptListView(ReceiptAPIView):
     """GET list + POST create draft at /front-office/receipts/."""
 
     def get_permissions(self):
@@ -134,7 +148,7 @@ class ReceiptListView(APIView):
         )
 
 
-class ReceiptKpisView(APIView):
+class ReceiptKpisView(ReceiptAPIView):
     """GET /front-office/receipts/kpis/ — work-queue aggregates over the filters."""
 
     permission_classes = [MustViewReceiptsPermission]
@@ -151,7 +165,7 @@ class ReceiptKpisView(APIView):
         return Response({"data": kpis})
 
 
-class ReceiptExportView(APIView):
+class ReceiptExportView(ReceiptAPIView):
     """GET /front-office/receipts/export/ — CSV export respecting the same filters."""
 
     permission_classes = [MustViewReceiptsPermission]
@@ -175,7 +189,7 @@ class ReceiptExportView(APIView):
         return response
 
 
-class ReceiptDetailView(APIView):
+class ReceiptDetailView(ReceiptAPIView):
     """GET retrieve + PATCH update draft at /front-office/receipts/<uuid>/."""
 
     def get_permissions(self):
@@ -195,7 +209,7 @@ class ReceiptDetailView(APIView):
         return Response({"data": ReceiptDetailSerializer(receipt, context={"request": request}).data})
 
 
-class ReceiptPostView(APIView):
+class ReceiptPostView(ReceiptAPIView):
     """POST /front-office/receipts/<uuid>/post/ — post a draft receipt."""
 
     def get_permissions(self):
@@ -208,7 +222,7 @@ class ReceiptPostView(APIView):
         return Response({"data": ReceiptDetailSerializer(receipt, context={"request": request}).data})
 
 
-class ReceiptAllocationsView(APIView):
+class ReceiptAllocationsView(ReceiptAPIView):
     """GET /front-office/receipts/<uuid>/allocations/ — paginated allocation rows."""
 
     permission_classes = [MustViewReceiptsPermission]
@@ -237,7 +251,7 @@ class ReceiptAllocationsView(APIView):
         )
 
 
-class ReceiptReversalsView(APIView):
+class ReceiptReversalsView(ReceiptAPIView):
     """GET /front-office/receipts/<uuid>/reversals/ — paginated reversal history."""
 
     permission_classes = [MustViewReceiptsPermission]
@@ -264,7 +278,7 @@ class ReceiptReversalsView(APIView):
         )
 
 
-class ReceiptAuditTimelineView(APIView):
+class ReceiptAuditTimelineView(ReceiptAPIView):
     """GET /front-office/receipts/<uuid>/audit-timeline/ — paginated lifecycle events."""
 
     permission_classes = [MustViewReceiptsPermission]
@@ -292,7 +306,7 @@ class ReceiptAuditTimelineView(APIView):
         )
 
 
-class ReceiptBankAccountView(APIView):
+class ReceiptBankAccountView(ReceiptAPIView):
     """GET /front-office/receipts/<uuid>/bank-account/ — reveal the linked account."""
 
     permission_classes = [MustViewReceiptsPermission]
@@ -303,7 +317,7 @@ class ReceiptBankAccountView(APIView):
         return Response({"data": {"bank_account_display": display}})
 
 
-class ReceiptAllocationOptionsView(APIView):
+class ReceiptAllocationOptionsView(ReceiptAPIView):
     """GET /front-office/receipts/<uuid>/allocation-options/ — open commitments.
 
     Returns a paginated option list (matching the web allocation modal contract);
@@ -376,7 +390,7 @@ def _allocation_item(allocation, receipt_currency):
     }
 
 
-class ReceiptAllocateView(APIView):
+class ReceiptAllocateView(ReceiptAPIView):
     """POST /front-office/receipts/<uuid>/allocate/ — manual allocation.
 
     Accepts the web contract ``{allocations: [{commitment, amount, exchange_rate}]}``
@@ -474,7 +488,7 @@ class ReceiptAllocateView(APIView):
         )
 
 
-class ReceiptAutoAllocateView(APIView):
+class ReceiptAutoAllocateView(ReceiptAPIView):
     """POST /front-office/receipts/<uuid>/auto-allocate/ — oldest-due-first."""
 
     def get_permissions(self):
@@ -503,7 +517,7 @@ class ReceiptAutoAllocateView(APIView):
         )
 
 
-class ExchangeRateView(APIView):
+class ExchangeRateView(ReceiptAPIView):
     """GET /front-office/exchange-rate/?from=&to=&date= — configured rate lookup."""
 
     permission_classes = [MustViewReceiptsPermission]
@@ -556,7 +570,7 @@ class ExchangeRateView(APIView):
         return Response({"data": payload})
 
 
-class ReceiptReverseView(APIView):
+class ReceiptReverseView(ReceiptAPIView):
     """POST /front-office/receipts/<uuid>/reverse/ — full receipt reversal."""
 
     def get_permissions(self):
@@ -582,7 +596,7 @@ class ReceiptReverseView(APIView):
         )
 
 
-class ReceiptAllocationReverseView(APIView):
+class ReceiptAllocationReverseView(ReceiptAPIView):
     """POST /front-office/receipts/<uuid>/allocations/<uuid>/reverse/ — one allocation."""
 
     def get_permissions(self):
@@ -616,7 +630,7 @@ class ReceiptAllocationReverseView(APIView):
         )
 
 
-class ReceiptCancelView(APIView):
+class ReceiptCancelView(ReceiptAPIView):
     """POST /front-office/receipts/<uuid>/cancel/ — cancel a draft receipt."""
 
     def get_permissions(self):
@@ -637,7 +651,7 @@ class ReceiptCancelView(APIView):
         return Response({"data": ReceiptDetailSerializer(receipt, context={"request": request}).data})
 
 
-class ReceiptOptionsView(APIView):
+class ReceiptOptionsView(ReceiptAPIView):
     permission_classes = [MustViewReceiptsPermission]
 
     def get(self, request):
@@ -714,7 +728,7 @@ class ReceiptOptionsView(APIView):
         )
 
 
-class ReceiptOptionsResourceView(APIView):
+class ReceiptOptionsResourceView(ReceiptAPIView):
     """GET /front-office/options/<resource>/ plus quick-create helpers.
 
     Serves the web SmartSelect contract: a paginated ``{results, count, next,
@@ -909,7 +923,7 @@ class ReceiptOptionsResourceView(APIView):
         )
 
 
-class ReceiptPrintView(APIView):
+class ReceiptPrintView(ReceiptAPIView):
     """POST /front-office/receipts/<uuid>/print/ — generate a receipt printout.
 
     Print rules (Prompt 8): DRAFT prints a preview only; posted states print an
@@ -946,7 +960,7 @@ class ReceiptPrintView(APIView):
         return Response({"data": data}, status=201)
 
 
-class ReceiptDocumentsView(APIView):
+class ReceiptDocumentsView(ReceiptAPIView):
     """GET /front-office/receipts/<uuid>/documents/ — document register for a receipt."""
 
     permission_classes = [MustViewReceiptsPermission]
@@ -966,7 +980,7 @@ class ReceiptDocumentsView(APIView):
         )
 
 
-class ReceiptDocumentDownloadView(APIView):
+class ReceiptDocumentDownloadView(ReceiptAPIView):
     """GET /front-office/receipts/documents/<uuid>/download/?ticket=... — signed download.
 
     The ticket is issued by the print pipeline (bound to the requesting user,
@@ -1074,7 +1088,7 @@ def _import_result(batch, *, dry_run):
     }
 
 
-class ReceiptImportTemplateView(APIView):
+class ReceiptImportTemplateView(ReceiptAPIView):
     """GET /front-office/receipts/import/template/ — downloadable CSV template."""
 
     def get_permissions(self):
@@ -1086,7 +1100,7 @@ class ReceiptImportTemplateView(APIView):
         return response
 
 
-class ReceiptImportDryRunView(APIView):
+class ReceiptImportDryRunView(ReceiptAPIView):
     """POST /front-office/receipts/import/dry-run/ — validate a CSV without creating receipts."""
 
     def get_permissions(self):
@@ -1104,7 +1118,7 @@ class ReceiptImportDryRunView(APIView):
         return Response({"data": _import_result(batch, dry_run=True)}, status=200)
 
 
-class ReceiptImportCommitView(APIView):
+class ReceiptImportCommitView(ReceiptAPIView):
     """POST /front-office/receipts/import/commit/ — commit an import batch.
 
     Accepts either the web flow (a ``file`` plus ``mode``, re-validated then
@@ -1138,7 +1152,7 @@ class ReceiptImportCommitView(APIView):
         return Response({"data": _import_result(batch, dry_run=False)}, status=200)
 
 
-class ReceiptImportBatchListView(APIView):
+class ReceiptImportBatchListView(ReceiptAPIView):
     """GET /front-office/receipts/imports/ — paginated import batch register."""
 
     permission_classes = [MustViewReceiptsPermission]
@@ -1164,7 +1178,7 @@ class ReceiptImportBatchListView(APIView):
         )
 
 
-class ReceiptImportBatchDetailView(APIView):
+class ReceiptImportBatchDetailView(ReceiptAPIView):
     """GET /front-office/receipts/imports/<uuid>/ — batch header plus error rows.
 
     Returns the batch fields flattened (matching the web batch-detail contract)
@@ -1184,7 +1198,7 @@ class ReceiptImportBatchDetailView(APIView):
         return Response({"data": data})
 
 
-class ReceiptImportReprocessView(APIView):
+class ReceiptImportReprocessView(ReceiptAPIView):
     """POST /front-office/receipts/imports/<uuid>/reprocess/ — retry failed rows.
 
     Re-runs the commit for a batch; committed rows are skipped and FAILED rows
@@ -1202,7 +1216,7 @@ class ReceiptImportReprocessView(APIView):
         return Response({"data": _import_result(batch, dry_run=False)}, status=200)
 
 
-class ReceiptReportingDatasetView(APIView):
+class ReceiptReportingDatasetView(ReceiptAPIView):
     """GET /front-office/receipts/reporting/dataset/ — reporting module contract."""
 
     permission_classes = [MustViewReceiptsPermission]
@@ -1213,7 +1227,7 @@ class ReceiptReportingDatasetView(APIView):
         return Response({"data": register()})
 
 
-class PartnerPortalReceiptListView(APIView):
+class PartnerPortalReceiptListView(ReceiptAPIView):
     """GET /front-office/receipts/portal/ — read-only receipts for the linked partner.
 
     Scoped to the partner's own receipts only; no internal audit state is
@@ -1239,7 +1253,7 @@ class PartnerPortalReceiptListView(APIView):
         )
 
 
-class PartnerPortalReceiptDetailView(APIView):
+class PartnerPortalReceiptDetailView(ReceiptAPIView):
     """GET /front-office/receipts/portal/<uuid>/ — scoped read-only receipt detail.
 
     Only the linked partner's own receipt resolves; another partner's receipt

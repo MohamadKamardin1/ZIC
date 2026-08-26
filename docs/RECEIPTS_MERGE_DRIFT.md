@@ -120,6 +120,23 @@ Two earlier schema blockers were also fixed so `openapi-generator`-style verific
 a serializer `read_only_fields` set as a bare string (→ list) and a redundant `source="documents"`
 declaration removed (ordinary_life / partners serializers).
 
+## 6b. Wire-format drift — camelCase renderer vs snake_case client (live E2E, 2026-08-26)
+
+The global REST settings (`config/settings/base.py`) render DRF output through
+`CamelCaseJSONRenderer`, so every JSON response arrives **camelCase** on the wire
+(`receiptCount`, `payerDisplay`, `pageSize`). The merged manus client is snake_case
+end-to-end — `receipts-api.ts` types, all `FOReceipts`/detail/portal components, and the
+MSW mocks all read `receipt_count`, `payer_display`, `page_size`. Backend tests missed this
+because `response.data` in the test client is the **pre-render** dict (snake_case); only the
+rendered JSON was camelCase. A live browser therefore crashed on
+`kpis.receipt_count.toLocaleString()` (the field was `undefined`).
+
+**Fix:** a `ReceiptAPIView` base pins `renderer_classes = [JSONRenderer]` for all 30 receipts
+domain views (list, kpis, detail, actions, allocations, imports, print, documents, options,
+portal). The `CamelCaseJSONParser` stays active — it tolerates already-snake_case request
+bodies. Wire contract regression tests: `backend/apps/front_office/receipts/tests/test_wire_contract.py`
+(renders the response, asserts snake_case keys and no camelCase aliases).
+
 ## 7. Verification summary
 
 | Check | Result |
