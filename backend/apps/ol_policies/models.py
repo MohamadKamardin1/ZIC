@@ -152,7 +152,8 @@ class PolicyMember(UUIDModel, AuditedModel):
     dob = models.DateField()
     gender = models.CharField(max_length=30)
     benefit_amount = models.DecimalField(max_digits=18, decimal_places=2)
-
+    is_active = models.BooleanField(default=True, db_index=True)
+    ended_at = models.DateField(null=True, blank=True)
     class Meta:
         db_table = "ol_policies_policy_member"
         ordering = ["name", "created_at"]

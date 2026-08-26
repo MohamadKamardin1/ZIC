@@ -73,6 +73,7 @@ _SOURCE_MODEL_MAP = {
     },
     CommitmentSourceType.POLICY: {
         "ordinary_life": {"olpolicy"},
+        "ol_policies": {"policy"},
     },
 }
 

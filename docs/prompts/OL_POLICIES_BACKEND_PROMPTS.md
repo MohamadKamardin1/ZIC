@@ -153,7 +153,7 @@ FINAL OUTPUT: endpoint contract, KPI rules, tests, commit hash, pushed branch.
 
 ---
 
-## [ ] Prompt 4/12 — Policy Servicing & Endorsements Framework
+## [x] Prompt 4/12 — Policy Servicing & Endorsements Framework
 
 ```text
 You are a senior Django insurance engineer. Continue the ZIC OL Policies backend. Execute ONLY Prompt 4.
