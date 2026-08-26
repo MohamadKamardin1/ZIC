@@ -31,6 +31,7 @@ import {
   type PolicyPrintResult,
 } from "./policies"
 import type { QueryParams } from "./apiClient"
+import { listProposals, normalizePaginated, normalizeProposalListItem, type ProposalListItem } from "./proposals"
 
 export const policyListKey = (filters: PolicyListParams = {}) => ["policies", "list", filters] as const
 export const policyKpisKey = (filters: QueryParams = {}) => ["policies", "kpis", filters] as const
@@ -89,6 +90,22 @@ export function usePolicyOptionsPage(entity: string, params: QueryParams = {}, e
     queryFn: () => listPolicyOptions(entity, params),
     staleTime: 5 * 60 * 1000,
     enabled: Boolean(entity) && enabled,
+  })
+}
+
+export function useIssuableProposals(search = "", enabled = true) {
+  return useQuery<ProposalListItem[]>({
+    queryKey: ["policies", "issuable-proposals", search],
+    queryFn: async () => {
+      const [awaiting, ready] = await Promise.all([
+        listProposals({ status: "AWAITING_FIRST_PREMIUM", search, page: 1, pageSize: 50 }),
+        listProposals({ status: "PAYMENT_READY", search, page: 1, pageSize: 50 }),
+      ])
+      const rows = [...normalizePaginated(awaiting, normalizeProposalListItem).results, ...normalizePaginated(ready, normalizeProposalListItem).results]
+      return rows.filter((row, index, all) => all.findIndex((candidate) => candidate.id === row.id) === index)
+    },
+    staleTime: 60 * 1000,
+    enabled,
   })
 }
 
