@@ -41,10 +41,13 @@ All endpoints require authenticated users. Superusers bypass the module permissi
 | `GET` | `/quotations/{id}/` | View | Retrieve quotation detail and current aggregate state. |
 | `PATCH` | `/quotations/{id}/` | Update | Update permitted draft header fields. |
 | `DELETE` | `/quotations/{id}/` | Delete | Delete only a non-expired draft quotation. |
-| `GET` | `/quotations/summary/` | View | Return draft, finalized, converted, and expired KPI counts. |
+| `GET` | `/quotations/summary/` | View | Legacy count-only compatibility response; uses the canonical KPI calculator. |
+| `GET` | `/api/v1/ol/quotations/kpis/` | View | Return real-time, filter-aware quotation KPIs including counts, premium totals, finalization latency, currency, and timestamp. |
 | `GET` | `/quotations/{id}/wizard-summary/` | View | Return authoritative completion state for every wizard/handoff step. |
 
 The list endpoint supports `search`, `status`, `plan`, `agent`, `location`, `quote_date_from`, `quote_date_to`, `ordering`, and standard pagination parameters. Row actions are state- and permission-aware: edit is draft-only, revise is finalized-only, print is finalized or converted, convert requires finalized plus verified partner, and delete is draft-only.
+
+The canonical KPI endpoint accepts the same date, status, agent, and location/branch filters, plus an optional `currency` filter. It returns `total_drafts`, `total_finalized`, `total_converted`, `total_expired`, `total_premium_sum`, `avg_days_to_finalize`, `currency`, `premium_by_currency`, and an ISO-8601 `timestamp`. Expiry uses the effective quotation status. Premium totals are never combined across currencies: an explicit currency produces a numeric total, while an unqualified mixed-currency result returns `total_premium_sum=null` and a per-currency breakdown.
 
 ## Personal Details
 
@@ -82,6 +85,8 @@ Example request:
 | `PATCH` | `/quotations/{id}/plans/{configuration_id}/` | Update | Configure term, payment period, frequency, basis, maturity, factor, and feature toggles. |
 
 Selection order determines section numbering. Product setup validates policy term, payment period, entry age, frequency, and required positive amounts. Joint life, mortgage, PA, WP, and bonus defaults are resolved from active OL parameters and plan applicability.
+
+Premium frequency is product-configured, not a global fallback. `OLProduct.premium_frequencies` is normalized to the uppercase codes `ANNUALLY`, `SEMI_ANNUALLY`, `QUARTERLY`, `MONTHLY`, and `SINGLE`. The plan-selection and direct plan-configuration endpoints accept a case-insensitive value only when it is present in the selected product’s configured array, persist the normalized uppercase code, and return `PLAN_CONFIG_INVALID_FREQUENCY` with the allowed values and correction guidance when validation fails.
 
 ## Member Coverage
 
@@ -294,6 +299,18 @@ python manage.py seed_ol_quotations
 
 The seed command configures quotation permissions, role groups, quotation/proposal numbering prefixes, lifecycle defaults, and the configured quotation partner-type code without duplicating existing rows.
 
+## Fixed option compatibility routes
+
+The repaired partner option routes are available under the canonical OL namespace:
+
+| Method | Endpoint | Permission | Behavior |
+|---|---|---|---|
+| `GET` | `/api/v1/ol/options/banks/` | `ol_parameters.view` or `partners.view` | Active bank partners with labeled options and partner metadata. |
+| `GET` | `/api/v1/ol/options/intermediaries/` | `ol_parameters.view` or `partners.view` | Active intermediary and agent partners with labeled options and metadata. |
+| `GET` | `/api/v1/ol/options/employers/` | `ol_parameters.view` or `partners.view` | Active employer and corporate partners with labeled options and metadata. |
+
+Each route supports `q`, `page`, and `page_size`, excludes inactive partners, and returns the standard option shape. The legacy `/api/v1/ol-proposals/options/{entity}/` paths remain compatibility redirects to the canonical routes. Unknown registry entities return structured `OPTIONS_ENTITY_NOT_FOUND` details rather than an opaque 404.
+
 ## Standardized OL option registry
 
 The quotation wizard uses the authenticated registry endpoint:
@@ -309,6 +326,8 @@ Each option is returned in the stable shape `{value, label, meta}`. `value` is t
 Catalog providers exclude inactive records and records outside their effective date window. Product, agent, and rider providers support case-insensitive `q` search and all providers support bounded pagination through `page` and `page_size` (maximum 200). Unknown entities return HTTP 404 with the available entity list.
 
 All model-backed OL quotation and parameter serializers retain UUID foreign-key fields for write compatibility but also expose a matching `<field>_display` field. The display field is the authoritative presentation value for UI tables, detail pages, and select controls; clients must never render a foreign-key UUID directly. Quotation headers additionally expose `agent_display`, `location_display`, and `currency_display` aliases for the wizard’s personal-details and summary views.
+
+The options, KPI, and display-label contracts are also used by the final verification suite to assert that no raw UUID is exposed as a user-facing label or option text.
 
 The baseline `seed_ol_quotations` command is idempotent and seeds identity types, payment modes, premium frequencies, quote bases, premium factors, member relations, cover types, benefit types, and currencies. The unified Zanzibar demo seeder adds the canonical location and demo-agent prerequisites. No seed operation flushes or destructively resets existing data.
 
@@ -335,3 +354,7 @@ The current quick-create permission map is:
 | Agents/intermediaries | `partners.create` |
 
 Every successful quick-create operation uses the existing model validation and creation service where applicable and writes an audit record with source channel `QUICK_CREATE` and reason `Created from OL quotation wizard`. Agent creation also marks incomplete KYC through `meta.completion_required` in the returned option.
+
+## Parameter-screen Manage links
+
+Foreign-key SmartSelect controls may render a `Manage…` link only when the current access metadata grants a configured permission for that entity, such as `ol_parameters.configure`, `system_parameters.manage`, or the established partner-management equivalent. The link is omitted entirely for unauthorized users. When opened from the quotation wizard, the target receives `return_to` and the active draft identifier so the existing browser snapshot and quotation draft can be resumed after configuration. Parameter screens honor their `screen` query parameter for exact-tab navigation.
