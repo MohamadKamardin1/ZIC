@@ -3,28 +3,30 @@ from __future__ import annotations
 from datetime import date, timedelta
 from decimal import Decimal
 from io import BytesIO
-from urllib.parse import parse_qs, urlparse
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlparse
 
+from django.core.cache import cache
 from django.core.files.storage import default_storage
 from django.core.management import call_command
-from django.core.cache import cache
 from django.test import TestCase
 from pypdf import PdfReader
 from rest_framework.test import APIClient
 
 from apps.documents.models import BrandingConfiguration, DocumentInstance, DocumentTemplate
-from apps.governance.models import AuditLog
 from apps.documents.services.engine import DocumentEngine, DocumentTypeRegistry
+from apps.front_office.models import FOReceipt
+from apps.governance.models import AuditLog
+from apps.ol_commitments.models import OLCommitment, OLCommitmentAllocation
 from apps.ol_parameters.models import (
     OLInvestmentFund,
     OLInvestmentFundType,
     OLPlanType,
-    OLProduct as ParameterProduct,
     OLRiderSetup,
 )
-from apps.ol_commitments.models import OLCommitment, OLCommitmentAllocation
-from apps.front_office.models import FOReceipt
+from apps.ol_parameters.models import (
+    OLProduct as ParameterProduct,
+)
 from apps.ol_proposals.models import OLProposal
 from apps.ol_quotations.models import (
     OLQuotation,
@@ -37,7 +39,8 @@ from apps.ol_quotations.models import (
     OLQuotationPlanConfiguration,
     OLQuotationRiderSelection,
 )
-from apps.ordinary_life.models import OLPlan, OLProduct as LegacyProduct, OLProductVersion
+from apps.ordinary_life.models import OLPlan, OLProductVersion
+from apps.ordinary_life.models import OLProduct as LegacyProduct
 from apps.partner_onboarding.models import Branch, Location
 from apps.partners.models import Partner
 from apps.system_parameters.models import ParameterGroup, SystemParameter
@@ -83,7 +86,9 @@ class UnifiedReceiptDocumentTests(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.client.force_authenticate(self.admin)
-        self.base = f"/api/v1/front-office/receipts/{self.receipt.pk}"
+        # The receipts merge moved the legacy FOReceipt CRUD under /legacy/receipts/;
+        # /receipts/ is now owned by the new receipts domain (new Receipt model).
+        self.base = f"/api/v1/front-office/legacy/receipts/{self.receipt.pk}"
 
     def test_receipt_print_returns_secure_preview_and_download_urls(self):
         response = self.client.post(f"{self.base}/print/", {}, format="json")
