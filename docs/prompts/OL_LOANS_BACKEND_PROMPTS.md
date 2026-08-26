@@ -281,7 +281,7 @@ FINAL OUTPUT: accrual command, balance service, tests, commit hash, pushed branc
 
 ---
 
-## [ ] Prompt 7/12 — Repayment & Allocation Logic
+## [x] Prompt 7/12 — Repayment & Allocation Logic
 
 ```text
 You are a senior Django finance allocation engineer. Continue the ZIC OL Loans backend. Execute ONLY Prompt 7.
