@@ -1,6 +1,6 @@
 # OL POLICIES BACKEND — FULL PROMPT SERIES (12 Prompts)
 
-## [ ] Prompt 1/12 — Save Series File + Policy Domain Foundation
+## [x] Prompt 1/12 — Save Series File + Policy Domain Foundation
 
 ```text
 You are a senior Django insurance platform engineer. Build the ZIC Ordinary Life Policies backend. The user pasted the FULL 12-prompt series at once.
