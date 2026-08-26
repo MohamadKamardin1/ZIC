@@ -326,7 +326,7 @@ FINAL OUTPUT: repayment endpoint, allocation math, tests, commit hash, pushed br
 
 ---
 
-## [ ] Prompt 8/12 — Lifecycle: Default, Offset on Surrender/Claim/Maturity
+## [x] Prompt 8/12 — Lifecycle: Default, Offset on Surrender/Claim/Maturity
 
 ```text
 You are a senior Django insurance lifecycle engineer. Continue the ZIC OL Loans backend. Execute ONLY Prompt 8.
