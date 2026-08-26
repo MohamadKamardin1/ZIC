@@ -1,24 +1,23 @@
 from datetime import date
 from decimal import Decimal
 
-from django.contrib import admin
-from django.core import management
-from django.core.exceptions import ValidationError
-from django.test import TestCase
-from rest_framework.test import APIClient
-
 from apps.governance.models import AuditLog
 from apps.ol_parameters.models import (
     OLJointLifeSetup,
     OLMortalityRateRow,
     OLMortalityRateTable,
     OLParameterTableRegistry,
-    OLProduct,
+    OLPlanType,
     OLPremiumRateRow,
     OLPremiumRateTable,
-    OLPlanType,
+    OLProduct,
 )
 from apps.users.models import User
+from django.contrib import admin
+from django.core import management
+from django.core.exceptions import ValidationError
+from django.test import TestCase
+from rest_framework.test import APIClient
 
 
 class OLProductRatingPart1Tests(TestCase):

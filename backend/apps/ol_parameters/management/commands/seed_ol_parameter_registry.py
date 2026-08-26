@@ -3,7 +3,6 @@ from django.db import transaction
 
 from apps.ol_parameters.models import OLParameterTableRegistry
 
-
 PERMISSION_REQUIREMENTS = {
     "view": "ol_parameters.view",
     "create": "ol_parameters.create",

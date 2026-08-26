@@ -12,7 +12,6 @@ from apps.ol_parameters.models import (
     OLParameterTableRegistry,
 )
 
-
 EFFECTIVE_FROM = date(2026, 1, 1)
 
 REGISTRY_SEEDS = [
@@ -240,7 +239,7 @@ class Command(BaseCommand):
             "CLOSED": [],
         }
         for code, allowed_transitions in transitions.items():
-            status = OLClaimStatus.objects.get(code=code)
+            OLClaimStatus.objects.get(code=code)
             upsert(OLClaimStatus, {"code": code}, {"allowed_transitions": allowed_transitions})
 
         discharge_specs = [

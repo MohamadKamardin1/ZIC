@@ -11,11 +11,10 @@ from apps.ol_parameters.models import (
     OLInstallmentChargeRate,
     OLMortgageInterestFactor,
     OLParameterTableRegistry,
+    OLProduct,
     OLReinstatementInterestRate,
     OLReserveLoading,
-    OLProduct,
 )
-
 
 EFFECTIVE_FROM = date(2026, 1, 1)
 

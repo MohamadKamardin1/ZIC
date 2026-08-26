@@ -12,7 +12,6 @@ from apps.ol_parameters.models import (
     OLProduct,
 )
 
-
 EFFECTIVE_FROM = date(2026, 1, 1)
 
 REGISTRY_SEEDS = [

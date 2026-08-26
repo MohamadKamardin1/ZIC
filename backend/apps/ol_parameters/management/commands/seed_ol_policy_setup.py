@@ -7,24 +7,23 @@ from django.db import transaction
 from apps.ol_parameters.models import (
     OLAnticipatedEndowmentInstallmentRate,
     OLBeneficialType,
+    OLCommitmentStatus,
     OLGracePeriod,
     OLGracePeriodNotificationSchedule,
     OLHealthQuestion,
     OLHealthQuestionnaire,
     OLHealthQuestionnaireItem,
     OLMemberCoverConfiguration,
-    OLParameterTableRegistry,
-    OLCommitmentStatus,
     OLPaidUpRate,
     OLPaidUpSetup,
-    OLSurrenderSetup,
-    OLSurrenderValueRate,
+    OLParameterTableRegistry,
     OLPolicyRenewalStatus,
     OLPolicyStatus,
     OLReinstatementWindow,
+    OLSurrenderSetup,
+    OLSurrenderValueRate,
 )
 from apps.ordinary_life.models import OLPlan, OLProduct
-
 
 EFFECTIVE_FROM = date(2026, 1, 1)
 
@@ -250,7 +249,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         created = 0
         updated = 0
-        for index, (code, name, terminal, badge_type, transitions) in enumerate(POLICY_STATUS_SEEDS):
+        for index, (code, name, terminal, badge_type, _transitions) in enumerate(POLICY_STATUS_SEEDS):
             record, was_created = upsert(
                 OLPolicyStatus,
                 {"code": code},

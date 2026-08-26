@@ -5,7 +5,6 @@ from django.db import transaction
 
 from apps.ol_parameters.models import OLDefaultSystemParameter
 
-
 DEFAULT_SETUP_SEEDS = [
     {
         "parameter_key": "DEFAULT_CURRENCY",

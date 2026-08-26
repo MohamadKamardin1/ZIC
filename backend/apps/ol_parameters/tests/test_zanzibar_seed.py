@@ -1,17 +1,16 @@
 import pytest
-from django.core.management import call_command
-
 from apps.ol_parameters.models import (
     OLInvestmentFund,
-    OLProduct,
     OLPremiumRateRow,
     OLPremiumRateTable,
+    OLProduct,
     OLRiderRateRow,
     OLRiderRateTable,
     OLRiderSetup,
 )
 from apps.ordinary_life.models import OLPlan, OLProductVersion
 from apps.partner_onboarding.models import Branch, Location
+from django.core.management import call_command
 
 
 @pytest.mark.django_db

@@ -879,8 +879,9 @@ class ProposalHistoryView(APIView):
     permission_classes = [MustViewProposalsPermission]
 
     def get(self, request, proposal_id):
-        from apps.common.models import DomainEvent
         from django.contrib.auth import get_user_model
+
+        from apps.common.models import DomainEvent
 
         proposal = _get_proposal(proposal_id)
         events = DomainEvent.objects.filter(aggregate_type="OLProposal", aggregate_id=str(proposal.pk)).order_by("occurred_at", "id")

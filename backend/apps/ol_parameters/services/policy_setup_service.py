@@ -1,4 +1,3 @@
-from django.core.exceptions import ValidationError
 
 from ..models import validate_policy_status_transition_graph
 

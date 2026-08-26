@@ -8,19 +8,23 @@ from django.utils import timezone
 
 from apps.ol_parameters.models import (
     OLCommissionRateType,
-    OLComputationApproach as ParameterComputationApproach,
     OLInvestmentFund,
     OLInvestmentFundRiskProfile,
     OLInvestmentFundType,
     OLMaturityClaimSetup,
     OLOverrideCommissionSetup,
+    OLPlanType,
     OLPremiumRateRow,
     OLPremiumRateTable,
     OLRiderRateRow,
     OLRiderRateTable,
-    OLProduct as ParameterProduct,
-    OLPlanType,
     OLRiderSetup,
+)
+from apps.ol_parameters.models import (
+    OLComputationApproach as ParameterComputationApproach,
+)
+from apps.ol_parameters.models import (
+    OLProduct as ParameterProduct,
 )
 from apps.ordinary_life.models import (
     OLComputationApproach,
@@ -31,7 +35,6 @@ from apps.ordinary_life.models import (
 )
 from apps.partner_onboarding.models import Branch, Location
 from apps.partners.models import Partner, PartnerType, PartnerTypeAssignment
-
 
 SEED_COMMANDS = (
     "seed_ol_parameters_release",
@@ -266,7 +269,7 @@ class Command(BaseCommand):
             )
 
         operational_products = {}
-        for code, name, description, product_type, currency in [
+        for code, name, description, _product_type, currency in [
             (
                 "OL_TERM_LIFE",
                 "ZIC Ordinary Life Term Assurance",
@@ -629,7 +632,7 @@ class Command(BaseCommand):
                 code=code,
                 defaults={
                     "name": name,
-                    "description": f"Zanzibar Insurance Company investment fund priced in Tanzanian Shillings.",
+                    "description": "Zanzibar Insurance Company investment fund priced in Tanzanian Shillings.",
                     "fund_type": fund_types[fund_type_code],
                     "currency": "TZS",
                     "valuation_frequency": frequency,

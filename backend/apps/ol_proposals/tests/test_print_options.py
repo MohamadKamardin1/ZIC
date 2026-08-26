@@ -8,8 +8,8 @@ from django.core.management import call_command
 from django.test import TestCase
 from rest_framework.test import APITestCase as DRFTestCase
 
-from apps.ol_commitments.models import OLCommitment
 from apps.documents.models import DocumentTemplate
+from apps.ol_commitments.models import OLCommitment
 from apps.ol_parameters.models import (
     OLBeneficialType,
     OLCommitmentStatus,

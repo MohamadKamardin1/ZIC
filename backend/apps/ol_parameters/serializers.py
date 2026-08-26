@@ -1,6 +1,72 @@
+import json
+from datetime import date
+from decimal import Decimal, InvalidOperation
+
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from .models import OLParameterTableRegistry, PREMIUM_FREQUENCY_CODES, normalize_premium_frequencies
+from .models import (
+    PREMIUM_FREQUENCY_CODES,
+    OLAgentCommissionSetup,
+    OLAnticipatedEndowmentInstallmentRate,
+    OLBeneficialType,
+    OLBonusRate,
+    OLCashSurrenderValue,
+    OLClaimReason,
+    OLClaimStatus,
+    OLClaimType,
+    OLCommitmentStatus,
+    OLComputationApproach,
+    OLCorrespondentType,
+    OLDefaultParameterValueType,
+    OLDefaultSystemParameter,
+    OLDischargeType,
+    OLGracePeriod,
+    OLGracePeriodNotificationSchedule,
+    OLHealthQuestion,
+    OLHealthQuestionnaire,
+    OLHealthQuestionnaireItem,
+    OLInstallmentChargeRate,
+    OLInvestmentFund,
+    OLInvestmentFundType,
+    OLJointLifeSetup,
+    OLLoanInterestControl,
+    OLLoanSystemSetup,
+    OLMaturityClaimSetup,
+    OLMedicalCode,
+    OLMedicalFacility,
+    OLMedicalHistory,
+    OLMedicalLimit,
+    OLMedicalPractitioner,
+    OLMemberCoverConfiguration,
+    OLMortalityRateRow,
+    OLMortalityRateTable,
+    OLMortgageInterestFactor,
+    OLOverrideCommissionSetup,
+    OLPaidUpRate,
+    OLPaidUpSetup,
+    OLParameterTableRegistry,
+    OLPersonalHabit,
+    OLPlanOccupationRiskLimit,
+    OLPlanRiskCategory,
+    OLPlanTargetMarket,
+    OLPlanTaxConfiguration,
+    OLPlanType,
+    OLPolicyRenewalStatus,
+    OLPolicyStatus,
+    OLPremiumRateRow,
+    OLPremiumRateTable,
+    OLProduct,
+    OLReinstatementInterestRate,
+    OLReinstatementWindow,
+    OLReserveLoading,
+    OLRiderRateRow,
+    OLRiderRateTable,
+    OLRiderSetup,
+    OLSurrenderSetup,
+    OLSurrenderValueRate,
+    normalize_premium_frequencies,
+)
 
 
 class OLParameterBaseSerializer(serializers.Serializer):
@@ -124,74 +190,6 @@ class OLTableRegistrySerializer(ForeignKeyDisplayMixin, serializers.ModelSeriali
             raise serializers.ValidationError({"permission_requirements": "Expected a JSON object."})
         return attrs
 
-
-import json
-from datetime import date
-from decimal import Decimal, InvalidOperation
-
-from django.core.exceptions import ValidationError as DjangoValidationError
-
-from .models import (
-    OLAnticipatedEndowmentInstallmentRate,
-    OLAgentCommissionSetup,
-    OLBeneficialType,
-    OLBeneficialTypeCategory,
-    OLCommissionRateType,
-    OLComputationApproach,
-    OLDefaultParameterValueType,
-    OLDefaultSystemParameter,
-    OLGracePeriod,
-    OLMaturityClaimSetup,
-    OLMemberCoverConfiguration,
-    OLOverrideCommissionSetup,
-    OLPolicyRenewalStatus,
-    OLPolicyStatus,
-    OLPaidUpRate,
-    OLPaidUpSetup,
-    OLCommitmentStatus,
-    OLHealthQuestion,
-    OLHealthQuestionnaire,
-    OLHealthQuestionnaireItem,
-    OLGracePeriodNotificationSchedule,
-    OLReinstatementWindow,
-    OLPlanType,
-    OLProduct,
-    OLPlanTaxConfiguration,
-    OLPlanTargetMarket,
-    OLPlanRiskCategory,
-    OLPlanOccupationRiskLimit,
-    OLInvestmentFundType,
-    OLInvestmentFund,
-    OLPremiumRateTable,
-    OLPremiumRateRow,
-    OLMortalityRateTable,
-    OLMortalityRateRow,
-    OLJointLifeSetup,
-    OLSurrenderSetup,
-    OLSurrenderValueRate,
-    OLReinstatementInterestRate,
-    OLBonusRate,
-    OLMortgageInterestFactor,
-    OLInstallmentChargeRate,
-    OLCashSurrenderValue,
-    OLReserveLoading,
-    OLRiderSetup,
-    OLRiderRateTable,
-    OLRiderRateRow,
-    OLLoanSystemSetup,
-    OLLoanInterestControl,
-    OLMedicalCode,
-    OLMedicalLimit,
-    OLPersonalHabit,
-    OLMedicalHistory,
-    OLMedicalFacility,
-    OLMedicalPractitioner,
-    OLClaimType,
-    OLClaimReason,
-    OLClaimStatus,
-    OLDischargeType,
-    OLCorrespondentType,
-)
 
 
 _AUDIT_READ_ONLY = ["id", "created_by", "updated_by", "created_at", "updated_at"]

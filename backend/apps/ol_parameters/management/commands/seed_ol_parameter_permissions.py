@@ -3,7 +3,6 @@ from django.db import transaction
 
 from apps.users.models import PermissionGroup, UserGroup, UserPermission
 
-
 PERMISSIONS = [
     {
         "name": "View OL Parameters",

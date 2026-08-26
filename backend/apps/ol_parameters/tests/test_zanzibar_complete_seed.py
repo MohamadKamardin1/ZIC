@@ -1,10 +1,6 @@
 from datetime import date
 
 import pytest
-from django.core.management import call_command
-from django.db.models import Q
-from rest_framework.test import APIClient
-
 from apps.ol_parameters.management.commands.seed_zanzibar_ol_complete import Command
 from apps.ol_parameters.models import (
     OLHealthQuestionnaireItem,
@@ -18,7 +14,9 @@ from apps.ol_parameters.models import (
     OLRiderSetup,
 )
 from apps.users.models import User
-
+from django.core.management import call_command
+from django.db.models import Q
+from rest_framework.test import APIClient
 
 OPTION_ENTITIES = (
     "identity-types",

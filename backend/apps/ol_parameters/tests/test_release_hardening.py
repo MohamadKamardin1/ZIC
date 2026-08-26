@@ -1,9 +1,8 @@
+from apps.ol_parameters.models import OLParameterTableRegistry
+from apps.users.models import PermissionGroup, User, UserGroup, UserPermission
 from django.core.management import call_command
 from django.test import TestCase
 from rest_framework.test import APIClient
-
-from apps.ol_parameters.models import OLParameterTableRegistry
-from apps.users.models import PermissionGroup, User, UserGroup, UserPermission
 
 
 class OLParameterReleaseHardeningTests(TestCase):

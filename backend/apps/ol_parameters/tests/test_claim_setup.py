@@ -1,11 +1,5 @@
 from datetime import date
 
-from django.contrib import admin
-from django.core import management
-from django.core.exceptions import ValidationError
-from django.test import TestCase
-from rest_framework.test import APIClient
-
 from apps.governance.models import AuditLog
 from apps.ol_parameters.models import (
     OLClaimReason,
@@ -16,6 +10,11 @@ from apps.ol_parameters.models import (
     OLParameterTableRegistry,
 )
 from apps.users.models import User
+from django.contrib import admin
+from django.core import management
+from django.core.exceptions import ValidationError
+from django.test import TestCase
+from rest_framework.test import APIClient
 
 
 class OLClaimSetupTests(TestCase):

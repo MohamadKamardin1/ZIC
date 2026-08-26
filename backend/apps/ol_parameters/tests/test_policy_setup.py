@@ -1,34 +1,33 @@
 from datetime import date
 from decimal import Decimal
 
-from django.core.exceptions import ValidationError
-from django.core.management import call_command
-from django.test import TestCase, override_settings
-from django.urls import reverse
-from rest_framework.test import APIClient
-
 from apps.governance.models import AuditLog
 from apps.ol_parameters.models import (
     OLAnticipatedEndowmentInstallmentRate,
     OLBeneficialType,
+    OLCommitmentStatus,
     OLGracePeriod,
     OLGracePeriodNotificationSchedule,
     OLHealthQuestion,
     OLHealthQuestionnaire,
     OLHealthQuestionnaireItem,
     OLMemberCoverConfiguration,
-    OLParameterTableRegistry,
-    OLCommitmentStatus,
     OLPaidUpRate,
     OLPaidUpSetup,
-    OLSurrenderSetup,
-    OLSurrenderValueRate,
+    OLParameterTableRegistry,
     OLPolicyRenewalStatus,
     OLPolicyStatus,
     OLReinstatementWindow,
+    OLSurrenderSetup,
+    OLSurrenderValueRate,
 )
-from apps.users.models import User
 from apps.ordinary_life.models import OLPlan, OLProduct, OLProductVersion
+from apps.users.models import User
+from django.core.exceptions import ValidationError
+from django.core.management import call_command
+from django.test import TestCase, override_settings
+from django.urls import reverse
+from rest_framework.test import APIClient
 
 
 class OLPolicySetupTests(TestCase):

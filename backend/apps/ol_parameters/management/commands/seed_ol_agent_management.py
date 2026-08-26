@@ -7,7 +7,6 @@ from django.db import transaction
 
 from apps.ol_parameters.models import OLAgentCommissionSetup, OLParameterTableRegistry, OLProduct, OLRiderSetup
 
-
 EFFECTIVE_FROM = date(2026, 1, 1)
 
 REGISTRY_SEEDS = [

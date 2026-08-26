@@ -64,10 +64,10 @@ from apps.ol_parameters.models import (
     OLSurrenderSetup,
     OLSurrenderValueRate,
 )
-from apps.ordinary_life.models import OLPlan, OLProduct as OperationalProduct
+from apps.ordinary_life.models import OLPlan
+from apps.ordinary_life.models import OLProduct as OperationalProduct
 from apps.partner_onboarding.models import Branch
 from apps.partners.models import Partner
-
 
 EFFECTIVE_FROM = date(2026, 1, 1)
 
@@ -377,7 +377,7 @@ class Command(BaseCommand):
                 },
             )
 
-        for index, (code, name, action, terminal) in enumerate([
+        for index, (code, name, _action, terminal) in enumerate([
             ("ZIC_COMMITMENT_PENDING", "Commitment pending", "AWAIT_PAYMENT", False),
             ("ZIC_COMMITMENT_PARTIAL", "Commitment partially paid", "AWAIT_BALANCE", False),
             ("ZIC_COMMITMENT_COMPLETE", "Commitment complete", "ISSUE_POLICY", True),
@@ -395,7 +395,7 @@ class Command(BaseCommand):
             )
 
         for product_code, product in operational_products.items():
-            parameter_product = products[product_code]
+            products[product_code]
             product_plans = [plan for plan in plans.values() if plan.product_version.product_id == product.id]
             for plan in product_plans:
                 for frequency, grace, warning, pre_lapse, lapse in [
@@ -739,7 +739,7 @@ class Command(BaseCommand):
         # A joint-life setup is attached to the family plan and is consumed by
         # the joint-life quotation branch.
         family_plan = plans["OL_TERM_FAMILY"]
-        family_product = products[family_plan.product_version.product.code]
+        products[family_plan.product_version.product.code]
         self._upsert(
             OLJointLifeSetup,
             {"code": "ZIC_OL_TERM_FAMILY_JOINT_LIFE"},

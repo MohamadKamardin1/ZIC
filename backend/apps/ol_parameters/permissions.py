@@ -1,6 +1,5 @@
 from rest_framework.permissions import BasePermission
 
-
 OL_PARAMETERS_MODULE = "ol_parameters"
 
 
