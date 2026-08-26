@@ -46,8 +46,11 @@ router.register("versions", OLQuotationVersionViewSet, basename="ol-quotation-ve
 router.register("financial-summaries", OLQuotationFinancialSummaryViewSet, basename="ol-quotation-financial-summary")
 router.register("events", OLQuotationEventViewSet, basename="ol-quotation-event")
 
+ol_quotation_kpis = OLQuotationViewSet.as_view({"get": "kpis"})
+
 urlpatterns = [
     path("plans/search/", OLPlanSearchView.as_view(), name="ol-plan-search"),
+    path("kpis/", ol_quotation_kpis, name="ol-quotation-kpis"),
     path("options/<str:entity>/", OLOptionRegistryView.as_view(), name="ol-option-registry"),
     path("options/<str:entity>/quick-create-schema/", OLOptionQuickCreateSchemaView.as_view(), name="ol-option-quick-create-schema"),
     path("options/<str:entity>/quick-create/", OLOptionQuickCreateView.as_view(), name="ol-option-quick-create"),

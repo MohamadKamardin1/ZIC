@@ -51,20 +51,119 @@ type QuotationRecord = {
   row_actions?: Partial<Record<ActionKey, ActionMetadata>>
 }
 
-type Summary = {
-  total: number
-  drafts: number
-  finalized: number
-  converted: number
-  expired: number
+export type QuotationKpis = {
+  total_drafts: number
+  total_finalized: number
+  total_converted: number
+  total_expired: number
+  total_premium_sum: string | number | null
+  avg_days_to_finalize: string | number | null
+  currency: string | null
+  premium_by_currency?: Record<string, string | number>
+  timestamp?: string
 }
 
 type ConfirmState = { kind: "delete" | "finalize" | "revise" | "convert"; row: QuotationRecord } | null
 
 const API_PREFIX = "/api/v1/ol/quotations/quotations/"
-const SUMMARY_ENDPOINT = `${API_PREFIX}summary/`
+export const KPI_ENDPOINT = "/api/v1/ol/quotations/kpis/"
 
-const emptySummary: Summary = { total: 0, drafts: 0, finalized: 0, converted: 0, expired: 0 }
+export const emptyKpis: QuotationKpis = {
+  total_drafts: 0,
+  total_finalized: 0,
+  total_converted: 0,
+  total_expired: 0,
+  total_premium_sum: null,
+  avg_days_to_finalize: null,
+  currency: null,
+}
+
+type FilterInput = Record<string, unknown>
+
+function serverQuotationFilters(filters: FilterInput): Record<string, string> {
+  const result: Record<string, string> = {}
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value === null || value === undefined || value === "") return
+    if (key === "quote_date") {
+      if (typeof value === "object" && !Array.isArray(value)) {
+        const range = value as { from?: string; to?: string }
+        if (range.from) result.quote_date_from = range.from
+        if (range.to) result.quote_date_to = range.to
+        return
+      }
+      const [from, to] = String(value).split(",")
+      if (from) result.quote_date_from = from
+      if (to) result.quote_date_to = to
+      return
+    }
+    result[key] = Array.isArray(value) ? value.join(",") : String(value)
+  })
+  return result
+}
+
+export function buildQuotationKpiQuery(filters: FilterInput = {}): string {
+  return buildTableQuery({ filters: serverQuotationFilters(filters) })
+}
+
+function numericValue(value: unknown, fallback = 0): number {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : fallback
+}
+
+function normalizeQuotationKpis(value: unknown): QuotationKpis {
+  const record = value && typeof value === "object" ? value as Record<string, unknown> : {}
+  const nullableValue = (key: string, fallbackKey: string): string | number | null => {
+    const raw = record[key] ?? record[fallbackKey]
+    return raw === null || raw === undefined || raw === "" ? null : raw as string | number
+  }
+  return {
+    total_drafts: numericValue(record.total_drafts ?? record.totalDrafts),
+    total_finalized: numericValue(record.total_finalized ?? record.totalFinalized),
+    total_converted: numericValue(record.total_converted ?? record.totalConverted),
+    total_expired: numericValue(record.total_expired ?? record.totalExpired),
+    total_premium_sum: nullableValue("total_premium_sum", "totalPremiumSum"),
+    avg_days_to_finalize: nullableValue("avg_days_to_finalize", "avgDaysToFinalize"),
+    currency: typeof (record.currency ?? record.reportingCurrency) === "string" ? String(record.currency ?? record.reportingCurrency) : null,
+    premium_by_currency: record.premium_by_currency && typeof record.premium_by_currency === "object" ? record.premium_by_currency as Record<string, string | number> : undefined,
+    timestamp: typeof (record.timestamp) === "string" ? record.timestamp : undefined,
+  }
+}
+
+export function formatCurrency(value: string | number | null | undefined, currency?: string | null, locale?: string): string {
+  if (value === null || value === undefined || value === "") return "—"
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return "—"
+  if (!currency) return new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(numeric)
+  try {
+    return new Intl.NumberFormat(locale, { style: "currency", currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(numeric)
+  } catch {
+    return `${currency} ${new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(numeric)}`
+  }
+}
+
+export function formatNumber(value: string | number | null | undefined, maximumFractionDigits = 0, locale?: string): string {
+  if (value === null || value === undefined || value === "") return "—"
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? new Intl.NumberFormat(locale, { maximumFractionDigits }).format(numeric) : "—"
+}
+
+export function useQuotationKpis(filters: FilterInput, refreshKey: number) {
+  const query = useMemo(() => buildQuotationKpiQuery(filters), [filters])
+  const [state, setState] = useState<{ data: QuotationKpis | null; loading: boolean; error: Error | null }>({ data: null, loading: true, error: null })
+
+  useEffect(() => {
+    let active = true
+    setState((current) => ({ data: current.data, loading: true, error: null }))
+    request<unknown>(`${KPI_ENDPOINT}${query}`).then((payload) => {
+      if (active) setState({ data: normalizeQuotationKpis(payload), loading: false, error: null })
+    }).catch((reason: unknown) => {
+      if (active) setState((current) => ({ data: current.data, loading: false, error: reason instanceof Error ? reason : new Error("Unable to load quotation KPIs.") }))
+    })
+    return () => { active = false }
+  }, [query, refreshKey])
+
+  return state
+}
 
 const filterDefinitions = [
   { key: "quote_date", label: "Quote date", type: "date-range" as const },
@@ -85,10 +184,7 @@ function statusTone(status: string): StatusTone {
 }
 
 function amountLabel(value: string | number | null | undefined, currency?: string | null): string {
-  if (value === null || value === undefined || value === "") return "—"
-  const numeric = Number(value)
-  const formatted = Number.isFinite(numeric) ? numeric.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : String(value)
-  return currency ? `${currency} ${formatted}` : formatted
+  return formatCurrency(value, currency)
 }
 
 function dateLabel(value?: string | null): string {
@@ -145,7 +241,7 @@ const columns: TableColumn<QuotationRecord>[] = [
   { key: "quote_name", label: "Quote name", field: "quote_name", sortable: true },
   { key: "prospect_name", label: "Prospect", field: "prospect_name", sortable: true },
   { key: "plans", label: "Plans", render: (_value, row) => <div><span className="font-semibold">{row.plan_count}</span><span className="ml-2 text-xs text-[var(--muted-foreground)]">{textValue(row.plans_summary)}</span></div> },
-  { key: "total_premium", label: "Total premium", field: "total_premium", sortable: true, align: "right", render: (_value, row) => amountLabel(row.total_premium, renderFk(row.currency, row.currency_display)) },
+  { key: "total_premium", label: "Total premium", field: "total_premium", sortable: true, align: "right", render: (_value, row) => amountLabel(row.total_premium, row.currency) },
   { key: "currency", label: "Currency", field: "currency", sortable: true, align: "center", render: (_value, row) => renderFk(row.currency, row.currency_display) },
   { key: "state", label: "Status", field: "status", sortable: true, render: (_value, row) => <StatusBadge value={row.status_badge?.label ?? row.status} tone={statusTone(row.status)} /> },
   { key: "version", label: "Version", field: "version", sortable: true, align: "center" },
@@ -159,8 +255,8 @@ export default function OLQuotations() {
   const { access, canAccess, isSuperAdmin } = useAccess()
   const { toast } = useToast()
   const [filters, setFilters] = useState<FilterValues>({})
-  const [summary, setSummary] = useState<Summary>(emptySummary)
   const [refreshKey, setRefreshKey] = useState(0)
+  const kpiState = useQuotationKpis(filters, refreshKey)
   const [confirm, setConfirm] = useState<ConfirmState>(null)
   const [busy, setBusy] = useState(false)
   const [documentTarget, setDocumentTarget] = useState<QuotationRecord | null>(null)
@@ -171,27 +267,8 @@ export default function OLQuotations() {
     return permissionKeys.includes(permission.toLowerCase())
   }, [access.permissions.length, canAccess, permissionKeys])
 
-  const loadSummary = useCallback(async () => {
-    try {
-      const payload = await request<Summary>(SUMMARY_ENDPOINT)
-      setSummary({ ...emptySummary, ...payload })
-    } catch (error) {
-      toast({ tone: "danger", title: "Unable to load quotation summary", message: error instanceof Error ? error.message : "The summary service is unavailable." })
-    }
-  }, [toast])
-
-  useEffect(() => { void loadSummary() }, [loadSummary, refreshKey])
-
   const fetcher = useCallback(async (query: TableQuery) => {
-    const nextFilters = { ...(query.filters ?? {}) }
-    const dateRange = nextFilters.quote_date
-    delete nextFilters.quote_date
-    if (typeof dateRange === "string") {
-      const [from, to] = dateRange.split(",")
-      if (from) nextFilters.quote_date_from = from
-      if (to) nextFilters.quote_date_to = to
-    }
-    const table = normalizeTableResponse<QuotationRecord & { rowActions?: unknown }>(await request<unknown>(`${API_PREFIX}${buildTableQuery({ ...query, filters: nextFilters })}`))
+    const table = normalizeTableResponse<QuotationRecord & { rowActions?: unknown }>(await request<unknown>(`${API_PREFIX}${buildTableQuery({ ...query, filters: serverQuotationFilters(query.filters ?? {}) })}`))
     return { ...table, results: table.results.map(normalizeQuotationRecord) }
   }, [])
 
@@ -251,11 +328,14 @@ export default function OLQuotations() {
     return false
   }, [hasPermission, isSuperAdmin])
 
+  const kpis = kpiState.data ?? emptyKpis
   const stats = [
-    { label: "Drafts", value: summary.drafts.toLocaleString(), helper: "Editable quotations" },
-    { label: "Finalized", value: summary.finalized.toLocaleString(), helper: "Ready for downstream actions" },
-    { label: "Converted", value: summary.converted.toLocaleString(), helper: "Handed off to proposals" },
-    { label: "Expired", value: summary.expired.toLocaleString(), helper: "Outside validity period" },
+    { label: "Drafts", value: kpiState.loading ? "…" : formatNumber(kpis.total_drafts), helper: kpiState.data && kpis.total_drafts === 0 ? "No quotations match these filters" : "Editable quotations" },
+    { label: "Finalized", value: kpiState.loading ? "…" : formatNumber(kpis.total_finalized), helper: kpiState.data && kpis.total_finalized === 0 ? "No quotations match these filters" : "Ready for downstream actions" },
+    { label: "Converted", value: kpiState.loading ? "…" : formatNumber(kpis.total_converted), helper: kpiState.data && kpis.total_converted === 0 ? "No quotations match these filters" : "Handed off to proposals" },
+    { label: "Expired", value: kpiState.loading ? "…" : formatNumber(kpis.total_expired), helper: kpiState.data && kpis.total_expired === 0 ? "No quotations match these filters" : "Outside validity period" },
+    { label: "Premium total", value: kpiState.loading ? "…" : formatCurrency(kpis.total_premium_sum, kpis.currency), helper: kpis.currency ? `Reporting currency: ${kpis.currency}` : "Select one currency to total premiums" },
+    { label: "Avg. days to finalize", value: kpiState.loading ? "…" : kpis.avg_days_to_finalize === null ? "—" : `${formatNumber(kpis.avg_days_to_finalize, 2)} days`, helper: "Finalized and converted quotations" },
   ]
 
   const onConfirm = () => {
@@ -275,9 +355,10 @@ export default function OLQuotations() {
       stats={stats}
       actions={<button type="button" className="button-primary" onClick={() => navigate("/ordinary-life/quotations/new")} disabled={!canAccess("ol_quotations")}><FilePlus2 size={16} aria-hidden="true" />Create New Quote</button>}
     >
+      {kpiState.error && <InfoBanner title="Quotation KPIs unavailable" className="border-red-200 bg-red-50 text-red-900 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-100">{kpiState.error.message}. The quotation table remains available; try changing the filters or refresh the page.</InfoBanner>}
       <div className="space-y-3">
         <div className="surface-card flex flex-wrap items-end gap-3 p-4" role="group" aria-label="Quotation filters">
-          {([ ["status", "Status", "DRAFT or FINALIZED"], ["plan", "Plan", "Plan code or name"], ["agent", "Agent", "Agent name or username"], ["location", "Location", "Location"] ] as const).map(([key, label, placeholder]) => <div key={key} className="min-w-44 flex-1"><label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.12em] text-[var(--muted-foreground)]" htmlFor={`quotation-filter-${key}`}>{label}</label><input id={`quotation-filter-${key}`} value={typeof filters[key] === "string" ? filters[key] as string : ""} onChange={(event) => setFilters((current) => ({ ...current, [key]: event.target.value }))} placeholder={placeholder} className="h-10 w-full rounded-[10px] border bg-[var(--card)] px-3 text-sm outline-none focus:border-[var(--ring)]" /></div>)}
+          {([ ["status", "Status", "DRAFT or FINALIZED"], ["plan", "Plan", "Plan code or name"], ["agent", "Agent", "Agent name or username"], ["location", "Location", "Location"], ["branch", "Branch", "Branch code or name"], ["currency", "Currency", "ISO currency code"] ] as const).map(([key, label, placeholder]) => <div key={key} className="min-w-44 flex-1"><label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.12em] text-[var(--muted-foreground)]" htmlFor={`quotation-filter-${key}`}>{label}</label><input id={`quotation-filter-${key}`} value={typeof filters[key] === "string" ? filters[key] as string : ""} onChange={(event) => setFilters((current) => ({ ...current, [key]: event.target.value }))} placeholder={placeholder} className="h-10 w-full rounded-[10px] border bg-[var(--card)] px-3 text-sm outline-none focus:border-[var(--ring)]" /></div>)}
         </div>
         <FilterBar definitions={filterDefinitions} value={filters} onChange={(key, value) => setFilters((current) => ({ ...current, [key]: value }))} onReset={() => setFilters({})} />
       </div>

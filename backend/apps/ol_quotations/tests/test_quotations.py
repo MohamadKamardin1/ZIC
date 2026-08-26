@@ -665,6 +665,94 @@ class OLQuotationAPITests(TestCase):
         self.assertEqual(summary["total"], 3)
         self.assertEqual(draft["id"] is not None, True)
 
+    def test_kpis_aggregate_effective_statuses_and_support_filters(self):
+        draft = self.create_draft()
+        draft_object = OLQuotation.objects.get(pk=draft["id"])
+        draft_object.total_premium = Decimal("100.00")
+        draft_object.save(update_fields=["total_premium", "updated_at"])
+
+        finalized = self.create_draft()
+        finalized_object = OLQuotation.objects.get(pk=finalized["id"])
+        finalized_object.status = QuotationStatus.FINALIZED
+        finalized_object.total_premium = Decimal("200.00")
+        finalized_object.agent_partner = self.partner
+        finalized_object.location_master = self.location
+        finalized_object.save(update_fields=["status", "total_premium", "agent_partner", "location_master", "updated_at"])
+        finalized_event = OLQuotationEvent.objects.create(
+            quotation=finalized_object,
+            event_type=QuotationStatus.FINALIZED,
+            from_status=QuotationStatus.DRAFT,
+            to_status=QuotationStatus.FINALIZED,
+            actor=self.admin,
+        )
+        OLQuotationEvent.objects.filter(pk=finalized_event.pk).update(
+            created_at=finalized_object.created_at + timedelta(days=2)
+        )
+
+        expired = self.create_draft()
+        expired_object = OLQuotation.objects.get(pk=expired["id"])
+        expired_object.quote_date = date.today() - timedelta(days=1)
+        expired_object.expiry_date = date.today() - timedelta(days=1)
+        expired_object.total_premium = Decimal("50.00")
+        expired_object.agent_partner = self.partner
+        expired_object.location_master = self.location
+        expired_object.save(update_fields=["quote_date", "expiry_date", "total_premium", "agent_partner", "location_master", "updated_at"])
+
+        response = self.client.get("/api/v1/ol/quotations/kpis/?currency=TZS")
+        self.assertEqual(response.status_code, 200, response.data)
+        data = response.data["data"]
+        self.assertTrue(
+            {
+                "total_drafts",
+                "total_finalized",
+                "total_converted",
+                "total_expired",
+                "total_premium_sum",
+                "avg_days_to_finalize",
+                "currency",
+                "timestamp",
+            }.issubset(data)
+        )
+        self.assertEqual(data["total_drafts"], 1)
+        self.assertEqual(data["total_finalized"], 1)
+        self.assertEqual(data["total_converted"], 0)
+        self.assertEqual(data["total_expired"], 1)
+        self.assertEqual(Decimal(str(data["total_premium_sum"])), Decimal("350.00"))
+        self.assertEqual(float(data["avg_days_to_finalize"]), 2.0)
+        self.assertEqual(data["currency"], "TZS")
+        self.assertTrue(data["timestamp"])
+
+        status_response = self.client.get("/api/v1/ol/quotations/kpis/?status=EXPIRED")
+        self.assertEqual(status_response.status_code, 200, status_response.data)
+        self.assertEqual(status_response.data["data"]["total_expired"], 1)
+        self.assertEqual(status_response.data["data"]["total_drafts"], 0)
+
+        agent_response = self.client.get(f"/api/v1/ol/quotations/kpis/?agent={self.partner.pk}")
+        self.assertEqual(agent_response.status_code, 200, agent_response.data)
+        self.assertEqual(agent_response.data["data"]["total_finalized"], 1)
+        self.assertEqual(agent_response.data["data"]["total_expired"], 1)
+
+        branch_response = self.client.get(f"/api/v1/ol/quotations/kpis/?branch={self.branch.code}")
+        self.assertEqual(branch_response.status_code, 200, branch_response.data)
+        self.assertEqual(branch_response.data["data"]["total"], 2)
+
+        date_response = self.client.get(
+            f"/api/v1/ol/quotations/kpis/?quote_date_from={date.today().isoformat()}"
+        )
+        self.assertEqual(date_response.status_code, 200, date_response.data)
+        self.assertEqual(date_response.data["data"]["total"], 2)
+
+        zero_response = self.client.get("/api/v1/ol/quotations/kpis/?branch=DOES-NOT-EXIST")
+        self.assertEqual(zero_response.status_code, 200, zero_response.data)
+        zero = zero_response.data["data"]
+        self.assertEqual(zero["total_drafts"], 0)
+        self.assertEqual(zero["total_finalized"], 0)
+        self.assertEqual(zero["total_converted"], 0)
+        self.assertEqual(zero["total_expired"], 0)
+        self.assertIsNone(zero["total_premium_sum"])
+        self.assertIsNone(zero["avg_days_to_finalize"])
+        self.assertIsNone(zero["currency"])
+
     def test_admin_work_queue_columns_filters_and_search_contract(self):
         from django.contrib import admin
 

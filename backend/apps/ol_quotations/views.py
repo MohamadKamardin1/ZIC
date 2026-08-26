@@ -10,7 +10,9 @@ from rest_framework.exceptions import PermissionDenied, ValidationError as DRFVa
 from django.db.models import Count, Q
 from django.http import Http404, HttpResponse
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.utils import timezone
 from django.utils.dateparse import parse_date
+from decimal import Decimal
 from uuid import UUID
 
 from apps.core.pagination import StandardPagination
@@ -244,22 +246,31 @@ class OLQuotationViewSet(QuotationScopedViewSet):
             return OLQuotationListSerializer
         return super().get_serializer_class()
 
-    def get_queryset(self):
-        queryset = super().get_queryset().filter(is_deleted=False)
-        params = self.request.query_params
+    def _requested_statuses(self):
+        statuses = [value.strip().upper() for value in self.request.query_params.get("status", "").split(",") if value.strip()]
+        allowed = {value for value, _label in QuotationStatus.choices}
+        unsupported = sorted(set(statuses) - allowed)
+        if unsupported:
+            raise DRFValidationError({"status": f"Unsupported quotation status filter(s): {', '.join(unsupported)}."})
+        return statuses
 
-        if params.get("include_expired") != "true":
+    def _apply_work_queue_filters(self, queryset, *, exclude_expired=True, apply_status_filter=True):
+        """Apply the same server-side filters to the list and KPI work queues.
+
+        KPI status filtering is applied after effective-status evaluation so a draft
+        whose expiry date has passed is correctly selectable as EXPIRED.
+        """
+        params = self.request.query_params
+        if exclude_expired and params.get("include_expired") != "true":
             queryset = queryset.exclude(status=QuotationStatus.EXPIRED)
 
-        statuses = [value.strip().upper() for value in params.get("status", "").split(",") if value.strip()]
-        if statuses:
+        statuses = self._requested_statuses()
+        if statuses and apply_status_filter:
             queryset = queryset.filter(status__in=statuses)
 
         plan = params.get("plan")
         if plan:
-            plan_filter = Q(
-                plan_configurations__plan__code__iexact=plan
-            ) | Q(plan_configurations__plan__name__icontains=plan)
+            plan_filter = Q(plan_configurations__plan__code__iexact=plan) | Q(plan_configurations__plan__name__icontains=plan)
             try:
                 UUID(str(plan))
             except (ValueError, TypeError, AttributeError):
@@ -274,18 +285,52 @@ class OLQuotationViewSet(QuotationScopedViewSet):
                 Q(agent__username__icontains=agent)
                 | Q(agent__first_name__icontains=agent)
                 | Q(agent__last_name__icontains=agent)
+                | Q(agent_partner__partner_number__icontains=agent)
+                | Q(agent_partner__legal_name__icontains=agent)
+                | Q(agent_partner__company_name__icontains=agent)
+                | Q(agent_partner__first_name__icontains=agent)
+                | Q(agent_partner__surname__icontains=agent)
             )
             try:
                 UUID(str(agent))
             except (ValueError, TypeError, AttributeError):
                 pass
             else:
-                agent_filter |= Q(agent_id=agent)
+                agent_filter |= Q(agent_id=agent) | Q(agent_partner_id=agent)
             queryset = queryset.filter(agent_filter)
 
         location = params.get("location")
         if location:
-            queryset = queryset.filter(location__icontains=location)
+            location_filter = (
+                Q(location__icontains=location)
+                | Q(location_master__code__iexact=location)
+                | Q(location_master__name__icontains=location)
+            )
+            try:
+                UUID(str(location))
+            except (ValueError, TypeError, AttributeError):
+                pass
+            else:
+                location_filter |= Q(location_master_id=location)
+            queryset = queryset.filter(location_filter)
+
+        branch = params.get("branch")
+        if branch:
+            branch_filter = (
+                Q(location_master__branch__code__iexact=branch)
+                | Q(location_master__branch__name__icontains=branch)
+            )
+            try:
+                UUID(str(branch))
+            except (ValueError, TypeError, AttributeError):
+                pass
+            else:
+                branch_filter |= Q(location_master__branch_id=branch)
+            queryset = queryset.filter(branch_filter)
+
+        currency = (params.get("currency") or "").strip().upper()
+        if currency:
+            queryset = queryset.filter(currency__iexact=currency)
 
         for parameter, lookup in (("quote_date_from", "quote_date__gte"), ("quote_date_to", "quote_date__lte")):
             value = params.get(parameter)
@@ -295,6 +340,11 @@ class OLQuotationViewSet(QuotationScopedViewSet):
                     raise DRFValidationError({parameter: "Use an ISO date in YYYY-MM-DD format."})
                 queryset = queryset.filter(**{lookup: parsed})
 
+        return queryset.distinct()
+
+    def get_queryset(self):
+        queryset = super().get_queryset().filter(is_deleted=False)
+        queryset = self._apply_work_queue_filters(queryset)
         return queryset.annotate(
             work_queue_plan_count=Count(
                 "plan_configurations",
@@ -303,19 +353,77 @@ class OLQuotationViewSet(QuotationScopedViewSet):
             )
         ).distinct()
 
+    def _kpi_queryset(self):
+        queryset = self._scope_queryset(self.queryset.filter(is_deleted=False))
+        return self._apply_work_queue_filters(queryset, exclude_expired=False, apply_status_filter=False)
+
+    def _calculate_kpis(self):
+        queryset = self._kpi_queryset()
+        requested_statuses = set(self._requested_statuses())
+        counts = {status_code: 0 for status_code, _label in QuotationStatus.choices}
+        premium_by_currency = {}
+        finalization_days = []
+        included = []
+        for quotation in queryset:
+            effective_status = QuotationService.effective_status(quotation)
+            if requested_statuses and effective_status not in requested_statuses:
+                continue
+            included.append(quotation)
+            counts[effective_status] += 1
+            amount = quotation.total_premium
+            if amount is None:
+                try:
+                    amount = quotation.financial_summary.total_premium
+                except OLQuotationFinancialSummary.DoesNotExist:
+                    amount = Decimal("0")
+            code = (quotation.currency or "").strip().upper() or "UNKNOWN"
+            premium_by_currency[code] = premium_by_currency.get(code, Decimal("0")) + (amount or Decimal("0"))
+            if effective_status in {QuotationStatus.FINALIZED, QuotationStatus.CONVERTED}:
+                finalized_events = [
+                    event for event in quotation.events.all()
+                    if event.event_type == QuotationStatus.FINALIZED or event.to_status == QuotationStatus.FINALIZED
+                ]
+                finalized_event = min(finalized_events, key=lambda event: event.created_at) if finalized_events else None
+                if finalized_event is not None:
+                    finalization_days.append(
+                        (finalized_event.created_at - quotation.created_at).total_seconds() / 86400
+                    )
+
+        currency_codes = sorted(premium_by_currency)
+        requested_currency = (self.request.query_params.get("currency") or "").strip().upper()
+        reporting_currency = requested_currency or (currency_codes[0] if len(currency_codes) == 1 else None)
+        total_premium_sum = premium_by_currency.get(reporting_currency) if reporting_currency else None
+        return {
+            "total": len(included),
+            "drafts": counts[QuotationStatus.DRAFT],
+            "finalized": counts[QuotationStatus.FINALIZED],
+            "converted": counts[QuotationStatus.CONVERTED],
+            "expired": counts[QuotationStatus.EXPIRED],
+            "total_drafts": counts[QuotationStatus.DRAFT],
+            "total_finalized": counts[QuotationStatus.FINALIZED],
+            "total_converted": counts[QuotationStatus.CONVERTED],
+            "total_expired": counts[QuotationStatus.EXPIRED],
+            "total_premium_sum": total_premium_sum,
+            "avg_days_to_finalize": round(sum(finalization_days) / len(finalization_days), 2) if finalization_days else None,
+            "currency": reporting_currency,
+            "premium_by_currency": {code: amount for code, amount in sorted(premium_by_currency.items())},
+            "timestamp": timezone.now().isoformat(),
+        }
+
+    @action(detail=False, methods=["get"], url_path="kpis")
+    def kpis(self, request, *args, **kwargs):
+        return _response(self._calculate_kpis(), "Quotation KPIs retrieved.")
+
     @action(detail=False, methods=["get"], url_path="summary")
     def summary(self, request, *args, **kwargs):
-        queryset = self._scope_queryset(self.queryset.filter(is_deleted=False))
-        counts = {status_code: 0 for status_code, _label in QuotationStatus.choices}
-        for quotation in queryset:
-            counts[QuotationService.effective_status(quotation)] += 1
+        calculated = self._calculate_kpis()
         return _response(
             {
-                "total": sum(counts.values()),
-                "drafts": counts[QuotationStatus.DRAFT],
-                "finalized": counts[QuotationStatus.FINALIZED],
-                "converted": counts[QuotationStatus.CONVERTED],
-                "expired": counts[QuotationStatus.EXPIRED],
+                "total": calculated["total"],
+                "drafts": calculated["drafts"],
+                "finalized": calculated["finalized"],
+                "converted": calculated["converted"],
+                "expired": calculated["expired"],
             },
             "Quotation work-queue summary retrieved.",
         )

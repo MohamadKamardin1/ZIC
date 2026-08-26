@@ -112,7 +112,7 @@ FINAL OUTPUT: engine pipeline, signed URL contract, frontend preview fix, tests,
 
 ---
 
-## [ ] Prompt 3 — Resolve empty KPI cards on quotation list/detail pages
+## [x] Prompt 3 — Resolve empty KPI cards on quotation list/detail pages
 
 ```text
 You are a senior Django + frontend engineer. Continue the ZIC fix series. Execute ONLY Prompt 3.

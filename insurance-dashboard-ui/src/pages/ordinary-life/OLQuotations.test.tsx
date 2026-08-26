@@ -112,7 +112,7 @@ beforeEach(() => {
   requestMock.mockImplementation(async (path: string) => {
     if (path.startsWith("/api/v1/documents/instances/?")) return { count: 1, page: 1, page_size: 50, results: [{ id: "document-1", document_type: "OL_QUOTATION", template_name: "Ordinary Life Quotation", template_version: 1, generated_by_display: "E2E Superadmin", generated_at: "2026-08-19T10:05:00Z", page_count: 2, signed_download_url: "/api/v1/documents/instances/document-1/download/?ticket=signed-ticket" }] }
     if (path.startsWith("/api/v1/documents/render/")) return { id: "document-1", signed_download_url: "/api/v1/documents/instances/document-1/download/?ticket=signed-ticket" }
-    if (path.includes("/summary/")) return { total: 4, drafts: 1, finalized: 1, converted: 1, expired: 1 }
+    if (path.startsWith("/api/v1/ol/quotations/kpis/")) return { total_drafts: 1, total_finalized: 1, total_converted: 1, total_expired: 1, total_premium_sum: "1234.50", avg_days_to_finalize: "2.50", currency: "TZS", timestamp: "2026-08-26T08:00:00Z" }
     if (path.startsWith("/api/v1/ol/quotations/quotations/")) return { results: [draftRow, finalizedRow], count: 25, page: 1, page_size: 20 }
     return {}
   })
@@ -124,6 +124,9 @@ describe("OL Quotations list", () => {
 
     expect(await screen.findByText("Drafts")).toBeInTheDocument()
     expect(within(screen.getByText("Drafts").closest("article") as HTMLElement).getByText("1", { selector: "p" })).toBeInTheDocument()
+    expect(screen.getByText("Premium total")).toBeInTheDocument()
+    expect(screen.getByText(/1,234\.50/)).toBeInTheDocument()
+    expect(screen.getByText("2.5 days")).toBeInTheDocument()
     expect(screen.getByText("Q-0001")).toBeInTheDocument()
     expect(screen.getByText("Q-0002")).toBeInTheDocument()
     expect(screen.getByText("Draft")).toBeInTheDocument()
@@ -163,13 +166,42 @@ describe("OL Quotations list", () => {
     fireEvent.change(screen.getByLabelText("Quote date to"), { target: { value: "2026-08-31" } })
 
     await waitFor(() => {
-      const listCalls = requestMock.mock.calls.filter(([path]) => String(path).startsWith("/api/v1/ol/quotations/quotations/") && !String(path).includes("/summary/"))
+      const listCalls = requestMock.mock.calls.filter(([path]) => String(path).startsWith("/api/v1/ol/quotations/quotations/"))
       const latestPath = String(listCalls.at(-1)?.[0] ?? "")
       expect(latestPath).toContain("search=Q-0001")
       expect(latestPath).toContain("status=DRAFT")
       expect(latestPath).toContain("quote_date_from=2026-08-01")
       expect(latestPath).toContain("quote_date_to=2026-08-31")
     })
+    await waitFor(() => {
+      const kpiCalls = requestMock.mock.calls.filter(([path]) => String(path).startsWith("/api/v1/ol/quotations/kpis/"))
+      const latestPath = String(kpiCalls.at(-1)?.[0] ?? "")
+      expect(latestPath).toContain("status=DRAFT")
+      expect(latestPath).toContain("quote_date_from=2026-08-01")
+      expect(latestPath).toContain("quote_date_to=2026-08-31")
+    })
+  })
+
+  it("renders a zero KPI response as an intentional empty state", async () => {
+    requestMock.mockImplementation(async (path: string) => {
+      if (path.startsWith("/api/v1/ol/quotations/kpis/")) return { total_drafts: 0, total_finalized: 0, total_converted: 0, total_expired: 0, total_premium_sum: null, avg_days_to_finalize: null, currency: null, timestamp: "2026-08-26T08:00:00Z" }
+      if (path.startsWith("/api/v1/ol/quotations/quotations/")) return { results: [], count: 0, page: 1, page_size: 20 }
+      return {}
+    })
+    render(<OLQuotations />)
+    expect(await screen.findAllByText("No quotations match these filters")).toHaveLength(4)
+    expect(screen.getByText("Select one currency to total premiums")).toBeInTheDocument()
+  })
+
+  it("shows a recoverable KPI error while leaving the work queue available", async () => {
+    requestMock.mockImplementation(async (path: string) => {
+      if (path.startsWith("/api/v1/ol/quotations/kpis/")) throw new Error("KPI service unavailable")
+      if (path.startsWith("/api/v1/ol/quotations/quotations/")) return { results: [draftRow], count: 1, page: 1, page_size: 20 }
+      return {}
+    })
+    render(<OLQuotations />)
+    expect(await screen.findByText("Quotation KPIs unavailable")).toBeInTheDocument()
+    expect(await screen.findByText("Q-0001")).toBeInTheDocument()
   })
 
   it("opens the shared document panel from the work queue", async () => {
