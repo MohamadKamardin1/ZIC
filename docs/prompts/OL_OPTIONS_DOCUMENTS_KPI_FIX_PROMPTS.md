@@ -112,9 +112,47 @@ FINAL OUTPUT: engine pipeline, signed URL contract, frontend preview fix, tests,
 
 ---
 
-## [ ] Prompt 3 — Not supplied in the current request
+## [ ] Prompt 3 — Resolve empty KPI cards on quotation list/detail pages
 
-The exact Prompt 3 text was not included in the current request. It is intentionally not reconstructed.
+```text
+You are a senior Django + frontend engineer. Continue the ZIC fix series. Execute ONLY Prompt 3.
+
+MANDATORY RULES:
+
+- KPIs must reflect real-time aggregated data with correct filters and currency formatting.
+- Commit and push; tick checkbox.
+
+OBJECTIVE:
+Resolve empty KPI cards on quotation list/detail pages.
+
+SCOPE:
+
+1. Backend KPI endpoint `/api/v1/ol/quotations/kpis/`:
+   - compute: total_drafts, total_finalized, total_converted, total_expired, total_premium_sum, avg_days_to_finalize
+   - respect date range, status, agent, branch filters
+   - return structured payload with currency and timestamp
+2. Frontend KPI component:
+   - bind to KPI hook
+   - map fields correctly to cards
+   - handle loading/empty/error states
+   - format currency and numbers per locale
+3. Ensure KPI auto-refreshes on list filter change.
+4. Add unit tests for aggregation math and frontend rendering.
+
+TESTS:
+
+- KPI payload matches expected schema
+- frontend cards display correct numbers and formatting
+- filter changes update KPIs
+- empty state handles zero counts gracefully
+
+GIT:
+
+- commit: "fix(quotations): repair kpi cards aggregation and frontend binding"
+- push; tick checkbox
+
+FINAL OUTPUT: backend aggregation, frontend binding, tests, commit hash, pushed branch.
+```
 
 ---
 
