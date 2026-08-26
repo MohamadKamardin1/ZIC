@@ -8,9 +8,12 @@ from .models import (
     PolicyAuditLog,
     PolicyBenefit,
     PolicyEndorsement,
+    PolicyLoan,
+    PolicyLoanRepayment,
     PolicyMember,
     PolicyRider,
     SurrenderRequest,
+    WithdrawalRequest,
 )
 
 
@@ -94,6 +97,85 @@ class PolicyEndorsementSerializer(serializers.ModelSerializer):
             "updated_at",
         )
         read_only_fields = fields
+
+
+class PolicyLoanRepaymentSerializer(serializers.ModelSerializer):
+    loan_number = serializers.CharField(source="loan.loan_number", read_only=True)
+
+    class Meta:
+        model = PolicyLoanRepayment
+        fields = (
+            "id",
+            "repayment_number",
+            "loan_number",
+            "payment_date",
+            "amount",
+            "interest_component",
+            "principal_component",
+            "reason",
+            "created_at",
+        )
+        read_only_fields = fields
+
+
+class PolicyLoanSerializer(serializers.ModelSerializer):
+    policy_number = serializers.CharField(source="policy.policy_number", read_only=True)
+    repayments = PolicyLoanRepaymentSerializer(many=True, read_only=True)
+    payment_requisition_number = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PolicyLoan
+        fields = (
+            "id",
+            "loan_number",
+            "policy_number",
+            "requested_at",
+            "approved_at",
+            "disbursed_at",
+            "principal_amount",
+            "outstanding_principal",
+            "accrued_interest",
+            "outstanding_interest",
+            "interest_rate",
+            "currency",
+            "status",
+            "approval_required",
+            "payment_requisition_number",
+            "repayment_options",
+            "reason",
+            "repayments",
+            "created_at",
+        )
+        read_only_fields = fields
+
+    def get_payment_requisition_number(self, obj):
+        return getattr(obj.payment_requisition, "requisition_number", "") if obj.payment_requisition else ""
+
+
+class WithdrawalRequestSerializer(serializers.ModelSerializer):
+    policy_number = serializers.CharField(source="policy.policy_number", read_only=True)
+    payment_requisition_number = serializers.SerializerMethodField()
+
+    class Meta:
+        model = WithdrawalRequest
+        fields = (
+            "id",
+            "request_number",
+            "policy_number",
+            "request_date",
+            "amount",
+            "cash_value_before",
+            "loan_balance_before",
+            "net_amount",
+            "status",
+            "payment_requisition_number",
+            "reason",
+            "created_at",
+        )
+        read_only_fields = fields
+
+    def get_payment_requisition_number(self, obj):
+        return getattr(obj.payment_requisition, "requisition_number", "") if obj.payment_requisition else ""
 
 
 class SurrenderRequestSerializer(serializers.ModelSerializer):
@@ -230,6 +312,8 @@ class PolicyDetailSerializer(PolicyListSerializer):
     benefits = PolicyBenefitSerializer(many=True, read_only=True)
     endorsements = PolicyEndorsementSerializer(many=True, read_only=True)
     surrender_requests = SurrenderRequestSerializer(many=True, read_only=True)
+    loans = PolicyLoanSerializer(many=True, read_only=True)
+    withdrawal_requests = WithdrawalRequestSerializer(many=True, read_only=True)
     audit_logs = PolicyAuditLogSerializer(many=True, read_only=True)
     linked_proposal = serializers.SerializerMethodField()
     linked_commitments = serializers.SerializerMethodField()
@@ -244,6 +328,8 @@ class PolicyDetailSerializer(PolicyListSerializer):
             "benefits",
             "endorsements",
             "surrender_requests",
+            "loans",
+            "withdrawal_requests",
             "audit_logs",
             "linked_proposal",
             "linked_commitments",

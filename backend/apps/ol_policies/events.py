@@ -9,6 +9,11 @@ POLICY_EXPIRED = "PolicyExpired"
 POLICY_SURRENDER_REQUESTED = "PolicySurrenderRequested"
 POLICY_PAID_UP = "PolicyPaidUp"
 POLICY_CANCELLED = "PolicyCancelled"
+POLICY_LOAN_REQUESTED = "PolicyLoanRequested"
+POLICY_LOAN_APPROVED = "PolicyLoanApproved"
+POLICY_LOAN_DISBURSED = "PolicyLoanDisbursed"
+POLICY_LOAN_REPAID = "PolicyLoanRepaid"
+POLICY_WITHDRAWAL_REQUESTED = "PolicyWithdrawalRequested"
 
 
 def emit_policy_endorsed(policy, endorsement, *, actor=None, reason="", source_channel="API", metadata=None):
@@ -91,6 +96,30 @@ def emit_policy_paid_up(policy, *, actor=None, from_status="LAPSED", reason="", 
 def emit_policy_cancelled(policy, *, actor=None, from_status="", reason="", source_channel="API", metadata=None):
     return emit_lifecycle_event(
         POLICY_CANCELLED,
+        policy,
+        actor=actor,
+        from_status=from_status,
+        reason=reason,
+        source_channel=source_channel,
+        metadata=metadata,
+    )
+
+
+def emit_policy_finance_event(event_type, policy, *, actor=None, from_status="", reason="", source_channel="API", metadata=None):
+    return emit_lifecycle_event(
+        event_type,
+        policy,
+        actor=actor,
+        from_status=from_status,
+        reason=reason,
+        source_channel=source_channel,
+        metadata=metadata,
+    )
+
+
+def emit_policy_loan_event(event_type, policy, *, actor=None, from_status="", reason="", source_channel="API", metadata=None):
+    return emit_policy_finance_event(
+        event_type,
         policy,
         actor=actor,
         from_status=from_status,

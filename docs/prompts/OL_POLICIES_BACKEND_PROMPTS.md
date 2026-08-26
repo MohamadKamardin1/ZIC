@@ -288,7 +288,7 @@ FINAL OUTPUT: financial logic, status transitions, tests, commit hash, pushed br
 
 ---
 
-## [ ] Prompt 7/12 — Policy Loans & Withdrawals
+## [x] Prompt 7/12 — Policy Loans, Repayments & Withdrawals
 
 ```text
 You are a senior Django insurance engineer. Continue the ZIC OL Policies backend. Execute ONLY Prompt 7.

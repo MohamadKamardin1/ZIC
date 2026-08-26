@@ -236,6 +236,121 @@ class PolicyEndorsement(UUIDModel, AuditedModel):
         super().save(*args, **kwargs)
 
 
+class LoanStatus(models.TextChoices):
+    REQUESTED = "REQUESTED", "Requested"
+    APPROVED = "APPROVED", "Approved"
+    DISBURSED = "DISBURSED", "Disbursed"
+    PARTIALLY_REPAID = "PARTIALLY_REPAID", "Partially repaid"
+    REPAID = "REPAID", "Repaid"
+    DECLINED = "DECLINED", "Declined"
+    CANCELLED = "CANCELLED", "Cancelled"
+
+
+class WithdrawalStatus(models.TextChoices):
+    REQUESTED = "REQUESTED", "Requested"
+    APPROVED = "APPROVED", "Approved"
+    PAID = "PAID", "Paid"
+    DECLINED = "DECLINED", "Declined"
+    CANCELLED = "CANCELLED", "Cancelled"
+
+
+class PolicyLoan(UUIDModel, AuditedModel):
+    policy = models.ForeignKey(Policy, on_delete=models.PROTECT, related_name="loans")
+    loan_number = models.CharField(max_length=50, unique=True, db_index=True, blank=True)
+    requested_at = models.DateField(default=timezone.localdate)
+    approved_at = models.DateField(null=True, blank=True)
+    disbursed_at = models.DateField(null=True, blank=True)
+    last_interest_date = models.DateField(null=True, blank=True)
+    principal_amount = models.DecimalField(max_digits=18, decimal_places=2)
+    outstanding_principal = models.DecimalField(max_digits=18, decimal_places=2)
+    accrued_interest = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    outstanding_interest = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    interest_rate = models.DecimalField(max_digits=18, decimal_places=8, default=0)
+    currency = models.CharField(max_length=3, default="TZS")
+    status = models.CharField(max_length=25, choices=LoanStatus.choices, default=LoanStatus.REQUESTED, db_index=True)
+    approval_required = models.BooleanField(default=False)
+    payment_requisition = models.ForeignKey(
+        "front_office.FORequisition",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ol_policy_loans",
+    )
+    repayment_options = models.JSONField(default=list, blank=True)
+    reason = models.TextField(blank=True, default="")
+
+    class Meta:
+        db_table = "ol_policies_policy_loan"
+        ordering = ["-requested_at", "-created_at"]
+        indexes = [
+            models.Index(fields=["policy", "status"], name="ol_policy_loan_st_idx"),
+        ]
+
+    def __str__(self):
+        return self.loan_number or "Unnumbered policy loan"
+
+    def save(self, *args, **kwargs):
+        if not self.loan_number:
+            self.loan_number = f"LOAN-{timezone.localdate():%Y%m%d}-{uuid.uuid4().hex[:10].upper()}"
+        super().save(*args, **kwargs)
+
+
+class PolicyLoanRepayment(UUIDModel, AuditedModel):
+    loan = models.ForeignKey(PolicyLoan, on_delete=models.PROTECT, related_name="repayments")
+    repayment_number = models.CharField(max_length=50, unique=True, db_index=True, blank=True)
+    payment_date = models.DateField(default=timezone.localdate)
+    amount = models.DecimalField(max_digits=18, decimal_places=2)
+    interest_component = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    principal_component = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    reason = models.TextField(blank=True, default="")
+
+    class Meta:
+        db_table = "ol_policies_policy_loan_repayment"
+        ordering = ["-payment_date", "-created_at"]
+
+    def __str__(self):
+        return self.repayment_number or "Unnumbered loan repayment"
+
+    def save(self, *args, **kwargs):
+        if not self.repayment_number:
+            self.repayment_number = f"REPAY-{timezone.localdate():%Y%m%d}-{uuid.uuid4().hex[:10].upper()}"
+        super().save(*args, **kwargs)
+
+
+class WithdrawalRequest(UUIDModel, AuditedModel):
+    policy = models.ForeignKey(Policy, on_delete=models.PROTECT, related_name="withdrawal_requests")
+    request_number = models.CharField(max_length=50, unique=True, db_index=True, blank=True)
+    request_date = models.DateField(default=timezone.localdate)
+    amount = models.DecimalField(max_digits=18, decimal_places=2)
+    cash_value_before = models.DecimalField(max_digits=18, decimal_places=2)
+    loan_balance_before = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    net_amount = models.DecimalField(max_digits=18, decimal_places=2)
+    status = models.CharField(max_length=25, choices=WithdrawalStatus.choices, default=WithdrawalStatus.REQUESTED)
+    payment_requisition = models.ForeignKey(
+        "front_office.FORequisition",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ol_policy_withdrawals",
+    )
+    reason = models.TextField(blank=True, default="")
+
+    class Meta:
+        db_table = "ol_policies_withdrawal_request"
+        ordering = ["-request_date", "-created_at"]
+        indexes = [
+            models.Index(fields=["policy", "status"], name="ol_policy_withdrawal_st_idx"),
+        ]
+
+    def __str__(self):
+        return self.request_number or "Unnumbered withdrawal request"
+
+    def save(self, *args, **kwargs):
+        if not self.request_number:
+            self.request_number = f"WITH-{timezone.localdate():%Y%m%d}-{uuid.uuid4().hex[:10].upper()}"
+        super().save(*args, **kwargs)
+
+
 class SurrenderStatus(models.TextChoices):
     REQUESTED = "REQUESTED", "Requested"
     PENDING_PAYMENT = "PENDING_PAYMENT", "Pending payment"
