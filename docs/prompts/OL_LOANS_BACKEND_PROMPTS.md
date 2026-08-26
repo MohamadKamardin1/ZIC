@@ -236,7 +236,7 @@ FINAL OUTPUT: disbursement service, schedule math, tests, commit hash, pushed br
 
 ---
 
-## [ ] Prompt 6/12 — Interest Accrual Engine & Balance Calculation
+## [x] Prompt 6/12 — Interest Accrual Engine & Balance Calculation
 
 ```text
 You are a senior Django actuarial/finance engineer. Continue the ZIC OL Loans backend. Execute ONLY Prompt 6.
