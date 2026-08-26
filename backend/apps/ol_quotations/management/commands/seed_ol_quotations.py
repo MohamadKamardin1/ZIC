@@ -1,11 +1,10 @@
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
+from apps.documents.models import DocumentTemplate
+from apps.ol_quotations.services.document_service import QuotationDocumentService
 from apps.system_parameters.models import ChoiceList, ChoiceOption, ParameterGroup, SystemParameter
 from apps.users.models import PermissionGroup, UserGroup, UserPermission
-
-from apps.ol_quotations.services.document_service import QuotationDocumentService
-
 
 PERMISSIONS = [
     {
@@ -404,6 +403,32 @@ class Command(BaseCommand):
         print_template.layout_variables = {"company_name": "Zanzibar Insurance Company"}
         print_template.is_active = True
         print_template.save(update_fields=["template_html", "layout_variables", "is_active", "updated_at"])
+
+        # The unified print engine resolves the active OL quotation template from
+        # DocumentTemplate (data migration 0002 seeds it). Mirror it here so the
+        # seed is self-sufficient under --nomigrations test runs.
+        DocumentTemplate.objects.update_or_create(
+            code="OL_QUOTATION_UNIFIED",
+            version=1,
+            defaults={
+                "name": "Ordinary Life Quotation",
+                "document_type": "OL_QUOTATION",
+                "layout_template_path": "documents/ol_quotation.html",
+                "variables_schema": {
+                    "quote": "object",
+                    "prospect": "object",
+                    "plans": "array",
+                    "riders": "array",
+                    "benefits": "array",
+                    "installments": "array",
+                    "financial": "object",
+                    "agent": "object",
+                    "branding": "object",
+                },
+                "branding_config_reference": "COMPANY_BRANDING",
+                "is_active": True,
+            },
+        )
 
         self.stdout.write(
             self.style.SUCCESS(
