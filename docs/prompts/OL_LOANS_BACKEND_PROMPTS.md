@@ -1,6 +1,6 @@
 OL LOANS BACKEND — FULL PROMPT SERIES (12 Prompts)
 
-## [ ] Prompt 1/12 — Save Series File + Loan Domain Foundation
+## [x] Prompt 1/12 — Save Series File + Loan Domain Foundation
 
 ```text
 You are a senior Django insurance platform engineer. Build the ZIC Ordinary Life Loans backend. The user pasted the FULL 12-prompt series at once.

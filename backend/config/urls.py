@@ -42,6 +42,7 @@ api_v1_patterns = [
     path('ol-proposals/options/<str:entity>/', OLOptionLegacyRedirectView.as_view(), name='ol-option-registry-legacy-redirect'),
     path('ol-proposals/', include('apps.ol_proposals.urls')),
     path('ol-commitments/', include('apps.ol_commitments.urls')),
+    path('ol/', include('apps.ol_loans.urls')),
     path('ol/', include('apps.ol_policies.urls')),
     path('ol/quotations/', include('apps.ol_quotations.urls')),
     path('ol-quotations/', include('apps.ol_quotations.urls')),
