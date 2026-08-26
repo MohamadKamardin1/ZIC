@@ -351,6 +351,52 @@ class WithdrawalRequest(UUIDModel, AuditedModel):
         super().save(*args, **kwargs)
 
 
+class MaturityClaimStatus(models.TextChoices):
+    PENDING_DOCUMENTS = "PENDING_DOCUMENTS", "Pending documents"
+    PENDING_APPROVAL = "PENDING_APPROVAL", "Pending approval"
+    APPROVED = "APPROVED", "Approved"
+    PAID = "PAID", "Paid"
+    DECLINED = "DECLINED", "Declined"
+
+
+class MaturityClaim(UUIDModel, AuditedModel):
+    policy = models.ForeignKey(Policy, on_delete=models.PROTECT, related_name="maturity_claims")
+    claim_number = models.CharField(max_length=50, unique=True, db_index=True, blank=True)
+    claim_date = models.DateField(default=timezone.localdate)
+    maturity_value = models.DecimalField(max_digits=18, decimal_places=2)
+    loan_deduction = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    net_payout = models.DecimalField(max_digits=18, decimal_places=2)
+    payout_method = models.CharField(max_length=40, default="BANK_TRANSFER")
+    status = models.CharField(max_length=30, choices=MaturityClaimStatus.choices, default=MaturityClaimStatus.PENDING_APPROVAL, db_index=True)
+    approval_required = models.BooleanField(default=True)
+    documents_required = models.BooleanField(default=True)
+    documents_verified = models.BooleanField(default=False)
+    payment_requisition = models.ForeignKey(
+        "front_office.FORequisition",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ol_policy_maturity_claims",
+    )
+    payment_reference = models.CharField(max_length=100, blank=True, default="")
+    reason = models.TextField(blank=True, default="")
+
+    class Meta:
+        db_table = "ol_policies_maturity_claim"
+        ordering = ["-claim_date", "-created_at"]
+        indexes = [
+            models.Index(fields=["policy", "status"], name="ol_policy_maturity_st_idx"),
+        ]
+
+    def __str__(self):
+        return self.claim_number or "Unnumbered maturity claim"
+
+    def save(self, *args, **kwargs):
+        if not self.claim_number:
+            self.claim_number = f"MAT-{timezone.localdate():%Y%m%d}-{uuid.uuid4().hex[:10].upper()}"
+        super().save(*args, **kwargs)
+
+
 class SurrenderStatus(models.TextChoices):
     REQUESTED = "REQUESTED", "Requested"
     PENDING_PAYMENT = "PENDING_PAYMENT", "Pending payment"

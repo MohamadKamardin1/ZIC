@@ -4,6 +4,7 @@ from rest_framework import serializers
 from apps.ol_commitments.models import OLCommitment
 
 from .models import (
+    MaturityClaim,
     Policy,
     PolicyAuditLog,
     PolicyBenefit,
@@ -97,6 +98,36 @@ class PolicyEndorsementSerializer(serializers.ModelSerializer):
             "updated_at",
         )
         read_only_fields = fields
+
+
+class MaturityClaimSerializer(serializers.ModelSerializer):
+    policy_number = serializers.CharField(source="policy.policy_number", read_only=True)
+    payment_requisition_number = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MaturityClaim
+        fields = (
+            "id",
+            "claim_number",
+            "policy_number",
+            "claim_date",
+            "maturity_value",
+            "loan_deduction",
+            "net_payout",
+            "payout_method",
+            "status",
+            "approval_required",
+            "documents_required",
+            "documents_verified",
+            "payment_requisition_number",
+            "payment_reference",
+            "reason",
+            "created_at",
+        )
+        read_only_fields = fields
+
+    def get_payment_requisition_number(self, obj):
+        return getattr(obj.payment_requisition, "requisition_number", "") if obj.payment_requisition else ""
 
 
 class PolicyLoanRepaymentSerializer(serializers.ModelSerializer):
@@ -314,6 +345,7 @@ class PolicyDetailSerializer(PolicyListSerializer):
     surrender_requests = SurrenderRequestSerializer(many=True, read_only=True)
     loans = PolicyLoanSerializer(many=True, read_only=True)
     withdrawal_requests = WithdrawalRequestSerializer(many=True, read_only=True)
+    maturity_claims = MaturityClaimSerializer(many=True, read_only=True)
     audit_logs = PolicyAuditLogSerializer(many=True, read_only=True)
     linked_proposal = serializers.SerializerMethodField()
     linked_commitments = serializers.SerializerMethodField()
@@ -330,6 +362,7 @@ class PolicyDetailSerializer(PolicyListSerializer):
             "surrender_requests",
             "loans",
             "withdrawal_requests",
+            "maturity_claims",
             "audit_logs",
             "linked_proposal",
             "linked_commitments",

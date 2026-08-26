@@ -332,10 +332,9 @@ FINAL OUTPUT: loan logic, repayment tracking, tests, commit hash, pushed branch.
 
 ---
 
-## [ ] Prompt 8/12 — Maturity Processing
+## [x] Prompt 8/12 — Maturity Processing & Payout Transitions
 
-```text
-You are a senior Django insurance engineer. Continue the ZIC OL Policies backend. Execute ONLY Prompt 8.
+Django insurance engineer. Continue the ZIC OL Policies backend. Execute ONLY Prompt 8.
 
 MANDATORY RULES:
 - Maturity is a claim-like event that pays out the maturity value.

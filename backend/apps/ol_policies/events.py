@@ -14,6 +14,9 @@ POLICY_LOAN_APPROVED = "PolicyLoanApproved"
 POLICY_LOAN_DISBURSED = "PolicyLoanDisbursed"
 POLICY_LOAN_REPAID = "PolicyLoanRepaid"
 POLICY_WITHDRAWAL_REQUESTED = "PolicyWithdrawalRequested"
+POLICY_MATURITY_CLAIM_CREATED = "PolicyMaturityClaimCreated"
+POLICY_MATURITY_CLAIM_APPROVED = "PolicyMaturityClaimApproved"
+POLICY_MATURITY_PAID = "PolicyMaturityPaid"
 
 
 def emit_policy_endorsed(policy, endorsement, *, actor=None, reason="", source_channel="API", metadata=None):
