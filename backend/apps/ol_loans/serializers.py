@@ -45,6 +45,9 @@ class OLLoanScheduleSerializer(serializers.ModelSerializer):
             "principal_due",
             "interest_due",
             "penalty_due",
+            "principal_paid",
+            "interest_paid",
+            "penalty_paid",
             "amount_paid",
             "balance",
             "status",
@@ -52,11 +55,14 @@ class OLLoanScheduleSerializer(serializers.ModelSerializer):
 
 
 class OLLoanRepaymentSerializer(serializers.ModelSerializer):
+    receipt_number = serializers.CharField(source="receipt_allocation.receipt.receipt_number", read_only=True)
+
     class Meta:
         model = OLLoanRepayment
         fields = (
             "id",
             "receipt_ref",
+            "receipt_number",
             "amount",
             "currency",
             "exchange_rate",
@@ -156,6 +162,15 @@ class OLLoanDisbursementRequestSerializer(serializers.Serializer):
     bank_account_code = serializers.CharField(max_length=50, required=False, allow_blank=True, trim_whitespace=True)
     as_of = serializers.DateField(required=False)
     reason = serializers.CharField(max_length=2000, required=False, allow_blank=True, trim_whitespace=True)
+
+
+class OLLoanRepaymentRequestSerializer(serializers.Serializer):
+    amount = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=Decimal("0.01"))
+    currency = serializers.CharField(max_length=3)
+    exchange_rate = serializers.DecimalField(max_digits=18, decimal_places=8, min_value=Decimal("0.00000001"), required=False)
+    receipt_ref = serializers.CharField(max_length=120, required=False, allow_blank=True, trim_whitespace=True)
+    reason = serializers.CharField(max_length=2000, required=False, allow_blank=True, trim_whitespace=True)
+    payment_date = serializers.DateField(required=False)
 
 
 class OLLoanApprovalSerializer(serializers.Serializer):

@@ -175,6 +175,9 @@ class OLLoanSchedule(AuditedModel):
     principal_due = models.DecimalField(max_digits=18, decimal_places=2, default=ZERO)
     interest_due = models.DecimalField(max_digits=18, decimal_places=2, default=ZERO)
     penalty_due = models.DecimalField(max_digits=18, decimal_places=2, default=ZERO)
+    principal_paid = models.DecimalField(max_digits=18, decimal_places=2, default=ZERO)
+    interest_paid = models.DecimalField(max_digits=18, decimal_places=2, default=ZERO)
+    penalty_paid = models.DecimalField(max_digits=18, decimal_places=2, default=ZERO)
     amount_paid = models.DecimalField(max_digits=18, decimal_places=2, default=ZERO)
     balance = models.DecimalField(max_digits=18, decimal_places=2, default=ZERO)
     status = models.CharField(max_length=30, choices=LoanScheduleStatus.choices, default=LoanScheduleStatus.PENDING, db_index=True)
@@ -190,6 +193,9 @@ class OLLoanSchedule(AuditedModel):
             models.CheckConstraint(check=Q(principal_due__gte=0), name="ol_loan_schedule_principal_nonnegative"),
             models.CheckConstraint(check=Q(interest_due__gte=0), name="ol_loan_schedule_interest_nonnegative"),
             models.CheckConstraint(check=Q(penalty_due__gte=0), name="ol_loan_schedule_penalty_nonnegative"),
+            models.CheckConstraint(check=Q(principal_paid__gte=0), name="ol_loan_schedule_principal_paid_nonnegative"),
+            models.CheckConstraint(check=Q(interest_paid__gte=0), name="ol_loan_schedule_interest_paid_nonnegative"),
+            models.CheckConstraint(check=Q(penalty_paid__gte=0), name="ol_loan_schedule_penalty_paid_nonnegative"),
             models.CheckConstraint(check=Q(amount_paid__gte=0), name="ol_loan_schedule_paid_nonnegative"),
             models.CheckConstraint(check=Q(balance__gte=0), name="ol_loan_schedule_balance_nonnegative"),
         ]
@@ -203,7 +209,16 @@ class OLLoanSchedule(AuditedModel):
 
     def clean(self):
         errors = {}
-        for field in ("principal_due", "interest_due", "penalty_due", "amount_paid", "balance"):
+        for field in (
+            "principal_due",
+            "interest_due",
+            "penalty_due",
+            "principal_paid",
+            "interest_paid",
+            "penalty_paid",
+            "amount_paid",
+            "balance",
+        ):
             if getattr(self, field) is not None and getattr(self, field) < 0:
                 errors[field] = f"{field.replace('_', ' ').capitalize()} cannot be negative."
         if self.installment_number is not None and self.installment_number <= 0:
@@ -223,6 +238,13 @@ class OLLoanRepayment(AuditedModel):
     currency = models.CharField(max_length=3, default="TZS")
     exchange_rate = models.DecimalField(max_digits=18, decimal_places=8, default=Decimal("1.00000000"))
     allocation_breakdown = models.JSONField(default=dict, blank=True)
+    receipt_allocation = models.ForeignKey(
+        "front_office.ReceiptAllocation",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="ol_loan_repayments",
+    )
     reason = models.TextField(blank=True, default="")
     source_channel = models.CharField(max_length=20, choices=LoanSourceChannel.choices, default=LoanSourceChannel.SYSTEM)
 
