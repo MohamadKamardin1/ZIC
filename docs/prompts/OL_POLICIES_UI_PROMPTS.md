@@ -82,7 +82,7 @@ FINAL OUTPUT: page behavior, tests, commit hash, pushed branch.
 
 ---
 
-## [ ] Prompt 3/10 — Policy Issuance UI (Proposal to Policy)
+## [x] Prompt 3/10 — Policy Issuance UI (Proposal to Policy)
 
 ```text
 You are a senior frontend engineer. Continue the ZIC Policies UI. Execute ONLY Prompt 3.
