@@ -945,7 +945,7 @@ class OLLoanInterestControlViewSet(OLDefaultSetupViewSet):
     ]
     ordering_fields = [
         "code", "name", "interest_rate", "compounding_frequency", "interest_calculation_basis",
-        "grace_period_days", "penalty_interest_rate", "effective_from", "effective_to", "created_at", "updated_at",
+        "grace_period_days", "penalty_period_days", "penalty_interest_rate", "effective_from", "effective_to", "created_at", "updated_at",
     ]
     ordering = ["product", "plan", "-effective_from", "code"]
 

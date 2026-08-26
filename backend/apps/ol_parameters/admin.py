@@ -898,7 +898,7 @@ class OLLoanSystemSetupAdmin(OLDefaultSetupAdmin):
 class OLLoanInterestControlAdmin(OLDefaultSetupAdmin):
     list_display = (
         "code", "name", "product", "plan", "interest_rate", "compounding_frequency",
-        "interest_calculation_basis", "grace_period_days", "penalty_interest_rate",
+        "interest_calculation_basis", "grace_period_days", "penalty_period_days", "penalty_interest_rate",
         "capitalize_interest", "is_active", "effective_from", "effective_to",
     )
     list_filter = (
@@ -914,7 +914,7 @@ class OLLoanInterestControlAdmin(OLDefaultSetupAdmin):
     fieldsets = (
         ("Identity", {"fields": ("code", "name", "description", "is_active")}),
         ("Scope and interest", {"fields": ("product", "plan", "interest_rate", "compounding_frequency", "interest_calculation_basis")}),
-        ("Grace, penalty, and capitalization", {"fields": ("grace_period_days", "penalty_interest_rate", "interest_suspension_rule", "capitalize_interest")}),
+        ("Grace, penalty, and capitalization", {"fields": ("grace_period_days", "penalty_period_days", "penalty_interest_rate", "interest_suspension_rule", "capitalize_interest")}),
         ("Effective dates", {"fields": ("effective_from", "effective_to")}),
         ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),
     )

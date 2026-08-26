@@ -3714,6 +3714,7 @@ class OLLoanInterestControl(OLEffectiveDateModel):
     compounding_frequency = models.CharField(max_length=20, choices=OLLoanCompoundingFrequency.choices, default=OLLoanCompoundingFrequency.ANNUAL)
     interest_calculation_basis = models.CharField(max_length=20, choices=OLLoanInterestBasis.choices, default=OLLoanInterestBasis.COMPOUND)
     grace_period_days = models.PositiveIntegerField(default=0)
+    penalty_period_days = models.PositiveIntegerField(default=0)
     penalty_interest_rate = models.DecimalField(max_digits=18, decimal_places=8, null=True, blank=True)
     interest_suspension_rule = models.CharField(max_length=120, blank=True, default="")
     capitalize_interest = models.BooleanField(default=True)
@@ -3750,6 +3751,8 @@ class OLLoanInterestControl(OLEffectiveDateModel):
             errors["interest_calculation_basis"] = "Unsupported interest calculation basis."
         if self.interest_rate is None or not 0 <= self.interest_rate <= 100:
             errors["interest_rate"] = "Interest rate must be between 0 and 100."
+        if self.penalty_period_days < 0:
+            errors["penalty_period_days"] = "Penalty period days cannot be negative."
         if self.penalty_interest_rate is not None and not 0 <= self.penalty_interest_rate <= 100:
             errors["penalty_interest_rate"] = "Penalty interest rate must be between 0 and 100."
         if errors:

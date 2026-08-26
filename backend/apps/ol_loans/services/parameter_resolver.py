@@ -36,6 +36,7 @@ class LoanConfig:
     compounding_frequency: str
     interest_calculation_basis: str
     grace_days: int
+    penalty_period_days: int
     penalty_rate: Decimal
     interest_suspension_rule: str
     capitalize_interest: bool
@@ -62,6 +63,7 @@ class LoanConfig:
             "compounding_frequency": self.compounding_frequency,
             "interest_calculation_basis": self.interest_calculation_basis,
             "grace_days": self.grace_days,
+            "penalty_period_days": self.penalty_period_days,
             "penalty_rate": str(self.penalty_rate),
             "interest_suspension_rule": self.interest_suspension_rule,
             "capitalize_interest": self.capitalize_interest,
@@ -192,6 +194,7 @@ def _build_config(as_of, system_setup, interest_control):
         compounding_frequency=interest_control.compounding_frequency,
         interest_calculation_basis=interest_control.interest_calculation_basis,
         grace_days=int(interest_control.grace_period_days or 0),
+        penalty_period_days=int(interest_control.penalty_period_days or 0),
         penalty_rate=Decimal(interest_control.penalty_interest_rate or 0),
         interest_suspension_rule=interest_control.interest_suspension_rule,
         capitalize_interest=bool(interest_control.capitalize_interest),
