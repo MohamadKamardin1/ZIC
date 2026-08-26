@@ -6,7 +6,7 @@ vi.mock("./apiClient", async () => {
   return { ...actual, request: requestMock }
 })
 
-import { cancelPolicy, getPolicy, getPolicyKpis, getPolicyOptions, issuePolicy, listPolicies, listPolicyBenefits, listPolicyMembers, listPolicyRiders, requestPolicyPaidUp, requestPolicySurrender } from "./policies"
+import { cancelPolicy, getPolicy, getPolicyKpis, getPolicyOptions, issuePolicy, listPolicies, listPolicyBenefits, listPolicyMembers, listPolicyRiders, printPolicyContract, requestPolicyPaidUp, requestPolicySurrender } from "./policies"
 
 beforeEach(() => requestMock.mockReset())
 
@@ -98,6 +98,15 @@ describe("OL Policies API contract", () => {
     expect(members[0]).toMatchObject({ name: "Halima Salum", memberRelation: "Spouse" })
     expect(riders[0]).toMatchObject({ riderCode: "AD — Accidental Death", premium: "2500.00" })
     expect(benefits[0]).toMatchObject({ benefitType: "Death benefit", calculationBasis: "SUM_ASSURED" })
+  })
+
+  it("posts policy contract generation to the canonical authenticated print endpoint", async () => {
+    requestMock.mockResolvedValue({ instance: { document_type: "POLICY_CONTRACT", template_version: 2 }, signed_download_url: "/api/v1/documents/instances/document-1/download/?ticket=signed" })
+
+    const result = await printPolicyContract("policy-1")
+
+    expect(requestMock).toHaveBeenCalledWith("/api/v1/ol/policies/policy-1/print-contract/", expect.objectContaining({ method: "POST", body: JSON.stringify({}) }))
+    expect(result).toMatchObject({ instance: { document_type: "POLICY_CONTRACT", template_version: 2 }, signedDownloadUrl: "/api/v1/documents/instances/document-1/download/?ticket=signed" })
   })
 
   it("posts surrender, paid-up, and cancellation actions to canonical terminal endpoints", async () => {

@@ -1,9 +1,16 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import PolicyDetailPage from "./PolicyDetailPage"
 import { UUID_RE } from "../../lib/display"
 
-const { navigateMock, setSearchParamsMock, searchParamsMock, usePolicyDetailMock, usePolicyOptionsMock, usePolicyMembersMock, usePolicyRidersMock, usePolicyBenefitsMock, usePolicyEndorsementsMock, usePolicyLoansMock, usePolicyWithdrawalsMock, useCreatePolicyEndorsementMutationMock, useRequestPolicySurrenderMutationMock, useRequestPolicyPaidUpMutationMock, useCancelPolicyMutationMock, surrenderMutateMock, paidUpMutateMock, cancelMutateMock } = vi.hoisted(() => ({
+vi.mock("../../lib/documentClient", () => ({
+  AuthenticatedDocumentError: class AuthenticatedDocumentError extends Error {},
+  fetchAuthenticatedDocument: vi.fn().mockResolvedValue({ blob: new Blob(["%PDF"], { type: "application/pdf" }), objectUrl: "blob:policy-preview", contentType: "application/pdf" }),
+  openAuthenticatedDocument: vi.fn(),
+  revokeAuthenticatedDocument: vi.fn(),
+}))
+
+const { navigateMock, setSearchParamsMock, searchParamsMock, usePolicyDetailMock, usePolicyOptionsMock, usePolicyMembersMock, usePolicyRidersMock, usePolicyBenefitsMock, usePolicyEndorsementsMock, usePolicyLoansMock, usePolicyWithdrawalsMock, useCreatePolicyEndorsementMutationMock, useRequestPolicySurrenderMutationMock, useRequestPolicyPaidUpMutationMock, useCancelPolicyMutationMock, usePrintPolicyContractMutationMock, surrenderMutateMock, paidUpMutateMock, cancelMutateMock } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
   setSearchParamsMock: vi.fn(),
   searchParamsMock: new URLSearchParams(),
@@ -19,6 +26,7 @@ const { navigateMock, setSearchParamsMock, searchParamsMock, usePolicyDetailMock
   useRequestPolicySurrenderMutationMock: vi.fn(),
   useRequestPolicyPaidUpMutationMock: vi.fn(),
   useCancelPolicyMutationMock: vi.fn(),
+  usePrintPolicyContractMutationMock: vi.fn(),
   surrenderMutateMock: vi.fn(),
   paidUpMutateMock: vi.fn(),
   cancelMutateMock: vi.fn(),
@@ -56,6 +64,7 @@ vi.mock("../../lib/policiesHooks", () => ({
   useRequestPolicySurrenderMutation: useRequestPolicySurrenderMutationMock,
   useRequestPolicyPaidUpMutation: useRequestPolicyPaidUpMutationMock,
   useCancelPolicyMutation: useCancelPolicyMutationMock,
+  usePrintPolicyContractMutation: usePrintPolicyContractMutationMock,
 }))
 
 const activePolicy = {
@@ -119,6 +128,7 @@ beforeEach(() => {
   useRequestPolicySurrenderMutationMock.mockReturnValue({ mutate: surrenderMutateMock, reset: vi.fn(), isPending: false, error: null })
   useRequestPolicyPaidUpMutationMock.mockReturnValue({ mutate: paidUpMutateMock, reset: vi.fn(), isPending: false, error: null })
   useCancelPolicyMutationMock.mockReturnValue({ mutate: cancelMutateMock, reset: vi.fn(), isPending: false, error: null })
+  usePrintPolicyContractMutationMock.mockReturnValue({ mutate: vi.fn(), mutateAsync: vi.fn(), reset: vi.fn(), isPending: false, error: null, data: null })
 })
 
 describe("PolicyDetailPage", () => {
@@ -142,7 +152,7 @@ describe("PolicyDetailPage", () => {
     expect(screen.getByRole("button", { name: "Loan" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Withdraw" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Surrender" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Print" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Print Contract" })).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Members & Riders" }))
     expect(setSearchParamsMock).toHaveBeenCalledWith({ tab: "members" })
   })
@@ -182,6 +192,21 @@ describe("PolicyDetailPage", () => {
     expect(screen.getByText("After")).toBeInTheDocument()
     expect(screen.getByText(/Old address/)).toBeInTheDocument()
     expect(screen.getByText(/New address/)).toBeInTheDocument()
+  })
+
+  it("opens policy contract preview through the print action and marks cancelled policies", async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({ instance: { document_type: "POLICY_CONTRACT", template_name: "Policy Contract", template_version: 2 }, signedDownloadUrl: "/api/v1/documents/instances/document-1/download/?ticket=signed" })
+    usePrintPolicyContractMutationMock.mockReturnValue({ mutate: vi.fn(), mutateAsync, reset: vi.fn(), isPending: false, error: null, data: null })
+    const generatedRender = render(<PolicyDetailPage />)
+    fireEvent.click(screen.getByRole("button", { name: "Print Contract" }))
+    expect(screen.getByRole("dialog", { name: "Print preview — policy contract" })).toBeInTheDocument()
+    expect(mutateAsync).toHaveBeenCalledWith("policy-1")
+    generatedRender.unmount()
+
+    usePolicyDetailMock.mockReturnValue({ data: { ...activePolicy, status: "CANCELLED", statusDisplay: "Cancelled", allowedActions: ["view", "print"] }, isPending: false, isError: false, error: null, refetch: vi.fn() })
+    const cancelledRender = render(<PolicyDetailPage />)
+    fireEvent.click(cancelledRender.getByRole("button", { name: "Print Contract" }))
+    await waitFor(() => expect(cancelledRender.getByLabelText("Cancelled policy watermark")).toBeInTheDocument())
   })
 
   it("opens surrender and cancellation modals with reason and confirmation safeguards", () => {
@@ -225,6 +250,6 @@ describe("PolicyDetailPage", () => {
     expect(screen.queryByRole("button", { name: "Loan" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Withdraw" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Surrender" })).not.toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Print" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Print Contract" })).toBeInTheDocument()
   })
 })

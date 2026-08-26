@@ -6,6 +6,8 @@ import { InfoBanner, Modal } from "../../components/ui/Overlays"
 import PolicyEndorsementModal from "./PolicyEndorsementModal"
 import PolicyFinancialsTab from "./PolicyFinancialsTab"
 import PolicyTerminalActions from "./PolicyTerminalActions"
+import PolicyPrintPreviewModal from "./PolicyPrintPreviewModal"
+import { DocumentInstancesPanel } from "../../components/documents/DocumentInstancesPanel"
 import { MasterDetailPage } from "../../components/ui/Patterns"
 import { StatusBadge } from "../../components/ui/StatusBadge"
 import { MoneyCell, PolicyHeader } from "../../components/policies"
@@ -134,6 +136,7 @@ export default function PolicyDetailPage() {
   const [surrenderModalOpen, setSurrenderModalOpen] = useState(false)
   const [paidUpModalOpen, setPaidUpModalOpen] = useState(false)
   const [cancelModalOpen, setCancelModalOpen] = useState(false)
+  const [policyPrintModalOpen, setPolicyPrintModalOpen] = useState(false)
   const { access, isSuperAdmin } = useAccess()
   const detailQuery = usePolicyDetail(policyId)
   const statusOptions = usePolicyOptions("statuses", {}, Boolean(detailQuery.data))
@@ -159,7 +162,7 @@ export default function PolicyDetailPage() {
   const lapseDate = snapshotPick(policy.contractSnapshot, "lapsed_since", "lapse_date", "lapse_effective_date")
   const isActive = policy.status.toUpperCase() === "ACTIVE"
   const canFinancialService = !lapsed && !matured
-  const actionSlot = <div className="flex flex-wrap justify-end gap-2">{canAction("endorse") ? <DetailAction label="Endorse" icon={<FileText size={14} aria-hidden="true" />} onClick={() => setEndorsementModalOpen(true)} /> : null}{canFinancialService && canAction("loan") ? <DetailAction label="Loan" icon={<Banknote size={14} aria-hidden="true" />} onClick={() => setLoanModalOpen(true)} /> : null}{canFinancialService && canAction("withdraw") ? <DetailAction label="Withdraw" icon={<HandCoins size={14} aria-hidden="true" />} onClick={() => setWithdrawalModalOpen(true)} /> : null}{isActive && canAction("surrender") ? <DetailAction label="Surrender" icon={<Landmark size={14} aria-hidden="true" />} onClick={() => setSurrenderModalOpen(true)} /> : null}{canAction("cancel") ? <DetailAction label="Cancel Policy" icon={<Ban size={14} aria-hidden="true" />} onClick={() => setCancelModalOpen(true)} danger /> : null}{canAction("print") ? <DetailAction label="Print" icon={<FileText size={14} aria-hidden="true" />} onClick={() => goAction("print")} /> : null}</div>
+  const actionSlot = <div className="flex flex-wrap justify-end gap-2">{canAction("endorse") ? <DetailAction label="Endorse" icon={<FileText size={14} aria-hidden="true" />} onClick={() => setEndorsementModalOpen(true)} /> : null}{canFinancialService && canAction("loan") ? <DetailAction label="Loan" icon={<Banknote size={14} aria-hidden="true" />} onClick={() => setLoanModalOpen(true)} /> : null}{canFinancialService && canAction("withdraw") ? <DetailAction label="Withdraw" icon={<HandCoins size={14} aria-hidden="true" />} onClick={() => setWithdrawalModalOpen(true)} /> : null}{isActive && canAction("surrender") ? <DetailAction label="Surrender" icon={<Landmark size={14} aria-hidden="true" />} onClick={() => setSurrenderModalOpen(true)} /> : null}{canAction("cancel") ? <DetailAction label="Cancel Policy" icon={<Ban size={14} aria-hidden="true" />} onClick={() => setCancelModalOpen(true)} danger /> : null}{canAction("print") ? <DetailAction label="Print Contract" icon={<FileText size={14} aria-hidden="true" />} onClick={() => setPolicyPrintModalOpen(true)} /> : null}</div>
 
   return <><MasterDetailPage eyebrow="Ordinary Life · Policy detail" title={policy.policyNumber} description="Read-only contract overview sourced from the immutable issuance snapshot." status={{ value: policy.statusDisplay, tone: lapsed ? "danger" : matured ? "success" : "info" }} actions={<button type="button" className="button-secondary border-white/30 bg-white/10 text-white hover:bg-white/20" onClick={() => navigate("/ordinary-life/policies")}><ArrowLeft size={15} aria-hidden="true" />Back to policies</button>}>
     <PolicyHeader data={policy} statusOptions={statusOptions.data ?? []} actionSlot={actionSlot} />
@@ -170,7 +173,7 @@ export default function PolicyDetailPage() {
     {activeTab === "members" && <CompositionTab policy={policy} members={memberQuery.data ?? policy.members} riders={riderQuery.data ?? policy.riders} benefits={benefitQuery.data ?? policy.benefits} canAdd={canAction("endorse")} onAddMember={() => goAction("endorse")} onAddRider={() => goAction("endorse")} />}
     {activeTab === "endorsements" && <EndorsementsTab rows={endorsementQuery.data?.results ?? policy.endorsements} canCreate={canAction("endorse")} onCreate={() => setEndorsementModalOpen(true)} />}
     {activeTab === "financials" && <PolicyFinancialsTab policy={policy} loans={loanQuery.data?.results ?? []} withdrawals={withdrawalQuery.data?.results ?? []} canRequestLoan={canFinancialService && canAction("loan")} canRequestWithdrawal={canFinancialService && canAction("withdraw")} loanModalOpen={loanModalOpen} withdrawalModalOpen={withdrawalModalOpen} onLoanModalChange={setLoanModalOpen} onWithdrawalModalChange={setWithdrawalModalOpen} />}
-    {activeTab === "documents" && <InfoBanner title="Documents">Policy contract and schedule documents will appear here through the shared authenticated document pipeline.</InfoBanner>}
+    {activeTab === "documents" && <DocumentInstancesPanel sourceType="ol_policies.policy" objectId={policy.id} documentType="POLICY_CONTRACT" title="Policy documents" description="Generated policy contracts, schedules, and premium statements are retained against this policy with their template versions." renderLabel="Generate policy contract PDF" />}
     {activeTab === "audit" && <section className="surface-card p-4"><h2 className="text-sm font-bold">Audit trail</h2><div className="mt-4"><AuditTimeline entries={policy.auditLogs} /></div></section>}
-  </MasterDetailPage><PolicyEndorsementModal open={endorsementModalOpen} policy={policy} onClose={() => setEndorsementModalOpen(false)} /><PolicyTerminalActions policy={policy} surrenderOpen={surrenderModalOpen} paidUpOpen={paidUpModalOpen} cancelOpen={cancelModalOpen} onSurrenderChange={setSurrenderModalOpen} onPaidUpChange={setPaidUpModalOpen} onCancelChange={setCancelModalOpen} /></>
+  </MasterDetailPage><PolicyEndorsementModal open={endorsementModalOpen} policy={policy} onClose={() => setEndorsementModalOpen(false)} /><PolicyTerminalActions policy={policy} surrenderOpen={surrenderModalOpen} paidUpOpen={paidUpModalOpen} cancelOpen={cancelModalOpen} onSurrenderChange={setSurrenderModalOpen} onPaidUpChange={setPaidUpModalOpen} onCancelChange={setCancelModalOpen} /><PolicyPrintPreviewModal open={policyPrintModalOpen} policy={policy} onClose={() => setPolicyPrintModalOpen(false)} /></>
 }

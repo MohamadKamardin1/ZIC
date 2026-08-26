@@ -27,6 +27,13 @@ describe("OL Policies MSW contract", () => {
     expect(kpis.data).toMatchObject({ total_active_policies: 2, currency: "TZS" })
   })
 
+  it("returns a secure policy contract print result", async () => {
+    const response = await fetch("http://localhost/api/v1/ol/policies/policy-active-1/print-contract/", { method: "POST", body: JSON.stringify({}), headers: { "Content-Type": "application/json" } })
+    expect(response.status).toBe(201)
+    const body = await response.json()
+    expect(body.data).toMatchObject({ instance: { document_type: "POLICY_CONTRACT", template_version: 1 }, signed_download_url: expect.stringContaining("ticket=mock-policy-active-1-policy_contract") })
+  })
+
   it("enforces terminal-flow eligibility and returns realistic response envelopes", async () => {
     const surrenderResponse = await fetch("http://localhost/api/v1/ol/policies/policy-active-1/surrender/", { method: "POST", body: JSON.stringify({ reason: "Customer request" }), headers: { "Content-Type": "application/json" } })
     expect(surrenderResponse.status).toBe(201)

@@ -321,7 +321,7 @@ FINAL OUTPUT: terminal actions, tests, commit hash, pushed branch.
 
 ---
 
-## [ ] Prompt 9/10 — Policy Documents & Printouts
+## [x] Prompt 9/10 — Policy Documents & Printouts
 
 ```text
 You are a senior frontend engineer. Continue the ZIC Policies UI. Execute ONLY Prompt 9.
