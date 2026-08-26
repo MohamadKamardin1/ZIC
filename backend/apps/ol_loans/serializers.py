@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from decimal import Decimal
+
 from .models import OLLoan, OLLoanInterestAccrual, OLLoanOffset, OLLoanRepayment, OLLoanSchedule
 
 
@@ -89,7 +91,9 @@ class OLLoanListSerializer(serializers.ModelSerializer):
             "partner_display",
             "currency",
             "principal_amount",
+            "cash_value_snapshot",
             "disbursed_amount",
+            "repayment_mode",
             "interest_rate",
             "compounding_frequency",
             "term_months",
@@ -111,6 +115,14 @@ class OLLoanListSerializer(serializers.ModelSerializer):
 
     def get_partner_display(self, obj):
         return _display(obj.partner, "legal_name", "partner_number")
+
+
+class OLLoanRequestSerializer(serializers.Serializer):
+    requested_amount = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=Decimal("0.01"))
+    term_months = serializers.IntegerField(min_value=1)
+    repayment_mode = serializers.CharField(max_length=40)
+    reason = serializers.CharField(max_length=2000, allow_blank=False, trim_whitespace=True)
+    as_of = serializers.DateField(required=False)
 
 
 class OLLoanDetailSerializer(OLLoanListSerializer):

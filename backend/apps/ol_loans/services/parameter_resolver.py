@@ -87,10 +87,12 @@ def _related_scope(policy):
     snapshot = getattr(policy, "contract_snapshot", None) or {}
     if not isinstance(snapshot, dict):
         snapshot = {}
-    product_id = getattr(product, "pk", None) or snapshot.get("product_id")
-    plan_id = getattr(plan, "pk", None) or snapshot.get("plan_id")
-    product_code = getattr(product, "code", None) or snapshot.get("product_code")
-    plan_code = getattr(plan, "code", None) or snapshot.get("plan_code")
+    plan_rows = snapshot.get("plans") if isinstance(snapshot.get("plans"), list) else []
+    plan_snapshot = next((row for row in plan_rows if isinstance(row, dict)), {})
+    product_id = getattr(product, "pk", None) or snapshot.get("product_id") or plan_snapshot.get("product_id")
+    plan_id = getattr(plan, "pk", None) or snapshot.get("plan_id") or plan_snapshot.get("plan_id")
+    product_code = getattr(product, "code", None) or snapshot.get("product_code") or plan_snapshot.get("product_code")
+    plan_code = getattr(plan, "code", None) or snapshot.get("plan_code") or plan_snapshot.get("plan_code")
     product_plan_ref = getattr(policy, "product_plan_ref", "") or ""
     return product_id, plan_id, product_code, plan_code, product_plan_ref
 

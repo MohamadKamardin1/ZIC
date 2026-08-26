@@ -70,7 +70,9 @@ class OLLoan(AuditedModel):
     )
     currency = models.CharField(max_length=3, default="TZS")
     principal_amount = models.DecimalField(max_digits=18, decimal_places=2)
+    cash_value_snapshot = models.DecimalField(max_digits=18, decimal_places=2, default=ZERO)
     disbursed_amount = models.DecimalField(max_digits=18, decimal_places=2, default=ZERO)
+    repayment_mode = models.CharField(max_length=40, blank=True, default="")
     interest_rate = models.DecimalField(max_digits=18, decimal_places=8)
     compounding_frequency = models.CharField(max_length=40)
     term_months = models.PositiveIntegerField()
@@ -91,6 +93,7 @@ class OLLoan(AuditedModel):
         verbose_name_plural = "OL Loans"
         constraints = [
             models.CheckConstraint(check=Q(principal_amount__gt=0), name="ol_loan_principal_positive"),
+            models.CheckConstraint(check=Q(cash_value_snapshot__gte=0), name="ol_loan_cash_value_nonnegative"),
             models.CheckConstraint(check=Q(disbursed_amount__gte=0), name="ol_loan_disbursed_nonnegative"),
             models.CheckConstraint(check=Q(interest_rate__gte=0), name="ol_loan_interest_nonnegative"),
             models.CheckConstraint(check=Q(term_months__gt=0), name="ol_loan_term_positive"),
@@ -111,6 +114,8 @@ class OLLoan(AuditedModel):
         errors = {}
         if self.principal_amount is not None and self.principal_amount <= 0:
             errors["principal_amount"] = "Principal amount must be greater than zero."
+        if (self.cash_value_snapshot or ZERO) < 0:
+            errors["cash_value_snapshot"] = "Policy cash-value snapshot cannot be negative."
         if (self.disbursed_amount or ZERO) < 0:
             errors["disbursed_amount"] = "Disbursed amount cannot be negative."
         if self.interest_rate is not None and self.interest_rate < 0:

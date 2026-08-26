@@ -100,7 +100,7 @@ FINAL OUTPUT: resolver service, options endpoints, validation rules, tests, comm
 
 ---
 
-## [ ] Prompt 3/12 — Loan Eligibility & Request Creation
+## [x] Prompt 3/12 — Loan Eligibility & Request Creation
 
 ```text
 You are a senior Django insurance engineer. Continue the ZIC OL Loans backend. Execute ONLY Prompt 3.
