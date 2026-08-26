@@ -338,6 +338,60 @@ export async function mockUnifiedDocumentApi(page: Page, options: { expireFirstD
   return { getRefreshCalls: () => refreshCalls }
 }
 
+export async function mockPolicyApi(page: Page) {
+  let status = "ACTIVE"
+  let endorsementCount = 0
+  let loanCount = 0
+  const policyId = "policy-active-1"
+  const policyNumber = "ZIC-OL-2026-000001"
+  const proposal = { id: "proposal-ready-1", proposal_number: "OLP-E2E-0001", quotation_number: "Q-E2E-0001", status: "PAYMENT_READY", partner_name: "E2E Applicant", product_name: "Elimu Bora Growth Plan", plan_name: "Education savings", total_premium: "120000.00", currency: "TZS", payment_ready: true, first_premium_posted: true }
+
+  const detail = () => ({ id: policyId, policy_number: policyNumber, policyholder_display: "P-000018 — E2E Applicant", policyholder_name: "E2E Applicant", product_plan_display: "OL_EDU_GROWTH — Elimu Bora Growth Plan", agent_display: "AG-0004 — E2E Agent", currency: "TZS", sum_assured: "25000000.00", premium_amount: "120000.00", premium_frequency: "MONTHLY", term_years: 15, risk_commencement_date: "2026-01-15", maturity_date: "2041-01-15", status, status_display: status === "SURRENDER_PENDING" ? "Surrender pending" : status === "PAID_UP" ? "Paid-up" : status === "CANCELLED" ? "Cancelled" : "Active", allowed_actions: status === "ACTIVE" ? ["view", "service", "endorse", "print", "cancel"] : status === "LAPSED" ? ["view", "service", "reinstate", "print"] : ["view", "print"], version: 1, contract_snapshot: { sum_assured: "25000000.00", premium_amount: "120000.00", premium_frequency: "MONTHLY", term_years: 15, cash_value: "10000000.00", max_loan_percentage_of_cash_value: "50", estimated_surrender_value: "8750000.00", paid_up_sum_assured: "15000000.00", within_free_look: true }, members: [{ id: "member-1", member_relation: "Principal member", name: "E2E Applicant", dob: "1990-01-01", gender: "MALE", benefit_amount: "25000000.00" }], riders: [], benefits: [], endorsements: Array.from({ length: endorsementCount }, (_, index) => ({ id: `endorsement-${index + 1}`, endorsement_number: `END-E2E-00000${index + 1}`, endorsement_type: "ADDRESS_CHANGE", effective_date: "2026-08-26", description: "Address correction", status: "PENDING" })), audit_logs: [], linked_proposal: { proposal_number: "OLP-E2E-0001", status: "CONVERTED" }, linked_commitments: [] })
+
+  await page.route("**/api/v1/ol-proposals/proposals/**", async (route) => {
+    const url = new URL(route.request().url())
+    if (url.searchParams.get("status") === "AWAITING_FIRST_PREMIUM" || url.searchParams.get("status") === "PAYMENT_READY") await route.fulfill({ json: { data: { count: 1, results: [proposal], page: 1, page_size: 50 } } })
+    else await route.fulfill({ json: { data: { count: 1, results: [proposal] } } })
+  })
+
+  await page.route("**/api/v1/ol/options/**", async (route) => {
+    const path = new URL(route.request().url()).pathname
+    if (path.endsWith("/endorsement_types/")) {
+      await route.fulfill({ json: { data: { count: 1, results: [{ value: "ADDRESS_CHANGE", label: "Address change", meta: { max_change_percent: 25 } }] } } })
+      return
+    }
+    await route.fallback()
+  })
+
+  await page.route("**/api/v1/ol/policies/**", async (route) => {
+    const url = new URL(route.request().url())
+    const path = url.pathname
+    const method = route.request().method()
+    let response: unknown = {}
+    let responseStatus = 200
+    if (path.endsWith("/kpis/")) response = { total_active_policies: status === "ACTIVE" ? 1 : 0, total_sum_assured: status === "ACTIVE" ? "25000000.00" : "0.00", new_policies_this_month: 1, lapsed_policies_count: status === "LAPSED" ? 1 : 0, maturing_soon_count: 0, currency: "TZS" }
+    else if (path.endsWith("/portal/") && method === "GET") response = { count: 1, results: [{ id: policyId, policy_number: policyNumber, status, product_plan: "OL_EDU_GROWTH — Elimu Bora Growth Plan", risk_commencement_date: "2026-01-15", maturity_date: "2041-01-15", currency: "TZS" }] }
+    else if (path.includes("/portal/") && method === "GET") response = { id: policyId, policy_number: policyNumber, status, product_plan: "OL_EDU_GROWTH — Elimu Bora Growth Plan", risk_commencement_date: "2026-01-15", maturity_date: "2041-01-15", currency: "TZS" }
+    else if (path.endsWith("/issue/") && method === "POST") { status = "ACTIVE"; responseStatus = 201; response = { id: policyId, policy_number: policyNumber, status: "ACTIVE", created: true } }
+    else if (path.endsWith("/surrender/") && method === "POST") { status = "SURRENDER_PENDING"; responseStatus = 201; response = { surrender_request: { id: "surrender-1", request_number: "SUR-E2E-0001", status: "SURRENDER_PENDING", net_surrender_value: "8750000.00" }, policy: detail(), created: true } }
+    else if (path.endsWith("/paid-up/") && method === "POST") { status = "PAID_UP"; response = detail() }
+    else if (path.endsWith("/cancel/") && method === "POST") { status = "CANCELLED"; response = { policy: detail(), refund: { amount: "120000.00", within_free_look: true, requisition_number: "REF-E2E-0001" } }
+    }
+    else if (path.endsWith("/print-contract/") && method === "POST") { responseStatus = 201; response = { instance: { id: "document-policy-1", document_type: "POLICY_CONTRACT", template_name: "Policy Contract", template_version: 2, page_count: 2, generated_by_display: "ZIC Superadmin", generated_at: "2026-08-26T10:00:00Z" }, signed_download_url: "/api/v1/documents/instances/document-policy-1/download/?ticket=policy-ticket" } }
+    else if (path.endsWith("/options/endorsement-types/") && method === "GET") response = [{ value: "ADDRESS_CHANGE", label: "Address change", meta: { max_change_percent: 25 } }]
+    else if (path.endsWith("/members/") && method === "GET") response = detail().members
+    else if (path.endsWith("/riders/") && method === "GET") response = detail().riders
+    else if (path.endsWith("/benefits/") && method === "GET") response = detail().benefits
+    else if (path.endsWith("/endorsements/") && method === "GET") response = { count: endorsementCount, results: detail().endorsements, page: 1, page_size: 20 }
+    else if (path.endsWith("/endorsements/") && method === "POST") { endorsementCount += 1; responseStatus = 201; response = { id: `endorsement-${endorsementCount}`, endorsement_number: `END-E2E-00000${endorsementCount}`, status: "PENDING" } }
+    else if (path.endsWith("/loans/") && method === "GET") response = { count: loanCount, results: loanCount ? [{ id: "loan-e2e-1", loan_number: "LOAN-E2E-0001", principal_amount: "500000.00", amount: "500000.00", outstanding_principal: "500000.00", outstanding_interest: "0.00", interest_rate: "8.00", status: "PENDING_APPROVAL" }] : [], page: 1, page_size: 20 }
+    else if (path.endsWith("/loans/") && method === "POST") { loanCount += 1; responseStatus = 201; response = { id: "loan-e2e-1", loan_number: "LOAN-E2E-0001", status: "PENDING_APPROVAL", requested_amount: "500000.00" } }
+    else if (path.endsWith("/withdrawals/") && method === "GET") response = { count: 0, results: [], page: 1, page_size: 20 }
+    else if (path.endsWith("/")) response = detail()
+    await route.fulfill({ status: responseStatus, json: { data: response } })
+  })
+}
+
 export async function mockParameterApi(page: Page) {
   await page.route("**/api/v1/ol-parameters/**", async (route) => {
     const method = route.request().method()

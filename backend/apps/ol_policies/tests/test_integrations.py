@@ -101,10 +101,12 @@ class PolicyIntegrationTestCase(APITestCase):
         self.assertEqual(listing.status_code, 200)
         self.assertEqual(listing.data["data"]["count"], 1)
         self.assertEqual(listing.data["data"]["results"][0]["policy_number"], self.policy.policy_number)
+        self.assertEqual(listing.data["data"]["results"][0]["id"], str(self.policy.pk))
         self.assertNotIn("premium_amount", listing.data["data"]["results"][0])
 
         detail = self.client.get(f"/api/v1/ol/policies/portal/{self.policy.pk}/")
         self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.data["data"]["id"], str(self.policy.pk))
         self.assertNotIn("sum_assured", detail.data["data"])
         denied = self.client.get(f"/api/v1/ol/policies/portal/{self.other_policy.pk}/")
         self.assertEqual(denied.status_code, 404)

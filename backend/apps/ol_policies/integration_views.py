@@ -15,6 +15,7 @@ from .services.integration_service import (
 
 def _portal_payload(policy, *, include_sensitive=False):
     payload = {
+        "id": str(policy.pk),
         "policy_number": policy.policy_number,
         "status": policy.get_status_display(),
         "product_plan": policy.product_plan_ref,

@@ -93,8 +93,17 @@ The integration seam avoids hard dependencies on future claims and reinsurance a
 | `GET /api/v1/ol/policies/{id}/reinsurance-risk/` | Reinsurance-ready risk payload without a reinsurance app dependency |
 | `POST /api/v1/ol/policies/{id}/claim-settled/` | Idempotent claim-settlement ingress; exhausting claims close policy coverage |
 | `GET /api/v1/ol/policies/portal/` | Partner-scoped portal list |
-| `GET /api/v1/ol/policies/portal/{id}/` | Partner-scoped portal detail with sensitive values entitlement-gated |
+| `GET /api/v1/ol/policies/portal/{id}/` | Partner-scoped portal detail with sensitive values entitlement-gated; includes safe `id` and human-readable product/status fields |
 | `GET /api/v1/ol/policies/dashboard-hooks/` | Active count, annualized premium, and lapsed ratio for dashboard consumers |
+
+## Policy documents and authenticated preview
+
+`POST /api/v1/ol/policies/{id}/print-contract/` requires `ol_policies.print` and uses the unified documents pipeline. A successful response includes the generated `instance`, its template name/version and page count, plus a short-lived `signed_download_url` (normally valid for five minutes). The staff UI retrieves the PDF through the authenticated document client, renders it from a blob/object URL, and offers authenticated download or signed-ticket open-in-new-tab. Clients must not put a raw API URL in an iframe, anchor, or `window.open` call without authentication.
+
+`GET /api/v1/documents/instances/?source_type=ol_policies.policy&object_id={id}` returns retained document metadata for the Documents tab. Document-render failures use `DOCUMENT_RENDER_FAILED`, `TEMPLATE_PENDING`, or a structured permission/session error with resolution steps. Ticket expiry or tampering must be handled as a retryable document error, not as a blank preview.
+
+The partner portal does not render staff document actions. Its read-only document section consumes only metadata from the authenticated, partner-scoped document list contract.
+
 
 Notification and maturing-soon adapters queue `PolicyNotificationLog` and dashboard notifications. They are clean provider seams and do not hard-wire a particular email or SMS vendor.
 

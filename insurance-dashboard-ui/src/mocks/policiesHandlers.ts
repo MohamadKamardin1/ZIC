@@ -201,6 +201,12 @@ export const policiesHandlers = [
     const policy = detailFor(String(params.policyId))
     return policy ? data(page([{ id: "withdrawal-1", request_number: "WDR-2026-000001", amount: "500000.00", net_amount: "490000.00", status: "PAID" }], new URL(request.url))) : error(404, "POLICY_NOT_FOUND", "The policy could not be found.", ["Return to the policy list and choose an available policy."])
   }),
+  http.get(`*${POLICIES_BASE}/portal/`, () => data({ count: 1, results: [{ policy_number: "ZIC-OL-2026-000001", status: "ACTIVE", product_plan: "OL_EDU_GROWTH — Elimu Bora Growth Plan", risk_commencement_date: "2026-01-15", maturity_date: "2041-01-15", currency: "TZS" }] })),
+  http.get(`*${POLICIES_BASE}/portal/:policyId/`, ({ params }) => {
+    const policy = detailFor(String(params.policyId))
+    if (!policy) return error(404, "POLICY_NOT_FOUND", "The policy could not be found in your partner account.", ["Return to My Policies and choose an available policy."])
+    return data({ policy_number: policy.policy_number, status: policy.status, product_plan: policy.product_plan_display, risk_commencement_date: policy.risk_commencement_date, maturity_date: policy.maturity_date, currency: policy.currency })
+  }),
   http.post(`*${POLICIES_BASE}/:policyId/print-contract/`, ({ params }) => detailFor(String(params.policyId)) ? data(printResult(String(params.policyId), "POLICY_CONTRACT"), 201) : error(404, "POLICY_NOT_FOUND", "The policy could not be found.", ["Return to the policy list and choose an available policy."])),
   http.post(`*${POLICIES_BASE}/:policyId/print-schedule/`, ({ params }) => detailFor(String(params.policyId)) ? data(printResult(String(params.policyId), "POLICY_SCHEDULE"), 201) : error(404, "POLICY_NOT_FOUND", "The policy could not be found.", ["Return to the policy list and choose an available policy."])),
   http.get(`*${POLICIES_BASE}/:policyId/`, ({ params }) => {

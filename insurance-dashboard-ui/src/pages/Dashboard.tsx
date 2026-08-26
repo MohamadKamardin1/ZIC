@@ -66,7 +66,7 @@ export default function Dashboard() {
           <ReceiptDashboardCards />
 
           <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
-            <DashboardWidgetLink label="Open ordinary-life policies" route="/ordinary-life/policies" onNavigate={navigate}><PoliciesCard data={data.policies} /></DashboardWidgetLink>
+            <DashboardWidgetLink label="Open active ordinary-life policies" route="/ordinary-life/policies?status=ACTIVE" onNavigate={navigate}><PoliciesCard data={data.policies} /></DashboardWidgetLink>
             <DashboardWidgetLink label="Open claims" route="/ordinary-life/claims" onNavigate={navigate}><ClaimsCard data={data.claims} /></DashboardWidgetLink>
             <DashboardWidgetLink label="Open partners" route="/partners" onNavigate={navigate}><PartnersCard data={data.partners} /></DashboardWidgetLink>
             <DashboardWidgetLink label="Open receipts" route="/front-office/receipts" onNavigate={navigate}><DebitedGauge data={data.debited} /></DashboardWidgetLink>

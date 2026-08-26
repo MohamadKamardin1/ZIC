@@ -89,6 +89,7 @@ import FOReceiptForm from "./pages/front-office/FOReceiptForm"
 import FOReceiptDetail from "./pages/front-office/FOReceiptDetail"
 import FOReceiptImports from "./pages/front-office/FOReceiptImports"
 import { PortalReceiptDetail, PortalReceipts } from "./pages/portal/PortalReceipts"
+import { PortalPolicies, PortalPolicyDetail } from "./pages/portal/PortalPolicies"
 import FOCommissions from "./pages/front-office/FOCommissions"
 import FOCommissionStatements from "./pages/front-office/FOCommissionStatements"
 import FORequisitions from "./pages/front-office/FORequisitions"
@@ -217,7 +218,7 @@ export default function App() {
           </RequirePermission>
         } />
         <Route path="ordinary-life/policies" element={<RequirePermission permission="ol_policies.view"><OLPolicies /></RequirePermission>} />
-        <Route path="ordinary-life/policies/new" element={<RequirePermission permission="ol_policies.issue"><PolicyIssuanceWizard /></RequirePermission>} />
+        <Route path="ordinary-life/policies/new" element={<RequirePermission permission="ol_policies.create"><PolicyIssuanceWizard /></RequirePermission>} />
         <Route path="ordinary-life/policies/:policyId" element={<RequirePermission permission="ol_policies.view"><PolicyDetailPage /></RequirePermission>} />
         <Route path="ordinary-life/loans" element={<OLLoans />} />
         <Route path="ordinary-life/withdrawals" element={<OLWithdrawals />} />
@@ -242,6 +243,14 @@ export default function App() {
               <PortalReceiptDetail />
             </RequirePermission>
           }
+        />
+        <Route
+          path="portal/policies"
+          element={<PortalPolicies />}
+        />
+        <Route
+          path="portal/policies/:id"
+          element={<PortalPolicyDetail />}
         />
         <Route
           path="portal/commitments"
