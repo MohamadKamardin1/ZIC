@@ -194,7 +194,7 @@ FINAL OUTPUT: endorsement logic, validation rules, tests, commit hash, pushed br
 
 ---
 
-## [ ] Prompt 5/12 — Lapse, Reinstatement & Expiry Logic
+## [x] Prompt 5/12 — Lapse, Reinstatement & Expiry Logic
 
 ```text
 You are a senior Django insurance engineer. Continue the ZIC OL Policies backend. Execute ONLY Prompt 5.

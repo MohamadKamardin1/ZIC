@@ -111,6 +111,9 @@ class Policy(UUIDModel, AuditedModel):
     first_premium_receipt_ref = models.CharField(max_length=160, blank=True, default="")
     contract_snapshot = models.JSONField(default=dict, blank=True)
     version = models.PositiveIntegerField(default=1)
+    lapsed_at = models.DateField(null=True, blank=True, db_index=True)
+    reinstated_at = models.DateField(null=True, blank=True)
+    expired_at = models.DateField(null=True, blank=True)
 
     class Meta:
         db_table = "ol_policies_policy"

@@ -3,6 +3,9 @@ from apps.common.models import DomainEvent
 AGGREGATE_TYPE = "Policy"
 POLICY_ISSUED = "PolicyIssued"
 POLICY_ENDORSED = "PolicyEndorsed"
+POLICY_LAPSED = "PolicyLapsed"
+POLICY_REINSTATED = "PolicyReinstated"
+POLICY_EXPIRED = "PolicyExpired"
 
 
 def emit_policy_endorsed(policy, endorsement, *, actor=None, reason="", source_channel="API", metadata=None):
@@ -25,6 +28,37 @@ def emit_policy_endorsed(policy, endorsement, *, actor=None, reason="", source_c
         aggregate_id=str(policy.pk),
         payload=payload,
     )
+
+
+def emit_lifecycle_event(event_type, policy, *, actor=None, from_status="", reason="", source_channel="SYSTEM", metadata=None):
+    payload = {
+        "policy_id": str(policy.pk),
+        "policy_number": policy.policy_number,
+        "actor_id": str(actor.pk) if actor and getattr(actor, "pk", None) else None,
+        "from_status": from_status,
+        "to_status": policy.status,
+        "reason": reason,
+        "source_channel": source_channel,
+        "metadata": metadata or {},
+    }
+    return DomainEvent.objects.create(
+        event_type=event_type,
+        aggregate_type=AGGREGATE_TYPE,
+        aggregate_id=str(policy.pk),
+        payload=payload,
+    )
+
+
+def emit_policy_lapsed(policy, **kwargs):
+    return emit_lifecycle_event(POLICY_LAPSED, policy, **kwargs)
+
+
+def emit_policy_reinstated(policy, **kwargs):
+    return emit_lifecycle_event(POLICY_REINSTATED, policy, **kwargs)
+
+
+def emit_policy_expired(policy, **kwargs):
+    return emit_lifecycle_event(POLICY_EXPIRED, policy, **kwargs)
 
 
 def emit_policy_issued(policy, *, actor=None, reason="", source_channel="API", metadata=None):
