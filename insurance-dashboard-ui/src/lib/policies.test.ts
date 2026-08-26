@@ -6,7 +6,7 @@ vi.mock("./apiClient", async () => {
   return { ...actual, request: requestMock }
 })
 
-import { getPolicy, getPolicyKpis, getPolicyOptions, issuePolicy, listPolicies, listPolicyBenefits, listPolicyMembers, listPolicyRiders } from "./policies"
+import { cancelPolicy, getPolicy, getPolicyKpis, getPolicyOptions, issuePolicy, listPolicies, listPolicyBenefits, listPolicyMembers, listPolicyRiders, requestPolicyPaidUp, requestPolicySurrender } from "./policies"
 
 beforeEach(() => requestMock.mockReset())
 
@@ -98,6 +98,24 @@ describe("OL Policies API contract", () => {
     expect(members[0]).toMatchObject({ name: "Halima Salum", memberRelation: "Spouse" })
     expect(riders[0]).toMatchObject({ riderCode: "AD — Accidental Death", premium: "2500.00" })
     expect(benefits[0]).toMatchObject({ benefitType: "Death benefit", calculationBasis: "SUM_ASSURED" })
+  })
+
+  it("posts surrender, paid-up, and cancellation actions to canonical terminal endpoints", async () => {
+    requestMock
+      .mockResolvedValueOnce({ surrender_request: { status: "SURRENDER_PENDING", net_surrender_value: "8750000.00" }, policy: { id: "policy-1" }, created: true })
+      .mockResolvedValueOnce({ id: "policy-1", policy_number: "ZIC-OL-2026-000001", status: "PAID_UP" })
+      .mockResolvedValueOnce({ policy: { id: "policy-1", status: "CANCELLED" }, refund: { amount: "120000.00" } })
+
+    const surrender = await requestPolicySurrender("policy-1", { reason: "Customer request" })
+    const paidUp = await requestPolicyPaidUp("policy-1")
+    const cancelled = await cancelPolicy("policy-1", { reason: "Free-look cancellation" })
+
+    expect(surrender).toMatchObject({ created: true, surrender_request: { status: "SURRENDER_PENDING" } })
+    expect(paidUp).toMatchObject({ id: "policy-1", policyNumber: "ZIC-OL-2026-000001", status: "PAID_UP" })
+    expect(cancelled).toMatchObject({ refund: { amount: "120000.00" } })
+    expect(requestMock).toHaveBeenNthCalledWith(1, "/api/v1/ol/policies/policy-1/surrender/", expect.objectContaining({ method: "POST", body: JSON.stringify({ reason: "Customer request" }) }))
+    expect(requestMock).toHaveBeenNthCalledWith(2, "/api/v1/ol/policies/policy-1/paid-up/", expect.objectContaining({ method: "POST", body: JSON.stringify({}) }))
+    expect(requestMock).toHaveBeenNthCalledWith(3, "/api/v1/ol/policies/policy-1/cancel/", expect.objectContaining({ method: "POST", body: JSON.stringify({ reason: "Free-look cancellation" }) }))
   })
 
   it("posts an eligible proposal to the canonical issue endpoint", async () => {

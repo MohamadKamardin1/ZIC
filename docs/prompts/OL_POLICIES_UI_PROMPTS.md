@@ -279,7 +279,7 @@ FINAL OUTPUT: financial actions, validation, tests, commit hash, pushed branch.
 
 ---
 
-## [ ] Prompt 8/10 — Surrender, Paid-Up, & Cancellation Flows
+## [x] Prompt 8/10 — Surrender, Paid-Up, & Cancellation Flows
 
 ```text
 You are a senior frontend engineer. Continue the ZIC Policies UI. Execute ONLY Prompt 8.

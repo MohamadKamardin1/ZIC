@@ -23,7 +23,9 @@ import {
   printPolicySchedule,
   repayPolicyLoan,
   requestPolicyLoan,
+  requestPolicyPaidUp,
   requestPolicySurrender,
+  cancelPolicy,
   requestPolicyWithdrawal,
   type PolicyDetail,
   type PolicyEndorsement,
@@ -226,6 +228,22 @@ export function useRequestPolicySurrenderMutation() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ id, payload = {} }: { id: string; payload?: Record<string, unknown> }) => requestPolicySurrender(id, payload),
+    onSuccess: (_data, variables) => invalidatePolicyQueries(queryClient, variables.id),
+  })
+}
+
+export function useRequestPolicyPaidUpMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, payload = {} }: { id: string; payload?: Record<string, unknown> }) => requestPolicyPaidUp(id, payload),
+    onSuccess: (_data, variables) => invalidatePolicyQueries(queryClient, variables.id),
+  })
+}
+
+export function useCancelPolicyMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, payload = {} }: { id: string; payload?: Record<string, unknown> }) => cancelPolicy(id, payload),
     onSuccess: (_data, variables) => invalidatePolicyQueries(queryClient, variables.id),
   })
 }

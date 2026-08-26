@@ -27,6 +27,28 @@ describe("OL Policies MSW contract", () => {
     expect(kpis.data).toMatchObject({ total_active_policies: 2, currency: "TZS" })
   })
 
+  it("enforces terminal-flow eligibility and returns realistic response envelopes", async () => {
+    const surrenderResponse = await fetch("http://localhost/api/v1/ol/policies/policy-active-1/surrender/", { method: "POST", body: JSON.stringify({ reason: "Customer request" }), headers: { "Content-Type": "application/json" } })
+    expect(surrenderResponse.status).toBe(201)
+    const surrender = await surrenderResponse.json()
+    expect(surrender.data).toMatchObject({ created: true, surrender_request: { status: "SURRENDER_PENDING", net_surrender_value: "8750000.00" }, policy: { status: "SURRENDER_PENDING", status_display: "Surrender pending" } })
+
+    const paidUpResponse = await fetch("http://localhost/api/v1/ol/policies/policy-lapsed-1/paid-up/", { method: "POST", body: JSON.stringify({}), headers: { "Content-Type": "application/json" } })
+    expect(paidUpResponse.status).toBe(200)
+    const paidUp = await paidUpResponse.json()
+    expect(paidUp.data).toMatchObject({ status: "PAID_UP", status_display: "Paid-up", allowed_actions: ["view", "print"] })
+
+    const missingReasonResponse = await fetch("http://localhost/api/v1/ol/policies/policy-active-1/cancel/", { method: "POST", body: JSON.stringify({}), headers: { "Content-Type": "application/json" } })
+    expect(missingReasonResponse.status).toBe(400)
+    const missingReason = await missingReasonResponse.json()
+    expect(missingReason).toMatchObject({ errorCode: "POLICY_CANCELLATION_REASON_REQUIRED", fieldErrors: { reason: [expect.any(String)] } })
+
+    const cancelResponse = await fetch("http://localhost/api/v1/ol/policies/policy-active-1/cancel/", { method: "POST", body: JSON.stringify({ reason: "Free-look cancellation" }), headers: { "Content-Type": "application/json" } })
+    expect(cancelResponse.status).toBe(200)
+    const cancelled = await cancelResponse.json()
+    expect(cancelled.data).toMatchObject({ policy: { status: "CANCELLED" }, refund: { amount: "120000.00", requisition_number: "REF-2026-000001" } })
+  })
+
   it("returns searchable standard policy options and a structured unknown-entity error", async () => {
     const optionResponse = await fetch("http://localhost/api/v1/ol/options/statuses/?q=lapsed")
     expect(optionResponse.status).toBe(200)

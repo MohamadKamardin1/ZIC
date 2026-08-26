@@ -426,6 +426,14 @@ export async function requestPolicySurrender(policyId: string, payload: Record<s
   return request<Record<string, unknown>>(`${POLICIES_BASE}/${policyId}/surrender/`, { method: "POST", body: JSON.stringify(payload) })
 }
 
+export async function requestPolicyPaidUp(policyId: string, payload: Record<string, unknown> = {}): Promise<PolicyDetail> {
+  return normalizePolicyDetail(await request<unknown>(`${POLICIES_BASE}/${policyId}/paid-up/`, { method: "POST", body: JSON.stringify(payload) }))
+}
+
+export async function cancelPolicy(policyId: string, payload: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(`${POLICIES_BASE}/${policyId}/cancel/`, { method: "POST", body: JSON.stringify(payload) })
+}
+
 export async function processPolicyMaturity(policyId: string, payload: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
   return request<Record<string, unknown>>(`${POLICIES_BASE}/${policyId}/maturity/`, { method: "POST", body: JSON.stringify(payload) })
 }

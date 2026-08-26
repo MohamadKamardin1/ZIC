@@ -1,6 +1,8 @@
 import { http, HttpResponse } from "msw"
 import { POLICY_OPTIONS_BASE, POLICIES_BASE, type PolicyOption } from "../lib/policies"
 
+const terminalStatusOverrides = new Map<string, string>()
+
 const ids = {
   active: "policy-active-1",
   lapsed: "policy-lapsed-1",
@@ -136,8 +138,14 @@ function page<T>(rows: T[], url: URL) {
 function detailFor(id: string) {
   const policy = basePolicies.find((item) => item.id === id)
   if (!policy) return null
+  const status = terminalStatusOverrides.get(id) ?? policy.status
+  const statusDisplay = status === "SURRENDER_PENDING" ? "Surrender pending" : status === "PAID_UP" ? "Paid-up" : status === "CANCELLED" ? "Cancelled" : policy.status_display
+  const allowedActions = status === "SURRENDER_PENDING" || status === "PAID_UP" ? ["view", "print"] : status === "CANCELLED" ? ["view", "print"] : policy.allowed_actions
   return {
     ...policy,
+    status,
+    status_display: statusDisplay,
+    allowed_actions: allowedActions,
     contract_snapshot: {
       policy_number: policy.policy_number,
       product_plan: policy.product_plan_display,
@@ -215,7 +223,31 @@ export const policiesHandlers = [
   http.post(`*${POLICIES_BASE}/loans/:loanId/disburse/`, ({ params }) => data({ id: String(params.loanId), status: "DISBURSED" })),
   http.post(`*${POLICIES_BASE}/loans/:loanId/repay/`, ({ params }) => data({ id: String(params.loanId), status: "PARTIALLY_REPAID", interest_component: "1000.00", principal_component: "9000.00" })),
   http.post(`*${POLICIES_BASE}/:policyId/withdrawals/`, ({ params }) => detailFor(String(params.policyId)) ? data({ id: "withdrawal-new", request_number: "WDR-2026-000002", status: "PENDING" }, 201) : error(404, "POLICY_NOT_FOUND", "The policy could not be found.", ["Return to the policy list and choose an available policy."])),
-  http.post(`*${POLICIES_BASE}/:policyId/surrender/`, ({ params }) => detailFor(String(params.policyId)) ? data({ id: "surrender-new", request_number: "SUR-2026-000001", status: "SURRENDER_PENDING", net_surrender_value: "8750000.00" }, 201) : error(404, "POLICY_NOT_FOUND", "The policy could not be found.", ["Return to the policy list and choose an available policy."])),
+  http.post(`*${POLICIES_BASE}/:policyId/surrender/`, ({ params }) => {
+    const policyId = String(params.policyId)
+    const policy = detailFor(policyId)
+    if (!policy) return error(404, "POLICY_NOT_FOUND", "The policy could not be found.", ["Return to the policy list and choose an available policy."])
+    if (policy.status !== "ACTIVE") return error(422, "POLICY_SURRENDER_NOT_ELIGIBLE", "Only an active policy can be submitted for surrender.", ["Open an active policy before requesting surrender."])
+    terminalStatusOverrides.set(policyId, "SURRENDER_PENDING")
+    return data({ surrender_request: { id: "surrender-new", request_number: "SUR-2026-000001", status: "SURRENDER_PENDING", net_surrender_value: "8750000.00" }, policy: detailFor(policyId), created: true }, 201)
+  }),
+  http.post(`*${POLICIES_BASE}/:policyId/paid-up/`, ({ params }) => {
+    const policyId = String(params.policyId)
+    const policy = detailFor(policyId)
+    if (!policy) return error(404, "POLICY_NOT_FOUND", "The policy could not be found.", ["Return to the policy list and choose an available policy."])
+    if (policy.status !== "LAPSED") return error(422, "POLICY_PAID_UP_NOT_ELIGIBLE", "Paid-up conversion is available only for eligible lapsed policies.", ["Use the reinstatement option or open a lapsed policy eligible for paid-up conversion."])
+    terminalStatusOverrides.set(policyId, "PAID_UP")
+    return data(detailFor(policyId))
+  }),
+  http.post(`*${POLICIES_BASE}/:policyId/cancel/`, async ({ params, request }) => {
+    const policyId = String(params.policyId)
+    const policy = detailFor(policyId)
+    if (!policy) return error(404, "POLICY_NOT_FOUND", "The policy could not be found.", ["Return to the policy list and choose an available policy."])
+    const body = await request.json() as { reason?: string }
+    if (!body.reason?.trim()) return error(400, "POLICY_CANCELLATION_REASON_REQUIRED", "A cancellation reason is required.", ["Enter a clear reason for cancellation, then submit again."], { reason: ["Provide the reason recorded for this terminal action."] })
+    terminalStatusOverrides.set(policyId, "CANCELLED")
+    return data({ policy: detailFor(policyId), refund: { amount: "120000.00", within_free_look: true, requisition_number: "REF-2026-000001" } })
+  }),
   http.post(`*${POLICIES_BASE}/:policyId/maturity/`, ({ params }) => detailFor(String(params.policyId)) ? data({ id: "maturity-1", claim_number: "MAT-2026-000001", status: "PENDING_APPROVAL" }, 201) : error(404, "POLICY_NOT_FOUND", "The policy could not be found.", ["Return to the policy list and choose an available policy."])),
   http.get(`*${POLICY_OPTIONS_BASE}/:entity/`, ({ params, request }) => {
     const values = policyOptions[String(params.entity)]

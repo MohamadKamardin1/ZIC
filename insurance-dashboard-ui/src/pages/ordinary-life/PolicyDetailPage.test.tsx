@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import PolicyDetailPage from "./PolicyDetailPage"
 import { UUID_RE } from "../../lib/display"
 
-const { navigateMock, setSearchParamsMock, searchParamsMock, usePolicyDetailMock, usePolicyOptionsMock, usePolicyMembersMock, usePolicyRidersMock, usePolicyBenefitsMock, usePolicyEndorsementsMock, usePolicyLoansMock, usePolicyWithdrawalsMock, useCreatePolicyEndorsementMutationMock } = vi.hoisted(() => ({
+const { navigateMock, setSearchParamsMock, searchParamsMock, usePolicyDetailMock, usePolicyOptionsMock, usePolicyMembersMock, usePolicyRidersMock, usePolicyBenefitsMock, usePolicyEndorsementsMock, usePolicyLoansMock, usePolicyWithdrawalsMock, useCreatePolicyEndorsementMutationMock, useRequestPolicySurrenderMutationMock, useRequestPolicyPaidUpMutationMock, useCancelPolicyMutationMock, surrenderMutateMock, paidUpMutateMock, cancelMutateMock } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
   setSearchParamsMock: vi.fn(),
   searchParamsMock: new URLSearchParams(),
@@ -16,6 +16,12 @@ const { navigateMock, setSearchParamsMock, searchParamsMock, usePolicyDetailMock
   usePolicyLoansMock: vi.fn(),
   usePolicyWithdrawalsMock: vi.fn(),
   useCreatePolicyEndorsementMutationMock: vi.fn(),
+  useRequestPolicySurrenderMutationMock: vi.fn(),
+  useRequestPolicyPaidUpMutationMock: vi.fn(),
+  useCancelPolicyMutationMock: vi.fn(),
+  surrenderMutateMock: vi.fn(),
+  paidUpMutateMock: vi.fn(),
+  cancelMutateMock: vi.fn(),
 }))
 
 vi.mock("react-router-dom", () => ({
@@ -29,11 +35,10 @@ vi.mock("../../lib/access", () => ({
     access: { permissions: [
       { module: "ol_policies", action: "view" },
       { module: "ol_policies", action: "endorse" },
-      { module: "ol_policies", action: "loan" },
-      { module: "ol_policies", action: "withdraw" },
-      { module: "ol_policies", action: "surrender" },
+      { module: "ol_policies", action: "service" },
       { module: "ol_policies", action: "print" },
       { module: "ol_policies", action: "reinstate" },
+      { module: "ol_policies", action: "cancel" },
     ] },
     isSuperAdmin: false,
   }),
@@ -48,6 +53,9 @@ vi.mock("../../lib/policiesHooks", () => ({
   usePolicyLoans: usePolicyLoansMock,
   usePolicyWithdrawals: usePolicyWithdrawalsMock,
   useCreatePolicyEndorsementMutation: useCreatePolicyEndorsementMutationMock,
+  useRequestPolicySurrenderMutation: useRequestPolicySurrenderMutationMock,
+  useRequestPolicyPaidUpMutation: useRequestPolicyPaidUpMutationMock,
+  useCancelPolicyMutation: useCancelPolicyMutationMock,
 }))
 
 const activePolicy = {
@@ -66,7 +74,7 @@ const activePolicy = {
   maturityDate: "2041-01-15",
   status: "ACTIVE",
   statusDisplay: "Active",
-  allowedActions: ["view", "endorse", "loan", "withdraw", "surrender", "print"],
+  allowedActions: ["view", "endorse", "service", "print", "cancel"],
   version: 1,
   contractSnapshot: {
     term_years: 15,
@@ -105,6 +113,12 @@ beforeEach(() => {
   usePolicyLoansMock.mockReturnValue({ data: { results: [], count: 0 }, isPending: false })
   usePolicyWithdrawalsMock.mockReturnValue({ data: { results: [], count: 0 }, isPending: false })
   useCreatePolicyEndorsementMutationMock.mockReturnValue({ mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null })
+  surrenderMutateMock.mockReset()
+  paidUpMutateMock.mockReset()
+  cancelMutateMock.mockReset()
+  useRequestPolicySurrenderMutationMock.mockReturnValue({ mutate: surrenderMutateMock, reset: vi.fn(), isPending: false, error: null })
+  useRequestPolicyPaidUpMutationMock.mockReturnValue({ mutate: paidUpMutateMock, reset: vi.fn(), isPending: false, error: null })
+  useCancelPolicyMutationMock.mockReturnValue({ mutate: cancelMutateMock, reset: vi.fn(), isPending: false, error: null })
 })
 
 describe("PolicyDetailPage", () => {
@@ -170,7 +184,40 @@ describe("PolicyDetailPage", () => {
     expect(screen.getByText(/New address/)).toBeInTheDocument()
   })
 
-  it("hides loan and servicing actions when a policy is lapsed and shows reinstatement guidance", () => {
+  it("opens surrender and cancellation modals with reason and confirmation safeguards", () => {
+    render(<PolicyDetailPage />)
+    fireEvent.click(screen.getByRole("button", { name: "Surrender" }))
+    expect(screen.getByRole("dialog", { name: "Surrender Policy" })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Confirm surrender" }))
+    expect(screen.getByText("Enter the reason for surrender so the request can be reviewed.")).toBeInTheDocument()
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Customer request" } })
+    fireEvent.click(screen.getByRole("button", { name: "Confirm surrender" }))
+    expect(screen.getByText("Confirm that you understand this action will terminate the policy.")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("checkbox"))
+    fireEvent.click(screen.getByRole("button", { name: "Confirm surrender" }))
+    expect(surrenderMutateMock).toHaveBeenCalledWith(expect.objectContaining({ id: "policy-1", payload: { reason: "Customer request" } }), expect.any(Object))
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
+    fireEvent.click(screen.getByRole("button", { name: "Cancel Policy" }))
+    expect(screen.getByRole("dialog", { name: "Cancel Policy" })).toBeInTheDocument()
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Free-look cancellation" } })
+    fireEvent.click(screen.getByRole("checkbox"))
+    fireEvent.click(screen.getByRole("button", { name: "Confirm cancellation" }))
+    expect(cancelMutateMock).toHaveBeenCalledWith(expect.objectContaining({ id: "policy-1", payload: { reason: "Free-look cancellation" } }), expect.any(Object))
+  })
+
+  it("shows paid-up conversion only for a lapsed policy with service permission", () => {
+    usePolicyDetailMock.mockReturnValue({ data: { ...activePolicy, status: "LAPSED", statusDisplay: "Lapsed", allowedActions: ["view", "service", "reinstate", "print"], contractSnapshot: { ...activePolicy.contractSnapshot, lapse_date: "2026-04-01" } }, isPending: false, isError: false, error: null, refetch: vi.fn() })
+    render(<PolicyDetailPage />)
+    expect(screen.getByRole("button", { name: "Convert to Paid-Up" })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Convert to Paid-Up" }))
+    expect(screen.getByRole("dialog", { name: "Convert to Paid-Up" })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("checkbox"))
+    fireEvent.click(screen.getByRole("button", { name: "Confirm paid-up conversion" }))
+    expect(paidUpMutateMock).toHaveBeenCalledWith(expect.objectContaining({ id: "policy-1", payload: {} }), expect.any(Object))
+  })
+
+  it("hides loan and servicing actions when a policy is lapsed and shows reinstatement guidance", async () => {
     usePolicyDetailMock.mockReturnValue({ data: { ...activePolicy, status: "LAPSED", statusDisplay: "Lapsed", allowedActions: ["view", "reinstate", "print"], contractSnapshot: { ...activePolicy.contractSnapshot, lapse_date: "2026-04-01" } }, isPending: false, isError: false, error: null, refetch: vi.fn() })
     render(<PolicyDetailPage />)
     expect(screen.getByText(/Lapsed Since/)).toHaveTextContent("Apr 2026")
