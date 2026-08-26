@@ -249,6 +249,43 @@ FINAL OUTPUT: component extension, routing registry, tests, commit hash, pushed 
 
 ---
 
-## [ ] Prompt 6 — Not supplied in the current request
+## [ ] Prompt 6 — Full OL fixes-series verification
 
-The exact Prompt 6 text was not included in the current request. It is intentionally not reconstructed.
+```text
+You are a senior QA engineer. Complete the ZIC fix series. Execute ONLY Prompt 6.
+
+MANDATORY RULES:
+
+- Verify every fix end-to-end; fix regressions before pushing.
+- Commit and push; tick final checkbox; all 6 checkboxes ticked at the end.
+
+OBJECTIVE:
+Run full verification suite across options, documents, KPIs, frequencies, and manage links.
+
+SCOPE:
+
+1. Playwright E2E:
+   - options endpoints return 200 with labeled data
+   - quotation KPIs display correct aggregated values
+   - payment frequency validates against product config; mismatch shows teachable error
+   - "Manage" links navigate to parameter screens and preserve wizard state
+   - document print generates PDF, preview renders, signed URL works, no "no secure URL" error
+2. Audit consistency:
+   - verify document generation/download events logged
+   - verify option access logs correctly
+   - ensure no UUID leaks in KPI/options responses
+3. Documentation:
+   - update docs/OL_QUOTATIONS_API.md with fixed endpoints
+   - add docs/FIXES_OPTIONS_DOCUMENTS_KPI_FREQUENCY.md summarizing changes
+4. Run backend + frontend lint/typecheck/tests/E2E; fix all failures.
+5. Mark series complete in saved prompt file.
+
+GIT:
+
+- commit: "test(ol): e2e verification for options documents kpi frequency and manage links"
+- push; if blocked create feature/ol-fix-series-complete and push
+- tag v0.11.0-ol-fixes if tagging convention exists
+
+FINAL OUTPUT:
+Return E2E results, audit evidence, docs added, all 6 checkboxes ticked, commit hash/tag, pushed branch, and next recommended module.
+```
