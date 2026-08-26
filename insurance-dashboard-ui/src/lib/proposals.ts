@@ -8,6 +8,7 @@
  */
 
 import { buildTableQuery, request, type TableQuery } from "./apiClient"
+import { fetchAuthenticatedDocument } from "./documentClient"
 
 const BASE = "/api/v1/ol-proposals"
 const CREATE_BASE = "/api/v1/ol/proposals"
@@ -998,11 +999,19 @@ export interface GeneratedDocumentRecord {
   generatedAt?: string | null
   pdfUrl?: string | null
   htmlUrl?: string | null
+  previewUrl?: string | null
+  signedDownloadUrl?: string | null
+  downloadUrlExpiresAt?: string | null
+  pageCount?: number | null
+  checksum?: string | null
 }
 
 export function normalizeGeneratedDocument(raw: unknown): GeneratedDocumentRecord {
   const record = asRecord(raw)
   const urls = asRecord(record.urls)
+  const signedDownloadUrl = str(record, "signed_download_url") ?? str(urls, "signed_download_url")
+  const previewUrl = str(record, "preview_url") ?? str(urls, "signed_preview_url") ?? str(urls, "html_url")
+  const pdfUrl = signedDownloadUrl ?? str(record, "download_url") ?? str(urls, "pdf_url")
   return {
     id: str(record, "id") ?? "",
     documentType: str(record, "document_type") ?? "",
@@ -1010,15 +1019,20 @@ export function normalizeGeneratedDocument(raw: unknown): GeneratedDocumentRecor
     templateCode: str(record, "template_code"),
     templateVersion: num(record, "template_version"),
     sourceVersion: num(record, "source_version"),
-    generatedByName: str(record, "generated_by_name"),
+    generatedByName: str(record, "generated_by_display", "generated_by_name"),
     generatedAt: str(record, "generated_at"),
-    pdfUrl: str(urls, "pdf_url"),
-    htmlUrl: str(urls, "html_url"),
+    pdfUrl,
+    htmlUrl: str(record, "html_url") ?? str(urls, "html_url"),
+    previewUrl,
+    signedDownloadUrl,
+    downloadUrlExpiresAt: str(record, "download_url_expires_at"),
+    pageCount: num(record, "page_count"),
+    checksum: str(record, "checksum"),
   }
 }
 
 export async function generateProposalPrint(id: string): Promise<GeneratedDocumentRecord> {
-  const payload = await request<unknown>(`${BASE}/proposals/${id}/print/`, { method: "POST" })
+  const payload = await request<unknown>(`/api/v1/documents/render/PROPOSAL_SUMMARY/${encodeURIComponent(id)}/`, { method: "POST" })
   return normalizeGeneratedDocument(payload)
 }
 
@@ -1027,22 +1041,18 @@ export interface ProposalPrintPreview extends GeneratedDocumentRecord {
 }
 
 export async function printProposal(id: string): Promise<PrintResult> {
-  const response = await fetch(`${BASE}/proposals/${id}/print/?format=pdf`, {
-    headers: {
-      Authorization: `Bearer ${localStorage.getItem("aims_access_token") ?? sessionStorage.getItem("aims_access_token") ?? ""}`,
-      Accept: "application/pdf",
-    },
-  })
-  if (!response.ok) throw await (await import("./apiClient")).normalizeResponseError(response)
-  const blob = await response.blob()
+  const document = await generateProposalPrint(id)
+  const url = document.signedDownloadUrl ?? document.pdfUrl
+  if (!url) throw new Error("The proposal print service did not return a secure PDF URL. Generate the document again or contact System Administration.")
+  const result = await fetchAuthenticatedDocument(url, "pdf")
   return {
     fileName: `proposal-${id}.pdf`,
-    blobUrl: URL.createObjectURL(blob),
+    blobUrl: result.objectUrl,
   }
 }
 
 export async function listGeneratedDocuments(id: string): Promise<GeneratedDocumentRecord[]> {
-  const payload = await request<unknown>(`${BASE}/proposals/${id}/generated-documents/`)
+  const payload = await request<unknown>(`/api/v1/documents/instances/?source_type=ol_proposals.olproposal&object_id=${encodeURIComponent(id)}&page_size=50`)
   const record = asRecord(payload)
   const rows = Array.isArray(record.results) ? record.results : []
   return rows.map(normalizeGeneratedDocument)

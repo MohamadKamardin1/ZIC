@@ -30,7 +30,7 @@ def _success(data, message, status_code=status.HTTP_200_OK):
     )
 
 
-def _failure(message, status_code, details=None, code=None):
+def _failure(message, status_code, details=None, code=None, resolution_steps=None):
     payload = {
         "success": False,
         "status_code": status_code,
@@ -39,6 +39,8 @@ def _failure(message, status_code, details=None, code=None):
     }
     if code:
         payload["code"] = code
+    if resolution_steps:
+        payload["resolution_steps"] = resolution_steps
     return Response(payload, status=status_code)
 
 
@@ -54,13 +56,19 @@ class DocumentRenderView(APIView):
                 actor=request.user,
                 request=request,
             )
+            document_payload = DocumentEngine.payload(instance, request=request, actor=request.user, signed=True)
             return _success(
-                DocumentEngine.payload(instance, request=request, actor=request.user, signed=True),
+                {
+                    **document_payload,
+                    "instance": document_payload,
+                    "preview_blob_base64_or_url": document_payload["preview_url"],
+                    "signed_download_url": document_payload["signed_download_url"],
+                },
                 "Document rendered successfully.",
                 status.HTTP_201_CREATED,
             )
         except DocumentEngineError as exc:
-            return _failure(str(exc), exc.status_code, code=exc.code)
+            return _failure(str(exc), exc.status_code, code=exc.code, resolution_steps=exc.resolution_steps)
 
 
 class DocumentInstanceListView(APIView):
@@ -260,4 +268,4 @@ class DocumentDownloadView(APIView):
                 format_name="html" if is_preview else "pdf",
             )
         except DocumentEngineError as exc:
-            return _failure(str(exc), exc.status_code)
+            return _failure(str(exc), exc.status_code, code=exc.code, resolution_steps=exc.resolution_steps)

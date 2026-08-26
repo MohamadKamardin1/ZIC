@@ -1,85 +1,92 @@
-import { Download, Printer } from "lucide-react"
+import { Download, ExternalLink, Eye, FileText, Loader2, X } from "lucide-react"
+import { useEffect, useState } from "react"
 import { ErrorCoach } from "../../components/commitments/ErrorCoach"
+import { Modal } from "../../components/ui/Overlays"
+import { fetchAuthenticatedDocument, openAuthenticatedDocument, revokeAuthenticatedDocument, type AuthenticatedDocumentResult } from "../../lib/documentClient"
 import { useGeneratedDocuments } from "../../lib/proposalsHooks"
-import type { ProposalDetail } from "../../lib/proposals"
+import type { GeneratedDocumentRecord, ProposalDetail } from "../../lib/proposals"
+
+function documentUrl(row: GeneratedDocumentRecord): string | null {
+  return row.signedDownloadUrl ?? row.pdfUrl ?? null
+}
+
+function labelDate(value?: string | null): string {
+  if (!value) return "—"
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+}
 
 /**
- * Generated Documents tab: the durable register of every printout produced
- * for this proposal — template version, source quotation version, who
- * generated it and when.
+ * Unified proposal document history. Every preview/download is authenticated;
+ * only a short-lived signed ticket may be opened directly in a new tab.
  */
 export function OLGeneratedDocuments({ detail }: { detail: ProposalDetail }) {
   const documentsQuery = useGeneratedDocuments(detail.id)
   const rows = documentsQuery.data ?? []
+  const [preview, setPreview] = useState<AuthenticatedDocumentResult | null>(null)
+  const [previewTitle, setPreviewTitle] = useState("Proposal PDF")
+  const [actionError, setActionError] = useState<unknown>(null)
+
+  useEffect(() => () => revokeAuthenticatedDocument(preview), [preview])
+
+  const previewDocument = async (row: GeneratedDocumentRecord) => {
+    const url = documentUrl(row)
+    if (!url) {
+      setActionError(new Error("The unified document service did not return a secure PDF URL. Generate the document again or contact System Administration."))
+      return
+    }
+    setActionError(null)
+    revokeAuthenticatedDocument(preview)
+    try {
+      const result = await fetchAuthenticatedDocument(url, "pdf")
+      setPreview(result)
+      setPreviewTitle(row.documentType || "Proposal PDF")
+    } catch (caught) {
+      setActionError(caught)
+    }
+  }
+
+  const downloadDocument = async (row: GeneratedDocumentRecord) => {
+    const url = documentUrl(row)
+    if (!url) {
+      setActionError(new Error("The unified document service did not return a secure PDF URL. Generate the document again or contact System Administration."))
+      return
+    }
+    setActionError(null)
+    try {
+      await openAuthenticatedDocument(url, { kind: "pdf", mode: "download", filename: `proposal-${detail.id}.pdf` })
+    } catch (caught) {
+      setActionError(caught)
+    }
+  }
 
   return (
     <div className="space-y-4" data-testid="tab-generated">
       <section className="surface-card p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="flex items-center gap-2 font-bold">
-            <Printer size={16} aria-hidden="true" />
-            Generated documents
-          </h2>
-          <span className="text-xs font-bold uppercase tracking-[0.08em] text-[var(--muted-foreground)]" data-testid="generated-counts">
-            {rows.length} {rows.length === 1 ? "printout" : "printouts"}
-          </span>
+          <h2 className="flex items-center gap-2 font-bold"><FileText size={16} aria-hidden="true" />Generated documents</h2>
+          <span className="text-xs font-bold uppercase tracking-[0.08em] text-[var(--muted-foreground)]" data-testid="generated-counts">{rows.length} {rows.length === 1 ? "printout" : "printouts"}</span>
         </div>
 
         {documentsQuery.isLoading ? (
-          <div className="h-20 animate-pulse rounded-[10px] bg-[var(--muted)]" aria-busy="true" />
+          <div className="flex h-20 items-center justify-center gap-2 rounded-[10px] bg-[var(--muted)] text-sm" role="status" aria-busy="true"><Loader2 size={16} className="animate-spin" aria-hidden="true" />Loading generated documents…</div>
         ) : rows.length === 0 ? (
-          <p className="text-sm text-[var(--muted-foreground)]">
-            No printouts yet. Use “Print” in the action bar to generate the proposal summary PDF.
-          </p>
+          <p className="text-sm text-[var(--muted-foreground)]">No printouts yet. Use “Print” in the action bar to generate the proposal summary PDF.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm" data-testid="generated-documents-table">
-              <thead>
-                <tr className="border-b text-xs font-bold uppercase tracking-wide text-[var(--muted-foreground)]">
-                  <th className="py-2 pr-3">Document</th>
-                  <th className="py-2 pr-3">Template</th>
-                  <th className="py-2 pr-3">Source ver.</th>
-                  <th className="py-2 pr-3">Generated by</th>
-                  <th className="py-2 pr-3">Generated at</th>
-                  <th className="py-2">File</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.id || row.documentType} className="border-b border-[var(--border)] last:border-0" data-testid={`generated-row-${row.id}`}>
-                    <td className="py-2 pr-3 font-semibold">{row.documentType}</td>
-                    <td className="py-2 pr-3 text-xs">
-                      {row.templateCode ? (
-                        <>
-                          {row.templateCode} <span className="font-bold">v{row.templateVersion ?? "?"}</span>
-                        </>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className="py-2 pr-3 text-xs">{row.sourceVersion != null ? `v${row.sourceVersion}` : "—"}</td>
-                    <td className="py-2 pr-3 text-xs">{row.generatedByName || "—"}</td>
-                    <td className="py-2 pr-3 text-xs">{row.generatedAt ? row.generatedAt.slice(0, 16).replace("T", " ") : "—"}</td>
-                    <td className="py-2">
-                      {row.pdfUrl ? (
-                        <a href={row.pdfUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-bold underline-offset-2 hover:underline">
-                          <Download size={12} aria-hidden="true" />
-                          PDF
-                        </a>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
+              <caption className="sr-only">Generated proposal documents</caption>
+              <thead><tr className="border-b text-xs font-bold uppercase tracking-wide text-[var(--muted-foreground)]"><th className="py-2 pr-3">Document</th><th className="py-2 pr-3">Template</th><th className="py-2 pr-3">Source ver.</th><th className="py-2 pr-3">Generated by</th><th className="py-2 pr-3">Generated at</th><th className="py-2 text-right">Actions</th></tr></thead>
+              <tbody>{rows.map((row) => <tr key={row.id || row.documentType} className="border-b border-[var(--border)] last:border-0" data-testid={`generated-row-${row.id}`}><td className="py-2 pr-3 font-semibold">{row.documentType || "Document"}</td><td className="py-2 pr-3 text-xs">{row.templateCode ? <>{row.templateCode} <span className="font-bold">v{row.templateVersion ?? "?"}</span></> : "—"}</td><td className="py-2 pr-3 text-xs">{row.sourceVersion != null ? `v${row.sourceVersion}` : "—"}</td><td className="py-2 pr-3 text-xs">{row.generatedByName || "System"}</td><td className="py-2 pr-3 text-xs">{labelDate(row.generatedAt)}</td><td className="py-2"><div className="flex flex-wrap justify-end gap-2"><button type="button" className="button-secondary inline-flex items-center gap-1" onClick={() => void previewDocument(row)}><Eye size={12} aria-hidden="true" />Preview</button><button type="button" className="button-secondary inline-flex items-center gap-1" onClick={() => void downloadDocument(row)}><Download size={12} aria-hidden="true" />Download</button>{row.signedDownloadUrl && <button type="button" className="button-secondary inline-flex items-center gap-1" onClick={() => window.open(row.signedDownloadUrl ?? "", "_blank", "noopener,noreferrer")}><ExternalLink size={12} aria-hidden="true" />Open in new tab</button>}</div></td></tr>)}</tbody>
             </table>
           </div>
         )}
-        {documentsQuery.isError && (
-          <ErrorCoach error={documentsQuery.error} title="The generated documents could not be loaded" compact onRetry={() => void documentsQuery.refetch()} />
-        )}
+        {documentsQuery.isError && <ErrorCoach error={documentsQuery.error} title="The generated documents could not be loaded" compact onRetry={() => void documentsQuery.refetch()} />}
+        {Boolean(actionError) && <div className="mt-4"><ErrorCoach error={actionError} title="The document action could not be completed" compact /></div>}
       </section>
+      <Modal open={Boolean(preview)} title={`${previewTitle} preview`} onClose={() => { revokeAuthenticatedDocument(preview); setPreview(null) }} size="xl">
+        {preview ? <div className="space-y-3"><div className="flex items-center justify-between rounded-[10px] border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-950 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100">Authenticated PDF preview<button type="button" aria-label="Close PDF preview" className="rounded-md p-1 focus:outline-none focus:ring-2 focus:ring-blue-600" onClick={() => { revokeAuthenticatedDocument(preview); setPreview(null) }}><X size={15} aria-hidden="true" /></button></div><iframe src={preview.objectUrl} title={`${previewTitle} PDF`} className="min-h-[65vh] w-full rounded-[10px] border bg-white" /></div> : null}
+      </Modal>
     </div>
   )
 }

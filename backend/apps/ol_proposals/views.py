@@ -797,65 +797,70 @@ class ProposalConvertToPolicyView(APIView):
 
 
 class ProposalGeneratedDocumentsView(APIView):
-    """GET /api/v1/ol-proposals/proposals/{id}/generated-documents/ — printout register."""
+    """GET /api/v1/ol-proposals/proposals/{id}/generated-documents/ — unified printout register."""
 
     permission_classes = [MustViewProposalsPermission]
 
     def get(self, request, proposal_id):
-        from apps.ol_proposals.models import ProposalDocumentStatus
-        from apps.ol_proposals.services.print_service import ProposalPrintService
+        from apps.documents.models import DocumentInstance
+        from apps.documents.services.engine import DocumentEngine
 
         proposal = _get_proposal(proposal_id)
-        rows = proposal.documents.filter(status=ProposalDocumentStatus.GENERATED).order_by("-generated_at", "-created_at")
-        results = []
-        for document in rows:
-            generated_by = document.generated_by
-            name = ""
-            if generated_by is not None:
-                name = f"{generated_by.first_name} {generated_by.last_name}".strip() or generated_by.username
-            results.append(
-                {
-                    "id": str(document.pk),
-                    "document_type": document.document_type,
-                    "status": document.status,
-                    "template_code": (document.metadata or {}).get("template_code"),
-                    "template_version": document.template_version,
-                    "source_version": (document.metadata or {}).get("source_version_number"),
-                    "generated_by_name": name,
-                    "generated_at": document.generated_at.isoformat() if document.generated_at else None,
-                    "urls": ProposalPrintService.document_urls(document),
-                }
-            )
-        return Response({"data": {"results": results}})
+        rows = DocumentInstance.objects.select_related("template", "generated_by").filter(
+            document_type="PROPOSAL_SUMMARY",
+            source_app_label="ol_proposals",
+            source_model="olproposal",
+            source_object_id=str(proposal.pk),
+        ).order_by("-generated_at", "-created_at")
+        results = [DocumentEngine.payload(row, request=request, actor=request.user, signed=True) for row in rows]
+        return Response({"data": {"count": len(results), "results": results}})
 
 
 class ProposalPrintView(APIView):
-    """POST /api/v1/ol-proposals/proposals/{id}/print/ — render a summary printout."""
+    """POST /api/v1/ol-proposals/proposals/{id}/print/ — secure unified summary printout."""
 
     permission_classes = [MustPrintProposalPermission]
 
     def post(self, request, proposal_id):
-        from apps.ol_proposals.services.print_service import ProposalPrintService
+        from apps.documents.services.engine import DocumentEngine, DocumentEngineError
 
         proposal = _get_proposal(proposal_id)
-        document = ProposalPrintService.generate(
-            proposal=proposal,
-            actor=request.user,
-            request=request,
-            template_code=request.data.get("template_code"),
-            preview=bool(request.data.get("preview")),
-        )
+        try:
+            instance = DocumentEngine.render(
+                document_type="PROPOSAL_SUMMARY",
+                object_id=proposal.pk,
+                actor=request.user,
+                request=request,
+            )
+        except DocumentEngineError as exc:
+            return Response(
+                {
+                    "success": False,
+                    "status_code": exc.status_code,
+                    "code": exc.code,
+                    "message": str(exc),
+                    "resolution_steps": exc.resolution_steps,
+                },
+                status=exc.status_code,
+            )
+        document = DocumentEngine.payload(instance, request=request, actor=request.user, signed=True)
         return Response(
             {
                 "data": {
                     "proposal_number": proposal.proposal_number,
-                    "document_type": document.document_type,
-                    "status": document.status,
-                    "file_reference": document.file_reference,
-                    "template_code": document.template.code if document.template_id else None,
-                    "template_version": document.template_version,
-                    "source_version": (document.metadata or {}).get("source_version_number"),
-                    "urls": ProposalPrintService.document_urls(document),
+                    "document_type": "PROPOSAL_SUMMARY",
+                    "unified_document_type": document["document_type"],
+                    "status": document["status"],
+                    "template_code": document["template_code"],
+                    "template_version": document["template_version"],
+                    "source_object_id": document["source_object_id"],
+                    "preview_url": document["preview_url"],
+                    "preview_blob_base64_or_url": document["preview_blob_base64_or_url"],
+                    "signed_download_url": document["signed_download_url"],
+                    "download_url_expires_at": document["download_url_expires_at"],
+                    "page_count": document["page_count"],
+                    "checksum": document["checksum"],
+                    "instance": document,
                 }
             },
             status=201,

@@ -1,0 +1,44 @@
+{% extends "documents/base_print.html" %}
+
+{% block document_content %}
+  {% if status_watermark %}<div class="draft-watermark">{{ status_watermark }}</div>{% endif %}
+  <p class="small muted">ZIC FRONT OFFICE RECEIPT</p>
+  <section class="meta-grid">
+    <div class="meta-cell"><span class="meta-label">Receipt number</span><span class="meta-value">{{ receipt.number }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Receipt date</span><span class="meta-value">{{ receipt.date|date:'Y-m-d' }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Status</span><span class="meta-value">{{ receipt.status }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Currency</span><span class="meta-value">{{ receipt.currency }}</span></div>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title">Payment details</h2>
+    <table class="data">
+      <thead><tr><th>Payment method</th><th>Payment reference</th><th class="numeric">Amount</th></tr></thead>
+      <tbody><tr><td>{{ receipt.payment_method }}</td><td>{{ receipt.reference }}</td><td class="numeric">{{ financial.amount }}</td></tr></tbody>
+    </table>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title">Amount received</h2>
+    <div class="meta-grid">
+      <div class="meta-cell"><span class="meta-label">Amount in figures</span><span class="meta-value">{{ financial.amount }}</span></div>
+      <div class="meta-cell"><span class="meta-label">Amount in words</span><span class="meta-value">{{ financial.amount_in_words }}</span></div>
+      <div class="meta-cell"><span class="meta-label">Receipt status</span><span class="meta-value">{{ receipt.status }}</span></div>
+      <div class="meta-cell"><span class="meta-label">Reference</span><span class="meta-value">{{ receipt.reference }}</span></div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title">Acknowledgement</h2>
+    <p>We acknowledge receipt of the amount stated above. This receipt is subject to reconciliation in the official ZIC ledger and does not by itself amend policy or proposal terms.</p>
+    <p class="small muted">Retain this receipt for your records. For corrections, provide the receipt number and payment reference to Front Office Receipts.</p>
+  </section>
+{% endblock %}
+
+{% block signature_block %}
+  <footer class="signature-block">
+    <div class="signature-party"><strong>Payer / Customer</strong><div class="signature-line"></div><div>{{ receipt.reference }}</div><div class="small muted">Signature &amp; Date</div></div>
+    <div class="signature-party"><strong>Front Office Officer</strong><div class="signature-line"></div><div>{{ branding.company_name }}</div><div class="small muted">Signature &amp; Date</div></div>
+    <div class="signature-party"><strong>Company Representative</strong><div class="signature-line"></div><div>{{ branding.company_name }}</div><div class="small muted">Signature &amp; Date · Official Stamp</div></div>
+  </footer>
+{% endblock %}

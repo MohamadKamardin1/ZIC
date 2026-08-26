@@ -400,27 +400,31 @@ beforeEach(() => {
   deleteBeneficiaryMock.mockResolvedValue({ data: { deleted: true } })
   getFirstPremiumMock.mockResolvedValue({ linked: false, first_premium_posted: false, next_actions: [] })
   generatePrintMock.mockResolvedValue({
-    documentType: "PROPOSAL_PRINT",
+    documentType: "PROPOSAL_SUMMARY",
     status: "GENERATED",
-    templateCode: "OL_PROPOSAL_PRINT",
+    templateCode: "PROPOSAL_SUMMARY_UNIFIED",
     templateVersion: 1,
     sourceVersion: 3,
     generatedByName: "Asha Underwriter",
     generatedAt: "2026-08-20T10:00:00Z",
-    pdfUrl: "/media/ol_proposals/OLP-2026-000042/print.pdf",
+    pdfUrl: "/api/v1/documents/instances/print-doc-uuid-1/download/?ticket=signed-ticket",
+    signedDownloadUrl: "/api/v1/documents/instances/print-doc-uuid-1/download/?ticket=signed-ticket",
+    previewUrl: "/api/v1/documents/instances/print-doc-uuid-1/preview/",
     htmlUrl: null,
   })
   listGeneratedDocsMock.mockResolvedValue([
     {
       id: "print-doc-uuid-1",
-      documentType: "PROPOSAL_PRINT",
+      documentType: "PROPOSAL_SUMMARY",
       status: "GENERATED",
-      templateCode: "OL_PROPOSAL_PRINT",
+      templateCode: "PROPOSAL_SUMMARY_UNIFIED",
       templateVersion: 1,
       sourceVersion: 3,
       generatedByName: "Asha Underwriter",
       generatedAt: "2026-08-20T10:00:00Z",
-      pdfUrl: "/media/ol_proposals/OLP-2026-000042/print.pdf",
+      pdfUrl: "/api/v1/documents/instances/print-doc-uuid-1/download/?ticket=signed-ticket",
+      signedDownloadUrl: "/api/v1/documents/instances/print-doc-uuid-1/download/?ticket=signed-ticket",
+      previewUrl: "/api/v1/documents/instances/print-doc-uuid-1/preview/",
       htmlUrl: null,
     },
   ])
@@ -730,11 +734,11 @@ describe("OL Proposal detail page", () => {
     fireEvent.click(screen.getByTestId("open-print"))
 
     const metadata = await screen.findByTestId("print-metadata")
-    expect(metadata).toHaveTextContent("PROPOSAL_PRINT")
-    expect(metadata).toHaveTextContent("OL_PROPOSAL_PRINT")
+    expect(metadata).toHaveTextContent("PROPOSAL_SUMMARY")
+    expect(metadata).toHaveTextContent("PROPOSAL_SUMMARY_UNIFIED")
     expect(metadata).toHaveTextContent("v1")
-    const download = screen.getByTestId("print-download-pdf") as HTMLAnchorElement
-    expect(download.getAttribute("download")).toBe("proposal-prop-uuid-0001.pdf")
+    const download = screen.getByTestId("print-download-pdf") as HTMLButtonElement
+    expect(download).toBeEnabled()
 
     fireEvent.click(within(screen.getByTestId("proposal-tabs")).getByRole("button", { name: "Generated Documents" }))
     const panel = await screen.findByTestId("tab-generated")
@@ -743,7 +747,7 @@ describe("OL Proposal detail page", () => {
     expect(row).toHaveTextContent("v1")
     expect(row).toHaveTextContent("Asha Underwriter")
     expect(row).toHaveTextContent("v3")
-    expect(row).toHaveTextContent("PDF")
+    expect(within(row).getByRole("button", { name: "Download" })).toBeInTheDocument()
     expect(generatePrintMock).toHaveBeenCalledWith("prop-uuid-0001")
   })
 

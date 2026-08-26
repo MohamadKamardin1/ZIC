@@ -9,6 +9,7 @@ from django.test import TestCase
 from rest_framework.test import APITestCase as DRFTestCase
 
 from apps.ol_commitments.models import OLCommitment
+from apps.documents.models import DocumentTemplate
 from apps.ol_parameters.models import (
     OLBeneficialType,
     OLCommitmentStatus,
@@ -224,41 +225,48 @@ class PrintServiceTests(TestCase):
 class PrintAndOptionsEndpointTests(DRFTestCase):
     def setUp(self):
         seed_catalogs()
+        DocumentTemplate.objects.update_or_create(
+            code="PROPOSAL_SUMMARY_UNIFIED",
+            version=1,
+            defaults={
+                "name": "Proposal Summary",
+                "document_type": "PROPOSAL_SUMMARY",
+                "layout_template_path": "documents/proposal_summary.html",
+                "variables_schema": {"proposal": "object", "quote": "object", "prospect": "object", "plans": "array", "financial": "object", "branding": "object"},
+                "branding_config_reference": "COMPANY_BRANDING",
+                "is_active": True,
+            },
+        )
         self.superuser = User.objects.create_superuser(username="po_adm", password="Password@12345", email="po_adm@zic.tz")
         self.proposal = build_proposal("OLP-2026-PR2")
         self.client.force_authenticate(self.superuser)
         self.base = f"/api/v1/ol-proposals/proposals/{self.proposal.pk}"
 
-    @patch("apps.ol_proposals.services.print_service.ProposalPrintService._render_pdf", return_value=b"%PDF-proposal-printout")
-    def test_print_endpoint_generates_and_lists_document(self, _mock_pdf):
+    def test_print_endpoint_generates_and_lists_document(self):
         response = self.client.post(f"{self.base}/print/", format="json")
         self.assertEqual(response.status_code, 201, response.data)
         data = response.data["data"]
-        self.assertEqual(data["document_type"], "PROPOSAL_PRINT")
+        self.assertEqual(data["document_type"], "PROPOSAL_SUMMARY")
+        self.assertEqual(data["unified_document_type"], "PROPOSAL_SUMMARY")
         self.assertEqual(data["status"], "GENERATED")
-        self.assertEqual(data["template_code"], "OL_PROPOSAL_PRINT")
+        self.assertEqual(data["template_code"], "PROPOSAL_SUMMARY_UNIFIED")
         self.assertEqual(data["template_version"], 1)
-        self.assertEqual(data["source_version"], 1)
-
-        listing = self.client.get(f"{self.base}/documents/")
-        self.assertEqual(listing.status_code, 200)
-        rows = listing.data["data"]["results"]
-        generated = [row for row in rows if row["document_type"] == "PROPOSAL_PRINT"]
-        self.assertEqual(len(generated), 1)
-        self.assertEqual(generated[0]["status"], "GENERATED")
-        self.assertIsNotNone(generated[0]["file_reference"])
+        self.assertTrue(data["preview_url"])
+        self.assertTrue(data["signed_download_url"])
+        self.assertIn("ticket=", data["signed_download_url"])
 
         register = self.client.get(f"{self.base}/generated-documents/")
         self.assertEqual(register.status_code, 200)
         register_rows = register.data["data"]["results"]
         self.assertEqual(len(register_rows), 1)
         entry = register_rows[0]
-        self.assertEqual(entry["document_type"], "PROPOSAL_PRINT")
-        self.assertEqual(entry["template_code"], "OL_PROPOSAL_PRINT")
+        self.assertEqual(entry["document_type"], "PROPOSAL_SUMMARY")
+        self.assertEqual(entry["template_code"], "PROPOSAL_SUMMARY_UNIFIED")
         self.assertEqual(entry["template_version"], 1)
-        self.assertTrue(entry["generated_by_name"])
+        self.assertTrue(entry["generated_by_display"])
         self.assertIsNotNone(entry["generated_at"])
-        self.assertTrue(entry["urls"]["pdf_url"])
+        self.assertTrue(entry["signed_download_url"])
+        self.assertIn("ticket=", entry["signed_download_url"])
 
     def test_options_statuses_labeled_active_only(self):
         OLProposalStatus.objects.create(

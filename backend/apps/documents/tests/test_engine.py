@@ -15,7 +15,7 @@ from rest_framework.test import APIClient
 
 from apps.documents.models import BrandingConfiguration, DocumentInstance, DocumentTemplate
 from apps.governance.models import AuditLog
-from apps.documents.services.engine import DocumentEngine
+from apps.documents.services.engine import DocumentEngine, DocumentTypeRegistry
 from apps.ol_parameters.models import (
     OLInvestmentFund,
     OLInvestmentFundType,
@@ -24,6 +24,7 @@ from apps.ol_parameters.models import (
     OLRiderSetup,
 )
 from apps.ol_commitments.models import OLCommitment, OLCommitmentAllocation
+from apps.front_office.models import FOReceipt
 from apps.ol_proposals.models import OLProposal
 from apps.ol_quotations.models import (
     OLQuotation,
@@ -43,10 +44,94 @@ from apps.system_parameters.models import ParameterGroup, SystemParameter
 from apps.users.models import User
 
 
+def seed_unified_test_templates():
+    for definition in DocumentTypeRegistry.definitions():
+        if definition.status != "READY":
+            continue
+        DocumentTemplate.objects.update_or_create(
+            code=definition.template_code,
+            version=1,
+            defaults={
+                "name": definition.title,
+                "document_type": definition.document_type,
+                "layout_template_path": definition.layout_template_path,
+                "variables_schema": definition.variables_schema,
+                "branding_config_reference": "COMPANY_BRANDING",
+                "is_active": True,
+            },
+        )
+
+
+class UnifiedReceiptDocumentTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        seed_unified_test_templates()
+        cls.admin = User.objects.create_superuser(
+            username="unified-receipt-document-admin",
+            email="unified-receipt-document-admin@example.com",
+            password="Strong-pass-123!",
+        )
+        cls.receipt = FOReceipt.objects.create(
+            receipt_number="RCT-UNIFIED-001",
+            amount=Decimal("125000.00"),
+            payment_method="BANK_TRANSFER",
+            payment_date=date.today(),
+            reference="POL-UNIFIED-001",
+            status="COMPLETED",
+        )
+
+    def setUp(self):
+        self.client = APIClient()
+        self.client.force_authenticate(self.admin)
+        self.base = f"/api/v1/front-office/receipts/{self.receipt.pk}"
+
+    def test_receipt_print_returns_secure_preview_and_download_urls(self):
+        response = self.client.post(f"{self.base}/print/", {}, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        document = response.data["data"]["document"]
+        self.assertTrue(document["preview_url"])
+        self.assertTrue(document["signed_download_url"])
+        self.assertEqual(document["preview_blob_base64_or_url"], document["preview_url"])
+
+        signed = urlparse(document["signed_download_url"])
+        ticket = parse_qs(signed.query)["ticket"][0]
+        download = APIClient().get(f"{signed.path}?ticket={ticket}")
+        self.assertEqual(download.status_code, 200)
+        self.assertEqual(download["Content-Type"], "application/pdf")
+        pdf_bytes = b"".join(download.streaming_content)
+        self.assertIn("RCT-UNIFIED-001", "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_bytes)).pages))
+        self.assertTrue(AuditLog.objects.filter(action="DOCUMENT_GENERATED", object_id=document["id"], source_channel="API").exists())
+        self.assertTrue(AuditLog.objects.filter(action="DOCUMENT_TICKET_DOWNLOADED", object_id=document["id"], source_channel="API").exists())
+
+        listing = self.client.get(f"{self.base}/documents/")
+        self.assertEqual(listing.status_code, 200, listing.data)
+        self.assertEqual(listing.data["data"]["count"], 1)
+        listed_url = listing.data["data"]["results"][0]["signed_download_url"]
+        self.assertTrue(listed_url)
+        self.assertTrue(listed_url.startswith("http://testserver/api/v1/documents/instances/"))
+        self.assertIn("ticket=", listed_url)
+
+    def test_inactive_receipt_template_returns_teachable_error(self):
+        DocumentTemplate.objects.filter(code="RECEIPT_UNIFIED").update(is_active=False)
+        response = self.client.post(f"/api/v1/documents/render/RECEIPT/{self.receipt.pk}/", {}, format="json")
+        self.assertEqual(response.status_code, 409, response.data)
+        self.assertEqual(response.data["code"], "TEMPLATE_NOT_FOUND")
+        self.assertTrue(response.data["resolution_steps"])
+
+    @patch("apps.documents.services.engine.default_storage.save", side_effect=OSError("storage unavailable"))
+    def test_storage_failure_returns_document_render_failed_shape(self, _save):
+        response = self.client.post(f"/api/v1/documents/render/RECEIPT/{self.receipt.pk}/", {}, format="json")
+        self.assertEqual(response.status_code, 500, response.data)
+        self.assertEqual(response.data["code"], "DOCUMENT_RENDER_FAILED")
+        self.assertTrue(response.data["resolution_steps"])
+        self.assertIn("correlation ID", " ".join(response.data["resolution_steps"]))
+
+
 class UnifiedDocumentEngineAPITests(TestCase):
     @classmethod
     def setUpTestData(cls):
         call_command("seed_ol_quotations", verbosity=0)
+        seed_unified_test_templates()
         cls.admin = User.objects.create_superuser(
             username="unified-document-admin",
             email="unified-document-admin@example.com",
@@ -132,6 +217,9 @@ class UnifiedDocumentEngineAPITests(TestCase):
         self.assertEqual(data["template_version"], 1)
         self.assertEqual(data["template_name"], "Ordinary Life Quotation")
         self.assertTrue(data["checksum"])
+        self.assertEqual(data["preview_blob_base64_or_url"], data["preview_url"])
+        self.assertEqual(data["instance"]["id"], data["id"])
+        self.assertEqual(data["instance"]["signed_download_url"], data["signed_download_url"])
         instance = DocumentInstance.objects.get(pk=data["id"])
         self.assertEqual(instance.template_version, instance.template.version)
         self.assertEqual(instance.source_object_id, str(self.quotation.pk))
@@ -610,7 +698,6 @@ class UnifiedDocumentEngineAPITests(TestCase):
 
     def test_future_document_types_return_machine_readable_pending_error(self):
         for document_type in (
-            "RECEIPT",
             "POLICY_CONTRACT",
             "DISCHARGE_VOUCHER",
             "COMMISSION_STATEMENT",

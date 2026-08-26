@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import logging
 import mimetypes
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -29,11 +30,15 @@ from apps.system_parameters.services.config_service import ConfigurationService
 from ..models import DocumentInstance, DocumentTemplate
 
 
+logger = logging.getLogger(__name__)
+
+
 class DocumentEngineError(Exception):
-    def __init__(self, message: str, status_code: int = 400, code: str | None = None):
+    def __init__(self, message: str, status_code: int = 400, code: str | None = None, resolution_steps: list[str] | None = None):
         super().__init__(message)
         self.status_code = status_code
         self.code = code or "DOCUMENT_ERROR"
+        self.resolution_steps = resolution_steps or []
 
 
 @dataclass(frozen=True)
@@ -560,6 +565,50 @@ def _quotation_context(source, branding: dict[str, Any], template: DocumentTempl
     return context
 
 
+def _receipt_context(source, branding: dict[str, Any], template: DocumentTemplate):
+    amount = getattr(source, "amount", Decimal("0")) or Decimal("0")
+    currency = _safe_document_text(getattr(source, "currency", None), "TZS").upper()
+    status = _safe_document_text(getattr(source, "status", None), "COMPLETED")
+    payment_method = _safe_document_text(getattr(source, "payment_method", None), "-")
+    reference = _safe_document_text(getattr(source, "reference", None), "-")
+    receipt_date = getattr(source, "payment_date", None)
+    return {
+        "document_title": "RECEIPT",
+        "branding": branding,
+        "template_version": template.version,
+        "status_watermark": status if status in {"REVERSED", "CANCELLED"} else "",
+        "receipt": {
+            "number": _safe_document_text(getattr(source, "receipt_number", None)),
+            "date": receipt_date,
+            "amount": QuotationDocumentServiceMoney.format(amount, currency),
+            "currency": currency,
+            "payment_method": payment_method,
+            "reference": reference,
+            "status": status,
+        },
+        "meta": {
+            "receipt_number": _safe_document_text(getattr(source, "receipt_number", None)),
+            "receipt_date": receipt_date,
+            "currency": currency,
+            "payment_method": payment_method,
+            "reference": reference,
+        },
+        "financial": {
+            "amount": QuotationDocumentServiceMoney.format(amount, currency),
+            "amount_in_words": _amount_in_words(amount, currency),
+        },
+    }
+
+
+class QuotationDocumentServiceMoney:
+    @staticmethod
+    def format(value, currency):
+        try:
+            return f"{Decimal(str(value or 0)):,.2f} {currency}"
+        except (InvalidOperation, TypeError, ValueError):
+            return f"0.00 {currency}"
+
+
 DocumentTypeRegistry.register(
     DocumentTypeDefinition(
         document_type="OL_QUOTATION",
@@ -625,8 +674,26 @@ DocumentTypeRegistry.register(
     )
 )
 
+DocumentTypeRegistry.register(
+    DocumentTypeDefinition(
+        document_type="RECEIPT",
+        source_app_label="front_office",
+        source_model="foreceipt",
+        template_code="RECEIPT_UNIFIED",
+        layout_template_path="documents/receipt.html",
+        permission="front_office.receipts.print",
+        context_builder=_receipt_context,
+        title="Receipt",
+        variables_schema={
+            "receipt": "object",
+            "meta": "object",
+            "financial": "object",
+            "branding": "object",
+        },
+    )
+)
+
 for _pending_document_type, _pending_title in (
-    ("RECEIPT", "Receipt"),
     ("POLICY_CONTRACT", "Policy Contract"),
     ("DISCHARGE_VOUCHER", "Discharge Voucher"),
     ("COMMISSION_STATEMENT", "Commission Statement"),
@@ -675,6 +742,12 @@ class DocumentEngine:
             from apps.ol_commitments.permissions import has_ol_commitment_permission
 
             return has_ol_commitment_permission(actor, "view")
+        if permission_code == "front_office.receipts.print":
+            if hasattr(actor, "has_permission") and actor.has_permission("front_office.receipts.print"):
+                return True
+            if hasattr(actor, "has_module_permission"):
+                return actor.has_module_permission("front_office.receipts", "PRINT") or actor.has_module_permission("front_office", "PRINT")
+            return False
         if hasattr(actor, "has_permission") and actor.has_permission(permission_code):
             return True
         if "." in permission_code and hasattr(actor, "has_module_permission"):
@@ -728,18 +801,26 @@ class DocumentEngine:
             .order_by("-version")
             .first()
         )
-        if template:
-            return template
-        return DocumentTemplate.objects.create(
-            code=definition.template_code,
-            name=definition.title,
-            document_type=definition.document_type,
-            version=1,
-            layout_template_path=definition.layout_template_path,
-            variables_schema=definition.variables_schema,
-            branding_config_reference="COMPANY_BRANDING",
-            is_active=True,
-        )
+        if template is None:
+            raise DocumentEngineError(
+                f"No active template is configured for {definition.title}.",
+                status_code=409,
+                code="TEMPLATE_NOT_FOUND",
+                resolution_steps=[
+                    "Open System Parameters > Document Templates.",
+                    f"Activate an approved {definition.title} template, then retry the document action.",
+                ],
+            )
+        try:
+            template.clean()
+        except Exception as exc:
+            raise DocumentEngineError(
+                f"The active {definition.title} template is invalid.",
+                status_code=409,
+                code="TEMPLATE_INVALID",
+                resolution_steps=["Correct the active template configuration in System Parameters.", "Retry document generation."],
+            ) from exc
+        return template
 
     @classmethod
     def _validate_context(cls, context: dict[str, Any], schema: dict[str, Any]):
@@ -784,8 +865,16 @@ class DocumentEngine:
             pdf = HTML(string=html, base_url=str(settings.BASE_DIR)).write_pdf()
             page_count = len(PdfReader(BytesIO(pdf)).pages)
             return pdf, max(page_count, 1)
+        except DocumentEngineError:
+            raise
         except Exception as exc:
-            raise DocumentEngineError(f"Document PDF rendering failed: {exc}", 400) from exc
+            logger.exception("Document PDF rendering failed", extra={"document_failure": "pdf_render"})
+            raise DocumentEngineError(
+                "The PDF engine could not render this document.",
+                status_code=500,
+                code="DOCUMENT_RENDER_FAILED",
+                resolution_steps=["Confirm the document template and branding are configured.", "Retry the document action.", "If the issue persists, contact System Administration with the correlation ID."],
+            ) from exc
 
     @classmethod
     def _correlation_id(cls, request=None) -> str:
@@ -809,34 +898,49 @@ class DocumentEngine:
         source = cls.resolve_source(definition, object_id)
         cls.ensure_access(actor, definition, source)
         template = cls.template_for(definition)
-        branding = CompanyBranding.resolve(template.branding_config_reference).as_context()
-        context = definition.context_builder(source, branding, template)
-        context.update(
-            {
-                "document_type": definition.document_type,
-                "source_type": f"{definition.source_app_label}.{definition.source_model}",
-                "source_object_id": str(source.pk),
-                "generated_at": timezone.now(),
-                "generated_by_name": cls.user_display(actor),
-            }
-        )
-        cls._validate_context(context, template.variables_schema or definition.variables_schema)
         try:
+            branding = CompanyBranding.resolve(template.branding_config_reference).as_context()
+            context = definition.context_builder(source, branding, template)
+            context.update(
+                {
+                    "document_type": definition.document_type,
+                    "source_type": f"{definition.source_app_label}.{definition.source_model}",
+                    "source_object_id": str(source.pk),
+                    "generated_at": timezone.now(),
+                    "generated_by_name": cls.user_display(actor),
+                }
+            )
+            cls._validate_context(context, template.variables_schema or definition.variables_schema)
             html = render_to_string(template.layout_template_path, context)
+            pdf, page_count = cls._render_pdf(html)
+            digest = hashlib.sha256(pdf).hexdigest()
+            stamp = timezone.now().strftime("%Y%m%d%H%M%S%f")
+            prefix = f"documents/{definition.document_type.lower()}/{source.pk}/{stamp}-{digest[:12]}"
+            preview_reference = default_storage.save(
+                f"{prefix}.html",
+                ContentFile(html.encode("utf-8"), name=f"{prefix}.html"),
+            )
+            file_reference = default_storage.save(
+                f"{prefix}.pdf",
+                ContentFile(pdf, name=f"{prefix}.pdf"),
+            )
+        except DocumentEngineError:
+            raise
         except Exception as exc:
-            raise DocumentEngineError(f"Document HTML rendering failed: {exc}", 400) from exc
-        pdf, page_count = cls._render_pdf(html)
-        digest = hashlib.sha256(pdf).hexdigest()
-        stamp = timezone.now().strftime("%Y%m%d%H%M%S%f")
-        prefix = f"documents/{definition.document_type.lower()}/{source.pk}/{stamp}-{digest[:12]}"
-        preview_reference = default_storage.save(
-            f"{prefix}.html",
-            ContentFile(html.encode("utf-8"), name=f"{prefix}.html"),
-        )
-        file_reference = default_storage.save(
-            f"{prefix}.pdf",
-            ContentFile(pdf, name=f"{prefix}.pdf"),
-        )
+            logger.exception(
+                "Unified document render or storage failed",
+                extra={"correlation_id": cls._correlation_id(request), "document_type": definition.document_type, "source_object_id": str(source.pk)},
+            )
+            raise DocumentEngineError(
+                "The document could not be rendered or stored.",
+                status_code=500,
+                code="DOCUMENT_RENDER_FAILED",
+                resolution_steps=[
+                    "Confirm the active template and company branding are configured.",
+                    "Retry the document action.",
+                    "If the issue persists, contact System Administration with the correlation ID.",
+                ],
+            ) from exc
         instance = DocumentInstance.objects.create(
             document_type=definition.document_type,
             source_app_label=definition.source_app_label,
@@ -1021,6 +1125,7 @@ class DocumentEngine:
             "mime_type": instance.mime_type,
             "status": instance.status,
             "preview_url": cls.preview_url(instance, request),
+            "preview_blob_base64_or_url": cls.preview_url(instance, request),
             "signed_download_url": signed_url,
             "download_url_expires_at": expires_at.isoformat() if expires_at else None,
         }
