@@ -604,7 +604,7 @@ export default function OLProposals() {
   const agentOptions = useMemo(
     () =>
       optionRows(intermediariesQuery.data)
-        .map((row) => ({ label: optString(row.label) ?? "—", value: optString(row.id) ?? "" }))
+        .map((row) => ({ label: optString(row.label) ?? "—", value: optString(row.value) ?? optString(row.id) ?? "" }))
         .filter((option) => option.value),
     [intermediariesQuery.data, optionRows],
   )

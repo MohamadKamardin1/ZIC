@@ -1048,8 +1048,24 @@ export async function listGeneratedDocuments(id: string): Promise<GeneratedDocum
   return rows.map(normalizeGeneratedDocument)
 }
 
+const CANONICAL_PROPOSAL_OPTION_ENTITIES = new Set(["banks", "intermediaries", "employers"])
+
 export async function getProposalOptions(kind: string) {
-  return request<unknown>(`${BASE}/proposals/options/${encodeURIComponent(kind)}/`)
+  if (!CANONICAL_PROPOSAL_OPTION_ENTITIES.has(kind)) return request<unknown>(`${BASE}/proposals/options/${encodeURIComponent(kind)}/`)
+  const payload = await request<unknown>(`/api/v1/ol/options/${encodeURIComponent(kind)}/`)
+  const record = asRecord(payload)
+  const rows = Array.isArray(record.results) ? record.results : Array.isArray(record.items) ? record.items : []
+  return {
+    kind,
+    label: kind === "banks" ? "Bank" : kind === "employers" ? "Corporate partner (employer)" : "Intermediary/agent partner",
+    results: rows.map((row) => {
+      const option = asRecord(row)
+      const meta = asRecord(option.meta)
+      const value = str(option, "value") ?? str(option, "id") ?? ""
+      return { ...option, id: value, value, reference: str(meta, "partner_number") ?? value }
+    }),
+    count: typeof record.count === "number" ? record.count : rows.length,
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@ from apps.core.views import health_check, liveness_check, readiness_check
 from apps.ol_quotations.option_views import (
     OLOptionQuickCreateSchemaView,
     OLOptionQuickCreateView,
+    OLOptionLegacyRedirectView,
     OLOptionRegistryView,
 )
 from apps.ol_quotations.views import OLPlanSearchView
@@ -38,6 +39,7 @@ api_v1_patterns = [
     path('ol/options/<str:entity>/quick-create/', OLOptionQuickCreateView.as_view(), name='ol-option-quick-create-root'),
     path('ol/options/<str:entity>/', OLOptionRegistryView.as_view(), name='ol-option-registry-root'),
     path('ol/proposals/', include('apps.ol_proposals.conversion_urls')),
+    path('ol-proposals/options/<str:entity>/', OLOptionLegacyRedirectView.as_view(), name='ol-option-registry-legacy-redirect'),
     path('ol-proposals/', include('apps.ol_proposals.urls')),
     path('ol-commitments/', include('apps.ol_commitments.urls')),
     path('ol/quotations/', include('apps.ol_quotations.urls')),

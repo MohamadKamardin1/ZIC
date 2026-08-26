@@ -165,6 +165,95 @@ class OLOptionRegistryTests(TestCase):
                         )
 
 
+class OLOptionPartnerEntityTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin = User.objects.create_superuser(
+            username="ol-partner-options-admin",
+            email="ol-partner-options-admin@example.com",
+            password="Strong-pass-123!",
+        )
+        cls.bank = cls.create_partner("OPT-BANK-001", "BANK", "Zanzibar Commercial Bank", "BANK-REG-001")
+        cls.intermediary = cls.create_partner("OPT-INT-001", "INTERMEDIARY", "Zanzibar Insurance Brokers", "INT-REG-001")
+        cls.agent = cls.create_partner("OPT-AGENT-001", "AGENT", "Amani Life Agent", "AGENT-REG-001")
+        cls.employer = cls.create_partner("OPT-EMP-001", "CORPORATE", "Zanzibar Manufacturing Corporation", "EMP-REG-001")
+        cls.inactive_bank = cls.create_partner("OPT-BANK-INACTIVE", "BANK", "Inactive Bank", "BANK-REG-INACTIVE", is_active=False)
+
+    @staticmethod
+    def create_partner(partner_number, partner_type, legal_name, registration_number, *, is_active=True):
+        return Partner.objects.create(
+            partner_number=partner_number,
+            partner_type=partner_type,
+            partner_category="CORPORATE",
+            party_type="CORPORATE",
+            legal_name=legal_name,
+            registration_number=registration_number,
+            email=f"{partner_number.lower()}@example.com",
+            mobile_number="255700000001",
+            is_active=is_active,
+            status="ACTIVE",
+        )
+
+    def setUp(self):
+        self.client = APIClient()
+        self.client.force_authenticate(self.admin)
+
+    def test_each_partner_entity_returns_standard_labeled_payload(self):
+        expected = {
+            "banks": self.bank.partner_number,
+            "intermediaries": self.intermediary.partner_number,
+            "employers": self.employer.partner_number,
+        }
+        for entity, partner_number in expected.items():
+            with self.subTest(entity=entity):
+                response = self.client.get(f"/api/v1/ol/options/{entity}/", {"page_size": 200})
+                self.assertEqual(response.status_code, 200, response.data)
+                rows = response.data["data"]["items"]
+                row = next(item for item in rows if item["meta"].get("partner_type") in {"BANK", "INTERMEDIARY", "AGENT", "CORPORATE"} and partner_number in item["label"])
+                self.assertEqual(row["value"], str(getattr(self, entity[:-1] if entity != "intermediaries" else "intermediary").pk))
+                self.assertIn(f"{partner_number} — ", row["label"])
+                self.assertEqual(set(row["meta"]), {"partner_type", "location", "active_status"})
+                self.assertEqual(row["meta"]["active_status"], "ACTIVE")
+
+    def test_search_matches_legal_name_partner_number_and_registration_number(self):
+        for query, expected_number in (
+            ("Commercial Bank", self.bank.partner_number),
+            (self.intermediary.partner_number, self.intermediary.partner_number),
+            ("EMP-REG-001", self.employer.partner_number),
+        ):
+            with self.subTest(query=query):
+                response = self.client.get("/api/v1/ol/options/employers/" if expected_number == self.employer.partner_number else "/api/v1/ol/options/banks/" if expected_number == self.bank.partner_number else "/api/v1/ol/options/intermediaries/", {"q": query, "page_size": 200})
+                self.assertEqual(response.status_code, 200, response.data)
+                self.assertTrue(any(expected_number in item["label"] for item in response.data["data"]["items"]))
+
+    def test_inactive_partner_is_excluded(self):
+        response = self.client.get("/api/v1/ol/options/banks/", {"q": self.inactive_bank.partner_number, "page_size": 200})
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["data"]["count"], 0)
+
+    def test_unknown_entity_returns_teachable_structured_error(self):
+        response = self.client.get("/api/v1/ol/options/not-registered/")
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data["error_code"], "OPTIONS_ENTITY_NOT_FOUND")
+        self.assertTrue(response.data["resolution_steps"])
+        self.assertIn("available_entities", response.data["data"])
+
+    def test_legacy_partner_option_path_redirects_to_canonical_path(self):
+        response = self.client.get("/api/v1/ol-proposals/options/banks/?q=Zanzibar", follow=False)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "/api/v1/ol/options/banks/?q=Zanzibar")
+
+    def test_option_view_requires_ol_or_partner_view_permission(self):
+        user = User.objects.create_user(
+            username="ol-partner-options-no-access",
+            email="ol-partner-options-no-access@example.com",
+            password="Strong-pass-123!",
+        )
+        self.client.force_authenticate(user)
+        response = self.client.get("/api/v1/ol/options/banks/")
+        self.assertEqual(response.status_code, 403)
+
+
 class OLOptionQuickCreateTests(TestCase):
     @classmethod
     def setUpTestData(cls):

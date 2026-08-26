@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, Callable
 
-from django.db.models import Q, QuerySet
+from django.db.models import Prefetch, Q, QuerySet
 from django.utils import timezone
 
 from apps.ol_parameters.models import (
@@ -16,7 +16,7 @@ from apps.ol_parameters.models import (
     OLRiderSetup,
 )
 from apps.partner_onboarding.models import Location
-from apps.partners.models import Partner
+from apps.partners.models import Partner, PartnerTypeAssignment
 from apps.system_parameters.services.config_service import ConfigurationService
 
 
@@ -148,6 +148,67 @@ def _location_page(q: str, page: int, page_size: int) -> OptionPage:
         page=page,
         page_size=page_size,
     )
+
+
+def _partner_location_display(obj: Partner) -> str | None:
+    assignments = getattr(obj, "_active_option_assignments", None)
+    assignment = assignments[0] if assignments else obj.type_assignments.filter(status="ACTIVE").select_related("location").order_by("-created_at").first()
+    location = getattr(assignment, "location", None)
+    if not location:
+        return None
+    code = getattr(location, "code", "")
+    name = getattr(location, "name", "")
+    return f"{code} — {name}" if code and name else name or code or None
+
+
+def _partner_display(obj: Partner) -> str:
+    name = getattr(obj, "legal_name", "") or getattr(obj, "company_name", "") or getattr(obj, "display_name", "")
+    if not name:
+        name = " ".join(part for part in [getattr(obj, "first_name", ""), getattr(obj, "other_name", ""), getattr(obj, "surname", "")] if part).strip()
+    return f"{obj.partner_number} — {name}" if obj.partner_number and name else str(obj.partner_number or name or obj.pk)
+
+
+def _partner_option_page(partner_types: tuple[str, ...], q: str, page: int, page_size: int) -> OptionPage:
+    queryset = Partner.objects.filter(
+        partner_type__in=partner_types,
+        is_active=True,
+        status="ACTIVE",
+    ).prefetch_related(
+        Prefetch(
+            "type_assignments",
+            queryset=PartnerTypeAssignment.objects.filter(status="ACTIVE").select_related("location").order_by("-created_at"),
+            to_attr="_active_option_assignments",
+        )
+    ).order_by("partner_number", "legal_name", "company_name")
+    if q:
+        queryset = queryset.filter(
+            Q(legal_name__icontains=q)
+            | Q(partner_number__icontains=q)
+            | Q(registration_number__icontains=q)
+        )
+    return _model_page(
+        queryset,
+        label_builder=_partner_display,
+        meta_builder=lambda obj: {
+            "partner_type": obj.partner_type,
+            "location": _partner_location_display(obj),
+            "active_status": obj.status,
+        },
+        page=page,
+        page_size=page_size,
+    )
+
+
+def _bank_page(q: str, page: int, page_size: int) -> OptionPage:
+    return _partner_option_page(("BANK",), q, page, page_size)
+
+
+def _intermediary_page(q: str, page: int, page_size: int) -> OptionPage:
+    return _partner_option_page(("INTERMEDIARY", "AGENT"), q, page, page_size)
+
+
+def _employer_page(q: str, page: int, page_size: int) -> OptionPage:
+    return _partner_option_page(("EMPLOYER", "CORPORATE"), q, page, page_size)
 
 
 def _agent_display(obj: Partner) -> str:
@@ -311,6 +372,9 @@ CHOICE_PROVIDERS: dict[str, tuple[str, ...]] = {
 MODEL_PROVIDERS: dict[str, Callable[[str, int, int], OptionPage]] = {
     "locations": _location_page,
     "agents": _agent_page,
+    "banks": _bank_page,
+    "intermediaries": _intermediary_page,
+    "employers": _employer_page,
     "products": _product_page,
     "plan-types": _plan_type_page,
     "investment-funds": _fund_page,
@@ -357,6 +421,9 @@ ENTITY_ALIASES = {
     "benefit-code": "benefit-type-codes",
     "benefit_type_code": "benefit-type-codes",
     "benefit_type_codes": "benefit-type-codes",
+    "bank": "banks",
+    "intermediary": "intermediaries",
+    "employer": "employers",
 }
 
 

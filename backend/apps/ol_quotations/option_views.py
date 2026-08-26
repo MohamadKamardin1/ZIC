@@ -1,7 +1,8 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.http import HttpResponseRedirect
 from rest_framework import status
 from rest_framework.exceptions import PermissionDenied
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -12,6 +13,19 @@ from .quick_create import (
     get_quick_create_schema,
     list_quick_create_entities,
 )
+
+
+class HasOLOptionViewPermission(BasePermission):
+    message = "You need ol_parameters.view or partners.view permission to view OL options."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not getattr(user, "is_authenticated", False):
+            return False
+        if getattr(user, "is_superuser", False):
+            return True
+        has_permission = getattr(user, "has_permission", None)
+        return bool(has_permission and (has_permission("ol_parameters.view") or has_permission("partners.view")))
 
 
 def _error_message(error: Exception) -> dict:
@@ -25,8 +39,32 @@ def _error_message(error: Exception) -> dict:
     return {"detail": str(error)}
 
 
+class OLOptionLegacyRedirectView(APIView):
+    permission_classes = [HasOLOptionViewPermission]
+
+    def get(self, request, entity: str):
+        canonical = entity.strip().lower().replace("_", "-")
+        if canonical in {"bank", "banks", "intermediary", "intermediaries", "employer", "employers"}:
+            canonical = {"bank": "banks", "intermediary": "intermediaries", "employer": "employers"}.get(canonical, canonical)
+            target = f"/api/v1/ol/options/{canonical}/"
+            if request.META.get("QUERY_STRING"):
+                target = f"{target}?{request.META['QUERY_STRING']}"
+            return HttpResponseRedirect(target)
+        return Response(
+            {
+                "success": False,
+                "status_code": status.HTTP_404_NOT_FOUND,
+                "error_code": "OPTIONS_ENTITY_NOT_FOUND",
+                "message": f"The OL option entity '{entity}' is not registered.",
+                "resolution_steps": ["Use the canonical /api/v1/ol/options/<entity>/ path."],
+                "data": {"entity": entity, "available_entities": list_entities()},
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+
 class OLOptionRegistryView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [HasOLOptionViewPermission]
 
     def get(self, request, entity: str):
         try:
@@ -55,8 +93,13 @@ class OLOptionRegistryView(APIView):
                 {
                     "success": False,
                     "status_code": status.HTTP_404_NOT_FOUND,
-                    "message": f"Unknown OL option entity '{entity}'.",
-                    "data": {"available_entities": list_entities()},
+                    "error_code": "OPTIONS_ENTITY_NOT_FOUND",
+                    "message": f"The OL option entity '{entity}' is not registered.",
+                    "resolution_steps": [
+                        "Check the option entity name in the API contract.",
+                        "Use one of the registered entities listed in data.available_entities.",
+                    ],
+                    "data": {"entity": entity, "available_entities": list_entities()},
                 },
                 status=status.HTTP_404_NOT_FOUND,
             )

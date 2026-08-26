@@ -2,7 +2,7 @@
 
 > **Source note:** The current request included the complete text of Prompt 1 but did not include the text of Prompts 2–6. Prompt 1 is preserved verbatim below. The remaining entries are intentionally marked as not supplied so their requirements are not fabricated; they can be replaced with the exact source text when provided.
 
-## [ ] Prompt 1 — Resolve 404 for banks/intermediaries/employers options endpoints
+## [x] Prompt 1 — Resolve 404 for banks/intermediaries/employers options endpoints
 
 ```text
 You are a senior Django API engineer. Fix missing options endpoints in the ZIC platform. The user pasted the FULL 6-prompt series at once.
