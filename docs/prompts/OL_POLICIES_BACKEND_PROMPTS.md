@@ -59,7 +59,7 @@ FINAL OUTPUT: design summary, models, permissions, error codes, tests, commit ha
 
 ---
 
-## [ ] Prompt 2/12 — Policy Issuance Engine (Proposal to Policy Conversion)
+## [x] Prompt 2/12 — Policy Issuance Engine (Proposal to Policy Conversion)
 
 ```text
 You are a senior Django insurance engineer. Continue the ZIC OL Policies backend. Execute ONLY Prompt 2 from the saved series file.

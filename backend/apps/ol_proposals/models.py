@@ -131,6 +131,9 @@ class OLProposal(models.Model):
         blank=True,
         related_name="ol_proposals_converted",
     )
+    # Canonical apps.ol_policies bridge. Stored as an ID to keep the proposal
+    # migration independent from the policy app's proposal foreign key.
+    policy_ref = models.UUIDField(null=True, blank=True, db_index=True)
 
     reason_code = models.CharField(max_length=60, blank=True, default="")
     reason_text = models.TextField(blank=True, default="")

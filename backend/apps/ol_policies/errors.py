@@ -69,6 +69,23 @@ POLICY_ERROR_REGISTRY = {
             "Provide the required before-and-after values and confirm the policy is eligible for servicing.",
         ],
     },
+    "POLICY_ISSUANCE_INVALID": {
+        "message": "The proposal is not ready to be issued as a policy.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Move the proposal to Awaiting First Premium or Payment Ready.",
+            "Confirm that all agreed policy terms are present on the selected plan configuration.",
+        ],
+    },
+    "POLICY_FIRST_PREMIUM_NOT_POSTED": {
+        "message": "The first premium has not been fully posted for this proposal.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Record the first-premium receipt in Front Office.",
+            "Allocate the full receipt amount to the proposal commitment.",
+            "Retry policy issuance after the commitment status is Completed.",
+        ],
+    },
 }
 
 
