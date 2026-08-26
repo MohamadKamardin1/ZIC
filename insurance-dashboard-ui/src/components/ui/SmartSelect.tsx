@@ -3,7 +3,7 @@ import { Check, ChevronDown, ExternalLink, Plus, Search, X } from "lucide-react"
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { useAccess } from "../../lib/access"
-import { hasExplicitPermission, OPTION_CREATE_PERMISSIONS, OPTION_MANAGE_HREFS, OPTION_PARAMETER_SCREEN_LABELS, prettifyOptionEntity } from "../../lib/optionMetadata"
+import { hasAnyExplicitPermission, hasExplicitPermission, OPTION_CREATE_PERMISSIONS, OPTION_MANAGE_PERMISSIONS, OPTION_MANAGE_ROUTES, OPTION_PARAMETER_SCREEN_LABELS, prettifyOptionEntity, withWizardReturnContext } from "../../lib/optionMetadata"
 import { ApiClientError, request } from "../../lib/apiClient"
 import { useToast } from "./Toast"
 import { FieldLabel } from "./FormControls"
@@ -25,6 +25,7 @@ export type SmartSelectProps = FormFieldProps & {
   onValuesChange?: (values: string[]) => void
   placeholder?: string
   pageSize?: number
+  manageRoute?: string
   manageHref?: string
   manageLabel?: string
   createPermission?: string
@@ -115,6 +116,7 @@ export function SmartSelect({
   error,
   placeholder = "Select an option",
   pageSize = 30,
+  manageRoute,
   manageHref,
   manageLabel = "Manage…",
   createPermission,
@@ -130,7 +132,7 @@ export function SmartSelect({
   quickCreateUrl,
   rememberLastUsed = true,
 }: SmartSelectProps) {
-  const { access } = useAccess()
+  const { access, isSuperAdmin } = useAccess()
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
@@ -143,7 +145,9 @@ export function SmartSelect({
   const entityLabel = emptyEntityLabel ?? prettifyOptionEntity(entity)
   const permissionCode = createPermission ?? OPTION_CREATE_PERMISSIONS[entity]
   const canCreate = allowCreate && hasExplicitPermission(access.permissions, permissionCode)
-  const resolvedManageHref = manageHref ?? OPTION_MANAGE_HREFS[entity]
+  const resolvedManageRoute = manageRoute ?? manageHref ?? OPTION_MANAGE_ROUTES[entity]
+  const canManage = Boolean(resolvedManageRoute) && (isSuperAdmin || hasAnyExplicitPermission(access.permissions, OPTION_MANAGE_PERMISSIONS[entity] ?? ["ol_parameters.configure"]))
+  const resolvedManageHref = useMemo(() => canManage && resolvedManageRoute ? withWizardReturnContext(resolvedManageRoute) : undefined, [canManage, resolvedManageRoute])
   const parameterScreenLabel = OPTION_PARAMETER_SCREEN_LABELS[entity] ?? "the full parameter screen"
   const lastUsedKey = `zic.smart-select.last-used.${entity}`
 
@@ -305,10 +309,12 @@ export function SmartSelect({
             document.body,
           )}
         </div>
-        {canCreate && <button type="button" disabled={disabled} onClick={() => setQuickCreateOpen(true)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setQuickCreateOpen(true) } }} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border border-[var(--border)] bg-[var(--card)] text-[var(--primary)] shadow-sm outline-none transition hover:bg-[var(--secondary)] focus-visible:border-[var(--ring)] focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--ring)_18%,transparent)] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60" aria-label={`Add new ${entityLabel}`} title={`Add new ${entityLabel}`}><Plus size={17} aria-hidden="true" /></button>}
+        <div className="flex shrink-0 items-center gap-1">
+          {resolvedManageHref && <a href={resolvedManageHref} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-1 rounded-[10px] border border-transparent px-2 text-xs font-semibold text-[var(--primary)] outline-none transition hover:bg-[var(--secondary)] hover:underline focus-visible:border-[var(--ring)] focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--ring)_18%,transparent)]" data-manage-route={resolvedManageRoute}>{manageLabel}<ExternalLink size={12} aria-hidden="true" /></a>}
+          {canCreate && <button type="button" disabled={disabled} onClick={() => setQuickCreateOpen(true)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setQuickCreateOpen(true) } }} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border border-[var(--border)] bg-[var(--card)] text-[var(--primary)] shadow-sm outline-none transition hover:bg-[var(--secondary)] focus-visible:border-[var(--ring)] focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--ring)_18%,transparent)] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60" aria-label={`Add new ${entityLabel}`} title={`Add new ${entityLabel}`}><Plus size={17} aria-hidden="true" /></button>}
+        </div>
       </div>
       {(selectedOptions.length > 0 || (multiple && selectedValues.length > 0)) && <div className="flex flex-wrap items-center gap-1.5">{selectedOptions.map((option) => <span key={option.value} className="inline-flex max-w-full items-center gap-1 rounded-full bg-[var(--secondary)] px-2.5 py-1 text-xs text-[var(--foreground)]"><span className="max-w-[18rem] truncate">{option.label}</span></span>)}<button type="button" onClick={clear} className="text-xs font-semibold text-[var(--muted-foreground)] underline-offset-2 hover:text-[var(--foreground)] hover:underline">Clear</button></div>}
-      {resolvedManageHref && canCreate && <a href={resolvedManageHref} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-md text-xs font-semibold text-[var(--primary)] outline-none transition hover:underline focus-visible:ring-2 focus-visible:ring-[var(--ring)]">{manageLabel}<ExternalLink size={12} aria-hidden="true" /></a>}
       {error && <p id={`${name}-error`} className="mt-1 text-xs font-medium text-[var(--destructive)]" role="alert">{error}</p>}
       {!providedOptions && optionsQuery.isError && !open && <p className="text-xs text-[var(--destructive)]" role="alert">{getErrorMessage(optionsQuery.error)}</p>}
       <QuickCreateModal open={quickCreateOpen} entity={entity} entityLabel={entityLabel} permissionCode={permissionCode} manageHref={resolvedManageHref} parameterScreenLabel={parameterScreenLabel} schemaUrl={quickCreateSchemaUrl} createUrl={quickCreateUrl} onClose={() => setQuickCreateOpen(false)} onCreated={handleCreated} />

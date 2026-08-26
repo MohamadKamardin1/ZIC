@@ -141,6 +141,8 @@ const configuration = {
 
 beforeEach(() => {
   localStorage.clear()
+  sessionStorage.clear()
+  window.history.replaceState({}, "", "/")
   requestMock.mockReset()
   navigateMock.mockReset()
   toastMock.mockReset()
@@ -332,6 +334,22 @@ describe("OL quotation wizard", () => {
     await waitFor(() => expect(requestMock.mock.calls.some(([path, options]) => String(path).endsWith("/revise/") && options?.method === "POST")).toBe(true))
     await waitFor(() => expect(screen.queryByText("This quotation is read-only. Create a revision to change any wizard step.")).not.toBeInTheDocument())
     expect(screen.getByRole("button", { name: /Next/ })).not.toBeDisabled()
+  })
+
+  it("shows authorized Manage links for personal-detail foreign keys with draft context", async () => {
+    window.history.replaceState({}, "", "/ordinary-life/quotations/new?step=personal")
+    renderWizard()
+    await screen.findByRole("button", { name: /^Identity Type/ })
+    const manageLinks = screen.getAllByRole("link", { name: "Manage…" })
+    const hrefs = manageLinks.map((link) => link.getAttribute("href") ?? "")
+    expect(hrefs.some((href) => href.startsWith("/ordinary-life/parameters/dropdown-configuration?entity=identity-types"))).toBe(true)
+    expect(hrefs.some((href) => href.startsWith("/system-parameters/partner/locations"))).toBe(true)
+    expect(hrefs.some((href) => href.startsWith("/partners"))).toBe(true)
+    hrefs.forEach((href) => {
+      const target = new URL(href, window.location.origin)
+      expect(target.searchParams.get("return_to")).toBe("/ordinary-life/quotations/new?step=personal")
+      expect(target.searchParams.get("draft_id")).toBe("quote-1")
+    })
   })
 
   it("blocks navigation when Personal Details is invalid", async () => {

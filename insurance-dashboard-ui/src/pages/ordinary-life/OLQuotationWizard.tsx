@@ -27,7 +27,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import { ApiClientError, request } from "../../lib/apiClient"
 import { useAccess } from "../../lib/access"
-import { hasExplicitPermission } from "../../lib/optionMetadata"
+import { hasAnyExplicitPermission, hasExplicitPermission, OPTION_MANAGE_PERMISSIONS, OPTION_MANAGE_ROUTES, withWizardReturnContext } from "../../lib/optionMetadata"
 import { useToast } from "../../components/ui/Toast"
 import {
   DateInput,
@@ -794,13 +794,15 @@ function YesNoSelect({ label, name, value, required, disabled, onChange }: { lab
 }
 
 function PlanSelectionPanel({ plans, selectedPlanIds, search, loading, disabled = false, onSearch, onToggle, onProductCreated }: { plans: PlanCard[]; selectedPlanIds: string[]; search: string; loading: boolean; disabled?: boolean; onSearch: (value: string) => void; onToggle: (plan: PlanCard) => void; onProductCreated: (option: QuickCreateOption) => void | Promise<void> }) {
-  const { access } = useAccess()
+  const { access, isSuperAdmin } = useAccess()
   const [quickCreateOpen, setQuickCreateOpen] = useState(false)
   const canCreateProducts = hasExplicitPermission(access.permissions, "ol_parameters.create")
+  const canManageProducts = isSuperAdmin || hasAnyExplicitPermission(access.permissions, OPTION_MANAGE_PERMISSIONS.products)
+  const manageProductsHref = canManageProducts ? withWizardReturnContext(OPTION_MANAGE_ROUTES.products) : undefined
   return <aside className="w-full shrink-0 lg:w-[310px] xl:w-[330px]" aria-label="Plan selection panel">
     <div className="surface-card ol-quote-plan-panel overflow-hidden">
       <header className="px-4 py-3">
-        <div className="flex items-center justify-between gap-2"><div className="flex min-w-0 items-center gap-2"><PanelLeft size={17} aria-hidden="true" /><h2 className="truncate text-base font-bold">Plan Selection</h2></div>{canCreateProducts && !disabled && <button type="button" className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-white/35 text-white/90 transition hover:bg-white/15 focus-visible:ring-2 focus-visible:ring-white/70" aria-label="Add product" title="Add product" onClick={() => setQuickCreateOpen(true)}><Plus size={15} aria-hidden="true" /></button>}
+        <div className="flex items-center justify-between gap-2"><div className="flex min-w-0 items-center gap-2"><PanelLeft size={17} aria-hidden="true" /><h2 className="truncate text-base font-bold">Plan Selection</h2></div><div className="flex shrink-0 items-center gap-2">{manageProductsHref && <a href={manageProductsHref} target="_blank" rel="noreferrer" className="rounded-md px-1.5 py-1 text-[11px] font-semibold text-white/90 underline-offset-2 transition hover:bg-white/15 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70" data-manage-route={OPTION_MANAGE_ROUTES.products}>Manage</a>}{canCreateProducts && !disabled && <button type="button" className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-white/35 text-white/90 transition hover:bg-white/15 focus-visible:ring-2 focus-visible:ring-white/70" aria-label="Add product" title="Add product" onClick={() => setQuickCreateOpen(true)}><Plus size={15} aria-hidden="true" /></button>}</div>
 </div>
         <div className="relative mt-3"><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" size={16} aria-hidden="true" /><input aria-label="Search plans and sub-products" disabled={disabled} value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Search plans and sub-products..." className="h-10 w-full rounded-[10px] border border-white/30 bg-white px-3 pl-9 text-sm text-slate-700 shadow-sm outline-none placeholder:text-slate-400 focus:border-white focus:ring-2 focus:ring-white/35 disabled:cursor-not-allowed disabled:opacity-70" /></div>
         <span className="sr-only">{selectedPlanIds.length ? `${selectedPlanIds.length} ${selectedPlanIds.length === 1 ? "Plan" : "Plans"} selected` : "No products selected"}</span>

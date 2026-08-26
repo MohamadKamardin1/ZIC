@@ -200,7 +200,7 @@ FINAL OUTPUT: model/serializer fixes, frontend dropdown binding, validation rule
 
 ---
 
-## [ ] Prompt 5 — Add consistent Manage links to all quotation wizard dropdowns
+## [x] Prompt 5 — Add consistent Manage links to all quotation wizard dropdowns
 
 ```text
 You are a senior frontend engineer. Continue the ZIC fix series. Execute ONLY Prompt 5.

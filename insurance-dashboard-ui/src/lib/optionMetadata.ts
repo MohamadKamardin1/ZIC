@@ -17,6 +17,43 @@ export const OPTION_CREATE_PERMISSIONS: Record<string, string> = {
   currencies: "system_parameters.manage",
 }
 
+export const OPTION_MANAGE_PERMISSIONS: Record<string, string[]> = {
+  "identity-types": ["ol_parameters.configure", "system_parameters.manage"],
+  locations: ["ol_parameters.configure", "partner_onboarding.configure", "partner_onboarding.manage", "system_parameters.manage"],
+  branches: ["ol_parameters.configure", "partner_onboarding.configure", "partner_onboarding.manage", "system_parameters.manage"],
+  branch: ["ol_parameters.configure", "partner_onboarding.configure", "partner_onboarding.manage", "system_parameters.manage"],
+  agents: ["ol_parameters.configure", "partners.configure", "partners.manage", "partner_onboarding.configure", "partner_onboarding.manage"],
+  intermediaries: ["ol_parameters.configure", "partners.configure", "partners.manage", "partner_onboarding.configure", "partner_onboarding.manage"],
+  employers: ["ol_parameters.configure", "partners.configure", "partners.manage", "partner_onboarding.configure", "partner_onboarding.manage"],
+  banks: ["ol_parameters.configure", "partners.configure", "partners.manage", "partner_onboarding.configure", "partner_onboarding.manage"],
+  products: ["ol_parameters.configure"],
+  product: ["ol_parameters.configure"],
+  "plan-types": ["ol_parameters.configure"],
+  "plan-type": ["ol_parameters.configure"],
+  "payment-frequencies": ["ol_parameters.configure", "system_parameters.manage"],
+  "payment-frequency": ["ol_parameters.configure", "system_parameters.manage"],
+  "quote-bases": ["ol_parameters.configure", "system_parameters.manage"],
+  "quote-basis": ["ol_parameters.configure", "system_parameters.manage"],
+  "premium-factors": ["ol_parameters.configure", "system_parameters.manage"],
+  "premium-factor": ["ol_parameters.configure", "system_parameters.manage"],
+  "member-relations": ["ol_parameters.configure", "system_parameters.manage"],
+  "member-relation": ["ol_parameters.configure", "system_parameters.manage"],
+  "cover-types": ["ol_parameters.configure", "system_parameters.manage"],
+  "cover-type": ["ol_parameters.configure", "system_parameters.manage"],
+  "payment-modes": ["ol_parameters.configure", "system_parameters.manage"],
+  "payment-mode": ["ol_parameters.configure", "system_parameters.manage"],
+  "investment-funds": ["ol_parameters.configure"],
+  "investment-fund": ["ol_parameters.configure"],
+  "investment-fund-types": ["ol_parameters.configure"],
+  "investment-fund-type": ["ol_parameters.configure"],
+  riders: ["ol_parameters.configure"],
+  rider: ["ol_parameters.configure"],
+  "benefit-types": ["ol_parameters.configure"],
+  "benefit-type": ["ol_parameters.configure"],
+  currencies: ["ol_parameters.configure", "system_parameters.manage"],
+  currency: ["ol_parameters.configure", "system_parameters.manage"],
+}
+
 export const OPTION_CHOICE_LIST_CODES: Record<string, string> = {
   "identity-types": "IDENTIFICATION_TYPE_CHOICES",
   "payment-frequencies": "OL_PREMIUM_FREQUENCY_CHOICES",
@@ -34,23 +71,58 @@ export const OPTION_REGISTRY_ENTITIES = [
   "member-relations", "cover-types", "payment-modes", "investment-funds", "investment-fund-types", "riders", "benefit-types", "currencies",
 ] as const
 
-export const OPTION_MANAGE_HREFS: Record<string, string> = {
+export const OPTION_MANAGE_ROUTES: Record<string, string> = {
   "identity-types": "/ordinary-life/parameters/dropdown-configuration?entity=identity-types",
   locations: "/system-parameters/partner/locations",
-  agents: "/ordinary-life/parameters/agent-management",
-  products: "/ordinary-life/parameters/product-setup",
-  "plan-types": "/ordinary-life/parameters/product-setup",
+  branches: "/system-parameters/partner/branches",
+  branch: "/system-parameters/partner/branches",
+  agents: "/partners",
+  intermediaries: "/partners",
+  employers: "/partners",
+  banks: "/partners",
+  products: "/ordinary-life/parameters/product-setup?screen=products",
+  product: "/ordinary-life/parameters/product-setup?screen=products",
+  "plan-types": "/ordinary-life/parameters/product-setup?screen=plan-types",
+  "plan-type": "/ordinary-life/parameters/product-setup?screen=plan-types",
   "payment-frequencies": "/ordinary-life/parameters/dropdown-configuration?entity=payment-frequencies",
+  "payment-frequency": "/ordinary-life/parameters/dropdown-configuration?entity=payment-frequencies",
   "quote-bases": "/ordinary-life/parameters/dropdown-configuration?entity=quote-bases",
+  "quote-basis": "/ordinary-life/parameters/dropdown-configuration?entity=quote-bases",
   "premium-factors": "/ordinary-life/parameters/dropdown-configuration?entity=premium-factors",
+  "premium-factor": "/ordinary-life/parameters/dropdown-configuration?entity=premium-factors",
   "member-relations": "/ordinary-life/parameters/dropdown-configuration?entity=member-relations",
+  "member-relation": "/ordinary-life/parameters/dropdown-configuration?entity=member-relations",
   "cover-types": "/ordinary-life/parameters/dropdown-configuration?entity=cover-types",
+  "cover-type": "/ordinary-life/parameters/dropdown-configuration?entity=cover-types",
   "payment-modes": "/ordinary-life/parameters/dropdown-configuration?entity=payment-modes",
-  "investment-funds": "/ordinary-life/parameters/product-setup",
-  "investment-fund-types": "/ordinary-life/parameters/product-setup",
+  "payment-mode": "/ordinary-life/parameters/dropdown-configuration?entity=payment-modes",
+  "investment-funds": "/ordinary-life/parameters/product-setup?screen=investment-funds",
+  "investment-fund": "/ordinary-life/parameters/product-setup?screen=investment-funds",
+  "investment-fund-types": "/ordinary-life/parameters/product-setup?screen=investment-fund-types",
+  "investment-fund-type": "/ordinary-life/parameters/product-setup?screen=investment-fund-types",
   riders: "/ordinary-life/parameters/rider-setup",
-  "benefit-types": "/ordinary-life/parameters/policy-setup?screen=beneficial-types",
+  rider: "/ordinary-life/parameters/rider-setup",
+  "benefit-types": "/ordinary-life/parameters/policy-setup?screen=beneficial",
+  "benefit-type": "/ordinary-life/parameters/policy-setup?screen=beneficial",
   currencies: "/ordinary-life/parameters/dropdown-configuration?entity=currencies",
+  currency: "/ordinary-life/parameters/dropdown-configuration?entity=currencies",
+}
+
+// Backward-compatible export used by existing quick-create and parameter screens.
+export const OPTION_MANAGE_HREFS = OPTION_MANAGE_ROUTES
+
+export function withWizardReturnContext(route: string): string {
+  if (typeof window === "undefined" || !window.location.pathname.includes("/ordinary-life/quotations")) return route
+  const url = new URL(route, window.location.origin)
+  const returnTo = `${window.location.pathname}${window.location.search}`
+  if (returnTo) url.searchParams.set("return_to", returnTo)
+  try {
+    const draftId = window.sessionStorage.getItem("zic.ol-quotation.active-draft")
+    if (draftId) url.searchParams.set("draft_id", draftId)
+  } catch {
+    // Ignore storage restrictions; the wizard also persists a local browser snapshot.
+  }
+  return `${url.pathname}${url.search}${url.hash}`
 }
 
 export const OPTION_PARAMETER_SCREEN_LABELS: Record<string, string> = {
@@ -78,6 +150,13 @@ export function prettifyOptionEntity(entity: string): string {
     .replace(/\b\w/g, (character) => character.toUpperCase())
     .replace(/Types$/, "Types")
     .replace(/s$/, "")
+}
+
+export function hasAnyExplicitPermission(
+  permissions: Array<{ module?: string; action?: string }> | undefined,
+  permissionCodes: string[] | undefined,
+): boolean {
+  return Boolean(permissionCodes?.some((permissionCode) => hasExplicitPermission(permissions, permissionCode)))
 }
 
 export function hasExplicitPermission(

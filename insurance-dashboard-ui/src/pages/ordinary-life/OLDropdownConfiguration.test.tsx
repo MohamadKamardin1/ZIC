@@ -106,7 +106,7 @@ describe("OL Drop Down Configuration", () => {
   it("selects the catalog from a SmartSelect Manage deep link and loads its options", async () => {
     renderPage()
     expect(await screen.findByRole("heading", { name: "OL Premium Frequencies" })).toBeInTheDocument()
-    expect(apiMocks.listChoiceOptions).toHaveBeenCalledWith(frequencyList.id)
+    await waitFor(() => expect(apiMocks.listChoiceOptions).toHaveBeenCalledWith(frequencyList.id))
     expect((await screen.findAllByText("MONTHLY")).length).toBeGreaterThanOrEqual(1)
     expect((await screen.findAllByText("Monthly")).length).toBeGreaterThanOrEqual(1)
   })

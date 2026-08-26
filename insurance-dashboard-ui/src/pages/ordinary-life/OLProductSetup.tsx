@@ -238,7 +238,10 @@ export default function OLProductSetup() {
   const canCreate = isSuperAdmin || permissionKeys.includes("ol_parameters.create")
   const canUpdate = isSuperAdmin || permissionKeys.includes("ol_parameters.update")
   const canDeactivate = isSuperAdmin || permissionKeys.includes("ol_parameters.deactivate")
-  const [active, setActive] = useState<ScreenKey>("plan-types")
+  const [active, setActive] = useState<ScreenKey>(() => {
+    const requested = new URLSearchParams(window.location.search).get("screen") as ScreenKey | null
+    return requested && requested in screens ? requested : "plan-types"
+  })
   const [filters, setFilters] = useState<FilterValues>({})
   const [refreshKey, setRefreshKey] = useState(0)
   const [editor, setEditor] = useState<{ open: boolean; row: ProductRecord | null; value: EditorState }>({ open: false, row: null, value: {} })

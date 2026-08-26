@@ -6,15 +6,19 @@ import { SmartSelect } from "./SmartSelect"
 import { ToastProvider } from "./Toast"
 import { ApiClientError, request } from "../../lib/apiClient"
 
-vi.mock("../../lib/access", () => ({
-  useAccess: () => ({
-    access: { permissions: [{ module: "ol_parameters", action: "create" }], visibleModules: ["ol_parameters"], groups: [] },
+const smartSelectAccess = vi.hoisted(() => ({
+  current: {
+    access: { permissions: [{ module: "ol_parameters", action: "create" }, { module: "ol_parameters", action: "configure" }], visibleModules: ["ol_parameters"], groups: [] },
     isLoading: false,
     isError: false,
     isSuperAdmin: true,
     canAccess: () => true,
-    hasPermission: (permission: string) => permission === "ol_parameters.create",
-  }),
+    hasPermission: (permission: string) => permission === "ol_parameters.create" || permission === "ol_parameters.configure",
+  },
+}))
+
+vi.mock("../../lib/access", () => ({
+  useAccess: () => smartSelectAccess.current,
 }))
 
 vi.mock("../../lib/apiClient", async () => {
@@ -37,6 +41,16 @@ function renderSmartSelect(props: Partial<React.ComponentProps<typeof SmartSelec
 
 describe("SmartSelect", () => {
   beforeEach(() => {
+    smartSelectAccess.current = {
+      access: { permissions: [{ module: "ol_parameters", action: "create" }, { module: "ol_parameters", action: "configure" }], visibleModules: ["ol_parameters"], groups: [] },
+      isLoading: false,
+      isError: false,
+      isSuperAdmin: true,
+      canAccess: () => true,
+      hasPermission: (permission: string) => permission === "ol_parameters.create" || permission === "ol_parameters.configure",
+    }
+    window.history.replaceState({}, "", "/")
+    sessionStorage.clear()
     mockedRequest.mockReset()
     mockedRequest.mockResolvedValue({ items: [{ value: "location-1", label: "MALINDI — Malindi" }], total: 1 })
   })
@@ -51,6 +65,57 @@ describe("SmartSelect", () => {
   it("hides the plus control when the create permission is absent", () => {
     renderSmartSelect({ createPermission: "ol_parameters.update" })
     expect(screen.queryByRole("button", { name: "Add new Location" })).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ["identity-types", "/ordinary-life/parameters/dropdown-configuration?entity=identity-types"],
+    ["locations", "/system-parameters/partner/locations"],
+    ["agents", "/partners"],
+    ["products", "/ordinary-life/parameters/product-setup?screen=products"],
+    ["plan-types", "/ordinary-life/parameters/product-setup?screen=plan-types"],
+    ["payment-frequencies", "/ordinary-life/parameters/dropdown-configuration?entity=payment-frequencies"],
+    ["quote-bases", "/ordinary-life/parameters/dropdown-configuration?entity=quote-bases"],
+    ["premium-factors", "/ordinary-life/parameters/dropdown-configuration?entity=premium-factors"],
+    ["member-relations", "/ordinary-life/parameters/dropdown-configuration?entity=member-relations"],
+    ["cover-types", "/ordinary-life/parameters/dropdown-configuration?entity=cover-types"],
+    ["payment-modes", "/ordinary-life/parameters/dropdown-configuration?entity=payment-modes"],
+    ["investment-funds", "/ordinary-life/parameters/product-setup?screen=investment-funds"],
+    ["investment-fund-types", "/ordinary-life/parameters/product-setup?screen=investment-fund-types"],
+    ["riders", "/ordinary-life/parameters/rider-setup"],
+    ["benefit-types", "/ordinary-life/parameters/policy-setup?screen=beneficial"],
+    ["currencies", "/ordinary-life/parameters/dropdown-configuration?entity=currencies"],
+  ] as Array<[string, string]>)("uses the registry Manage target for %s", (entity, expectedRoute) => {
+    renderSmartSelect({ entity, options: [], allowCreate: false })
+    const manageLink = screen.getByRole("link", { name: "Manage…" })
+    expect(manageLink).toHaveAttribute("data-manage-route", expectedRoute)
+    expect(manageLink).toHaveAttribute("href", expectedRoute)
+  })
+
+  it("renders the Manage link for a permitted entity and preserves wizard draft context", () => {
+    window.history.replaceState({}, "", "/ordinary-life/quotations/new?step=2")
+    sessionStorage.setItem("zic.ol-quotation.active-draft", "draft-123")
+    renderSmartSelect({ entity: "agents", manageRoute: "/partners" })
+    const manageLink = screen.getByRole("link", { name: "Manage…" })
+    const target = new URL(manageLink.getAttribute("href") ?? "", window.location.origin)
+    expect(target.pathname).toBe("/partners")
+    expect(target.searchParams.get("return_to")).toBe("/ordinary-life/quotations/new?step=2")
+    expect(target.searchParams.get("draft_id")).toBe("draft-123")
+    expect(manageLink).toHaveAttribute("target", "_blank")
+    fireEvent.click(manageLink)
+    expect(manageLink).toHaveAttribute("href", expect.stringContaining("/partners"))
+  })
+
+  it("hides the Manage link when the user lacks configure permission", () => {
+    smartSelectAccess.current = {
+      access: { permissions: [{ module: "ol_parameters", action: "create" }], visibleModules: ["ol_parameters"], groups: [] },
+      isLoading: false,
+      isError: false,
+      isSuperAdmin: false,
+      canAccess: () => true,
+      hasPermission: (_permission: string): _permission is "ol_parameters.create" | "ol_parameters.configure" => false,
+    }
+    renderSmartSelect({ entity: "riders", manageRoute: "/ordinary-life/parameters/rider-setup" })
+    expect(screen.queryByRole("link", { name: "Manage…" })).not.toBeInTheDocument()
   })
 
   it("renders supplied local options without requesting the global option endpoint", async () => {

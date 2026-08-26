@@ -461,7 +461,10 @@ function QuestionnaireBuilderPanel({ value, onChange, items, catalog, onItemsCha
 export default function OLPolicySetup() {
   const { access, canAccess, isSuperAdmin } = useAccess()
   const { toast } = useToast()
-  const [active, setActive] = useState<ScreenKey>("rates")
+  const [active, setActive] = useState<ScreenKey>(() => {
+    const requested = new URLSearchParams(window.location.search).get("screen") as ScreenKey | null
+    return requested && requested in screens ? requested : "rates"
+  })
   const [filters, setFilters] = useState<FilterValues>({})
   const [refreshKey, setRefreshKey] = useState(0)
   const [saving, setSaving] = useState(false)
