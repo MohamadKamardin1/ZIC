@@ -351,6 +351,28 @@ class WithdrawalRequest(UUIDModel, AuditedModel):
         super().save(*args, **kwargs)
 
 
+class PolicyNotificationLog(UUIDModel):
+    policy = models.ForeignKey(Policy, on_delete=models.PROTECT, related_name="notification_logs")
+    event_type = models.CharField(max_length=80, db_index=True)
+    channel = models.CharField(max_length=20)
+    recipient = models.CharField(max_length=255)
+    message = models.TextField()
+    external_key = models.CharField(max_length=180)
+    status = models.CharField(max_length=20, default="QUEUED", db_index=True)
+    dispatched_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "ol_policies_policy_notification_log"
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["external_key", "channel", "recipient"], name="ol_policy_notification_key_uq"),
+        ]
+        indexes = [
+            models.Index(fields=["policy", "event_type"], name="ol_policy_notif_event_idx"),
+        ]
+
+
 class MaturityClaimStatus(models.TextChoices):
     PENDING_DOCUMENTS = "PENDING_DOCUMENTS", "Pending documents"
     PENDING_APPROVAL = "PENDING_APPROVAL", "Pending approval"

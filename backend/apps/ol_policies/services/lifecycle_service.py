@@ -145,6 +145,9 @@ def mark_policy_lapsed(policy, *, as_of=None, actor=None, source_channel="BATCH"
         event_emitter=emit_policy_lapsed,
         metadata={"commitment_numbers": [item.commitment_number for item, _ in overdue]},
     )
+    from .integration_service import notify_policy_event
+
+    notify_policy_event(policy, "PolicyLapsed", actor=actor, source_channel=source_channel)
     return True
 
 

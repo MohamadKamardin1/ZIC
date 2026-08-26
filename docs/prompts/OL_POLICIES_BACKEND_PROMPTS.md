@@ -404,7 +404,7 @@ FINAL OUTPUT: template vars, print endpoints, tests, commit hash, pushed branch.
 
 ---
 
-## [ ] Prompt 10/12 — Integrations: Portal, Claims, Reinsurance, Notifications
+## [x] Prompt 10/12 — Integrations: Portal, Claims, Reinsurance, Notifications
 
 ```text
 You are a senior Django integration engineer. Continue the ZIC OL Policies backend. Execute ONLY Prompt 10.

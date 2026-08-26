@@ -297,4 +297,7 @@ def issue_policy_from_proposal(proposal_id, *, actor=None, request=None, source_
             else None,
         },
     )
+    from .integration_service import notify_policy_event
+
+    notify_policy_event(policy, "PolicyIssued", actor=actor, source_channel=source_channel)
     return policy, True

@@ -9,6 +9,14 @@ from .finance_views import (
     PolicyLoanRepayView,
     PolicyWithdrawalListCreateView,
 )
+from .integration_views import (
+    PolicyClaimRegistrationDataView,
+    PolicyClaimSettledWebhookView,
+    PolicyDashboardHooksView,
+    PolicyPortalDetailView,
+    PolicyPortalListView,
+    PolicyReinsuranceRiskView,
+)
 from .issuance_views import PolicyIssueView
 from .lifecycle_views import PolicyReinstateView
 from .maturity_views import PolicyMaturityApproveView, PolicyMaturityPayView, PolicyMaturityView
@@ -35,6 +43,12 @@ urlpatterns = [
     path("policies/<uuid:policy_id>/print-schedule/", PolicySchedulePrintView.as_view(), name="policy-print-schedule"),
     path("policies/maturity/<uuid:claim_id>/approve/", PolicyMaturityApproveView.as_view(), name="policy-maturity-approve"),
     path("policies/maturity/<uuid:claim_id>/pay/", PolicyMaturityPayView.as_view(), name="policy-maturity-pay"),
+    path("policies/<uuid:policy_id>/claim-data/", PolicyClaimRegistrationDataView.as_view(), name="policy-claim-data"),
+    path("policies/<uuid:policy_id>/reinsurance-risk/", PolicyReinsuranceRiskView.as_view(), name="policy-reinsurance-risk"),
+    path("policies/integrations/claim-settled/", PolicyClaimSettledWebhookView.as_view(), name="policy-claim-settled"),
+    path("policies/portal/", PolicyPortalListView.as_view(), name="policy-portal-list"),
+    path("policies/portal/<uuid:policy_id>/", PolicyPortalDetailView.as_view(), name="policy-portal-detail"),
+    path("policies/dashboard-hooks/", PolicyDashboardHooksView.as_view(), name="policy-dashboard-hooks"),
     path("policies/", PolicyListView.as_view(), name="policy-list"),
     path(
         "policies/<uuid:policy_id>/endorsements/<uuid:endorsement_id>/",
