@@ -2,6 +2,7 @@ from django.contrib import admin
 
 from .models import OLLoan, OLLoanInterestAccrual, OLLoanOffset, OLLoanRepayment, OLLoanSchedule
 from .permissions import has_ol_loan_permission
+from apps.ol_parameters.models import OLLoanInterestControl, OLLoanSystemSetup
 
 
 class LoanChildReadOnlyAdmin(admin.ModelAdmin):
@@ -103,3 +104,52 @@ class OLLoanOffsetAdmin(LoanChildReadOnlyAdmin):
     list_filter = ("source_type",)
     search_fields = ("loan__loan_number", "source_id", "reason")
     list_select_related = ("loan",)
+
+
+class _LoanConfigurationDiagnosticAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "product", "plan", "effective_from", "effective_to", "is_active")
+    list_filter = ("is_active", "effective_from", "effective_to")
+    search_fields = ("code", "name", "product__code", "plan__code")
+    list_select_related = ("product", "plan")
+    readonly_fields = tuple(field.name for field in OLLoanSystemSetup._meta.fields)
+
+    def has_module_permission(self, request):
+        return has_ol_loan_permission(request.user, "view")
+
+    def has_view_permission(self, request, obj=None):
+        return has_ol_loan_permission(request.user, "view")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+class OLLoanSystemSetupDiagnostic(OLLoanSystemSetup):
+    class Meta:
+        proxy = True
+        app_label = "ol_loans"
+        verbose_name = "Loan System Setup Diagnostic"
+        verbose_name_plural = "Loan System Setup Diagnostics"
+
+
+class OLLoanInterestControlDiagnostic(OLLoanInterestControl):
+    class Meta:
+        proxy = True
+        app_label = "ol_loans"
+        verbose_name = "Loan Interest Control Diagnostic"
+        verbose_name_plural = "Loan Interest Control Diagnostics"
+
+
+@admin.register(OLLoanSystemSetupDiagnostic)
+class OLLoanSystemSetupDiagnosticAdmin(_LoanConfigurationDiagnosticAdmin):
+    readonly_fields = tuple(field.name for field in OLLoanSystemSetup._meta.fields)
+
+
+@admin.register(OLLoanInterestControlDiagnostic)
+class OLLoanInterestControlDiagnosticAdmin(_LoanConfigurationDiagnosticAdmin):
+    readonly_fields = tuple(field.name for field in OLLoanInterestControl._meta.fields)

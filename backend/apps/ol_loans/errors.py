@@ -28,6 +28,7 @@ class LoanError(ZICAPIException):
         field_errors=None,
         doc_ref=DOC_REF,
         details=None,
+        deep_link=None,
     ):
         super().__init__(
             message=message,
@@ -39,6 +40,7 @@ class LoanError(ZICAPIException):
             field_errors=field_errors,
             doc_ref=doc_ref,
         )
+        self.deep_link = deep_link
 
 
 def loan_not_found(identifier=None):
@@ -79,4 +81,5 @@ def parameter_missing(parameter_label, navigation_path="Ordinary Life Parameters
             "Retry the loan operation after the parameter is saved and effective.",
         ],
         details={"parameter": parameter_label, "navigation_path": navigation_path},
+        deep_link="/ol-parameters/loan-system-setups/",
     )
