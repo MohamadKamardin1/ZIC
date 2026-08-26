@@ -104,6 +104,12 @@ class OLLoanListSerializer(serializers.ModelSerializer):
             "total_repaid",
             "outstanding_balance",
             "approval_required",
+            "approval_request",
+            "approved_by",
+            "approved_at",
+            "rejected_by",
+            "rejected_at",
+            "rejection_reason",
             "reason",
             "created_at",
             "updated_at",
@@ -123,6 +129,19 @@ class OLLoanRequestSerializer(serializers.Serializer):
     repayment_mode = serializers.CharField(max_length=40)
     reason = serializers.CharField(max_length=2000, allow_blank=False, trim_whitespace=True)
     as_of = serializers.DateField(required=False)
+
+
+class OLLoanApprovalSerializer(serializers.Serializer):
+    reason = serializers.CharField(max_length=2000, required=False, allow_blank=True, trim_whitespace=True)
+
+
+class OLLoanRejectionSerializer(serializers.Serializer):
+    reason = serializers.CharField(max_length=2000, required=False, allow_blank=True, trim_whitespace=True)
+
+
+class OLLoanBulkActionSerializer(serializers.Serializer):
+    loan_ids = serializers.ListField(child=serializers.UUIDField(), allow_empty=False)
+    reason = serializers.CharField(max_length=2000, required=False, allow_blank=True, trim_whitespace=True)
 
 
 class OLLoanDetailSerializer(OLLoanListSerializer):

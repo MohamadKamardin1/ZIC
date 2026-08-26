@@ -5,7 +5,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from apps.common.models import DomainEvent
-from apps.governance.models import AuditLog
+from apps.governance.models import ApprovalRequest, AuditLog
 from apps.ol_loans.models import LoanStatus, OLLoan
 from apps.ol_parameters.models import OLLoanInterestControl, OLLoanSystemSetup, OLPlanType, OLProduct
 from apps.ol_policies.models import Policy
@@ -68,7 +68,8 @@ class PolicyLoanRequestTestCase(TestCase):
             effect_on_claim="DEDUCT_BALANCE",
             effect_on_surrender="DEDUCT_BALANCE",
             effect_on_maturity="DEDUCT_BALANCE",
-            require_approval=True,
+            require_approval=False,
+            auto_approve_limit=Decimal("500000.00"),
             effective_from=date(2026, 1, 1),
         )
         self.interest = OLLoanInterestControl.objects.create(
@@ -150,6 +151,7 @@ class PolicyLoanRequestTestCase(TestCase):
         self.assertEqual(loan.interest_rate, self.interest.interest_rate)
         self.assertEqual(loan.currency, "TZS")
         self.assertTrue(loan.approval_required)
+        self.assertTrue(ApprovalRequest.objects.filter(entity_id=loan.pk, status="PENDING").exists())
         self.assertTrue(DomainEvent.objects.filter(event_type="LoanRequested", aggregate_id=str(loan.pk)).exists())
         self.assertTrue(
             AuditLog.objects.filter(

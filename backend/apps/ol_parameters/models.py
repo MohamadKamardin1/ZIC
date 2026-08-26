@@ -3617,6 +3617,7 @@ class OLLoanSystemSetup(OLEffectiveDateModel):
     max_loan_percentage_of_cash_value = models.DecimalField(max_digits=18, decimal_places=8, default=Decimal("0"))
     min_loan_amount = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
     max_loan_amount = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
+    auto_approve_limit = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
     loan_currency = models.CharField(max_length=3, blank=True, default="", db_index=True)
     repayment_options = models.JSONField(default=list, blank=True)
     auto_deduct_from_benefits = models.BooleanField(default=True)
@@ -3648,6 +3649,10 @@ class OLLoanSystemSetup(OLEffectiveDateModel):
                 | models.Q(max_loan_amount__gte=models.F("min_loan_amount")),
                 name="ol_loan_system_min_max_ck",
             ),
+            models.CheckConstraint(
+                check=models.Q(auto_approve_limit__isnull=True) | models.Q(auto_approve_limit__gt=0),
+                name="ol_loan_system_auto_approve_pos",
+            ),
         ]
         indexes = [
             models.Index(fields=["product", "plan", "is_active", "effective_from"], name="ol_loan_system_scope_idx"),
@@ -3672,6 +3677,8 @@ class OLLoanSystemSetup(OLEffectiveDateModel):
             errors["min_loan_amount"] = "Minimum loan amount must be positive when supplied."
         if self.max_loan_amount is not None and self.max_loan_amount <= 0:
             errors["max_loan_amount"] = "Maximum loan amount must be positive when supplied."
+        if self.auto_approve_limit is not None and self.auto_approve_limit <= 0:
+            errors["auto_approve_limit"] = "Auto-approval limit must be positive when supplied."
         if self.min_loan_amount is not None and self.max_loan_amount is not None and self.max_loan_amount < self.min_loan_amount:
             errors["max_loan_amount"] = "Maximum loan amount cannot be less than minimum loan amount."
         if not isinstance(self.repayment_options, (dict, list)):

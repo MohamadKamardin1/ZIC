@@ -82,6 +82,30 @@ class OLLoan(AuditedModel):
     total_repaid = models.DecimalField(max_digits=18, decimal_places=2, default=ZERO)
     outstanding_balance = models.DecimalField(max_digits=18, decimal_places=2, default=ZERO, db_index=True)
     approval_required = models.BooleanField(default=False, db_index=True)
+    approval_request = models.OneToOneField(
+        "governance.ApprovalRequest",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ol_loan",
+    )
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="approved_ol_loans",
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    rejected_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="rejected_ol_loans",
+    )
+    rejected_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(blank=True, default="")
     reason = models.TextField(blank=True, default="")
     source_channel = models.CharField(max_length=20, choices=LoanSourceChannel.choices, default=LoanSourceChannel.SYSTEM)
     idempotency_key = models.CharField(max_length=100, unique=True, null=True, blank=True, db_index=True)

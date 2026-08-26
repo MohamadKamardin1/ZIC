@@ -24,6 +24,7 @@ class LoanConfig:
     max_loan_percentage: Decimal
     min_loan_amount: Decimal | None
     max_loan_amount: Decimal | None
+    auto_approve_limit: Decimal | None
     loan_currency: str
     repayment_options: tuple
     auto_deduct_from_benefits: bool
@@ -49,6 +50,7 @@ class LoanConfig:
             "max_loan_percentage": str(self.max_loan_percentage),
             "min_loan_amount": str(self.min_loan_amount) if self.min_loan_amount is not None else None,
             "max_loan_amount": str(self.max_loan_amount) if self.max_loan_amount is not None else None,
+            "auto_approve_limit": str(self.auto_approve_limit) if self.auto_approve_limit is not None else None,
             "loan_currency": self.loan_currency,
             "repayment_options": list(self.repayment_options),
             "auto_deduct_from_benefits": self.auto_deduct_from_benefits,
@@ -178,6 +180,7 @@ def _build_config(as_of, system_setup, interest_control):
         max_loan_percentage=Decimal(system_setup.max_loan_percentage_of_cash_value),
         min_loan_amount=Decimal(system_setup.min_loan_amount) if system_setup.min_loan_amount is not None else None,
         max_loan_amount=Decimal(system_setup.max_loan_amount) if system_setup.max_loan_amount is not None else None,
+        auto_approve_limit=Decimal(system_setup.auto_approve_limit) if system_setup.auto_approve_limit is not None else None,
         loan_currency=(system_setup.loan_currency or "").upper(),
         repayment_options=repayment_options,
         auto_deduct_from_benefits=bool(system_setup.auto_deduct_from_benefits),

@@ -869,7 +869,7 @@ class OLReserveLoadingAdmin(OLDefaultSetupAdmin):
 class OLLoanSystemSetupAdmin(OLDefaultSetupAdmin):
     list_display = (
         "code", "name", "product", "plan", "allow_policy_loans", "loan_basis",
-        "max_loan_percentage_of_cash_value", "min_loan_amount", "max_loan_amount",
+        "max_loan_percentage_of_cash_value", "min_loan_amount", "max_loan_amount", "auto_approve_limit",
         "require_approval", "is_active", "effective_from", "effective_to",
     )
     list_filter = (
@@ -887,7 +887,7 @@ class OLLoanSystemSetupAdmin(OLDefaultSetupAdmin):
     fieldsets = (
         ("Identity", {"fields": ("code", "name", "description", "is_active")}),
         ("Scope and loan basis", {"fields": ("product", "plan", "allow_policy_loans", "loan_basis", "loan_currency")}),
-        ("Loan limits", {"fields": ("max_loan_percentage_of_cash_value", "min_loan_amount", "max_loan_amount")}),
+        ("Loan limits", {"fields": ("max_loan_percentage_of_cash_value", "min_loan_amount", "max_loan_amount", "auto_approve_limit")}),
         ("Repayment and benefit behavior", {"fields": ("repayment_options", "auto_deduct_from_benefits", "effect_on_claim", "effect_on_surrender", "effect_on_maturity", "require_approval")}),
         ("Effective dates", {"fields": ("effective_from", "effective_to")}),
         ("Audit", {"fields": ("created_by", "created_at", "updated_by", "updated_at")}),

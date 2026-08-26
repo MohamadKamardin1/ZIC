@@ -147,7 +147,7 @@ FINAL OUTPUT: endpoint, validation logic, idempotency, tests, commit hash, pushe
 
 ---
 
-## [ ] Prompt 4/12 — Approval Workflow & Limit Checking
+## [x] Prompt 4/12 — Approval Workflow & Limit Checking
 
 ```text
 You are a senior Django insurance workflow engineer. Continue the ZIC OL Loans backend. Execute ONLY Prompt 4.

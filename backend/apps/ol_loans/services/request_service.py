@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from django.db import transaction
 
+from apps.governance.models import ApprovalRequest
 from apps.governance.services.audit_service import AuditService
 from apps.ol_parameters.models import OLProduct
 from apps.ol_policies.models import Policy, PolicyStatus
@@ -314,6 +315,10 @@ def request_policy_loan(
             field_errors={"reason": ["Explain why the policyholder is requesting the loan."]},
         )
 
+    approval_required = bool(
+        config.require_approval
+        or (config.auto_approve_limit is not None and amount > config.auto_approve_limit)
+    )
     loan = OLLoan(
         loan_number=f"LOAN-{as_of:%Y%m%d}-{uuid4().hex[:10].upper()}",
         policy_ref=policy,
@@ -329,7 +334,7 @@ def request_policy_loan(
         status=LoanStatus.REQUESTED,
         total_repaid=Decimal("0.00"),
         outstanding_balance=Decimal("0.00"),
-        approval_required=config.require_approval,
+        approval_required=approval_required,
         reason=reason,
         source_channel=source_channel,
         idempotency_key=key,
@@ -338,6 +343,25 @@ def request_policy_loan(
     )
     loan.full_clean()
     loan.save()
+    if approval_required:
+        approval_request = ApprovalRequest.objects.create(
+            module="OL_LOANS",
+            entity_type="OLLoan",
+            entity_id=loan.pk,
+            entity_repr=loan.loan_number,
+            action="DISBURSE",
+            requested_data={
+                "loan_id": str(loan.pk),
+                "loan_number": loan.loan_number,
+                "requested_amount": str(amount),
+                "policy_id": str(policy.pk),
+                "reason": reason,
+            },
+            current_data={"status": loan.status, "approval_required": True},
+            submitted_by=actor,
+        )
+        loan.approval_request = approval_request
+        loan.save(update_fields=["approval_request", "updated_at"])
     AuditService.log_action(
         "LOAN_REQUESTED",
         loan,
