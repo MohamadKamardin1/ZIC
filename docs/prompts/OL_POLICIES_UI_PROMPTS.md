@@ -199,7 +199,7 @@ FINAL OUTPUT: tables, tests, commit hash, pushed branch.
 
 ---
 
-## [ ] Prompt 6/10 — Endorsements Tab & Workflow
+## [x] Prompt 6/10 — Endorsements Tab & Workflow
 
 ```text
 You are a senior frontend engineer. Continue the ZIC Policies UI. Execute ONLY Prompt 6.

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import PolicyDetailPage from "./PolicyDetailPage"
 import { UUID_RE } from "../../lib/display"
 
-const { navigateMock, setSearchParamsMock, searchParamsMock, usePolicyDetailMock, usePolicyOptionsMock, usePolicyMembersMock, usePolicyRidersMock, usePolicyBenefitsMock } = vi.hoisted(() => ({
+const { navigateMock, setSearchParamsMock, searchParamsMock, usePolicyDetailMock, usePolicyOptionsMock, usePolicyMembersMock, usePolicyRidersMock, usePolicyBenefitsMock, usePolicyEndorsementsMock, useCreatePolicyEndorsementMutationMock } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
   setSearchParamsMock: vi.fn(),
   searchParamsMock: new URLSearchParams(),
@@ -12,6 +12,8 @@ const { navigateMock, setSearchParamsMock, searchParamsMock, usePolicyDetailMock
   usePolicyMembersMock: vi.fn(),
   usePolicyRidersMock: vi.fn(),
   usePolicyBenefitsMock: vi.fn(),
+  usePolicyEndorsementsMock: vi.fn(),
+  useCreatePolicyEndorsementMutationMock: vi.fn(),
 }))
 
 vi.mock("react-router-dom", () => ({
@@ -19,6 +21,7 @@ vi.mock("react-router-dom", () => ({
   useNavigate: () => navigateMock,
   useSearchParams: () => [searchParamsMock, setSearchParamsMock],
 }))
+vi.mock("../../components/ui/Toast", () => ({ useToast: () => ({ toast: vi.fn() }) }))
 vi.mock("../../lib/access", () => ({
   useAccess: () => ({
     access: { permissions: [
@@ -39,6 +42,8 @@ vi.mock("../../lib/policiesHooks", () => ({
   usePolicyMembers: usePolicyMembersMock,
   usePolicyRiders: usePolicyRidersMock,
   usePolicyBenefits: usePolicyBenefitsMock,
+  usePolicyEndorsements: usePolicyEndorsementsMock,
+  useCreatePolicyEndorsementMutation: useCreatePolicyEndorsementMutationMock,
 }))
 
 const activePolicy = {
@@ -92,6 +97,8 @@ beforeEach(() => {
   usePolicyMembersMock.mockReturnValue({ data: activePolicy.members, isPending: false })
   usePolicyRidersMock.mockReturnValue({ data: activePolicy.riders, isPending: false })
   usePolicyBenefitsMock.mockReturnValue({ data: activePolicy.benefits, isPending: false })
+  usePolicyEndorsementsMock.mockReturnValue({ data: { results: activePolicy.endorsements, count: activePolicy.endorsements.length }, isPending: false })
+  useCreatePolicyEndorsementMutationMock.mockReturnValue({ mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null })
 })
 
 describe("PolicyDetailPage", () => {
@@ -140,6 +147,21 @@ describe("PolicyDetailPage", () => {
     render(<PolicyDetailPage />)
     expect(screen.queryByRole("button", { name: "Add Member" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Add Rider" })).not.toBeInTheDocument()
+  })
+
+  it("loads endorsement history and opens before-and-after detail", () => {
+    searchParamsMock.set("tab", "endorsements")
+    usePolicyEndorsementsMock.mockReturnValue({ data: { results: [{ id: "endorsement-1", endorsementNumber: "END-2026-000001", endorsementType: "ADDRESS_CHANGE", effectiveDate: "2026-06-01", status: "APPLIED", description: "Updated postal address", beforeSnapshot: { address: "Old address" }, afterSnapshot: { address: "New address" }, sourceChannel: "UI", createdAt: "2026-06-01T10:00:00Z" }], count: 1 }, isPending: false })
+    render(<PolicyDetailPage />)
+    expect(screen.getByRole("heading", { name: "Endorsement history" })).toBeInTheDocument()
+    expect(screen.getByText("END-2026-000001")).toBeInTheDocument()
+    expect(screen.getByText("Updated postal address")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "View Detail" })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "View Detail" }))
+    expect(screen.getByText("Before")).toBeInTheDocument()
+    expect(screen.getByText("After")).toBeInTheDocument()
+    expect(screen.getByText(/Old address/)).toBeInTheDocument()
+    expect(screen.getByText(/New address/)).toBeInTheDocument()
   })
 
   it("hides loan and servicing actions when a policy is lapsed and shows reinstatement guidance", () => {
