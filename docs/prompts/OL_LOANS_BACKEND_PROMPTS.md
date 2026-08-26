@@ -372,7 +372,7 @@ FINAL OUTPUT: default command, offset service, tests, commit hash, pushed branch
 
 ---
 
-## [ ] Prompt 9/12 — List, Detail, KPI & Export APIs
+## [x] Prompt 9/12 — List, Detail, KPI & Export APIs
 
 ```text
 You are a senior Django API engineer. Continue the ZIC OL Loans backend. Execute ONLY Prompt 9.
