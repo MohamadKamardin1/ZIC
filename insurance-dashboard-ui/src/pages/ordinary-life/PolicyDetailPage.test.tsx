@@ -3,17 +3,21 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import PolicyDetailPage from "./PolicyDetailPage"
 import { UUID_RE } from "../../lib/display"
 
-const { navigateMock, setSearchParamsMock, usePolicyDetailMock, usePolicyOptionsMock } = vi.hoisted(() => ({
+const { navigateMock, setSearchParamsMock, searchParamsMock, usePolicyDetailMock, usePolicyOptionsMock, usePolicyMembersMock, usePolicyRidersMock, usePolicyBenefitsMock } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
   setSearchParamsMock: vi.fn(),
+  searchParamsMock: new URLSearchParams(),
   usePolicyDetailMock: vi.fn(),
   usePolicyOptionsMock: vi.fn(),
+  usePolicyMembersMock: vi.fn(),
+  usePolicyRidersMock: vi.fn(),
+  usePolicyBenefitsMock: vi.fn(),
 }))
 
 vi.mock("react-router-dom", () => ({
   useParams: () => ({ policyId: "policy-1" }),
   useNavigate: () => navigateMock,
-  useSearchParams: () => [new URLSearchParams(), setSearchParamsMock],
+  useSearchParams: () => [searchParamsMock, setSearchParamsMock],
 }))
 vi.mock("../../lib/access", () => ({
   useAccess: () => ({
@@ -32,6 +36,9 @@ vi.mock("../../lib/access", () => ({
 vi.mock("../../lib/policiesHooks", () => ({
   usePolicyDetail: usePolicyDetailMock,
   usePolicyOptions: usePolicyOptionsMock,
+  usePolicyMembers: usePolicyMembersMock,
+  usePolicyRiders: usePolicyRidersMock,
+  usePolicyBenefits: usePolicyBenefitsMock,
 }))
 
 const activePolicy = {
@@ -79,8 +86,12 @@ const activePolicy = {
 beforeEach(() => {
   navigateMock.mockReset()
   setSearchParamsMock.mockReset()
+  searchParamsMock.delete("tab")
   usePolicyDetailMock.mockReset().mockReturnValue({ data: activePolicy, isPending: false, isError: false, error: null, refetch: vi.fn() })
   usePolicyOptionsMock.mockReturnValue({ data: [{ value: "ACTIVE", label: "Active", meta: { badge_type: "POSITIVE" } }], isPending: false })
+  usePolicyMembersMock.mockReturnValue({ data: activePolicy.members, isPending: false })
+  usePolicyRidersMock.mockReturnValue({ data: activePolicy.riders, isPending: false })
+  usePolicyBenefitsMock.mockReturnValue({ data: activePolicy.benefits, isPending: false })
 })
 
 describe("PolicyDetailPage", () => {
@@ -107,6 +118,28 @@ describe("PolicyDetailPage", () => {
     expect(screen.getByRole("button", { name: "Print" })).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Members & Riders" }))
     expect(setSearchParamsMock).toHaveBeenCalledWith({ tab: "members" })
+  })
+
+  it("renders members, riders, and benefits tables with Add actions only when endorsement is allowed", () => {
+    searchParamsMock.set("tab", "members")
+    const firstRender = render(<PolicyDetailPage />)
+    expect(screen.getByRole("heading", { name: "Members" })).toBeInTheDocument()
+    expect(screen.getByText("Amani Salum")).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Attached riders" })).toBeInTheDocument()
+    expect(screen.getByText("WP — Waiver of Premium")).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Benefits" })).toBeInTheDocument()
+    expect(screen.getByText("Death benefit")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Add Member" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Add Rider" })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Add Rider" }))
+    expect(navigateMock).toHaveBeenCalledWith("/ordinary-life/policies/policy-1?action=endorse")
+    firstRender.unmount()
+
+    usePolicyDetailMock.mockReturnValue({ data: { ...activePolicy, allowedActions: ["view"] }, isPending: false, isError: false, error: null, refetch: vi.fn() })
+    searchParamsMock.set("tab", "members")
+    render(<PolicyDetailPage />)
+    expect(screen.queryByRole("button", { name: "Add Member" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Add Rider" })).not.toBeInTheDocument()
   })
 
   it("hides loan and servicing actions when a policy is lapsed and shows reinstatement guidance", () => {

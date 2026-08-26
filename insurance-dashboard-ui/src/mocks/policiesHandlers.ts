@@ -169,6 +169,18 @@ function printResult(policyId: string, documentType: string) {
 
 export const policiesHandlers = [
   http.get(`*${POLICIES_BASE}/kpis/`, () => data({ total_active_policies: 2, total_sum_assured: "65000000.00", new_policies_this_month: 3, lapsed_policies_count: 1, lapsed_policies_value: "40000000.00", maturing_soon_count: 1, currency: "TZS", sum_assured_by_currency: { TZS: "65000000.00" }, timestamp: "2026-08-26T10:00:00Z" })),
+  http.get(`*${POLICIES_BASE}/:policyId/members/`, ({ params }) => {
+    const policy = detailFor(String(params.policyId))
+    return policy ? data(policy.members) : error(404, "POLICY_NOT_FOUND", "The policy could not be found.", ["Return to the policy list and choose an available policy."])
+  }),
+  http.get(`*${POLICIES_BASE}/:policyId/riders/`, ({ params }) => {
+    const policy = detailFor(String(params.policyId))
+    return policy ? data(policy.riders) : error(404, "POLICY_NOT_FOUND", "The policy could not be found.", ["Return to the policy list and choose an available policy."])
+  }),
+  http.get(`*${POLICIES_BASE}/:policyId/benefits/`, ({ params }) => {
+    const policy = detailFor(String(params.policyId))
+    return policy ? data(policy.benefits) : error(404, "POLICY_NOT_FOUND", "The policy could not be found.", ["Return to the policy list and choose an available policy."])
+  }),
   http.get(`*${POLICIES_BASE}/:policyId/endorsements/`, ({ params, request }) => {
     const policy = detailFor(String(params.policyId))
     return policy ? data(page(policy.endorsements, new URL(request.url))) : error(404, "POLICY_NOT_FOUND", "The policy could not be found.", ["Return to the policy list and choose an available policy."])

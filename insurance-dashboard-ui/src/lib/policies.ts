@@ -358,6 +358,26 @@ export async function getPolicy(id: string): Promise<PolicyDetail> {
   return normalizePolicyDetail(await request<unknown>(`${POLICIES_BASE}/${id}/`))
 }
 
+function collectionRows(payload: unknown, key: string): unknown[] {
+  const record = asRecord(payload)
+  if (Array.isArray(payload)) return payload
+  if (Array.isArray(record.results)) return record.results
+  if (Array.isArray(record[key])) return record[key] as unknown[]
+  return []
+}
+
+export async function listPolicyMembers(id: string): Promise<PolicyMember[]> {
+  return normalizePolicyDetail({ members: collectionRows(await request<unknown>(`${POLICIES_BASE}/${id}/members/`), "members") }).members
+}
+
+export async function listPolicyRiders(id: string): Promise<PolicyRider[]> {
+  return normalizePolicyDetail({ riders: collectionRows(await request<unknown>(`${POLICIES_BASE}/${id}/riders/`), "riders") }).riders
+}
+
+export async function listPolicyBenefits(id: string): Promise<PolicyBenefit[]> {
+  return normalizePolicyDetail({ benefits: collectionRows(await request<unknown>(`${POLICIES_BASE}/${id}/benefits/`), "benefits") }).benefits
+}
+
 export async function getPolicyKpis(params: QueryParams = {}): Promise<PolicyKpis> {
   return normalizePolicyKpis(await request<unknown>(withQuery(`${POLICIES_BASE}/kpis/`, params)))
 }

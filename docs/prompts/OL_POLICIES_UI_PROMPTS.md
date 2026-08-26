@@ -164,7 +164,7 @@ FINAL OUTPUT: page structure, tests, commit hash, pushed branch.
 
 ---
 
-## [ ] Prompt 5/10 — Members, Riders, & Benefits Tabs
+## [x] Prompt 5/10 — Members, Riders, & Benefits Tabs
 
 ```text
 You are a senior frontend engineer. Continue the ZIC Policies UI. Execute ONLY Prompt 5.

@@ -7,6 +7,9 @@ import {
   disbursePolicyLoan,
   getPolicy,
   getPolicyKpis,
+  listPolicyBenefits,
+  listPolicyMembers,
+  listPolicyRiders,
   getPolicyOptions,
   issuePolicy,
   listPolicies,
@@ -38,6 +41,9 @@ export const policyKpisKey = (filters: QueryParams = {}) => ["policies", "kpis",
 export const policyOptionsKey = (entity: string, params: QueryParams = {}) => ["policies", "options", entity, params] as const
 export const policyDetailKey = (id?: string | null) => ["policies", "detail", id ?? "none"] as const
 export const policyEndorsementsKey = (id?: string | null) => ["policies", "endorsements", id ?? "none"] as const
+export const policyMembersKey = (id?: string | null) => ["policies", "members", id ?? "none"] as const
+export const policyRidersKey = (id?: string | null) => ["policies", "riders", id ?? "none"] as const
+export const policyBenefitsKey = (id?: string | null) => ["policies", "benefits", id ?? "none"] as const
 export const policyLoansKey = (id?: string | null) => ["policies", "loans", id ?? "none"] as const
 export const policyWithdrawalsKey = (id?: string | null) => ["policies", "withdrawals", id ?? "none"] as const
 
@@ -47,6 +53,9 @@ export function invalidatePolicyQueries(queryClient: ReturnType<typeof useQueryC
   if (!id) return
   void queryClient.invalidateQueries({ queryKey: policyDetailKey(id) })
   void queryClient.invalidateQueries({ queryKey: policyEndorsementsKey(id) })
+  void queryClient.invalidateQueries({ queryKey: policyMembersKey(id) })
+  void queryClient.invalidateQueries({ queryKey: policyRidersKey(id) })
+  void queryClient.invalidateQueries({ queryKey: policyBenefitsKey(id) })
   void queryClient.invalidateQueries({ queryKey: policyLoansKey(id) })
   void queryClient.invalidateQueries({ queryKey: policyWithdrawalsKey(id) })
 }
@@ -106,6 +115,30 @@ export function useIssuableProposals(search = "", enabled = true) {
     },
     staleTime: 60 * 1000,
     enabled,
+  })
+}
+
+export function usePolicyMembers(id?: string | null, enabled = true) {
+  return useQuery({
+    queryKey: policyMembersKey(id),
+    queryFn: () => id ? listPolicyMembers(id) : [],
+    enabled: Boolean(id) && enabled,
+  })
+}
+
+export function usePolicyRiders(id?: string | null, enabled = true) {
+  return useQuery({
+    queryKey: policyRidersKey(id),
+    queryFn: () => id ? listPolicyRiders(id) : [],
+    enabled: Boolean(id) && enabled,
+  })
+}
+
+export function usePolicyBenefits(id?: string | null, enabled = true) {
+  return useQuery({
+    queryKey: policyBenefitsKey(id),
+    queryFn: () => id ? listPolicyBenefits(id) : [],
+    enabled: Boolean(id) && enabled,
   })
 }
 

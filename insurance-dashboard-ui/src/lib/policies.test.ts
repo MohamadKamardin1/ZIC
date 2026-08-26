@@ -6,7 +6,7 @@ vi.mock("./apiClient", async () => {
   return { ...actual, request: requestMock }
 })
 
-import { getPolicy, getPolicyKpis, getPolicyOptions, issuePolicy, listPolicies } from "./policies"
+import { getPolicy, getPolicyKpis, getPolicyOptions, issuePolicy, listPolicies, listPolicyBenefits, listPolicyMembers, listPolicyRiders } from "./policies"
 
 beforeEach(() => requestMock.mockReset())
 
@@ -82,6 +82,22 @@ describe("OL Policies API contract", () => {
 
     expect(requestMock).toHaveBeenCalledWith("/api/v1/ol/options/statuses/?q=lapsed")
     expect(options).toEqual(expect.arrayContaining([expect.objectContaining({ value: "ACTIVE", label: "Active" }), expect.objectContaining({ value: "LAPSED", label: "Lapsed" })]))
+  })
+
+  it("loads dedicated composition collections from canonical member, rider, and benefit endpoints", async () => {
+    requestMock
+      .mockResolvedValueOnce([{ id: "member-1", member_relation: "Spouse", name: "Halima Salum", dob: "1992-06-09", gender: "FEMALE", benefit_amount: "10000000.00" }])
+      .mockResolvedValueOnce([{ id: "rider-1", rider_code: "AD — Accidental Death", sum_assured: "15000000.00", premium: "2500.00" }])
+      .mockResolvedValueOnce([{ id: "benefit-1", benefit_type: "Death benefit", calculation_basis: "SUM_ASSURED", amount: "25000000.00" }])
+
+    const [members, riders, benefits] = await Promise.all([listPolicyMembers("policy-1"), listPolicyRiders("policy-1"), listPolicyBenefits("policy-1")])
+
+    expect(requestMock).toHaveBeenNthCalledWith(1, "/api/v1/ol/policies/policy-1/members/")
+    expect(requestMock).toHaveBeenNthCalledWith(2, "/api/v1/ol/policies/policy-1/riders/")
+    expect(requestMock).toHaveBeenNthCalledWith(3, "/api/v1/ol/policies/policy-1/benefits/")
+    expect(members[0]).toMatchObject({ name: "Halima Salum", memberRelation: "Spouse" })
+    expect(riders[0]).toMatchObject({ riderCode: "AD — Accidental Death", premium: "2500.00" })
+    expect(benefits[0]).toMatchObject({ benefitType: "Death benefit", calculationBasis: "SUM_ASSURED" })
   })
 
   it("posts an eligible proposal to the canonical issue endpoint", async () => {
