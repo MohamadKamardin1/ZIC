@@ -156,9 +156,47 @@ FINAL OUTPUT: backend aggregation, frontend binding, tests, commit hash, pushed 
 
 ---
 
-## [ ] Prompt 4 — Not supplied in the current request
+## [ ] Prompt 4 — Align payment frequency validation with product configuration
 
-The exact Prompt 4 text was not included in the current request. It is intentionally not reconstructed.
+```text
+You are a senior Django product configuration engineer. Continue the ZIC fix series. Execute ONLY Prompt 4.
+
+MANDATORY RULES:
+
+- Validation must accept exact product-configured frequencies; no hardcoded fallbacks.
+- Commit and push; tick checkbox.
+
+OBJECTIVE:
+Resolve `premiumFrequency` validation error: "value you entered is 'QUARTERLY'. Choose one of the listed frequencies."
+
+SCOPE:
+
+1. Ensure `OLProduct.premium_frequencies` stores standardized uppercase codes: `ANNUALLY`, `SEMI_ANNUALLY`, `QUARTERLY`, `MONTHLY`, `SINGLE`.
+2. Fix product setup serializer to validate and normalize frequencies on save.
+3. Fix quotation plan config serializer validation:
+   - accept only frequencies present in product's `premium_frequencies`
+   - case-insensitive match but store normalized uppercase
+   - return structured error PLAN_CONFIG_INVALID_FREQUENCY listing allowed values
+4. Frontend wizard:
+   - dropdown options sourced directly from product's `premium_frequencies` array
+   - disable selection if product has no frequencies configured
+   - show inline validation matching backend error shape
+5. Seed at least one product with multiple frequencies configured.
+
+TESTS:
+
+- product save normalizes frequencies
+- quotation plan config rejects invalid frequency with teachable error
+- dropdown shows only configured frequencies
+- seeded product validates successfully
+
+GIT:
+
+- commit: "fix(products): align payment frequency validation with product configuration"
+- push; tick checkbox
+
+FINAL OUTPUT: model/serializer fixes, frontend dropdown binding, validation rules, tests, commit hash, pushed branch.
+```
 
 ---
 
