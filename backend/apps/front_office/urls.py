@@ -1,6 +1,8 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
+from apps.front_office.receipts.views import ReceiptOptionsResourceView
+
 from .views import (
     FOCommissionStatementViewSet,
     FOCommissionViewSet,
@@ -22,5 +24,11 @@ router.register(r"parameters", FOParameterViewSet, basename="fo-parameter")
 
 urlpatterns = [
     path("", include(router.urls)),
+    # The web SmartSelect contract mounts the receipts option catalogs at the
+    # front-office root (receipts-api.ts RECEIPTS_OPTIONS_BASE), not under
+    # /receipts/. The receipts-prefixed routes are kept for compatibility.
+    path("options/<str:resource>/quick-create-schema/", ReceiptOptionsResourceView.as_view(), name="fo-options-resource-schema"),
+    path("options/<str:resource>/quick-create/", ReceiptOptionsResourceView.as_view(), name="fo-options-resource-create"),
+    path("options/<str:resource>/", ReceiptOptionsResourceView.as_view(), name="fo-options-resource"),
     path("receipts/", include("apps.front_office.receipts.urls")),
 ]
