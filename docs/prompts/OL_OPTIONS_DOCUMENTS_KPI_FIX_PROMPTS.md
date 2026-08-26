@@ -249,7 +249,7 @@ FINAL OUTPUT: component extension, routing registry, tests, commit hash, pushed 
 
 ---
 
-## [ ] Prompt 6 — Full OL fixes-series verification
+## [x] Prompt 6 — Full OL fixes-series verification
 
 ```text
 You are a senior QA engineer. Complete the ZIC fix series. Execute ONLY Prompt 6.

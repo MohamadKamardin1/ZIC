@@ -9,6 +9,8 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from apps.common.models import DomainEvent
+from apps.documents.models import DocumentTemplate
+from apps.documents.services.engine import DocumentTypeRegistry
 from apps.governance.models import AuditEvent, AuditLog
 from apps.ol_parameters.models import (
     OLAnticipatedEndowmentInstallmentRate,
@@ -50,9 +52,28 @@ from apps.ol_quotations.services.document_service import QuotationDocumentServic
 from apps.ol_quotations.services.print_ticket_service import PrintTicketService
 
 
+def seed_unified_test_templates():
+    for definition in DocumentTypeRegistry.definitions():
+        if definition.status != "READY":
+            continue
+        DocumentTemplate.objects.update_or_create(
+            code=definition.template_code,
+            version=1,
+            defaults={
+                "name": definition.title,
+                "document_type": definition.document_type,
+                "layout_template_path": definition.layout_template_path,
+                "variables_schema": definition.variables_schema,
+                "branding_config_reference": "COMPANY_BRANDING",
+                "is_active": True,
+            },
+        )
+
+
 class OLQuotationAPITests(TestCase):
     @classmethod
     def setUpTestData(cls):
+        seed_unified_test_templates()
         call_command("seed_ol_quotations", verbosity=0)
         cls.admin = User.objects.create_superuser(
             username="ol-quotation-admin",
