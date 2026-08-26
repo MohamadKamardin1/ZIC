@@ -35,7 +35,7 @@ class OLLoanRepayView(APIView):
         return Response(
             {
                 "data": {
-                    "loan": OLLoanListSerializer(result.loan).data,
+                    "loan": OLLoanListSerializer(result.loan, context={"request": request}).data,
                     "repayment": OLLoanRepaymentSerializer(result.repayment).data,
                 },
                 "meta": {

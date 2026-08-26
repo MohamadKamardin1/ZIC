@@ -4,13 +4,15 @@ from .approval_views import OLLoanApproveView, OLLoanBulkApproveView, OLLoanBulk
 from .balance_views import OLLoanBalanceView
 from .disbursement_views import OLLoanDisburseView
 from .repayment_views import OLLoanRepayView
-from .views import OLLoanDetailView, OLLoanListView, OLLoanOptionsView
+from .views import OLLoanDetailView, OLLoanExportView, OLLoanKPIView, OLLoanListView, OLLoanOptionsView
 
 
 app_name = "ol_loans"
 
 urlpatterns = [
     path("loans/options/<str:kind>/", OLLoanOptionsView.as_view(), name="loan-options"),
+    path("loans/kpis/", OLLoanKPIView.as_view(), name="loan-kpis"),
+    path("loans/export/", OLLoanExportView.as_view(), name="loan-export"),
     path("loans/bulk-approve/", OLLoanBulkApproveView.as_view(), name="loan-bulk-approve"),
     path("loans/bulk-reject/", OLLoanBulkRejectView.as_view(), name="loan-bulk-reject"),
     path("loans/<uuid:loan_id>/approve/", OLLoanApproveView.as_view(), name="loan-approve"),

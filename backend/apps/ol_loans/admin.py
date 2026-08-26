@@ -30,6 +30,8 @@ class OLLoanAdmin(admin.ModelAdmin):
         "loan_number",
         "policy_display",
         "partner_display",
+        "product_display",
+        "agent_display",
         "currency",
         "principal_amount",
         "outstanding_balance",
@@ -40,7 +42,7 @@ class OLLoanAdmin(admin.ModelAdmin):
     list_filter = ("status", "currency", "approval_required", "compounding_frequency")
     search_fields = ("loan_number", "policy_ref__policy_number", "partner__legal_name", "partner__partner_number")
     readonly_fields = ("created_at", "updated_at", "created_by", "updated_by")
-    list_select_related = ("policy_ref", "partner")
+    list_select_related = ("policy_ref", "policy_ref__agent", "partner")
     ordering = ("-created_at", "loan_number")
 
     fieldsets = (
@@ -53,11 +55,21 @@ class OLLoanAdmin(admin.ModelAdmin):
 
     @admin.display(description="Policy")
     def policy_display(self, obj):
-        return getattr(obj.policy_ref, "policy_number", "") or str(obj.policy_ref_id)
+        return getattr(obj.policy_ref, "policy_number", "") or "Not recorded"
 
     @admin.display(description="Partner")
     def partner_display(self, obj):
         return getattr(obj.partner, "legal_name", "") or getattr(obj.partner, "partner_number", "")
+
+    @admin.display(description="Product / plan")
+    def product_display(self, obj):
+        snapshot = obj.policy_ref.contract_snapshot if isinstance(obj.policy_ref.contract_snapshot, dict) else {}
+        return snapshot.get("product_name") or snapshot.get("plan_name") or obj.policy_ref.product_plan_ref or "Not recorded"
+
+    @admin.display(description="Agent")
+    def agent_display(self, obj):
+        agent = getattr(obj.policy_ref, "agent", None)
+        return getattr(agent, "legal_name", "") or getattr(agent, "partner_number", "") or "Not assigned"
 
     def has_module_permission(self, request):
         return has_ol_loan_permission(request.user, "view")

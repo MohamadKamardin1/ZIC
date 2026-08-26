@@ -37,7 +37,7 @@ class OLLoanDisburseView(APIView):
         return Response(
             {
                 "data": {
-                    "loan": OLLoanListSerializer(result.loan).data,
+                    "loan": OLLoanListSerializer(result.loan, context={"request": request}).data,
                     "disbursement": OLLoanDisbursementSerializer(result.disbursement).data,
                     "schedules": OLLoanScheduleSerializer(result.schedules, many=True).data,
                 },

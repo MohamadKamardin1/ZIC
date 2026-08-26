@@ -30,7 +30,7 @@ class OLLoanApproveView(APIView):
             reason=serializer.validated_data.get("reason", ""),
             source_channel="API",
         )
-        return Response({"data": OLLoanListSerializer(result.loan).data, "meta": {"changed": result.changed}})
+        return Response({"data": OLLoanListSerializer(result.loan, context={"request": request}).data, "meta": {"changed": result.changed}})
 
 
 class OLLoanRejectView(APIView):
@@ -46,7 +46,7 @@ class OLLoanRejectView(APIView):
             request=request,
             source_channel="API",
         )
-        return Response({"data": OLLoanListSerializer(result.loan).data, "meta": {"changed": result.changed}})
+        return Response({"data": OLLoanListSerializer(result.loan, context={"request": request}).data, "meta": {"changed": result.changed}})
 
 
 class OLLoanBulkApproveView(APIView):
