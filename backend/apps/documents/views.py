@@ -14,8 +14,8 @@ from rest_framework.views import APIView
 
 from apps.governance.services.audit_service import AuditService
 
-from .services.engine import CompanyBranding, DocumentEngine, DocumentEngineError, DocumentTypeRegistry
 from .models import BrandingConfiguration, DocumentInstance
+from .services.engine import CompanyBranding, DocumentEngine, DocumentEngineError, DocumentTypeRegistry
 
 
 def _success(data, message, status_code=status.HTTP_200_OK):

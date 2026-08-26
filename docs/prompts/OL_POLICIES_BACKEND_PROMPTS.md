@@ -368,7 +368,7 @@ FINAL OUTPUT: maturity logic, event emission, tests, commit hash, pushed branch.
 
 ---
 
-## [ ] Prompt 9/12 — Policy Documents & Print Engine Integration
+## [x] Prompt 9/12 — Policy Documents & Print Engine Integration
 
 ```text
 You are a senior Django document engineer. Continue the ZIC OL Policies backend. Execute ONLY Prompt 9.

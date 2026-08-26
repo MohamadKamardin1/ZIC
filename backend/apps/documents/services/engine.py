@@ -4,12 +4,13 @@ import base64
 import hashlib
 import logging
 import mimetypes
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import urlencode
 from uuid import UUID
 
@@ -28,7 +29,7 @@ from apps.governance.services.audit_service import AuditService
 from apps.system_parameters.services.config_service import ConfigurationService
 
 from ..models import DocumentInstance, DocumentTemplate
-
+from .policy_documents import policy_contract_context, policy_schedule_context
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +70,7 @@ class CompanyBranding:
     version: int = 0
 
     @classmethod
-    def resolve(cls, reference: str = "COMPANY_BRANDING") -> "CompanyBranding":
+    def resolve(cls, reference: str = "COMPANY_BRANDING") -> CompanyBranding:
         prefix = (reference or "COMPANY_BRANDING").strip().upper()
         from ..models import BrandingConfiguration
 
@@ -310,8 +311,8 @@ def _quotation_projections(source, currency, money):
     for raw in raw_rows:
         if not isinstance(raw, dict):
             continue
-        def first(keys):
-            return next((raw[key] for key in keys if raw.get(key) not in (None, "")), None)
+        def first(keys, row=raw):
+            return next((row[key] for key in keys if row.get(key) not in (None, "")), None)
         rows.append(
             {
                 "policy_year": raw.get("policy_year", raw.get("year", "")),
@@ -693,8 +694,59 @@ DocumentTypeRegistry.register(
     )
 )
 
+DocumentTypeRegistry.register(
+    DocumentTypeDefinition(
+        document_type="POLICY_CONTRACT",
+        source_app_label="ol_policies",
+        source_model="policy",
+        template_code="POLICY_CONTRACT_UNIFIED",
+        layout_template_path="documents/policy_contract.html",
+        permission="ol_policies.print",
+        context_builder=policy_contract_context,
+        title="Policy Contract",
+        variables_schema={
+            "policy": "object",
+            "prospect": "object",
+            "agent": "object",
+            "plans": "array",
+            "members": "array",
+            "benefits": "array",
+            "riders": "array",
+            "premium_schedule": "array",
+            "financial": "object",
+            "legal_clauses": "array",
+            "signatures": "array",
+            "branding": "object",
+            "quote": "object",
+        },
+    )
+)
+
+DocumentTypeRegistry.register(
+    DocumentTypeDefinition(
+        document_type="POLICY_SCHEDULE",
+        source_app_label="ol_policies",
+        source_model="policy",
+        template_code="POLICY_SCHEDULE_UNIFIED",
+        layout_template_path="documents/policy_schedule.html",
+        permission="ol_policies.print",
+        context_builder=policy_schedule_context,
+        title="Schedule of Benefits",
+        variables_schema={
+            "policy": "object",
+            "prospect": "object",
+            "plans": "array",
+            "members": "array",
+            "benefits": "array",
+            "riders": "array",
+            "branding": "object",
+            "quote": "object",
+        },
+    )
+)
+
+
 for _pending_document_type, _pending_title in (
-    ("POLICY_CONTRACT", "Policy Contract"),
     ("DISCHARGE_VOUCHER", "Discharge Voucher"),
     ("COMMISSION_STATEMENT", "Commission Statement"),
     ("DEBIT_NOTE", "Debit Note"),
@@ -738,6 +790,10 @@ class DocumentEngine:
             from apps.ol_quotations.permissions import has_quotation_permission
 
             return has_quotation_permission(actor, "print")
+        if permission_code == "ol_policies.print":
+            from apps.ol_policies.permissions import has_ol_policy_permission
+
+            return has_ol_policy_permission(actor, "print")
         if permission_code == "ol_commitments.view":
             from apps.ol_commitments.permissions import has_ol_commitment_permission
 

@@ -703,7 +703,6 @@ class UnifiedDocumentEngineAPITests(TestCase):
 
     def test_future_document_types_return_machine_readable_pending_error(self):
         for document_type in (
-            "POLICY_CONTRACT",
             "DISCHARGE_VOUCHER",
             "COMMISSION_STATEMENT",
             "DEBIT_NOTE",

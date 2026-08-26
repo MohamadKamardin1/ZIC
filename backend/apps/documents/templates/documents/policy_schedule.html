@@ -1,0 +1,31 @@
+{% extends "documents/base_print.html" %}
+{% block document_content %}
+<section class="meta-grid">
+  <div class="meta-cell"><span class="meta-label">Policy Number</span><span class="meta-value">{{ policy.number }}</span></div>
+  <div class="meta-cell"><span class="meta-label">Policyholder</span><span class="meta-value">{{ prospect.name }}</span></div>
+  <div class="meta-cell"><span class="meta-label">Risk Commencement</span><span class="meta-value">{{ policy.risk_commencement_date }}</span></div>
+  <div class="meta-cell"><span class="meta-label">Maturity Date</span><span class="meta-value">{{ policy.maturity_date }}</span></div>
+</section>
+
+<section class="section">
+  <h2 class="section-title">Coverage Details</h2>
+  <table class="data"><thead><tr><th>Product / Plan</th><th>Term</th><th>Frequency</th><th>Currency</th><th class="numeric">Sum Assured</th></tr></thead><tbody>{% for plan in plans %}<tr><td><strong>{{ plan.code }}</strong><br>{{ plan.name }}{% for badge in plan.badges %}<span class="badge">{{ badge }}</span>{% endfor %}</td><td>{{ plan.term_years }} years</td><td>{{ plan.premium_frequency }}</td><td>{{ policy.currency }}</td><td class="numeric">{{ plan.sum_assured }}</td></tr>{% endfor %}</tbody></table>
+</section>
+
+<section class="section">
+  <h2 class="section-title">Members</h2>
+  {% if members %}<table class="data"><thead><tr><th>Relation</th><th>Name</th><th>Date of Birth</th><th>Gender</th><th class="numeric">Benefit Amount</th></tr></thead><tbody>{% for member in members %}<tr><td>{{ member.relation }}</td><td>{{ member.name }}</td><td>{{ member.dob }}</td><td>{{ member.gender }}</td><td class="numeric">{{ member.benefit_amount }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="muted small">No additional covered members are configured.</p>{% endif %}
+</section>
+
+<section class="section">
+  <h2 class="section-title">Benefits and Riders</h2>
+  {% if benefits %}<table class="data"><thead><tr><th>Benefit Type</th><th>Basis</th><th class="numeric">Amount</th></tr></thead><tbody>{% for benefit in benefits %}<tr><td>{{ benefit.benefit_type }}</td><td>{{ benefit.basis }}</td><td class="numeric">{{ benefit.amount }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+  {% if riders %}<table class="data"><thead><tr><th>Rider</th><th class="numeric">Sum Assured</th><th class="numeric">Amount</th><th class="numeric">Premium</th></tr></thead><tbody>{% for rider in riders %}<tr><td>{{ rider.code }}</td><td class="numeric">{{ rider.sum_assured }}</td><td class="numeric">{{ rider.amount }}</td><td class="numeric">{{ rider.premium }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+</section>
+
+<section class="section">
+  <h2 class="section-title">Premium and Validity Notes</h2>
+  <dl class="kv"><div class="kv-row"><dt>Premium</dt><dd>{{ policy.premium_amount }}</dd></div><div class="kv-row"><dt>Payment Frequency</dt><dd>{{ policy.premium_frequency }}</dd></div><div class="kv-row"><dt>Policy Status</dt><dd>{{ policy.status }}</dd></div></dl>
+  <p class="muted small">This schedule summarizes the active coverage recorded on the policy and must be read with the policy contract and applicable terms and conditions.</p>
+</section>
+{% endblock %}

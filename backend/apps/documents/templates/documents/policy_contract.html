@@ -1,0 +1,62 @@
+{% extends "documents/base_print.html" %}
+{% block document_content %}
+<section class="meta-grid">
+  <div class="meta-cell"><span class="meta-label">Policy Number</span><span class="meta-value">{{ policy.number }}</span></div>
+  <div class="meta-cell"><span class="meta-label">Issue / Risk Date</span><span class="meta-value">{{ policy.issue_date }}</span></div>
+  <div class="meta-cell"><span class="meta-label">Status</span><span class="meta-value">{{ policy.status }}</span></div>
+  <div class="meta-cell"><span class="meta-label">Version</span><span class="meta-value">{{ policy.version }}</span></div>
+</section>
+
+<section class="section">
+  <h2 class="section-title">Parties and Policyholder</h2>
+  <div class="two-column">
+    <div class="column"><dl class="kv">
+      <div class="kv-row"><dt>Policyholder</dt><dd>{{ prospect.name }}</dd></div>
+      <div class="kv-row"><dt>Partner Number</dt><dd>{{ prospect.partner_number }}</dd></div>
+      <div class="kv-row"><dt>Identity Number</dt><dd>{{ prospect.identity_number }}</dd></div>
+      <div class="kv-row"><dt>Date of Birth</dt><dd>{{ prospect.date_of_birth }}</dd></div>
+      <div class="kv-row"><dt>Gender</dt><dd>{{ prospect.gender }}</dd></div>
+    </dl></div>
+    <div class="column"><dl class="kv">
+      <div class="kv-row"><dt>Phone</dt><dd>{{ prospect.phone }}</dd></div>
+      <div class="kv-row"><dt>Email</dt><dd>{{ prospect.email }}</dd></div>
+      <div class="kv-row"><dt>Address</dt><dd>{{ prospect.address }}</dd></div>
+      <div class="kv-row"><dt>Agent / Intermediary</dt><dd>{{ agent.name }}</dd></div>
+      <div class="kv-row"><dt>Agent Code</dt><dd>{{ agent.code }}</dd></div>
+    </dl></div>
+  </div>
+</section>
+
+<section class="section">
+  <h2 class="section-title">Policy Terms</h2>
+  <table class="data"><thead><tr><th>Policy Product / Plan</th><th>Term</th><th>Payment Period</th><th>Frequency</th><th>Currency</th><th class="numeric">Sum Assured</th></tr></thead>
+    <tbody>{% for plan in plans %}<tr><td><strong>{{ plan.code }}</strong><br>{{ plan.name }}{% if plan.badges %}<br>{% for badge in plan.badges %}<span class="badge">{{ badge }}</span>{% endfor %}{% endif %}</td><td>{{ plan.term_years }} years</td><td>{{ plan.payment_period_years }} years</td><td>{{ plan.premium_frequency }}</td><td>{{ policy.currency }}</td><td class="numeric">{{ plan.sum_assured }}</td></tr>{% endfor %}</tbody>
+  </table>
+  <div class="two-column" style="margin-top:6px"><div class="column"><dl class="kv"><div class="kv-row"><dt>Risk Commencement</dt><dd>{{ policy.risk_commencement_date }}</dd></div><div class="kv-row"><dt>Maturity Date</dt><dd>{{ policy.maturity_date }}</dd></div><div class="kv-row"><dt>Product / Plan Reference</dt><dd>{{ policy.product_plan }}</dd></div></dl></div><div class="column"><dl class="kv"><div class="kv-row"><dt>Premium</dt><dd>{{ policy.premium_amount }}</dd></div><div class="kv-row"><dt>Payment Frequency</dt><dd>{{ policy.premium_frequency }}</dd></div><div class="kv-row"><dt>First Receipt</dt><dd>{{ policy.first_premium_receipt_ref }}</dd></div></dl></div></div>
+</section>
+
+<section class="section">
+  <h2 class="section-title">Schedule of Members and Benefits</h2>
+  {% if members %}<table class="data"><thead><tr><th>Member Relation</th><th>Name</th><th>Date of Birth</th><th>Gender</th><th class="numeric">Benefit Amount</th></tr></thead><tbody>{% for member in members %}<tr><td>{{ member.relation }}</td><td>{{ member.name }}</td><td>{{ member.dob }}</td><td>{{ member.gender }}</td><td class="numeric">{{ member.benefit_amount }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="muted small">No additional members are recorded. The policyholder is the principal member.</p>{% endif %}
+  {% if benefits %}<table class="data"><thead><tr><th>Benefit Type</th><th>Calculation Basis</th><th class="numeric">Benefit Amount</th></tr></thead><tbody>{% for benefit in benefits %}<tr><td>{{ benefit.benefit_type }}</td><td>{{ benefit.basis }}</td><td class="numeric">{{ benefit.amount }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+  {% if riders %}<table class="data"><thead><tr><th>Rider</th><th class="numeric">Sum Assured</th><th class="numeric">Amount</th><th class="numeric">Premium</th></tr></thead><tbody>{% for rider in riders %}<tr><td>{{ rider.code }}</td><td class="numeric">{{ rider.sum_assured }}</td><td class="numeric">{{ rider.amount }}</td><td class="numeric">{{ rider.premium }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+</section>
+
+<section class="section">
+  <h2 class="section-title">Premium Schedule and Financial Summary</h2>
+  <table class="data"><thead><tr><th>Installment</th><th>Due Date</th><th>Frequency</th><th class="numeric">Premium</th></tr></thead><tbody>{% for row in premium_schedule %}<tr><td>{{ row.number }}</td><td>{{ row.due_date }}</td><td>{{ row.frequency }}</td><td class="numeric">{{ row.amount }}</td></tr>{% endfor %}</tbody></table>
+  <table class="data"><tbody><tr><th>Base Premium</th><td class="numeric">{{ financial.base_premium }}</td></tr><tr><th>Rider Premium</th><td class="numeric">{{ financial.rider_premium }}</td></tr><tr class="total"><th>Total Premium</th><td class="numeric">{{ financial.total_premium }}</td></tr></tbody></table>
+</section>
+
+<section class="section">
+  <h2 class="section-title">Legal Clauses and Policy Notes</h2>
+  <ol>{% for clause in legal_clauses %}<li>{{ clause }}</li>{% endfor %}</ol>
+</section>
+
+<p class="muted small">This policy contract is issued from the approved policy record. It should be read together with the applicable Ordinary Life policy terms and conditions.</p>
+{% endblock %}
+{% block signature_block %}
+<footer class="signature-block">
+  {% for signature in signatures %}<div class="signature-party"><div class="signature-line"></div><strong>{{ signature }}</strong><br><span class="small muted">Signature and Date</span></div>{% endfor %}
+</footer>
+{% endblock %}

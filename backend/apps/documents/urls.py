@@ -1,12 +1,11 @@
 from django.urls import path
 
 from .views import (
+    BrandingConfigurationView,
+    DocumentDownloadView,
     DocumentInstanceListView,
     DocumentRenderView,
-    DocumentDownloadView,
-    BrandingConfigurationView,
 )
-
 
 app_name = "documents"
 
