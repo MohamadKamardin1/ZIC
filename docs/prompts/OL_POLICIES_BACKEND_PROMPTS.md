@@ -240,7 +240,7 @@ FINAL OUTPUT: lifecycle commands, validation rules, tests, commit hash, pushed b
 
 ---
 
-## [ ] Prompt 6/12 — Surrender, Paid-Up & Cancellation
+## [x] Prompt 6/12 — Surrender, Paid-Up & Cancellation
 
 ```text
 You are a senior Django insurance engineer. Continue the ZIC OL Policies backend. Execute ONLY Prompt 6.

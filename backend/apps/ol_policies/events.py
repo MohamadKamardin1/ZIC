@@ -6,6 +6,9 @@ POLICY_ENDORSED = "PolicyEndorsed"
 POLICY_LAPSED = "PolicyLapsed"
 POLICY_REINSTATED = "PolicyReinstated"
 POLICY_EXPIRED = "PolicyExpired"
+POLICY_SURRENDER_REQUESTED = "PolicySurrenderRequested"
+POLICY_PAID_UP = "PolicyPaidUp"
+POLICY_CANCELLED = "PolicyCancelled"
 
 
 def emit_policy_endorsed(policy, endorsement, *, actor=None, reason="", source_channel="API", metadata=None):
@@ -59,6 +62,42 @@ def emit_policy_reinstated(policy, **kwargs):
 
 def emit_policy_expired(policy, **kwargs):
     return emit_lifecycle_event(POLICY_EXPIRED, policy, **kwargs)
+
+
+def emit_policy_surrender_requested(policy, *, actor=None, from_status="ACTIVE", reason="", source_channel="API", metadata=None):
+    return emit_lifecycle_event(
+        POLICY_SURRENDER_REQUESTED,
+        policy,
+        actor=actor,
+        from_status=from_status,
+        reason=reason,
+        source_channel=source_channel,
+        metadata=metadata,
+    )
+
+
+def emit_policy_paid_up(policy, *, actor=None, from_status="LAPSED", reason="", source_channel="API", metadata=None):
+    return emit_lifecycle_event(
+        POLICY_PAID_UP,
+        policy,
+        actor=actor,
+        from_status=from_status,
+        reason=reason,
+        source_channel=source_channel,
+        metadata=metadata,
+    )
+
+
+def emit_policy_cancelled(policy, *, actor=None, from_status="", reason="", source_channel="API", metadata=None):
+    return emit_lifecycle_event(
+        POLICY_CANCELLED,
+        policy,
+        actor=actor,
+        from_status=from_status,
+        reason=reason,
+        source_channel=source_channel,
+        metadata=metadata,
+    )
 
 
 def emit_policy_issued(policy, *, actor=None, reason="", source_channel="API", metadata=None):

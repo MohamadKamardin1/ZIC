@@ -3,6 +3,7 @@ from django.urls import path
 from .endorsement_views import PolicyEndorsementDetailView, PolicyEndorsementListCreateView
 from .issuance_views import PolicyIssueView
 from .lifecycle_views import PolicyReinstateView
+from .termination_views import PolicyCancelView, PolicyPaidUpView, PolicySurrenderView
 from .views import PolicyDetailView, PolicyExportView, PolicyKPIsView, PolicyListView
 
 app_name = "ol_policies"
@@ -12,6 +13,9 @@ urlpatterns = [
     path("policies/kpis/", PolicyKPIsView.as_view(), name="policy-kpis"),
     path("policies/export/", PolicyExportView.as_view(), name="policy-export"),
     path("policies/<uuid:policy_id>/reinstate/", PolicyReinstateView.as_view(), name="policy-reinstate"),
+    path("policies/<uuid:policy_id>/surrender/", PolicySurrenderView.as_view(), name="policy-surrender"),
+    path("policies/<uuid:policy_id>/paid-up/", PolicyPaidUpView.as_view(), name="policy-paid-up"),
+    path("policies/<uuid:policy_id>/cancel/", PolicyCancelView.as_view(), name="policy-cancel"),
     path("policies/", PolicyListView.as_view(), name="policy-list"),
     path(
         "policies/<uuid:policy_id>/endorsements/<uuid:endorsement_id>/",

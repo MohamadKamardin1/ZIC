@@ -236,6 +236,48 @@ class PolicyEndorsement(UUIDModel, AuditedModel):
         super().save(*args, **kwargs)
 
 
+class SurrenderStatus(models.TextChoices):
+    REQUESTED = "REQUESTED", "Requested"
+    PENDING_PAYMENT = "PENDING_PAYMENT", "Pending payment"
+    PAID = "PAID", "Paid"
+    DECLINED = "DECLINED", "Declined"
+    CANCELLED = "CANCELLED", "Cancelled"
+
+
+class SurrenderRequest(UUIDModel, AuditedModel):
+    policy = models.ForeignKey(Policy, on_delete=models.PROTECT, related_name="surrender_requests")
+    request_number = models.CharField(max_length=50, unique=True, db_index=True, blank=True)
+    request_date = models.DateField(default=timezone.localdate)
+    surrender_value = models.DecimalField(max_digits=18, decimal_places=2)
+    outstanding_loan_amount = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    charges = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    net_surrender_value = models.DecimalField(max_digits=18, decimal_places=2)
+    status = models.CharField(max_length=25, choices=SurrenderStatus.choices, default=SurrenderStatus.PENDING_PAYMENT)
+    payment_requisition = models.ForeignKey(
+        "front_office.FORequisition",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ol_policy_surrenders",
+    )
+    reason = models.TextField(blank=True, default="")
+
+    class Meta:
+        db_table = "ol_policies_surrender_request"
+        ordering = ["-request_date", "-created_at"]
+        indexes = [
+            models.Index(fields=["policy", "status"], name="ol_policy_surr_st_idx"),
+        ]
+
+    def __str__(self):
+        return self.request_number or "Unnumbered surrender request"
+
+    def save(self, *args, **kwargs):
+        if not self.request_number:
+            self.request_number = f"SUR-{timezone.localdate():%Y%m%d}-{uuid.uuid4().hex[:10].upper()}"
+        super().save(*args, **kwargs)
+
+
 class PolicyAuditLog(UUIDModel, TimeStampedModel):
     """Immutable, queryable policy state-change and material-change audit row."""
 

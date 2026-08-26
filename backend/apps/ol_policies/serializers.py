@@ -10,6 +10,7 @@ from .models import (
     PolicyEndorsement,
     PolicyMember,
     PolicyRider,
+    SurrenderRequest,
 )
 
 
@@ -93,6 +94,30 @@ class PolicyEndorsementSerializer(serializers.ModelSerializer):
             "updated_at",
         )
         read_only_fields = fields
+
+
+class SurrenderRequestSerializer(serializers.ModelSerializer):
+    payment_requisition_number = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SurrenderRequest
+        fields = (
+            "id",
+            "request_number",
+            "request_date",
+            "surrender_value",
+            "outstanding_loan_amount",
+            "charges",
+            "net_surrender_value",
+            "status",
+            "payment_requisition_number",
+            "reason",
+            "created_at",
+        )
+        read_only_fields = fields
+
+    def get_payment_requisition_number(self, obj):
+        return getattr(obj.payment_requisition, "requisition_number", "") if obj.payment_requisition else ""
 
 
 class PolicyAuditLogSerializer(serializers.ModelSerializer):
@@ -204,6 +229,7 @@ class PolicyDetailSerializer(PolicyListSerializer):
     riders = PolicyRiderSerializer(many=True, read_only=True)
     benefits = PolicyBenefitSerializer(many=True, read_only=True)
     endorsements = PolicyEndorsementSerializer(many=True, read_only=True)
+    surrender_requests = SurrenderRequestSerializer(many=True, read_only=True)
     audit_logs = PolicyAuditLogSerializer(many=True, read_only=True)
     linked_proposal = serializers.SerializerMethodField()
     linked_commitments = serializers.SerializerMethodField()
@@ -217,6 +243,7 @@ class PolicyDetailSerializer(PolicyListSerializer):
             "riders",
             "benefits",
             "endorsements",
+            "surrender_requests",
             "audit_logs",
             "linked_proposal",
             "linked_commitments",
