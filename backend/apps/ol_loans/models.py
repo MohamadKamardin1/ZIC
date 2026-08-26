@@ -335,3 +335,66 @@ class OLLoanOffset(AuditedModel):
             errors["source_id"] = "Offset source reference is required."
         if errors:
             raise ValidationError(errors)
+
+
+class OLLoanDisbursement(AuditedModel):
+    """Immutable financial release linked to the front-office requisition seam."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    loan = models.OneToOneField(OLLoan, on_delete=models.PROTECT, related_name="disbursement")
+    requisition = models.ForeignKey(
+        "front_office.FORequisition",
+        on_delete=models.PROTECT,
+        related_name="ol_loan_disbursements",
+    )
+    amount = models.DecimalField(max_digits=18, decimal_places=2)
+    currency = models.CharField(max_length=3, default="TZS")
+    payment_mode = models.CharField(max_length=40)
+    bank_account_code = models.CharField(max_length=50, blank=True, default="")
+    disbursement_date = models.DateField()
+    status = models.CharField(max_length=20, default="RELEASED", db_index=True)
+    idempotency_key = models.CharField(max_length=120, unique=True, db_index=True)
+    reason = models.TextField(blank=True, default="")
+    source_channel = models.CharField(
+        max_length=20,
+        choices=LoanSourceChannel.choices,
+        default=LoanSourceChannel.API,
+    )
+
+    class Meta:
+        db_table = "ol_loans_disbursement"
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.CheckConstraint(
+                check=Q(amount__gt=0),
+                name="ol_loan_disbursement_amount_positive",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["loan", "disbursement_date"],
+                name="ol_loan_disb_loan_date_idx",
+            ),
+            models.Index(
+                fields=["status", "disbursement_date"],
+                name="ol_loan_disb_status_date_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.loan.loan_number} disbursement {self.amount} {self.currency}"
+
+    def clean(self):
+        errors = {}
+        if self.amount is not None and self.amount <= 0:
+            errors["amount"] = "Disbursement amount must be greater than zero."
+        currency = (self.currency or "").strip().upper()
+        if len(currency) != 3 or not currency.isalpha():
+            errors["currency"] = "Currency must be a three-letter code."
+        else:
+            self.currency = currency
+        self.payment_mode = (self.payment_mode or "").strip().upper()
+        if not self.payment_mode:
+            errors["payment_mode"] = "A configured payment mode is required."
+        if errors:
+            raise ValidationError(errors)

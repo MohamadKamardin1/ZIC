@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import OLLoan, OLLoanInterestAccrual, OLLoanOffset, OLLoanRepayment, OLLoanSchedule
+from .models import OLLoan, OLLoanDisbursement, OLLoanInterestAccrual, OLLoanOffset, OLLoanRepayment, OLLoanSchedule
 from .permissions import has_ol_loan_permission
 from apps.ol_parameters.models import OLLoanInterestControl, OLLoanSystemSetup
 
@@ -73,6 +73,24 @@ class OLLoanAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return has_ol_loan_permission(request.user, "reverse")
+
+
+@admin.register(OLLoanDisbursement)
+class OLLoanDisbursementAdmin(LoanChildReadOnlyAdmin):
+    list_display = (
+        "loan",
+        "requisition",
+        "amount",
+        "currency",
+        "payment_mode",
+        "bank_account_code",
+        "disbursement_date",
+        "status",
+        "created_at",
+    )
+    list_filter = ("status", "payment_mode", "currency", "disbursement_date")
+    search_fields = ("loan__loan_number", "requisition__requisition_number", "bank_account_code")
+    list_select_related = ("loan", "requisition")
 
 
 @admin.register(OLLoanSchedule)

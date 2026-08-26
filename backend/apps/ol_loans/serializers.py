@@ -2,7 +2,7 @@ from rest_framework import serializers
 
 from decimal import Decimal
 
-from .models import OLLoan, OLLoanInterestAccrual, OLLoanOffset, OLLoanRepayment, OLLoanSchedule
+from .models import OLLoan, OLLoanDisbursement, OLLoanInterestAccrual, OLLoanOffset, OLLoanRepayment, OLLoanSchedule
 
 
 def _display(instance, *attributes):
@@ -11,6 +11,26 @@ def _display(instance, *attributes):
         if value:
             return str(value)
     return ""
+
+
+class OLLoanDisbursementSerializer(serializers.ModelSerializer):
+    requisition_number = serializers.CharField(source="requisition.requisition_number", read_only=True)
+
+    class Meta:
+        model = OLLoanDisbursement
+        fields = (
+            "id",
+            "amount",
+            "currency",
+            "payment_mode",
+            "bank_account_code",
+            "disbursement_date",
+            "status",
+            "idempotency_key",
+            "requisition_number",
+            "reason",
+            "created_at",
+        )
 
 
 class OLLoanScheduleSerializer(serializers.ModelSerializer):
@@ -131,6 +151,13 @@ class OLLoanRequestSerializer(serializers.Serializer):
     as_of = serializers.DateField(required=False)
 
 
+class OLLoanDisbursementRequestSerializer(serializers.Serializer):
+    payment_mode = serializers.CharField(max_length=40, trim_whitespace=True)
+    bank_account_code = serializers.CharField(max_length=50, required=False, allow_blank=True, trim_whitespace=True)
+    as_of = serializers.DateField(required=False)
+    reason = serializers.CharField(max_length=2000, required=False, allow_blank=True, trim_whitespace=True)
+
+
 class OLLoanApprovalSerializer(serializers.Serializer):
     reason = serializers.CharField(max_length=2000, required=False, allow_blank=True, trim_whitespace=True)
 
@@ -145,6 +172,7 @@ class OLLoanBulkActionSerializer(serializers.Serializer):
 
 
 class OLLoanDetailSerializer(OLLoanListSerializer):
+    disbursement = OLLoanDisbursementSerializer(read_only=True)
     schedules = OLLoanScheduleSerializer(many=True, read_only=True)
     repayments = OLLoanRepaymentSerializer(many=True, read_only=True)
     interest_accruals = OLLoanInterestAccrualSerializer(many=True, read_only=True)
@@ -152,6 +180,7 @@ class OLLoanDetailSerializer(OLLoanListSerializer):
 
     class Meta(OLLoanListSerializer.Meta):
         fields = OLLoanListSerializer.Meta.fields + (
+            "disbursement",
             "schedules",
             "repayments",
             "interest_accruals",
