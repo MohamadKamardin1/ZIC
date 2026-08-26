@@ -44,6 +44,13 @@ in the backend.
 of `{value, label, meta}` options with `?q=` filtering; proposals are filtered to open,
 first-premium commitments and carry a `status_hint` meta.
 
+> **Live-E2E follow-up (2026-08-26):** the web client and MSW mocks actually mount these catalogs at
+> the **front-office root** — `RECEIPTS_OPTIONS_BASE = /api/v1/front-office/options` — not under
+> `/receipts/`. The initial merge only wired `receipts/options/...`, so a live browser 404'd on
+> `options/{branches,currencies,payment-modes,statuses}/`. Fixed by adding root-level alias routes in
+> `backend/apps/front_office/urls.py` (commit `ae48cc8`); the `/receipts/options/...` routes remain
+> as compatibility aliases. Regression coverage: `backend/apps/front_office/receipts/tests/test_options_resource.py`.
+
 ## 3. Field drift — aliases and `*_display` labels added
 
 All FK/reference fields now ship a human-readable display label and the web-facing aliases the
