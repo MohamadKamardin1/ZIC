@@ -53,6 +53,38 @@ describe("SmartSelect", () => {
     expect(screen.queryByRole("button", { name: "Add new Location" })).not.toBeInTheDocument()
   })
 
+  it("renders supplied local options without requesting the global option endpoint", async () => {
+    renderSmartSelect({
+      entity: "payment-frequencies",
+      label: "Payment Frequency",
+      name: "premium-frequency",
+      options: [
+        { value: "QUARTERLY", label: "Quarterly" },
+        { value: "MONTHLY", label: "Monthly" },
+      ],
+      allowCreate: false,
+    })
+    expect(mockedRequest).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("button", { name: "Payment Frequency" }))
+    expect(screen.getByRole("option", { name: "Quarterly" })).toBeInTheDocument()
+    expect(screen.getByRole("option", { name: "Monthly" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Add new Payment Frequency" })).not.toBeInTheDocument()
+  })
+
+  it("disables the select when the product has no configured frequencies", () => {
+    renderSmartSelect({
+      entity: "payment-frequencies",
+      label: "Payment Frequency",
+      name: "premium-frequency",
+      options: [],
+      allowCreate: false,
+      disabled: true,
+      placeholder: "No frequencies configured",
+    })
+    expect(screen.getByRole("button", { name: "Payment Frequency" })).toBeDisabled()
+    expect(screen.queryByRole("button", { name: "Add new Payment Frequency" })).not.toBeInTheDocument()
+  })
+
   it("quick-creates an option and auto-selects the returned labeled record", async () => {
     const onChange = vi.fn()
     mockedRequest.mockImplementation(async (path) => {

@@ -578,7 +578,7 @@ class Command(BaseCommand):
                     "max_term": 30,
                     "min_sum_assured": Decimal("500000.00"),
                     "max_sum_assured": Decimal("500000000.00"),
-                    "premium_frequencies": ["MONTHLY", "QUARTERLY", "SEMI_ANNUAL", "ANNUAL"],
+                    "premium_frequencies": ["MONTHLY", "QUARTERLY", "SEMI_ANNUALLY", "ANNUALLY"],
                     "allow_riders": True,
                     "allow_loans": True,
                     "allow_withdrawals": product_code == "OL_INVESTMENT_LINKED",

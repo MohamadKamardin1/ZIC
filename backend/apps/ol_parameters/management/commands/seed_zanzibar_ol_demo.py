@@ -251,7 +251,7 @@ class Command(BaseCommand):
                     "max_term": 30,
                     "min_sum_assured": Decimal("1000000.00"),
                     "max_sum_assured": Decimal("500000000.00"),
-                    "premium_frequencies": ["MONTHLY", "QUARTERLY", "SEMI_ANNUAL", "ANNUAL"],
+                    "premium_frequencies": ["MONTHLY", "QUARTERLY", "SEMI_ANNUALLY", "ANNUALLY"],
                     "allow_riders": True,
                     "allow_loans": True,
                     "allow_withdrawals": investment_linked,
@@ -314,7 +314,7 @@ class Command(BaseCommand):
                     "max_entry_age": 65,
                     "min_term_years": 5,
                     "max_term_years": 30,
-                    "payment_frequencies": ["MONTHLY", "QUARTERLY", "SEMI_ANNUAL", "ANNUAL"],
+                    "payment_frequencies": ["MONTHLY", "QUARTERLY", "SEMI_ANNUALLY", "ANNUALLY"],
                     "calculation_approach": computation,
                     "underwriting_rules": {
                         "medical_threshold_tzs": 100000000,
@@ -402,7 +402,7 @@ class Command(BaseCommand):
                 )
                 for gender in ("MALE", "FEMALE", "OTHER"):
                     for smoker_status in ("NON_SMOKER", "SMOKER"):
-                        for frequency in ("MONTHLY", "QUARTERLY", "SEMI_ANNUAL", "ANNUAL"):
+                        for frequency in ("MONTHLY", "QUARTERLY", "SEMI_ANNUALLY", "ANNUALLY"):
                             for min_age, max_age, min_term, max_term, rate in [
                                 (18, 35, 5, 30, Decimal("1.20000000")),
                                 (36, 50, 5, 25, Decimal("2.10000000")),
@@ -578,7 +578,7 @@ class Command(BaseCommand):
                 )
                 for gender in ("MALE", "FEMALE", "OTHER"):
                     for smoker_status in ("NON_SMOKER", "SMOKER"):
-                        for frequency in ("MONTHLY", "QUARTERLY", "SEMI_ANNUAL", "ANNUAL"):
+                        for frequency in ("MONTHLY", "QUARTERLY", "SEMI_ANNUALLY", "ANNUALLY"):
                             for min_age, max_age, min_term, max_term in [
                                 (18, 35, 5, 30),
                                 (36, 50, 5, 25),

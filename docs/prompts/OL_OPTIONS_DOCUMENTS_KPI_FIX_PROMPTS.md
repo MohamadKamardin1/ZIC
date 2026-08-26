@@ -156,7 +156,7 @@ FINAL OUTPUT: backend aggregation, frontend binding, tests, commit hash, pushed 
 
 ---
 
-## [ ] Prompt 4 — Align payment frequency validation with product configuration
+## [x] Prompt 4 — Align payment frequency validation with product configuration
 
 ```text
 You are a senior Django product configuration engineer. Continue the ZIC fix series. Execute ONLY Prompt 4.

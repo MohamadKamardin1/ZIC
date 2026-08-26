@@ -103,6 +103,34 @@ class OLProductSetupTests(TestCase):
         self.assertEqual(retrieve_response.status_code, 200)
         self.assertEqual(retrieve_response.data["code"], "WHOLE_LIFE")
 
+    def test_product_save_normalizes_frequency_codes(self):
+        payload = self.product_payload("NORMALIZED_FREQUENCIES")
+        payload["premium_frequencies"] = ["monthly", "quarterly", "SEMI_ANNUAL", "ANNUALLY", "single"]
+        response = self.client.post("/api/v1/ol-parameters/products/", payload, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        product = OLProduct.objects.get(code="NORMALIZED_FREQUENCIES")
+        self.assertEqual(
+            product.premium_frequencies,
+            ["MONTHLY", "QUARTERLY", "SEMI_ANNUALLY", "ANNUALLY", "SINGLE"],
+        )
+        self.assertEqual(response.data["premium_frequencies"], product.premium_frequencies)
+
+    def test_seeded_product_validates_with_multiple_canonical_frequencies(self):
+        management.call_command("seed_ol_product_setup", verbosity=0)
+        product = OLProduct.objects.get(code="STANDARD_ENDOWMENT")
+        self.assertGreaterEqual(len(product.premium_frequencies), 2)
+        self.assertTrue(set(product.premium_frequencies).issubset({"ANNUALLY", "SEMI_ANNUALLY", "QUARTERLY", "MONTHLY", "SINGLE"}))
+        self.assertEqual(product.premium_frequencies, ["MONTHLY", "QUARTERLY", "SEMI_ANNUALLY", "ANNUALLY"])
+
+    def test_product_rejects_unsupported_frequency_code(self):
+        payload = self.product_payload("UNSUPPORTED_FREQUENCY")
+        payload["premium_frequencies"] = ["MONTHLY", "WEEKLY"]
+        response = self.client.post("/api/v1/ol-parameters/products/", payload, format="json")
+        self.assertEqual(response.status_code, 400, response.data)
+        frequency_error = response.data["error"]["details"]["premium_frequencies"]
+        self.assertIn("WEEKLY", str(frequency_error))
+        self.assertIn("ANNUALLY", str(frequency_error))
+
     def test_product_crud_filter_and_csv_export(self):
         response = self.client.post("/api/v1/ol-parameters/products/", self.product_payload(), format="json", HTTP_X_REQUEST_ID="product-create")
         self.assertEqual(response.status_code, 201, response.data)

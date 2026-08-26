@@ -95,10 +95,11 @@ CHOICE_LIST_SEEDS = {
         "name": "OL Premium Frequencies",
         "description": "Premium payment frequencies available in OL quotations.",
         "options": [
-            ("ANNUAL", "Annual"),
-            ("SEMI_ANNUAL", "Semi-annual"),
+            ("ANNUALLY", "Annually"),
+            ("SEMI_ANNUALLY", "Semi-annually"),
             ("QUARTERLY", "Quarterly"),
             ("MONTHLY", "Monthly"),
+            ("SINGLE", "Single"),
         ],
     },
     "OL_PAYMENT_MODE_CHOICES": {

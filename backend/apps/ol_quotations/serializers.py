@@ -10,7 +10,7 @@ from apps.system_parameters.services.config_service import ConfigurationService
 from apps.ol_proposals.models import OLProposal
 
 from .permissions import OLQuotationPermission, has_quotation_permission
-from .services.quotation_service import QuotationService
+from .services.quotation_service import QuotationService, QuotationServiceError
 
 from .models import (
     OLQuotation,
@@ -168,6 +168,38 @@ class OLQuotationProductSerializer(QuotationNestedReadMixin, QuotationValidatedM
 
 
 class OLQuotationPlanConfigurationSerializer(QuotationNestedReadMixin, QuotationValidatedModelSerializer):
+    def validate(self, attrs):
+        instance = self.instance
+        quotation = attrs.get("quotation") or getattr(instance, "quotation", None)
+        product_version = attrs.get("product_version") or getattr(instance, "product_version", None)
+        parameter_product = getattr(quotation, "product", None) if quotation is not None else None
+        if parameter_product is None and product_version is not None:
+            parameter_product = QuotationService._parameter_product_for_legacy_product(
+                getattr(product_version, "product", None)
+            )
+        if "premium_frequency" in attrs:
+            frequency = str(attrs.get("premium_frequency") or "").strip().upper()
+            allowed = QuotationService._configured_premium_frequencies(
+                product_version=product_version,
+                parameter_product=parameter_product,
+            )
+            if frequency not in allowed:
+                allowed_codes = ", ".join(allowed) or "none"
+                allowed_labels = ", ".join(value.replace("_", " ").title() for value in allowed)
+                raise QuotationServiceError(
+                    {
+                        "premium_frequency": (
+                            "Choose a payment frequency configured on the selected product. "
+                            f"Allowed values: {allowed_labels or 'No frequencies are configured'} "
+                            f"({allowed_codes}). You entered '{frequency or 'blank'}'. "
+                            "Select one of the product’s listed frequencies, or ask a product administrator to configure one."
+                        )
+                    },
+                    error_code="PLAN_CONFIG_INVALID_FREQUENCY",
+                )
+            attrs["premium_frequency"] = frequency
+        return super().validate(attrs)
+
     class Meta:
         model = OLQuotationPlanConfiguration
         fields = "__all__"

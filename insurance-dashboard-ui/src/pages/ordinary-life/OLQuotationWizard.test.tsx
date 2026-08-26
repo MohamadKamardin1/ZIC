@@ -73,7 +73,7 @@ const plans = [
     mortgage: false,
     personal_accident: false,
     premium_waiver: false,
-    payment_frequencies: ["ANNUAL", "MONTHLY"],
+    payment_frequencies: ["ANNUALLY", "MONTHLY"],
     min_entry_age: 18,
     max_entry_age: 65,
     min_term_years: 5,
@@ -96,7 +96,7 @@ const plans = [
     mortgage: false,
     personal_accident: false,
     premium_waiver: false,
-    payment_frequencies: ["ANNUAL"],
+    payment_frequencies: ["ANNUALLY"],
     min_entry_age: 18,
     max_entry_age: 65,
     min_term_years: 5,
@@ -126,7 +126,7 @@ const configuration = {
   section_number: 1,
   term_years: 20,
   payment_period_years: 20,
-  premium_frequency: "ANNUAL",
+  premium_frequency: "ANNUALLY",
   quote_basis: "SUM_ASSURED",
   estimated_maturity_value: "100000.00",
   base_sum_assured: "1000.00",
@@ -217,7 +217,7 @@ beforeEach(() => {
       return { plans: availablePlans, count: availablePlans.length }
     }
     if (path.includes("/plan-options/")) return {
-      payment_frequencies: [{ value: "ANNUAL", label: "Annual" }, { value: "MONTHLY", label: "Monthly" }],
+      payment_frequencies: [{ value: "ANNUALLY", label: "Annually" }, { value: "MONTHLY", label: "Monthly" }],
       quote_bases: [{ value: "SUM_ASSURED", label: "Sum Assured" }],
       premium_factors: [{ value: "NONE", label: "None" }],
       constraints: {
@@ -230,10 +230,10 @@ beforeEach(() => {
         max_term_years: 20,
         minimum_sum_assured: "1000.00",
         maximum_sum_assured: "10000000.00",
-        allowed_payment_frequencies: [{ value: "ANNUAL", label: "Annual" }, { value: "MONTHLY", label: "Monthly" }],
+        allowed_payment_frequencies: [{ value: "ANNUALLY", label: "Annually" }, { value: "MONTHLY", label: "Monthly" }],
         default_term_years: 5,
         default_payment_period_years: 5,
-        default_payment_frequency: "ANNUAL",
+        default_payment_frequency: "ANNUALLY",
         default_quote_basis: "SUM_ASSURED",
         default_premium_factor: "NONE",
         default_base_sum_assured: "1000.00",
@@ -424,7 +424,8 @@ describe("OL quotation wizard", () => {
     const planCall = requestMock.mock.calls.find(([path, options]) => String(path).endsWith("/plans/") && options?.method === "POST")
     expect(planCall).toBeTruthy()
     const submitted = JSON.parse(String(planCall?.[1]?.body)).plans[0]
-    expect(submitted).toEqual(expect.objectContaining({ term_years: 5, payment_period_years: 5, premium_frequency: "ANNUAL", quote_basis: "SUM_ASSURED", premium_factor: "NONE" }))
+    expect(submitted).toEqual(expect.objectContaining({ term_years: 5, payment_period_years: 5, premium_frequency: "ANNUALLY", quote_basis: "SUM_ASSURED", premium_factor: "NONE" }))
+    expect(requestMock.mock.calls.some(([path]) => String(path).includes("/api/v1/ol/options/payment-frequencies/"))).toBe(false)
     expect(Number(submitted.base_sum_assured)).toBe(1000)
     expect(Number(submitted.estimated_maturity_value)).toBe(1000)
   })

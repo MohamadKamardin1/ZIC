@@ -36,6 +36,9 @@ from apps.ol_parameters.models import (
     OLCashSurrenderValue,
     OLReserveLoading,
     OLComputationApproach,
+    PREMIUM_FREQUENCY_CODES,
+    normalize_premium_frequency,
+    normalize_premium_frequencies,
 )
 from apps.ordinary_life.models import OLPlan, OLProductVersion
 from apps.ol_quotations.models import (
@@ -57,6 +60,10 @@ from apps.ol_quotations.models import (
 
 class QuotationServiceError(ValidationError):
     """A domain validation or lifecycle error for quotation workflows."""
+
+    def __init__(self, detail, *, error_code=None):
+        super().__init__(detail)
+        self.error_code = error_code
 
 
 class QuotationService:
@@ -712,7 +719,10 @@ class QuotationService:
             "minimum_sum_assured": str(effective_min_sum) if effective_min_sum is not None else None,
             "maximum_sum_assured": str(effective_max_sum) if effective_max_sum is not None else None,
             "currency": product_version.currency,
-            "payment_frequencies": list(product_version.payment_frequencies or []),
+            "payment_frequencies": QuotationService._configured_premium_frequencies(
+                product_version=product_version,
+                parameter_product=parameter_product,
+            ),
             "min_entry_age": product_version.min_entry_age,
             "max_entry_age": product_version.max_entry_age,
             "min_term_years": product_version.min_term_years,
@@ -769,10 +779,12 @@ class QuotationService:
             selected_plan = product_version.plans.filter(pk=plan_id, is_active=True).first()
             if selected_plan is None:
                 raise QuotationServiceError({"plan_id": "The selected plan does not belong to this quotation product version."})
-        frequencies = list(product_version.payment_frequencies or []) if product_version else []
-        if not frequencies and quotation.product_id:
-            frequencies = list(getattr(quotation.product, "premium_frequencies", []) or [])
         legacy_product = product_version.product if product_version else None
+        parameter_product = quotation.product or QuotationService._parameter_product_for_legacy_product(legacy_product)
+        frequencies = QuotationService._configured_premium_frequencies(
+            product_version=product_version,
+            parameter_product=parameter_product,
+        )
         features = QuotationService._plan_feature_availability(
             legacy_product=legacy_product,
             plan=selected_plan,
@@ -812,6 +824,19 @@ class QuotationService:
             str(item.get("value", "")).strip().upper()
             for item in ConfigurationService.get_choice_list(code)
             if str(item.get("value", "")).strip()
+        ))
+
+    @staticmethod
+    def _configured_premium_frequencies(*, product_version=None, parameter_product=None):
+        """Return the selected product's persisted, canonical frequency codes."""
+        if parameter_product is not None:
+            source = getattr(parameter_product, "premium_frequencies", []) or []
+        else:
+            source = getattr(product_version, "payment_frequencies", []) or []
+        return list(dict.fromkeys(
+            normalize_premium_frequency(value)
+            for value in normalize_premium_frequencies(list(source))
+            if str(value).strip() and normalize_premium_frequency(value) in PREMIUM_FREQUENCY_CODES
         ))
 
     @staticmethod
@@ -863,9 +888,10 @@ class QuotationService:
         min_sum = max([Decimal(str(value)) for value in (plan_min_sum, product_min_sum) if value is not None], default=None)
         max_sum_values = [Decimal(str(value)) for value in (plan_max_sum, product_max_sum) if value is not None]
         max_sum = min(max_sum_values) if max_sum_values else None
-        frequencies = list(product_version.payment_frequencies or [])
-        if not frequencies and parameter_product:
-            frequencies = list(parameter_product.premium_frequencies or [])
+        frequencies = QuotationService._configured_premium_frequencies(
+            product_version=product_version,
+            parameter_product=parameter_product,
+        )
         flags = QuotationService._plan_feature_availability(
             legacy_product=product,
             plan=plan,
@@ -950,14 +976,26 @@ class QuotationService:
             raise QuotationServiceError({"payment_period_years": f"Payment period for {label} must be between 1 and {term} years, and cannot be longer than the {term}-year policy term. You entered {payment_period}. Enter a whole number in that range."})
 
         frequency = str(payload.get("premium_frequency") or "").strip().upper()
-        allowed_frequencies = {str(item).strip().upper() for item in (product_version.payment_frequencies or [])}
-        if not allowed_frequencies and parameter_product:
-            allowed_frequencies = {str(item).strip().upper() for item in (parameter_product.premium_frequencies or [])}
+        allowed_frequencies = QuotationService._configured_premium_frequencies(
+            product_version=product_version,
+            parameter_product=parameter_product,
+        )
         if not frequency and allowed_frequencies:
-            frequency = sorted(allowed_frequencies)[0]
+            frequency = allowed_frequencies[0]
         if frequency not in allowed_frequencies:
-            allowed = ", ".join(value.replace("_", " ").title() for value in sorted(allowed_frequencies)) or "the payment frequencies configured for this product"
-            raise QuotationServiceError({"premium_frequency": f"Select a payment frequency for {label} from {allowed}. The value you entered is '{frequency or 'blank'}'. Choose one of the listed frequencies."})
+            allowed_labels = ", ".join(value.replace("_", " ").title() for value in allowed_frequencies)
+            allowed_codes = ", ".join(allowed_frequencies) or "none"
+            message = (
+                f"Select a payment frequency for {label} from the frequencies configured on this product. "
+                f"Allowed values: {allowed_labels or 'No frequencies are configured'}. "
+                f"The value you entered is '{frequency or 'blank'}'. "
+                f"Choose one of these exact product-configured codes: {allowed_codes}. "
+                "If the list is empty, ask a product administrator to configure at least one frequency."
+            )
+            raise QuotationServiceError(
+                {"premium_frequency": message},
+                error_code="PLAN_CONFIG_INVALID_FREQUENCY",
+            )
 
         quote_basis_values = QuotationService._choice_values("OL_QUOTE_BASIS_CHOICES")
         premium_factor_values = QuotationService._choice_values("OL_PREMIUM_FACTOR_CHOICES")
@@ -1966,7 +2004,7 @@ class QuotationService:
                     scoped = dict(details)
                     scoped.pop(f"plan_{index}", None)
                     details = {**details, f"plan_{index}": scoped}
-                raise QuotationServiceError(details)
+                raise QuotationServiceError(details, error_code=exc.error_code)
             normalized.append(validated)
 
         before = QuotationService.snapshot(locked)
@@ -3422,7 +3460,17 @@ class QuotationService:
     @staticmethod
     def _build_installment_payouts(quotation, plan_configs):
         payouts = []
-        frequency_months = {"MONTHLY": 1, "QUARTERLY": 3, "HALF_YEARLY": 6, "ANNUAL": 12, "SINGLE": 0}
+        frequency_months = {
+            "MONTHLY": 1,
+            "QUARTERLY": 3,
+            "SEMI_ANNUALLY": 6,
+            "ANNUALLY": 12,
+            "SINGLE": 0,
+            # Keep reading legacy saved installment rows while all new product/quote values use canonical codes.
+            "HALF_YEARLY": 6,
+            "SEMI_ANNUAL": 6,
+            "ANNUAL": 12,
+        }
         for config in quotation.installment_configurations.filter(is_selected=True).select_related("plan_configuration"):
             plan_config = config.plan_configuration or (plan_configs[0] if plan_configs else None)
             if plan_config is None:

@@ -81,7 +81,7 @@ from .serializers import (
     OLQuotationPartnerCompletionSerializer,
     OLProposalSerializer,
 )
-from .services.quotation_service import QuotationService
+from .services.quotation_service import QuotationService, QuotationServiceError
 from .services.document_service import QuotationDocumentService
 from .services.print_ticket_service import PrintTicketError, PrintTicketService
 
@@ -1116,6 +1116,33 @@ class OLQuotationPlanConfigurationViewSet(QuotationScopedViewSet):
     filterset_fields = ["quotation", "product_version", "plan", "is_selected", "premium_frequency"]
     search_fields = ["sub_product_code", "quotation__quote_number"]
     ordering_fields = ["created_at", "base_sum_assured", "term_years", "premium_amount"]
+
+    def _validate_serializer(self, serializer):
+        try:
+            serializer.is_valid(raise_exception=True)
+        except DRFValidationError:
+            frequency_errors = serializer.errors.get("premium_frequency")
+            if frequency_errors:
+                message = frequency_errors[0] if isinstance(frequency_errors, (list, tuple)) else frequency_errors
+                raise QuotationServiceError(
+                    {"premium_frequency": str(message)},
+                    error_code="PLAN_CONFIG_INVALID_FREQUENCY",
+                )
+            raise
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        self._validate_serializer(serializer)
+        self.perform_create(serializer)
+        return _response(self.get_serializer(serializer.instance).data, "Quotation child record created.", status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        self._validate_serializer(serializer)
+        self.perform_update(serializer)
+        return _response(self.get_serializer(serializer.instance).data, "Quotation child record updated.")
 
 
 class OLQuotationMemberViewSet(QuotationScopedViewSet):

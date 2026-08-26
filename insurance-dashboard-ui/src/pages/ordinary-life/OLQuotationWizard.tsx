@@ -576,7 +576,7 @@ function normalizePlanCard(value: unknown): PlanCard | null {
     max_entry_age: record.max_entry_age == null ? undefined : Number(record.max_entry_age),
     min_term_years: record.min_term_years == null ? undefined : Number(record.min_term_years),
     max_term_years: record.max_term_years == null ? undefined : Number(record.max_term_years),
-    payment_frequencies: Array.isArray(record.payment_frequencies) ? record.payment_frequencies.map(String) : undefined,
+    payment_frequencies: Array.isArray(record.payment_frequencies) ? record.payment_frequencies.map((value) => String(value).trim().toUpperCase()).filter(Boolean) : undefined,
     currency: record.currency == null ? undefined : String(record.currency),
   }
 }
@@ -684,7 +684,7 @@ function draftConfiguration(plan: PlanCard, sectionNumber: number, options?: Pla
     section_number: sectionNumber,
     term_years: term,
     payment_period_years: term,
-    premium_frequency: constraints?.default_payment_frequency ?? plan.payment_frequencies?.[0] ?? options?.payment_frequencies[0]?.value ?? "",
+    premium_frequency: constraints?.default_payment_frequency ?? plan.payment_frequencies?.[0] ?? "",
     quote_basis: constraints?.default_quote_basis ?? options?.quote_bases[0]?.value ?? "",
     estimated_maturity_value: constraints?.default_estimated_maturity_value ?? minimumSum,
     base_sum_assured: minimumSum,
@@ -855,12 +855,13 @@ function PlanConfigurationSection({ index, config, card, options, errors, onChan
   const minSum = constraints?.minimum_sum_assured ?? card?.minimum_sum_assured
   const maxSum = constraints?.maximum_sum_assured ?? card?.maximum_sum_assured
   const currency = constraints?.currency ?? card?.currency ?? "TZS"
-  const frequencyLabels = (constraints?.allowed_payment_frequencies ?? []).map((option) => option.label).join(", ") || (card?.payment_frequencies ?? []).map((value) => value.replace(/_/g, " ")).join(", ")
+  const frequencyOptions = asChoices(card?.payment_frequencies ?? constraints?.allowed_payment_frequencies ?? [])
+  const frequencyLabels = frequencyOptions.map((option) => option.label).join(", ")
   const rangeText = minSum != null && maxSum != null ? `${formatMoney(minSum, currency)} to ${formatMoney(maxSum, currency)}` : minSum != null ? `at least ${formatMoney(minSum, currency)}` : maxSum != null ? `up to ${formatMoney(maxSum, currency)}` : "the configured plan limit"
   return <section className="rounded-[10px] border bg-[var(--card)] shadow-sm"><div className="ol-quote-section-bar flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3"><div><h3 className="text-base font-bold uppercase tracking-[0.01em] text-white">{planName}</h3><p className="mt-0.5 text-xs font-semibold text-white/80">Plan-only configuration</p></div><span className="rounded-md border border-white/30 bg-white/10 px-2.5 py-1 text-[10px] font-bold text-white">Section {index + 1}</span></div><div className="space-y-5 p-4"><div className="sr-only" aria-live="polite">{minTerm != null && maxTerm != null ? `Policy term: ${minTerm}–${maxTerm} years. ` : "Policy term: use the configured plan range. "}Payment period must be from 1 year up to the selected policy term. {frequencyLabels ? `Supported payment frequencies: ${frequencyLabels}. ` : "Select a supported payment frequency. "}Base sum assured: {rangeText}. The estimated maturity value must be a positive projected amount.</div><FormGrid columns={3}>
     <TextInput label="Policy Term (Years)" name={`term_years_${config.id}`} required type="number" min={minTerm ?? 1} max={maxTerm} value={String(config.term_years ?? "")} onChange={(event) => onChange("term_years", event.target.value)} error={fieldError(errors, "term_years")} />
     <TextInput label="Payment Period (Years)" name={`payment_period_years_${config.id}`} required type="number" min={1} max={config.term_years ?? maxTerm} value={String(config.payment_period_years ?? "")} onChange={(event) => onChange("payment_period_years", event.target.value)} error={fieldError(errors, "payment_period_years")} />
-    <SmartSelect entity="payment-frequencies" label="Payment Frequency" name={`premium_frequency_${config.id}`} required value={String(config.premium_frequency ?? "")} onChange={(value) => onChange("premium_frequency", value)} error={fieldError(errors, "premium_frequency")} placeholder="Search and select payment frequency" />
+    <SmartSelect entity="payment-frequencies" label="Payment Frequency" name={`premium_frequency_${config.id}`} required value={String(config.premium_frequency ?? "")} options={frequencyOptions} allowCreate={false} disabled={!frequencyOptions.length} hint={!frequencyOptions.length ? "No payment frequencies are configured for this product. Complete Product Setup before continuing." : undefined} onChange={(value) => onChange("premium_frequency", value)} error={fieldError(errors, "premium_frequency")} placeholder={frequencyOptions.length ? "Select a product-configured frequency" : "No frequencies configured"} />
     <SmartSelect entity="quote-bases" label="Quote Basis" name={`quote_basis_${config.id}`} required value={String(config.quote_basis ?? "")} onChange={(value) => onChange("quote_basis", value)} error={fieldError(errors, "quote_basis")} placeholder="Search and select quote basis" />
     <DecimalInput label="Estimated Maturity Value" name={`estimated_maturity_value_${config.id}`} required value={String(config.estimated_maturity_value ?? "")} onChange={(event) => onChange("estimated_maturity_value", event.target.value)} error={fieldError(errors, "estimated_maturity_value")} />
     <div className="sr-only"><DecimalInput label="Base Sum Assured" name={`base_sum_assured_${config.id}`} required value={String(config.base_sum_assured ?? "")} onChange={(event) => onChange("base_sum_assured", event.target.value)} error={fieldError(errors, "base_sum_assured")} /></div>

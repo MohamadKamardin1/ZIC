@@ -34,6 +34,8 @@ export type SmartSelectProps = FormFieldProps & {
   allowedValues?: string[]
   className?: string
   optionsUrl?: string
+  options?: SmartOption[]
+  allowCreate?: boolean
   quickCreateSchemaUrl?: string
   quickCreateUrl?: string
   rememberLastUsed?: boolean
@@ -122,6 +124,8 @@ export function SmartSelect({
   allowedValues,
   className = "",
   optionsUrl,
+  options: providedOptions,
+  allowCreate = true,
   quickCreateSchemaUrl,
   quickCreateUrl,
   rememberLastUsed = true,
@@ -138,23 +142,23 @@ export function SmartSelect({
   const debouncedQuery = useDebouncedValue(query)
   const entityLabel = emptyEntityLabel ?? prettifyOptionEntity(entity)
   const permissionCode = createPermission ?? OPTION_CREATE_PERMISSIONS[entity]
-  const canCreate = hasExplicitPermission(access.permissions, permissionCode)
+  const canCreate = allowCreate && hasExplicitPermission(access.permissions, permissionCode)
   const resolvedManageHref = manageHref ?? OPTION_MANAGE_HREFS[entity]
   const parameterScreenLabel = OPTION_PARAMETER_SCREEN_LABELS[entity] ?? "the full parameter screen"
   const lastUsedKey = `zic.smart-select.last-used.${entity}`
 
   const optionsQuery = useQuery({
-    queryKey: ["ol-options", entity, optionsUrl ?? "", debouncedQuery, pageSize],
+    queryKey: ["ol-options", entity, optionsUrl ?? "", providedOptions ? "local" : debouncedQuery, pageSize],
     queryFn: () => {
       const base = optionsUrl ?? `/api/v1/ol/options/${encodeURIComponent(entity)}/`
       const separator = base.includes("?") ? "&" : "?"
       return request<OptionListPayload | unknown[]>(`${base}${separator}q=${encodeURIComponent(debouncedQuery)}&page=1&page_size=${pageSize}`)
     },
-    enabled: !disabled,
+    enabled: !disabled && !providedOptions,
     staleTime: 30_000,
   })
   const options = useMemo(() => {
-    const remoteOptions = normalizeOptions(optionsQuery.data)
+    const remoteOptions = providedOptions ?? normalizeOptions(optionsQuery.data)
     const merged = new Map<string, SmartOption>()
     remoteOptions.forEach((option) => merged.set(option.value, option))
     createdOptions.forEach((option) => merged.set(option.value, option))
@@ -162,8 +166,8 @@ export function SmartSelect({
     if (!allowed?.length) return Array.from(merged.values())
     const allowedSet = new Set(allowed)
     return Array.from(merged.values()).filter((option) => allowedSet.has(option.value) || createdOptions.some((created) => created.value === option.value))
-  }, [allowedValues, createdOptions, optionsQuery.data])
-  const total = getPayloadTotal(optionsQuery.data, options.length)
+  }, [allowedValues, createdOptions, optionsQuery.data, providedOptions])
+  const total = providedOptions ? options.length : getPayloadTotal(optionsQuery.data, options.length)
   const selectedValues = multiple ? values : value ? [value] : []
   const selectedOptions = selectedValues.map((selectedValue) => options.find((option) => option.value === selectedValue)).filter((item): item is SmartOption => Boolean(item))
   const selectedLabel = multiple
@@ -184,7 +188,7 @@ export function SmartSelect({
     lastUsedAppliedRef.current = false
   }, [entity])
   useEffect(() => {
-    if (!rememberLastUsed || multiple || value || !onChange || lastUsedAppliedRef.current || optionsQuery.isLoading || options.length === 0) return
+    if (!rememberLastUsed || multiple || value || !onChange || lastUsedAppliedRef.current || (providedOptions ? false : optionsQuery.isLoading) || options.length === 0) return
     lastUsedAppliedRef.current = true
     try {
       const raw = window.sessionStorage.getItem(lastUsedKey)
@@ -197,7 +201,7 @@ export function SmartSelect({
     } catch {
       // Ignore malformed or unavailable session storage.
     }
-  }, [lastUsedKey, multiple, onChange, onOptionChange, options, optionsQuery.isLoading, rememberLastUsed, value])
+  }, [lastUsedKey, multiple, onChange, onOptionChange, options, optionsQuery.isLoading, providedOptions, rememberLastUsed, value])
 
   useEffect(() => {
     if (!open) return undefined
@@ -288,10 +292,10 @@ export function SmartSelect({
                 {query && <button type="button" aria-label="Clear search" onClick={() => setQuery("")} className="rounded p-1 text-[var(--muted-foreground)] hover:bg-[var(--secondary)]"><X size={14} aria-hidden="true" /></button>}
               </div>
               <div className="max-h-60 overflow-auto py-1">
-                {optionsQuery.isLoading && <div className="space-y-2 px-2 py-3" role="status" aria-label={`Loading ${entityLabel.toLowerCase()}`}><span className="sr-only">Loading options…</span>{["w-11/12", "w-8/12", "w-10/12"].map((width) => <span key={width} className={`block h-8 ${width} animate-pulse rounded-md bg-[var(--muted)]`} aria-hidden="true" />)}</div>}
-                {optionsQuery.isError && <p className="px-3 py-4 text-center text-xs text-[var(--destructive)]" role="alert">{getErrorMessage(optionsQuery.error)}</p>}
-                {!optionsQuery.isLoading && !optionsQuery.isError && options.length === 0 && <p className="px-3 py-4 text-center text-xs text-[var(--muted-foreground)]">No results found. Use + to add a new {entityLabel.toLowerCase()}.</p>}
-                {!optionsQuery.isLoading && !optionsQuery.isError && options.map((option) => {
+                {!providedOptions && optionsQuery.isLoading && <div className="space-y-2 px-2 py-3" role="status" aria-label={`Loading ${entityLabel.toLowerCase()}`}><span className="sr-only">Loading options…</span>{["w-11/12", "w-8/12", "w-10/12"].map((width) => <span key={width} className={`block h-8 ${width} animate-pulse rounded-md bg-[var(--muted)]`} aria-hidden="true" />)}</div>}
+                {!providedOptions && optionsQuery.isError && <p className="px-3 py-4 text-center text-xs text-[var(--destructive)]" role="alert">{getErrorMessage(optionsQuery.error)}</p>}
+                {(providedOptions || (!optionsQuery.isLoading && !optionsQuery.isError)) && options.length === 0 && <p className="px-3 py-4 text-center text-xs text-[var(--muted-foreground)]">No results found.{canCreate ? ` Use + to add a new ${entityLabel.toLowerCase()}.` : ` ${entityLabel} options are not configured.`}</p>}
+                {(providedOptions || (!optionsQuery.isLoading && !optionsQuery.isError)) && options.map((option) => {
                   const selected = selectedValues.includes(option.value)
                   return <button key={option.value} type="button" role="option" aria-selected={selected} onClick={() => choose(option)} className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-[var(--secondary)]"><span className="min-w-0 truncate">{option.label}</span>{selected && <Check size={15} className="shrink-0 text-[var(--primary)]" aria-hidden="true" />}</button>
                 })}
@@ -306,7 +310,7 @@ export function SmartSelect({
       {(selectedOptions.length > 0 || (multiple && selectedValues.length > 0)) && <div className="flex flex-wrap items-center gap-1.5">{selectedOptions.map((option) => <span key={option.value} className="inline-flex max-w-full items-center gap-1 rounded-full bg-[var(--secondary)] px-2.5 py-1 text-xs text-[var(--foreground)]"><span className="max-w-[18rem] truncate">{option.label}</span></span>)}<button type="button" onClick={clear} className="text-xs font-semibold text-[var(--muted-foreground)] underline-offset-2 hover:text-[var(--foreground)] hover:underline">Clear</button></div>}
       {resolvedManageHref && canCreate && <a href={resolvedManageHref} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-md text-xs font-semibold text-[var(--primary)] outline-none transition hover:underline focus-visible:ring-2 focus-visible:ring-[var(--ring)]">{manageLabel}<ExternalLink size={12} aria-hidden="true" /></a>}
       {error && <p id={`${name}-error`} className="mt-1 text-xs font-medium text-[var(--destructive)]" role="alert">{error}</p>}
-      {optionsQuery.isError && !open && <p className="text-xs text-[var(--destructive)]" role="alert">{getErrorMessage(optionsQuery.error)}</p>}
+      {!providedOptions && optionsQuery.isError && !open && <p className="text-xs text-[var(--destructive)]" role="alert">{getErrorMessage(optionsQuery.error)}</p>}
       <QuickCreateModal open={quickCreateOpen} entity={entity} entityLabel={entityLabel} permissionCode={permissionCode} manageHref={resolvedManageHref} parameterScreenLabel={parameterScreenLabel} schemaUrl={quickCreateSchemaUrl} createUrl={quickCreateUrl} onClose={() => setQuickCreateOpen(false)} onCreated={handleCreated} />
     </div>
   )

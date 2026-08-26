@@ -138,7 +138,7 @@ class OLQuotationAPITests(TestCase):
             plan_type=cls.plan_type,
             effective_from=date.today(),
             currency="TZS",
-            premium_frequencies=["ANNUAL", "MONTHLY"],
+            premium_frequencies=["ANNUALLY", "QUARTERLY", "MONTHLY"],
             allow_riders=True,
             allow_bonus=True,
             allow_loans=True,
@@ -153,7 +153,7 @@ class OLQuotationAPITests(TestCase):
             version_number=1,
             effective_from=date.today(),
             currency="TZS",
-            payment_frequencies=["ANNUAL", "MONTHLY"],
+            payment_frequencies=["ANNUALLY", "QUARTERLY", "MONTHLY"],
             min_entry_age=18,
             max_entry_age=65,
             min_term_years=5,
@@ -234,7 +234,7 @@ class OLQuotationAPITests(TestCase):
                 "sub_product_code": "BASE",
                 "base_sum_assured": "250000.00",
                 "term_years": 20,
-                "premium_frequency": "ANNUAL",
+                "premium_frequency": "ANNUALLY",
                 "premium_amount": "12500.00",
             },
             **headers,
@@ -887,7 +887,7 @@ class OLQuotationAPITests(TestCase):
                     "plan_id": str(self.plan.pk),
                     "term_years": 20,
                     "payment_period_years": 20,
-                    "premium_frequency": "ANNUAL",
+                    "premium_frequency": "ANNUALLY",
                     "quote_basis": "SUM_ASSURED",
                     "premium_factor": "NONE",
                     "estimated_maturity_value": "1000.00",
@@ -908,7 +908,8 @@ class OLQuotationAPITests(TestCase):
         self.assertEqual(card["code"], "TERM-20")
         self.assertIn("WITH_PROFIT", card["badges"])
         self.assertIn("JOINT_LIFE", card["badges"])
-        self.assertEqual(card["payment_frequencies"], ["ANNUAL", "MONTHLY"])
+        self.assertEqual(card["payment_frequencies"], ["ANNUALLY", "QUARTERLY", "MONTHLY"])
+        self.assertNotIn("SEMI_ANNUAL", card["payment_frequencies"])
 
     def test_plan_selection_creates_multiple_configurations_in_selection_order(self):
         second_plan = OLPlan.objects.create(
@@ -927,7 +928,7 @@ class OLQuotationAPITests(TestCase):
                     "plan_id": str(self.plan.pk),
                     "term_years": 20,
                     "payment_period_years": 20,
-                    "premium_frequency": "ANNUAL",
+                    "premium_frequency": "ANNUALLY",
                     "quote_basis": "SUM_ASSURED",
                     "premium_factor": "NONE",
                     "estimated_maturity_value": "1000.00",
@@ -974,6 +975,52 @@ class OLQuotationAPITests(TestCase):
         configuration = response.data["data"]["configurations"][0]
         self.assertEqual(Decimal(configuration["estimated_bonus_rate"]), Decimal("2.500000"))
 
+    def test_plan_selection_normalizes_case_against_product_frequencies(self):
+        draft = self.create_draft()
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/plans/",
+            self.plan_selection_payload(
+                plans=[{
+                    **self.plan_selection_payload()["plans"][0],
+                    "premium_frequency": "quarterly",
+                }]
+            ),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["data"]["configurations"][0]["premium_frequency"], "QUARTERLY")
+
+    def test_plan_configuration_serializer_enforces_product_frequency_contract(self):
+        draft = self.create_draft()
+        payload = {
+            "quotation": draft["id"],
+            "product_version": str(self.product_version.pk),
+            "plan": str(self.plan.pk),
+            "sub_product_code": "DIRECT-CRUD",
+            "base_sum_assured": "1000.00",
+            "term_years": 5,
+            "payment_period_years": 5,
+            "premium_frequency": "monthly",
+            "quote_basis": "SUM_ASSURED",
+            "estimated_maturity_value": "1000.00",
+            "premium_factor": "NONE",
+            "joint_life": False,
+            "mortgage": False,
+            "personal_accident": False,
+            "premium_waiver": False,
+            "estimated_bonus_rate": "0.000000",
+        }
+        accepted = self.client.post("/api/v1/ol-quotations/plan-configurations/", payload, format="json")
+        self.assertEqual(accepted.status_code, 201, accepted.data)
+        self.assertEqual(accepted.data["data"]["premium_frequency"], "MONTHLY")
+
+        payload["sub_product_code"] = "DIRECT-CRUD-INVALID"
+        payload["premium_frequency"] = "weekly"
+        rejected = self.client.post("/api/v1/ol-quotations/plan-configurations/", payload, format="json")
+        self.assertEqual(rejected.status_code, 400, rejected.data)
+        self.assertEqual(rejected.data["error_code"], "PLAN_CONFIG_INVALID_FREQUENCY")
+        self.assertIn("MONTHLY", str(rejected.data["error"]["details"]["premium_frequency"]))
+
     def test_plan_options_are_sourced_from_product_and_parameter_catalogs(self):
         draft = self.create_draft()
         response = self.client.get(
@@ -985,7 +1032,8 @@ class OLQuotationAPITests(TestCase):
         self.assertEqual(
             options["payment_frequencies"],
             [
-                {"value": "ANNUAL", "label": "Annual"},
+                {"value": "ANNUALLY", "label": "Annually"},
+                {"value": "QUARTERLY", "label": "Quarterly"},
                 {"value": "MONTHLY", "label": "Monthly"},
             ],
         )
@@ -1023,7 +1071,7 @@ class OLQuotationAPITests(TestCase):
         self.assertEqual(str(configuration["product_version"]), str(self.product_version.pk))
         self.assertEqual(configuration["term_years"], 5)
         self.assertEqual(configuration["payment_period_years"], 5)
-        self.assertEqual(configuration["premium_frequency"], "ANNUAL")
+        self.assertEqual(configuration["premium_frequency"], "ANNUALLY")
         self.assertEqual(configuration["quote_basis"], "SUM_ASSURED")
         self.assertEqual(configuration["premium_factor"], "NONE")
         self.assertEqual(configuration["base_sum_assured"], "1000.00")
@@ -1100,9 +1148,11 @@ class OLQuotationAPITests(TestCase):
             format="json",
         )
         self.assertEqual(frequency_response.status_code, 400, frequency_response.data)
+        self.assertEqual(frequency_response.data["error_code"], "PLAN_CONFIG_INVALID_FREQUENCY")
         frequency_message = frequency_response.data["error"]["details"]["premium_frequency"]
-        self.assertIn("Annual", frequency_message)
+        self.assertIn("Annually", frequency_message)
         self.assertIn("Monthly", frequency_message)
+        self.assertIn("Quarterly", frequency_message)
         self.assertIn("WEEKLY", frequency_message)
         self.assertIn("Choose", frequency_message)
 
@@ -1451,7 +1501,7 @@ class OLQuotationAPITests(TestCase):
             product=self.legacy_product,
             plan=self.plan,
             installment_type="ANTICIPATED_ENDOWMENT",
-            frequency="ANNUAL",
+            frequency="ANNUALLY",
             age_from=18,
             age_to=65,
             term_from=20,
@@ -2222,7 +2272,7 @@ class OLQuotationAPITests(TestCase):
             age_to=65,
             term_from=1,
             term_to=40,
-            frequency="ANNUAL",
+            frequency="ANNUALLY",
             rate=Decimal(rate),
             rate_unit="PER_THOUSAND_SUM_ASSURED",
             effective_from=date.today(),

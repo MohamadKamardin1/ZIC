@@ -9,6 +9,36 @@ from django.utils import timezone
 from django.utils.text import slugify
 
 
+PREMIUM_FREQUENCY_CODES = (
+    "ANNUALLY",
+    "SEMI_ANNUALLY",
+    "QUARTERLY",
+    "MONTHLY",
+    "SINGLE",
+)
+
+PREMIUM_FREQUENCY_ALIASES = {
+    "ANNUAL": "ANNUALLY",
+    "YEARLY": "ANNUALLY",
+    "SEMI_ANNUAL": "SEMI_ANNUALLY",
+    "SEMI_ANNUALY": "SEMI_ANNUALLY",
+    "HALF_YEARLY": "SEMI_ANNUALLY",
+    "HALF_ANNUAL": "SEMI_ANNUALLY",
+}
+
+
+def normalize_premium_frequency(value):
+    """Return the canonical storage code while accepting legacy input aliases."""
+    normalized = str(value or "").strip().upper().replace("-", "_").replace(" ", "_")
+    return PREMIUM_FREQUENCY_ALIASES.get(normalized, normalized)
+
+
+def normalize_premium_frequencies(values):
+    if not isinstance(values, list):
+        return values
+    return list(dict.fromkeys(normalize_premium_frequency(value) for value in values))
+
+
 class OLParameterBaseModel(models.Model):
     """Common identity, lifecycle, effective-dating, and audit fields for OL parameters."""
 
@@ -2002,7 +2032,13 @@ class OLProduct(OLEffectiveDateModel):
         elif any(not isinstance(value, str) or not value.strip() for value in self.premium_frequencies):
             errors["premium_frequencies"] = "Premium frequencies must be a list of non-empty strings."
         else:
-            self.premium_frequencies = list(dict.fromkeys(value.strip().upper() for value in self.premium_frequencies))
+            self.premium_frequencies = normalize_premium_frequencies(self.premium_frequencies)
+            unsupported = sorted(set(self.premium_frequencies) - set(PREMIUM_FREQUENCY_CODES))
+            if unsupported:
+                errors["premium_frequencies"] = (
+                    "Unsupported premium frequency code(s): "
+                    f"{', '.join(unsupported)}. Choose only: {', '.join(PREMIUM_FREQUENCY_CODES)}."
+                )
         if errors:
             raise ValidationError(errors)
 

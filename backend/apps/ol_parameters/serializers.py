@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import OLParameterTableRegistry
+from .models import OLParameterTableRegistry, PREMIUM_FREQUENCY_CODES, normalize_premium_frequencies
 
 
 class OLParameterBaseSerializer(serializers.Serializer):
@@ -444,6 +444,19 @@ class OLPlanTypeSerializer(_ValidatedDefaultSetupModelSerializer):
 
 
 class OLProductSerializer(_ValidatedDefaultSetupModelSerializer):
+    def validate_premium_frequencies(self, value):
+        if not isinstance(value, list) or not value:
+            raise serializers.ValidationError("Configure at least one premium frequency for this product.")
+        if any(not isinstance(item, str) or not item.strip() for item in value):
+            raise serializers.ValidationError("Premium frequencies must be non-empty text codes.")
+        normalized = normalize_premium_frequencies(value)
+        unsupported = sorted(set(normalized) - set(PREMIUM_FREQUENCY_CODES))
+        if unsupported:
+            raise serializers.ValidationError(
+                f"Unsupported premium frequency code(s): {', '.join(unsupported)}. Choose only: {', '.join(PREMIUM_FREQUENCY_CODES)}."
+            )
+        return normalized
+
     class Meta(_ValidatedDefaultSetupModelSerializer.Meta):
         model = OLProduct
         fields = "__all__"
