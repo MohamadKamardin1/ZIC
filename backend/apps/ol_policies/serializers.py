@@ -1,4 +1,7 @@
+from django.db.models import Q
 from rest_framework import serializers
+
+from apps.ol_commitments.models import OLCommitment
 
 from .models import (
     Policy,
@@ -26,6 +29,29 @@ def _partner_label(partner):
             if value
         )
     return " — ".join(part for part in (number, name) if part) or "Unnamed partner"
+
+
+def _policy_plan_snapshot(policy):
+    snapshot = policy.contract_snapshot if isinstance(policy.contract_snapshot, dict) else {}
+    plans = snapshot.get("plans", [])
+    return [plan for plan in plans if isinstance(plan, dict)]
+
+
+def _status_allowed_actions(status):
+    actions = {
+        "ACTIVE": ["view", "service", "endorse", "print", "cancel"],
+        "LAPSED": ["view", "service", "reinstate", "print"],
+        "PAID_UP": ["view", "service", "print"],
+        "SURRENDER_PENDING": ["view", "print"],
+        "SURRENDERED": ["view", "print"],
+        "MATURED_PENDING_PAYMENT": ["view", "print"],
+        "MATURED": ["view", "print"],
+        "EXPIRED": ["view", "print"],
+        "CANCELLED": ["view", "print"],
+        "CLAIM_SETTLED": ["view", "print"],
+        "TERMINATED": ["view", "print"],
+    }
+    return actions.get((status or "").upper(), ["view"])
 
 
 class PolicyMemberSerializer(serializers.ModelSerializer):
@@ -98,9 +124,14 @@ class PolicyAuditLogSerializer(serializers.ModelSerializer):
 class PolicyListSerializer(serializers.ModelSerializer):
     proposal_ref_display = serializers.SerializerMethodField()
     policyholder_display = serializers.SerializerMethodField()
-    agent_display = serializers.SerializerMethodField()
+    policyholder_name = serializers.SerializerMethodField()
     product_plan_display = serializers.CharField(source="product_plan_ref", read_only=True)
+    product_name = serializers.SerializerMethodField()
+    plan_name = serializers.SerializerMethodField()
+    agent_display = serializers.SerializerMethodField()
+    agent_name = serializers.SerializerMethodField()
     status_display = serializers.SerializerMethodField()
+    allowed_actions = serializers.SerializerMethodField()
 
     class Meta:
         model = Policy
@@ -109,8 +140,12 @@ class PolicyListSerializer(serializers.ModelSerializer):
             "policy_number",
             "proposal_ref_display",
             "policyholder_display",
-            "agent_display",
+            "policyholder_name",
             "product_plan_display",
+            "product_name",
+            "plan_name",
+            "agent_display",
+            "agent_name",
             "currency",
             "sum_assured",
             "premium_amount",
@@ -120,6 +155,7 @@ class PolicyListSerializer(serializers.ModelSerializer):
             "maturity_date",
             "status",
             "status_display",
+            "allowed_actions",
             "version",
             "created_at",
             "updated_at",
@@ -133,11 +169,34 @@ class PolicyListSerializer(serializers.ModelSerializer):
     def get_policyholder_display(self, obj):
         return _partner_label(obj.partner)
 
+    def get_policyholder_name(self, obj):
+        if not obj.partner:
+            return ""
+        return getattr(obj.partner, "legal_name", "") or self.get_policyholder_display(obj)
+
+    def get_product_name(self, obj):
+        plans = _policy_plan_snapshot(obj)
+        product_names = [plan.get("product_code") for plan in plans if plan.get("product_code")]
+        return ", ".join(dict.fromkeys(product_names)) or obj.product_plan_ref
+
+    def get_plan_name(self, obj):
+        plans = _policy_plan_snapshot(obj)
+        plan_names = [plan.get("plan_name") or plan.get("plan_code") for plan in plans]
+        return ", ".join(dict.fromkeys(name for name in plan_names if name)) or obj.product_plan_ref
+
     def get_agent_display(self, obj):
         return _partner_label(obj.agent)
 
+    def get_agent_name(self, obj):
+        if not obj.agent:
+            return ""
+        return getattr(obj.agent, "legal_name", "") or self.get_agent_display(obj)
+
     def get_status_display(self, obj):
         return obj.get_status_display()
+
+    def get_allowed_actions(self, obj):
+        return _status_allowed_actions(obj.status)
 
 
 class PolicyDetailSerializer(PolicyListSerializer):
@@ -146,6 +205,9 @@ class PolicyDetailSerializer(PolicyListSerializer):
     benefits = PolicyBenefitSerializer(many=True, read_only=True)
     endorsements = PolicyEndorsementSerializer(many=True, read_only=True)
     audit_logs = PolicyAuditLogSerializer(many=True, read_only=True)
+    linked_proposal = serializers.SerializerMethodField()
+    linked_commitments = serializers.SerializerMethodField()
+    installments = serializers.SerializerMethodField()
 
     class Meta(PolicyListSerializer.Meta):
         fields = PolicyListSerializer.Meta.fields + (
@@ -156,4 +218,42 @@ class PolicyDetailSerializer(PolicyListSerializer):
             "benefits",
             "endorsements",
             "audit_logs",
+            "linked_proposal",
+            "linked_commitments",
+            "installments",
         )
+
+    def get_linked_proposal(self, obj):
+        proposal = obj.proposal_ref
+        return {
+            "proposal_number": getattr(proposal, "proposal_number", ""),
+            "status": getattr(proposal, "status", ""),
+            "quotation_number": getattr(getattr(proposal, "quotation", None), "quote_number", ""),
+        }
+
+    def get_linked_commitments(self, obj):
+        commitments = (
+            OLCommitment.objects.filter(
+                Q(source_reference=obj.policy_number) | Q(source_object_id=str(obj.pk))
+            )
+            .exclude(status__in=["COMPLETED", "CANCELLED", "REVERSED", "WAIVED", "CLOSED"])
+            .order_by("due_date", "created_at")
+        )
+        return [
+            {
+                "commitment_number": commitment.commitment_number,
+                "status": commitment.status,
+                "currency": commitment.currency,
+                "premium_frequency": commitment.premium_frequency,
+                "due_date": commitment.due_date,
+                "premium_amount": commitment.premium_amount,
+                "amount_paid": commitment.amount_paid,
+                "balance": commitment.balance,
+            }
+            for commitment in commitments
+        ]
+
+    def get_installments(self, obj):
+        snapshot = obj.contract_snapshot if isinstance(obj.contract_snapshot, dict) else {}
+        installments = snapshot.get("installments", [])
+        return installments if isinstance(installments, list) else []

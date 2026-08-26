@@ -107,7 +107,7 @@ FINAL OUTPUT: service contract, endpoint, event emission, tests, commit hash, pu
 
 ---
 
-## [ ] Prompt 3/12 — Policy List, Search, & KPI Dashboard
+## [x] Prompt 3/12 — Policy List, Search, & KPI Dashboard
 
 ```text
 You are a senior Django API engineer. Continue the ZIC OL Policies backend. Execute ONLY Prompt 3.
