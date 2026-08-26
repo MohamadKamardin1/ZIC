@@ -4,6 +4,16 @@ import OLQuotations from "./OLQuotations"
 
 const { requestMock, navigateMock } = vi.hoisted(() => ({ requestMock: vi.fn(), navigateMock: vi.fn() }))
 
+vi.mock("../../lib/documentClient", () => ({
+  AuthenticatedDocumentError: class AuthenticatedDocumentError extends Error {
+    requiresLogin = false
+    loginUrl = "/login"
+  },
+  fetchAuthenticatedDocument: vi.fn(),
+  openAuthenticatedDocument: vi.fn(),
+  revokeAuthenticatedDocument: vi.fn(),
+}))
+
 vi.mock("../../lib/apiClient", () => ({
   request: requestMock,
   buildTableQuery: (query: { page?: number; pageSize?: number; search?: string; ordering?: string; filters?: Record<string, unknown> } = {}) => {
@@ -100,6 +110,8 @@ beforeEach(() => {
   requestMock.mockReset()
   navigateMock.mockReset()
   requestMock.mockImplementation(async (path: string) => {
+    if (path.startsWith("/api/v1/documents/instances/?")) return { count: 1, page: 1, page_size: 50, results: [{ id: "document-1", document_type: "OL_QUOTATION", template_name: "Ordinary Life Quotation", template_version: 1, generated_by_display: "E2E Superadmin", generated_at: "2026-08-19T10:05:00Z", page_count: 2, signed_download_url: "/api/v1/documents/instances/document-1/download/?ticket=signed-ticket" }] }
+    if (path.startsWith("/api/v1/documents/render/")) return { id: "document-1", signed_download_url: "/api/v1/documents/instances/document-1/download/?ticket=signed-ticket" }
     if (path.includes("/summary/")) return { total: 4, drafts: 1, finalized: 1, converted: 1, expired: 1 }
     if (path.startsWith("/api/v1/ol/quotations/quotations/")) return { results: [draftRow, finalizedRow], count: 25, page: 1, page_size: 20 }
     return {}
@@ -158,6 +170,21 @@ describe("OL Quotations list", () => {
       expect(latestPath).toContain("quote_date_from=2026-08-01")
       expect(latestPath).toContain("quote_date_to=2026-08-31")
     })
+  })
+
+  it("opens the shared document panel from the work queue", async () => {
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null)
+    render(<OLQuotations />)
+    await screen.findByText("Q-0001")
+
+    const rows = screen.getAllByRole("row")
+    fireEvent.click(within(rows[2]).getByRole("button", { name: "Actions for row 2" }))
+    fireEvent.click(screen.getByRole("button", { name: "Print" }))
+
+    expect(await screen.findByRole("heading", { name: "Quotation documents · Q-0002" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Preview" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Open in new tab" })).toBeInTheDocument()
+    expect(openSpy).not.toHaveBeenCalled()
   })
 
   it("navigates to create and view routes", async () => {

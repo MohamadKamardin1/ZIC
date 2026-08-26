@@ -114,3 +114,17 @@ New Ordinary Life modules should add a focused spec under `e2e/`, reuse `seedSup
 ```bash
 pnpm typecheck && pnpm test -- --run && pnpm lint && pnpm build && pnpm test:e2e
 ```
+
+## 11. Unified print-engine scenarios
+
+`e2e/print-engine.spec.ts` verifies the shared document experience for all currently implemented document types. The quotation scenario opens the list, selects a finalized row, chooses **Print**, previews the returned PDF in the authenticated panel, captures the downloaded file, and confirms that **Open in new tab** receives only the server-issued signed ticket. The proposal and commitment scenarios exercise their respective document tabs with the same Preview, Download, and signed-ticket actions.
+
+The refresh scenario deliberately returns one 401 for the first PDF request. The browser intercepts `/api/v1/auth/refresh/`, returns refreshed tokens, and verifies that the original PDF operation succeeds without a session ErrorCoach. The spec also checks that the preview iframe uses a `blob:` URL rather than a protected API URL.
+
+Run the focused suite with:
+
+```bash
+pnpm exec playwright test e2e/print-engine.spec.ts --project=chromium
+```
+
+The full browser acceptance suite should include this focused print spec together with the quotation lifecycle, quotation wizard, commitment, parameter, and authentication specs. These tests use deterministic API mocks; backend PDF bytes, pypdf content, ticket tamper/expiry, permission, and audit evidence are covered by `backend/apps/documents/tests/test_engine.py`.

@@ -126,3 +126,20 @@ The second seed invocation is intentionally required to verify idempotency. SQLi
 ## Module boundary after this milestone
 
 The OL Quotations module is complete through proposal handoff. The next recommended bounded context is the full **OL Proposals** workflow, which should consume `OLProposal`, `ProposalCreated`, the immutable quotation version, and the copied handoff snapshots without mutating the quotation aggregate.
+
+
+## Finalized quotation detail hydration
+
+The quotation detail page loads the base quotation and then hydrates the authoritative lifecycle resources in parallel: `wizard-summary`, `members`, `installments`, `investment-funds`, `riders`, `financial-details`, `partner-verification`, `versions`, and `documents`. The UI merges these resources by stage while retaining the base serializer as the fallback. This prevents a successful finalized quotation from appearing empty when child data is returned by a stage endpoint rather than embedded in the initial retrieve response.
+
+The detail checklist accepts both canonical backend keys such as `1_personal_details` and stable UI aliases such as `personal`, `plans`, and `riders`. The backend serializer returns the live completion result, not only the historical JSON stored on the quotation header.
+
+## Partner process used by quotation detail
+
+Partner readiness is handled after quotation finalization and before proposal conversion. The page calls `GET /partner-verification/`, which matches identity type, identity number, and date of birth against Partner master data. A compliant active match is linked automatically to both quotation partner relationships and sets `partner_verified=true`. A non-compliant match is shown with its missing fields. When no compliant match exists, the user completes the required individual KYC fields through `POST /partner-completion/`; the request delegates to the canonical onboarding application lifecycle and links the resulting partner only after approval and conversion succeed.
+
+The detail page shows a green verified state with the partner display name and partner number when verification succeeds. Otherwise it shows a pending banner, missing-field guidance, and the Complete partner action. Proposal conversion remains blocked until the quotation is finalized, unexpired, approval-cleared, and linked to a compliant verified partner.
+
+## Printable output contract
+
+A generated printout is sourced from the current finalized quotation version and the active `OL_QUOTATION_PRINT` template version. Its context includes the prospect, agent, quote metadata, plan configurations, members, riders, configured benefits, financial totals, and installment schedules. Installment payout amounts use saved rating outputs when available; otherwise they are derived from the configured rate percentage and estimated maturity value rather than displaying an installment charge or raw rate as a currency amount. The generated document retains quotation, source-version, template, and template-version references for audit and reproducibility.

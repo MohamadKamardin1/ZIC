@@ -126,7 +126,7 @@ const NAV: NavItem[] = [
     { label: "Setup", icon: Settings, path: "/group-credit/setup" },
   ] },
   { label: "Front Office", icon: Building2, expandable: true, children: [
-    { label: "Receipts", icon: Banknote, path: "/front-office/receipts" },
+    { label: "Receipts", icon: Banknote, path: "/front-office/receipts", permission: { module: "front_office.receipts", action: "view" } },
     { label: "Commissions", icon: FileSpreadsheet, path: "/front-office/commissions" },
     { label: "Commission Statement", icon: FileText, path: "/front-office/commission-statements" },
     { label: "Requisitions", icon: FileText, path: "/front-office/requisitions" },
@@ -156,6 +156,7 @@ const NAV: NavItem[] = [
         ],
       },
       { label: "Reinsurance Parameters", icon: ShieldCheck, path: "/system-parameters/reinsurance" },
+      { label: "Document Branding", icon: FileText, path: "/system-parameters/documents/branding" },
     ],
   },
   {

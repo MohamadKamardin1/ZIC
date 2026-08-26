@@ -259,17 +259,20 @@ class QuotationService:
             and isinstance(underwriting_detail.declarations, dict)
             and underwriting_detail.declarations.get("confirmed") is True
         )
-        personal_details = bool(
-            quotation.quote_name
-            or quotation.identity_type
-            or quotation.identity_number
-            or quotation.date_of_birth
-            or quotation.partner_id
-            or quotation.linked_partner_id
-            or quotation.agent_id
-            or quotation.agent_partner_id
-            or quotation.address
-            or quotation.location
+        personal_details = all(
+            (
+                bool(quotation.quote_name),
+                bool(quotation.quote_date),
+                bool(quotation.identity_type),
+                bool(quotation.identity_number),
+                bool(quotation.date_of_birth),
+                bool(quotation.age_at_quote is not None),
+                bool(quotation.gender),
+                bool(quotation.smoker_status),
+                bool(quotation.location or quotation.location_master_id),
+                bool(quotation.agent_id or quotation.agent_partner_id),
+                bool(quotation.address),
+            )
         )
         financial = False
         if payment and underwriting:
@@ -288,6 +291,21 @@ class QuotationService:
             "7_financial_details": financial,
             "payment_details": payment,
             "underwriting": underwriting,
+        }
+
+    @staticmethod
+    def completion_payload(quotation):
+        """Return canonical wizard completion plus stable UI-friendly aliases."""
+        completion = QuotationService.wizard_completion(quotation)
+        return {
+            **completion,
+            "personal": completion["1_personal_details"],
+            "plans": completion["2_plan_and_sub_products"],
+            "members": completion["3_member_coverage"],
+            "installments": completion["4_installments"],
+            "funds": completion["5_investment_funds"],
+            "riders": completion["6_riders_and_benefits"],
+            "financial": completion["7_financial_details"],
         }
 
     @staticmethod
@@ -356,6 +374,30 @@ class QuotationService:
     @staticmethod
     def validate_wizard(quotation):
         errors = {}
+        missing_personal_fields = []
+        personal_requirements = (
+            ("quote_name", "Quote Name"),
+            ("quote_date", "Quote Date"),
+            ("identity_type", "Identity Type"),
+            ("identity_number", "Identity Number"),
+            ("date_of_birth", "Date of Birth"),
+            ("age_at_quote", "Age"),
+            ("gender", "Gender"),
+            ("smoker_status", "Smoker Status"),
+            ("location_master_id", "Location"),
+            ("agent_partner_id", "Agent"),
+            ("address", "Address"),
+        )
+        for field, label in personal_requirements:
+            value = getattr(quotation, field, None)
+            if value is None or (isinstance(value, str) and not value.strip()):
+                missing_personal_fields.append(label)
+        if missing_personal_fields:
+            errors["personal_details"] = (
+                "Complete Personal Details before finalizing. "
+                f"Still required: {', '.join(missing_personal_fields)}. "
+                "Return to Personal Details, enter each value, and save the step."
+            )
         if not (
             quotation.plan_configurations.filter(is_selected=True).exists()
             or quotation.products.filter(is_selected=True).exists()
@@ -2476,12 +2518,9 @@ class QuotationService:
                 partner_value = getattr(matching, partner_field, None)
                 if quotation_value and not partner_value:
                     missing_fields.append(partner_field)
-            if compliant and not missing_fields:
-                locked.partner = matching
-                locked.linked_partner = matching
-                locked.partner_verified = True
-            else:
-                locked.partner_verified = False
+            locked.partner = matching
+            locked.linked_partner = matching
+            locked.partner_verified = bool(compliant and not missing_fields)
         else:
             missing_fields = [
                 "identification_type",
@@ -2493,6 +2532,8 @@ class QuotationService:
                 "mobile_number",
                 "nationality",
             ]
+            locked.partner = None
+            locked.linked_partner = None
             locked.partner_verified = False
         locked.updated_by = QuotationService.actor(actor)
         locked.wizard_step_completion = QuotationService.wizard_completion(locked)

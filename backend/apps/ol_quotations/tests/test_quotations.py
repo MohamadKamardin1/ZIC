@@ -1,5 +1,7 @@
 from datetime import date, timedelta
 from decimal import Decimal
+from unittest import mock
+from urllib.parse import parse_qs, urlencode, urlparse
 
 from django.core.files.storage import default_storage
 from django.core.management import call_command
@@ -7,7 +9,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from apps.common.models import DomainEvent
-from apps.governance.models import AuditEvent
+from apps.governance.models import AuditEvent, AuditLog
 from apps.ol_parameters.models import (
     OLAnticipatedEndowmentInstallmentRate,
     OLBonusRate,
@@ -32,6 +34,7 @@ from apps.ol_quotations.models import (
     OLQuotationMember,
     OLQuotationRiderSelection,
     OLQuotationBenefit,
+    OLQuotationInstallmentRateRow,
     OLQuotationDocument,
     OLQuotationPrintTemplate,
     QuotationStatus,
@@ -43,6 +46,8 @@ from apps.system_parameters.models import SystemParameter
 from apps.system_parameters.services.config_service import ConfigurationService
 from apps.ordinary_life.models import OLPlan, OLProduct as LegacyOLProduct, OLProductVersion
 from apps.ol_proposals.models import OLProposal
+from apps.ol_quotations.services.document_service import QuotationDocumentService
+from apps.ol_quotations.services.print_ticket_service import PrintTicketService
 
 
 class OLQuotationAPITests(TestCase):
@@ -2306,6 +2311,47 @@ class OLQuotationAPITests(TestCase):
         self.assertEqual(calculation.status_code, 200, calculation.data)
         return draft
 
+    def test_finalize_requires_personal_details_before_finalization(self):
+        draft = self.create_draft()
+        self.populate_wizard(draft["id"])
+        response = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/finalize/",
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        errors = response.data["error"]["details"]["errors"]
+        self.assertIn("personal_details", errors)
+        self.assertIn("Quote Name", errors["personal_details"])
+        self.assertEqual(OLQuotation.objects.get(pk=draft["id"]).status, QuotationStatus.DRAFT)
+
+    def test_finalized_detail_returns_saved_quotation_aggregate_and_live_completion(self):
+        draft = self._prepare_finalizable_lifecycle_quotation("ID-OLQ-DETAIL-AGGREGATE")
+        finalized = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/finalize/",
+            {},
+            format="json",
+        )
+        self.assertEqual(finalized.status_code, 200, finalized.data)
+
+        response = self.client.get(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/"
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        data = response.data["data"]
+        self.assertEqual(data["quote_name"], "Amina Personal Details Quote")
+        self.assertEqual(data["identity_type"], "NIN")
+        self.assertEqual(data["identity_number"], "ID-OLQ-DETAIL-AGGREGATE")
+        self.assertIn("Quotation Location", data["location_display"])
+        self.assertIn("Amina Salim", data["agent_display"])
+        self.assertTrue(data["plan_configurations"])
+        self.assertTrue(data["members"])
+        self.assertTrue(data["installment_configurations"])
+        self.assertIsNotNone(data["financial_summary"])
+        self.assertTrue(data["wizard_step_completion"]["personal"])
+        self.assertTrue(data["wizard_step_completion"]["plans"])
+        self.assertTrue(data["wizard_step_completion"]["financial"])
+
     def test_finalize_requires_current_financial_details(self):
         draft = self.create_draft()
         personal = self.client.post(
@@ -2462,10 +2508,29 @@ class OLQuotationAPITests(TestCase):
         self.assertTrue(document.html_reference)
         quotation = OLQuotation.objects.get(pk=draft["id"])
         self.assertEqual(document.template.version, 2)
+        installment = quotation.installment_configurations.filter(is_selected=True).first()
+        self.assertIsNotNone(installment)
+        OLQuotationInstallmentRateRow.objects.create(
+            installment_configuration=installment,
+            sequence=1,
+            description="Maturity payout",
+            rate_percent=Decimal("100.0000"),
+            paid_up_rate=Decimal("0"),
+            period_from=1,
+            period_to=1,
+            rate=Decimal("100"),
+            charge=Decimal("0"),
+        )
+        financial_summary = quotation.financial_summary
+        financial_summary.estimated_maturity_value = Decimal("250000.00")
+        financial_summary.installment_payouts = []
+        financial_summary.save(update_fields=["estimated_maturity_value", "installment_payouts", "updated_at"])
+        document = QuotationDocumentService.generate(quotation=quotation, actor=self.admin)
         with default_storage.open(document.html_reference, "rb") as html_file:
             html = html_file.read().decode("utf-8")
         for section in ("ORDINARY LIFE QUOTATION", "Personal Details", "Quote Summary", "Quote Configurations", "Member Coverage Details", "Installment Payouts", "Terms and Conditions", "Prepared By:", "Official Stamp"):
             self.assertIn(section, html)
+        self.assertIn("TZS 250,000.00", html)
         if quotation.rider_selections.filter(is_selected=True).exists():
             self.assertIn("Additional Benefits", html)
 
@@ -2775,3 +2840,185 @@ class OLQuotationAPITests(TestCase):
 
 if __name__ == "__main__":
     pass
+
+
+class OLPrintTicketAPITests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        OLQuotationAPITests.setUpTestData.__func__(cls)
+
+    def setUp(self):
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin)
+
+    # Reuse the established quotation fixture helpers without inheriting the
+    # entire base test class and duplicating its unrelated test methods.
+    def create_draft(self, client=None, user=None):
+        return OLQuotationAPITests.create_draft(self, client=client, user=user)
+
+    def personal_details_payload(self, identity_number="ID-OLQ-0001", date_of_birth="1990-01-01"):
+        return OLQuotationAPITests.personal_details_payload(
+            self,
+            identity_number=identity_number,
+            date_of_birth=date_of_birth,
+        )
+
+    def populate_wizard(self, quotation_id):
+        return OLQuotationAPITests.populate_wizard(self, quotation_id)
+
+    def create_financial_rate(self, rate="10.00"):
+        return OLQuotationAPITests.create_financial_rate(self, rate=rate)
+
+    def calculate_financial_details(self, draft):
+        return OLQuotationAPITests.calculate_financial_details(self, draft)
+
+    def _prepare_finalizable_lifecycle_quotation(self, identity_number):
+        return OLQuotationAPITests._prepare_finalizable_lifecycle_quotation(self, identity_number)
+
+    def test_raw_unauthenticated_print_request_returns_bearer_401(self):
+        draft = self._prepare_finalizable_lifecycle_quotation("ID-OLQ-TICKET-001")
+        anonymous = APIClient()
+        response = anonymous.get(f"/api/v1/ol-quotations/quotations/{draft['id']}/print/")
+        self.assertEqual(response.status_code, 401, response.data)
+        self.assertTrue(response["WWW-Authenticate"].startswith("Bearer"))
+
+    def _generated_document(self, identifier="ID-OLQ-TICKET-002"):
+        draft = self._prepare_finalizable_lifecycle_quotation(identifier)
+        finalized = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/finalize/",
+            {},
+            format="json",
+        )
+        self.assertEqual(finalized.status_code, 200, finalized.data)
+        generated = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/print/",
+            {"preview": False},
+            format="json",
+        )
+        self.assertEqual(generated.status_code, 201, generated.data)
+        return draft, generated.data["data"]
+
+    def test_print_returns_short_lived_signed_urls_and_ticket_downloads_without_bearer(self):
+        draft, payload = self._generated_document()
+        self.assertTrue(payload["signed_download_url"])
+        self.assertTrue(payload["download_url_expires_at"])
+        self.assertIn("ticket=", payload["signed_download_url"])
+        self.assertNotIn("file_reference", payload)
+        self.assertNotIn("html_reference", payload)
+
+        parsed = urlparse(payload["signed_download_url"])
+        anonymous = APIClient()
+        protected_without_credentials = anonymous.get(
+            f"/api/v1/ol-quotations/documents/{payload['id']}/download/"
+        )
+        self.assertEqual(protected_without_credentials.status_code, 401)
+        self.assertTrue(protected_without_credentials["WWW-Authenticate"].startswith("Bearer"))
+
+        response = anonymous.get(f"{parsed.path}?{parsed.query}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertEqual(response["Cache-Control"], "private, no-store, max-age=0")
+        self.assertEqual(response["X-Content-Type-Options"], "nosniff")
+        self.assertIn(b"%PDF", b"".join(response.streaming_content))
+
+        bearer_response = self.client.get(f"/api/v1/ol-quotations/documents/{payload['id']}/download/")
+        self.assertEqual(bearer_response.status_code, 200)
+        self.assertEqual(bearer_response["Content-Type"], "application/pdf")
+
+        html_parsed = urlparse(payload["html_url"])
+        cross_format_response = APIClient().get(
+            f"/api/v1/ol-quotations/documents/{payload['id']}/html/?{parsed.query}"
+        )
+        self.assertEqual(cross_format_response.status_code, 403)
+        html_response = APIClient().get(f"{html_parsed.path}?{html_parsed.query}")
+        self.assertEqual(html_response.status_code, 200)
+        self.assertEqual(html_response["Content-Type"], "text/html; charset=utf-8")
+        self.assertIn(b"ORDINARY LIFE QUOTATION", b"".join(html_response.streaming_content))
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action="PRINT_TICKET_ISSUED",
+                object_id=str(payload["quotation_id"]),
+                source_channel="API",
+            ).exists()
+        )
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action="PRINT_TICKET_DOWNLOADED",
+                object_id=str(payload["quotation_id"]),
+                source_channel="API",
+            ).exists()
+        )
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action="PRINT_DOCUMENT_DOWNLOADED",
+                object_id=str(payload["quotation_id"]),
+                source_channel="API",
+            ).exists()
+        )
+
+    def test_tampered_ticket_is_rejected(self):
+        _draft, payload = self._generated_document("ID-OLQ-TICKET-003")
+        parsed = urlparse(payload["signed_download_url"])
+        ticket = parse_qs(parsed.query)["ticket"][0]
+        tampered = f"{ticket[:-1]}{'A' if ticket[-1] != 'A' else 'B'}"
+        response = APIClient().get(f"{parsed.path}?{urlencode({'ticket': tampered})}")
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("invalid", response.content.decode().lower())
+
+    def test_ticket_actor_binding_and_owner_permission_recheck(self):
+        _draft, payload = self._generated_document("ID-OLQ-TICKET-ACTOR")
+        parsed = urlparse(payload["signed_download_url"])
+        ticket_query = parsed.query
+
+        self.client.force_authenticate(self.viewer)
+        mismatch = self.client.get(f"{parsed.path}?{ticket_query}")
+        self.assertEqual(mismatch.status_code, 403)
+
+        self.admin.is_active = False
+        self.admin.save(update_fields=["is_active"])
+        owner_revoked = APIClient().get(f"{parsed.path}?{ticket_query}")
+        self.assertEqual(owner_revoked.status_code, 403)
+
+    def test_expired_ticket_is_rejected(self):
+        _draft, payload = self._generated_document("ID-OLQ-TICKET-004")
+        parsed = urlparse(payload["signed_download_url"])
+        ticket = parse_qs(parsed.query)["ticket"][0]
+        with mock.patch.object(PrintTicketService, "MAX_AGE_SECONDS", -1):
+            response = APIClient().get(f"{parsed.path}?{urlencode({'ticket': ticket})}")
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("expired", response.content.decode().lower())
+
+    def test_all_registered_print_routes_have_authentication_and_permission_classes(self):
+        from django.urls import URLPattern, URLResolver, get_resolver, reverse
+        from rest_framework.settings import api_settings
+
+        def patterns(items):
+            for item in items:
+                if isinstance(item, URLResolver):
+                    yield from patterns(item.url_patterns)
+                elif isinstance(item, URLPattern):
+                    route = str(item.pattern)
+                    if "print" in route.lower():
+                        yield item
+
+        document_id = "11111111-1111-4111-8111-111111111111"
+        self.assertEqual(
+            reverse("v1:ol-quotation-document-download", kwargs={"pk": document_id}),
+            f"/api/v1/ol-quotations/documents/{document_id}/download/",
+        )
+        self.assertEqual(
+            reverse("v1:ol-quotation-document-html", kwargs={"pk": document_id}),
+            f"/api/v1/ol-quotations/documents/{document_id}/html/",
+        )
+
+        routes = list(patterns(get_resolver().url_patterns))
+        self.assertTrue(routes)
+        for route in routes:
+            callback = route.callback
+            view_class = getattr(callback, "cls", None)
+            self.assertIsNotNone(view_class, route)
+            self.assertTrue(getattr(view_class, "permission_classes", None), route)
+            self.assertTrue(
+                getattr(view_class, "authentication_classes", api_settings.DEFAULT_AUTHENTICATION_CLASSES),
+                route,
+            )

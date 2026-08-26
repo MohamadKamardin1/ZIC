@@ -43,6 +43,8 @@ type QuickCreateModalProps = {
   permissionCode?: string
   manageHref?: string
   parameterScreenLabel?: string
+  schemaUrl?: string
+  createUrl?: string
   onClose: () => void
   onCreated: (option: QuickCreateOption) => void
 }
@@ -95,7 +97,7 @@ function initialValues(schema: QuickCreateSchema): Record<string, string | numbe
   return values
 }
 
-export function QuickCreateModal({ open, entity, entityLabel = entity, permissionCode, manageHref, parameterScreenLabel, onClose, onCreated }: QuickCreateModalProps) {
+export function QuickCreateModal({ open, entity, entityLabel = entity, permissionCode, manageHref, parameterScreenLabel, schemaUrl, createUrl, onClose, onCreated }: QuickCreateModalProps) {
   const { access } = useAccess()
   const formId = `quick-create-form-${useId().replace(/:/g, "")}`
   const [values, setValues] = useState<Record<string, string | number | boolean>>({})
@@ -110,8 +112,8 @@ export function QuickCreateModal({ open, entity, entityLabel = entity, permissio
   const resolvedParameterScreenLabel = parameterScreenLabel ?? OPTION_PARAMETER_SCREEN_LABELS[entity] ?? prettifyOptionEntity(entity)
 
   const schemaQuery = useQuery({
-    queryKey: ["ol-option-quick-create-schema", entity],
-    queryFn: () => request<QuickCreateSchema>(`/api/v1/ol/options/${encodeURIComponent(entity)}/quick-create-schema/`),
+    queryKey: ["ol-option-quick-create-schema", entity, schemaUrl ?? ""],
+    queryFn: () => request<QuickCreateSchema>(schemaUrl ?? `/api/v1/ol/options/${encodeURIComponent(entity)}/quick-create-schema/`),
     enabled: open,
     staleTime: 5 * 60_000,
   })
@@ -145,7 +147,7 @@ export function QuickCreateModal({ open, entity, entityLabel = entity, permissio
     setFieldErrors({})
     setSubmitError("")
     try {
-      const payload = await request<unknown>(`/api/v1/ol/options/${encodeURIComponent(entity)}/quick-create/`, {
+      const payload = await request<unknown>(createUrl ?? `/api/v1/ol/options/${encodeURIComponent(entity)}/quick-create/`, {
         method: "POST",
         body: JSON.stringify(values),
       })
@@ -190,7 +192,7 @@ export function QuickCreateModal({ open, entity, entityLabel = entity, permissio
   const nestedLabel = nestedField ? prettifyField(nestedField.nested_entity ?? nestedField.nestedEntity ?? nestedField.quick_create_entity ?? nestedField.quickCreateEntity ?? "option") : "option"
 
   return <>
-    <Modal open={open} title={title} description="Create a reference option without leaving the current form." onClose={onClose} size="lg" footer={<><button type="button" className="button-secondary" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" form={formId} className="button-primary" disabled={saving || schemaQuery.isLoading || !schema || !allowed}>{saving ? "Creating…" : "Create option"}</button></>}>
+          <Modal open={open} title={title} description="Create a reference option without leaving the current form." onClose={onClose} size="lg" footer={<><button type="button" className="button-secondary" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" form={formId} className="button-primary" disabled={saving || schemaQuery.isLoading || !schema || !allowed}>{saving ? "Creating…" : "Create option"}</button></>}>
       {!allowed && <div className="rounded-[10px] border border-[var(--destructive)]/30 bg-[var(--destructive)]/10 p-3 text-sm text-[var(--destructive)]" role="alert">You do not have permission to create this option.</div>}
       {allowed && schemaQuery.isLoading && <div className="flex items-center justify-center gap-2 py-8 text-sm text-[var(--muted-foreground)]" role="status"><Loader2 size={16} className="animate-spin" aria-hidden="true" /> Loading quick-create fields…</div>}
       {allowed && schemaQuery.isError && <div className="rounded-[10px] border border-[var(--destructive)]/30 bg-[var(--destructive)]/10 p-3 text-sm text-[var(--destructive)]" role="alert">Unable to load the quick-create schema.</div>}

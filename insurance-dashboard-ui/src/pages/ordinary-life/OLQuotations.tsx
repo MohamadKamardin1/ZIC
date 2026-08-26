@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import { FilePlus2 } from "lucide-react"
 import { buildTableQuery, request, type TableQuery } from "../../lib/apiClient"
+import { DocumentInstancesPanel } from "../../components/documents/DocumentInstancesPanel"
 import { useAccess } from "../../lib/access"
 import { DataTable, normalizeTableResponse } from "../../components/ui/DataTable"
 import { FilterBar, type FilterValues } from "../../components/ui/FilterBar"
@@ -162,6 +163,7 @@ export default function OLQuotations() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [confirm, setConfirm] = useState<ConfirmState>(null)
   const [busy, setBusy] = useState(false)
+  const [documentTarget, setDocumentTarget] = useState<QuotationRecord | null>(null)
 
   const permissionKeys = useMemo(() => access.permissions.map((permission) => `${permission.module}.${permission.action}`.toLowerCase()), [access.permissions])
   const hasPermission = useCallback((permission: string) => {
@@ -221,15 +223,19 @@ export default function OLQuotations() {
     } finally { setBusy(false) }
   }, [confirm, toast])
 
+  const printQuotation = useCallback((row: QuotationRecord) => {
+    setDocumentTarget(row)
+  }, [])
+
   const actions: RowAction<QuotationRecord>[] = useMemo(() => [
     { key: "view", label: "View", onSelect: (row) => navigate(`/ordinary-life/quotations/${row.id}`) },
     { key: "edit", label: "Edit", onSelect: (row) => navigate(`/ordinary-life/quotations/${row.id}/edit`) },
     { key: "revise", label: "Revise", onSelect: (row) => setConfirm({ kind: "revise", row }) },
     { key: "finalize", label: "Finalize", onSelect: (row) => setConfirm({ kind: "finalize", row }) },
-    { key: "print", label: "Print", onSelect: (row) => { const url = actionPath(row, "print", "/print/"); window.open(url, "_blank", "noopener,noreferrer") } },
+    { key: "print", label: "Print", onSelect: (row) => { void printQuotation(row) } },
     { key: "convert_to_proposal", label: "Convert to Proposal", onSelect: (row) => setConfirm({ kind: "convert", row }) },
     { key: "delete", label: "Delete", tone: "danger", onSelect: (row) => setConfirm({ kind: "delete", row }) },
-  ], [navigate])
+  ], [navigate, printQuotation])
 
   const canAction = useCallback((action: RowAction<QuotationRecord>, row: QuotationRecord) => {
     const key = action.key as ActionKey
@@ -261,6 +267,7 @@ export default function OLQuotations() {
   }
 
   return <div className="space-y-5 p-4 md:p-6">
+    {documentTarget && <DocumentInstancesPanel sourceType="ol_quotations.olquotation" objectId={documentTarget.id} documentType="OL_QUOTATION" title={`Quotation documents · ${documentTarget.quote_number}`} renderLabel="Generate quotation PDF" />}
     <MasterDetailPage
       eyebrow="Ordinary Life"
       title="Quotations"
@@ -274,7 +281,8 @@ export default function OLQuotations() {
         </div>
         <FilterBar definitions={filterDefinitions} value={filters} onChange={(key, value) => setFilters((current) => ({ ...current, [key]: value }))} onReset={() => setFilters({})} />
       </div>
-      <DataTable<QuotationRecord>
+            <DataTable<QuotationRecord>
+
         metadata={{ columns, defaultOrdering: "-quote_date", pageSize: 20, totalLabel: "Quotations" } satisfies TableMetadata<QuotationRecord>}
         fetcher={fetcher}
         filters={filters}

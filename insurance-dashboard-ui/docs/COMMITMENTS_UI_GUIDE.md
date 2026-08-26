@@ -37,3 +37,9 @@ Applies to the Ordinary Life Commitments module UI (frontend). Companion backend
 ## E2E
 
 `e2e/ol-commitments.spec.ts` covers list KPIs/filters/chips/export, generation dry-run + execute, PARAMETER_MISSING deep link, import dry-run errors + commit, detail tabs + payment, overpayment ErrorCoach, invalid-transition ErrorCoach, overdue processing + bell deep link, and portal read-only scoping (API-mocked, no backend required).
+
+## Commitment Statement documents
+
+The commitment detail page exposes a **Documents** tab backed by the unified document engine. Select **Generate commitment PDF** to create a new immutable document instance. Each row displays the template name, version, generated-by name, generation time, and page count. **Preview** fetches the PDF through the authenticated document client and displays a blob-backed iframe. **Download** also uses the authenticated client. **Open in new tab** is permitted only for the short-lived signed ticket returned by the server.
+
+Protected API URLs must not be opened directly with `window.open`, an iframe source, or a raw anchor. If the access token expires during preview or download, the client refreshes once and retries. After a failed retry, the page shows **Session expired — sign in again**. For `TEMPLATE_PENDING`, `PARAMETER_MISSING`, or `BRANDING_NOT_CONFIGURED`, use the ErrorCoach action to open **System Parameters → Document Branding**, correct the configuration, and retry. A ticket that expires or is tampered with must be replaced by generating a fresh link from the Documents tab.

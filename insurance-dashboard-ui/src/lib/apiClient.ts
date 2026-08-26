@@ -1,3 +1,5 @@
+import { apiFetchAuth } from "./api"
+
 export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? import.meta.env.VITE_API_BASE ?? "").replace(/\/$/, "")
 
 export type QueryValue = string | number | boolean | null | undefined
@@ -10,6 +12,8 @@ export interface NormalizedApiErrorShape {
   fieldErrors: Record<string, string[]>
   correlationId?: string
   details?: unknown
+  resolutionSteps?: string[]
+  deepLink?: string
 }
 
 export class ApiClientError extends Error implements NormalizedApiErrorShape {
@@ -18,6 +22,8 @@ export class ApiClientError extends Error implements NormalizedApiErrorShape {
   fieldErrors: Record<string, string[]>
   correlationId?: string
   details?: unknown
+  resolutionSteps?: string[]
+  deepLink?: string
 
   constructor(error: NormalizedApiErrorShape) {
     super(error.message)
@@ -27,6 +33,8 @@ export class ApiClientError extends Error implements NormalizedApiErrorShape {
     this.fieldErrors = error.fieldErrors
     this.correlationId = error.correlationId
     this.details = error.details
+    this.resolutionSteps = error.resolutionSteps
+    this.deepLink = error.deepLink
   }
 }
 
@@ -111,10 +119,20 @@ export async function normalizeResponseError(response: Response): Promise<ApiCli
           : Object.values(fieldErrors).flat()[0] ?? `Request failed (${response.status}).`
   const code = typeof envelopeError.code === "string"
     ? envelopeError.code
-    : typeof bodyRecord.code === "string"
-      ? bodyRecord.code
-      : typeof record.code === "string" ? record.code : `HTTP_${response.status}`
-  return new ApiClientError({ status: response.status, code, message, fieldErrors, correlationId, details: body })
+    : typeof envelopeError.errorCode === "string"
+      ? envelopeError.errorCode
+      : typeof bodyRecord.code === "string"
+        ? bodyRecord.code
+        : typeof bodyRecord.errorCode === "string"
+          ? bodyRecord.errorCode
+          : typeof record.code === "string"
+            ? record.code
+            : typeof record.errorCode === "string" ? record.errorCode : `HTTP_${response.status}`
+  const rawResolutionSteps = envelopeError.resolutionSteps ?? bodyRecord.resolutionSteps ?? record.resolutionSteps
+  const resolutionSteps = Array.isArray(rawResolutionSteps) ? rawResolutionSteps.filter((step): step is string => typeof step === "string") : undefined
+  const rawDeepLink = envelopeError.deepLink ?? bodyRecord.deepLink ?? record.deepLink
+  const deepLink = typeof rawDeepLink === "string" ? rawDeepLink : undefined
+  return new ApiClientError({ status: response.status, code, message, fieldErrors, correlationId, details: body, resolutionSteps, deepLink })
 }
 
 export interface ApiRequestOptions extends RequestInit {
@@ -125,14 +143,22 @@ export interface ApiRequestOptions extends RequestInit {
 export async function request<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const headers = new Headers(options.headers)
   headers.set("Accept", "application/json")
-  if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json")
+  if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) headers.set("Content-Type", "application/json")
   const correlationId = options.correlationId ?? createCorrelationId()
   headers.set("X-Correlation-ID", correlationId)
 
-  const token = options.skipAuth ? null : (localStorage.getItem("aims_access_token") ?? sessionStorage.getItem("aims_access_token"))
-  if (token) headers.set("Authorization", `Bearer ${token}`)
-
-  const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers })
+  const { skipAuth, correlationId: _ignoredCorrelationId, ...fetchOptions } = options
+  let response: Response
+  try {
+    response = skipAuth
+      ? await fetch(`${API_BASE_URL}${path}`, { ...fetchOptions, headers })
+      : await apiFetchAuth(path, { ...fetchOptions, headers })
+  } catch (error) {
+    if (error && typeof error === "object" && (error as { status?: unknown }).status === 401) {
+      throw new ApiClientError({ status: 401, code: "AUTHENTICATION_REQUIRED", message: "Session expired — sign in again", fieldErrors: {}, details: error })
+    }
+    throw error
+  }
   if (!response.ok) throw await normalizeResponseError(response)
   if (response.status === 204) return undefined as T
   const payload = await response.json()

@@ -95,6 +95,10 @@ interface ApiError {
   message: string
 }
 
+function resolveApiUrl(path: string): string {
+  return /^https?:\/\//i.test(path) ? path : `${API_BASE}${path}`
+}
+
 async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers)
   headers.set("Content-Type", "application/json")
@@ -108,7 +112,7 @@ async function apiFetch(path: string, init: RequestInit = {}): Promise<Response>
     console.warn(`[apiFetch] ${init.method ?? "GET"} ${path} — NO token in sessionStorage`)
   }
 
-  const res = await fetch(`${API_BASE}${path}`, { ...init, headers })
+  const res = await fetch(resolveApiUrl(path), { ...init, headers })
   if (!res.ok) console.warn(`[apiFetch] ${path} → ${res.status}`)
   return res
 }
@@ -606,6 +610,35 @@ export async function listProposalNotifications(): Promise<DashboardNotification
       isRead: false,
       createdAt: String(item.created_at ?? item.createdAt ?? ""),
       deepLink: typeof item.deep_link === "string" ? item.deep_link : "/ordinary-life/proposals",
+    }
+  })
+}
+
+export async function listReceiptNotifications(): Promise<DashboardNotificationRecord[]> {
+  const res = await apiFetchAuth("/api/v1/front-office/receipts/notifications/")
+  const json = await res.json().catch(() => null)
+  if (!res.ok) throw new Error(extractError(res, json))
+  const record = json && typeof json === "object" ? (json as Record<string, unknown>) : {}
+  const results = Array.isArray(record.results)
+    ? record.results
+    : record.data && typeof record.data === "object" && Array.isArray((record.data as { results?: unknown }).results)
+      ? (record.data as { results: unknown[] }).results
+      : []
+  return results.map((raw) => {
+    const item = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}
+    const deepLink = typeof item.deep_link === "string" ? item.deep_link : typeof item.deepLink === "string" ? item.deepLink : "/front-office/receipts"
+    return {
+      id: String(item.id ?? ""),
+      kind: "front-office-receipts",
+      title: String(item.title ?? "Receipt update"),
+      message: String(item.message ?? ""),
+      status: String(item.status ?? "UNREAD"),
+      route: deepLink,
+      entityType: "Receipt",
+      entityId: String(item.receipt_id ?? item.entity_id ?? item.id ?? ""),
+      isRead: Boolean(item.is_read ?? item.isRead ?? false),
+      createdAt: String(item.created_at ?? item.createdAt ?? ""),
+      deepLink,
     }
   })
 }

@@ -245,6 +245,99 @@ export async function mockDropdownQuickCreateApi(page: Page) {
   })
 }
 
+export async function mockCommitmentPrintApi(page: Page) {
+  const detail = {
+    id: "c-1",
+    commitmentNumber: "OLC-2026-00001",
+    sourceType: "POLICY",
+    sourceReference: "POL-2026-0001",
+    partnerName: "Zanzibar Trading Co.",
+    productName: "Family Protection",
+    planName: "Standard",
+    currency: "TZS",
+    premiumFrequency: "MONTHLY",
+    installmentNumber: 7,
+    installmentCount: 120,
+    dueDate: "2026-08-29",
+    premiumAmount: "100000.00",
+    amountPaid: "40000.00",
+    balance: "60000.00",
+    status: "PARTIALLY_PAID",
+    graceDate: "2026-09-28",
+    lapseDate: "2026-10-18",
+    graceDays: 30,
+    statusHistory: [],
+    allocations: [],
+    notificationLogs: [],
+  }
+  await page.route("**/api/v1/ol-commitments/**", async (route) => {
+    const url = new URL(route.request().url())
+    const path = url.pathname
+    if (path.includes("/c-1/")) {
+      await route.fulfill({ json: { data: detail } })
+      return
+    }
+    if (path.endsWith("/commitments/")) {
+      await route.fulfill({ json: { data: { count: 1, results: [detail], next: null, previous: null } } })
+      return
+    }
+    await route.fulfill({ json: { data: { count: 0, results: [] } } })
+  })
+}
+
+export async function mockUnifiedDocumentApi(page: Page, options: { expireFirstDownload?: boolean } = {}) {
+  let firstDownloadExpired = false
+  let refreshCalls = 0
+  const records = {
+    OL_QUOTATION: { id: "document-quote-1", document_type: "OL_QUOTATION", template_name: "Ordinary Life Quotation", template_version: 1, generated_by_display: "ZIC Superadmin", generated_at: "2026-08-19T10:05:00Z", page_count: 2, signed_download_url: "/api/v1/documents/instances/document-quote-1/download/?ticket=quote-ticket" },
+    PROPOSAL_SUMMARY: { id: "document-proposal-1", document_type: "PROPOSAL_SUMMARY", template_name: "Proposal Summary", template_version: 1, generated_by_display: "ZIC Superadmin", generated_at: "2026-08-19T10:06:00Z", page_count: 1, signed_download_url: "/api/v1/documents/instances/document-proposal-1/download/?ticket=proposal-ticket" },
+    COMMITMENT_STATEMENT: { id: "document-commitment-1", document_type: "COMMITMENT_STATEMENT", template_name: "Commitment Statement", template_version: 1, generated_by_display: "ZIC Superadmin", generated_at: "2026-08-19T10:07:00Z", page_count: 1, signed_download_url: "/api/v1/documents/instances/document-commitment-1/download/?ticket=commitment-ticket" },
+  }
+
+  await page.route("**/api/v1/auth/refresh/**", async (route) => {
+    refreshCalls += 1
+    await route.fulfill({ json: { data: { access: "e2e-refreshed-access-token", refresh: "e2e-refreshed-refresh-token" } } })
+  })
+
+  await page.route("**/api/v1/documents/**", async (route) => {
+    const url = new URL(route.request().url())
+    const path = url.pathname
+    if (path.endsWith("/download/")) {
+      if (options.expireFirstDownload && !firstDownloadExpired) {
+        firstDownloadExpired = true
+        await route.fulfill({ status: 401, json: { detail: "Authentication credentials were not provided" } })
+        return
+      }
+      await route.fulfill({ status: 200, contentType: "application/pdf", headers: { "Content-Disposition": "inline; filename=document.pdf" }, body: "%PDF-1.7\n1 0 obj\n<<>>\nendobj\n%%EOF" })
+      return
+    }
+    if (path.endsWith("/instances/")) {
+      const sourceType = url.searchParams.get("source_type") ?? ""
+      const documentType = sourceType.includes("proposal") ? "PROPOSAL_SUMMARY" : sourceType.includes("commitment") ? "COMMITMENT_STATEMENT" : "OL_QUOTATION"
+      await route.fulfill({ json: { data: { count: 1, page: 1, page_size: 50, results: [records[documentType]] } } })
+      return
+    }
+    if (path.includes("/render/") && route.request().method() === "POST") {
+      const documentType = path.split("/").filter(Boolean).at(-2) as keyof typeof records
+      await route.fulfill({ status: 201, json: { data: records[documentType] ?? records.OL_QUOTATION } })
+      return
+    }
+    await route.fulfill({ json: { data: {} } })
+  })
+
+  const proposal = { id: "proposal-1", proposal_number: "OLP-E2E-0001", quotation_number: "Q-E2E-0001", underwriting_status: "READY", status: "ACTIVE", created_at: "2026-08-19T10:00:00Z" }
+  const proposalListResponse = { data: { count: 1, results: [proposal] } }
+  const proposalDetailResponse = { data: proposal }
+  const proposalHandler = async (route: import("@playwright/test").Route) => {
+    const path = new URL(route.request().url()).pathname
+    await route.fulfill({ json: path.endsWith("/proposals/") ? proposalListResponse : proposalDetailResponse })
+  }
+  await page.route("**/api/v1/ordinary-life/core/proposals/**", proposalHandler)
+  await page.route("**/api/v1/ol-proposals/proposals/**", proposalHandler)
+
+  return { getRefreshCalls: () => refreshCalls }
+}
+
 export async function mockParameterApi(page: Page) {
   await page.route("**/api/v1/ol-parameters/**", async (route) => {
     const method = route.request().method()

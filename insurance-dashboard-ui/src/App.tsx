@@ -34,6 +34,7 @@ import PartnerSchedules from "./pages/system-parameters/PartnerSchedules"
 import UserParameters from "./pages/system-parameters/UserParameters"
 import PasswordPolicy from "./pages/system-parameters/PasswordPolicy"
 import ReinsuranceParameters from "./pages/system-parameters/ReinsuranceParameters"
+import DocumentBranding from "./pages/system-parameters/DocumentBranding"
 import PermissionGroups from "./pages/user-management/PermissionGroups"
 import Permissions from "./pages/user-management/Permissions"
 import UserGroups from "./pages/user-management/UserGroups"
@@ -82,6 +83,10 @@ import GCClaims from "./pages/group-credit/GCClaims"
 import GCMedicalUW from "./pages/group-credit/GCMedicalUW"
 import GCRenewals from "./pages/group-credit/GCRenewals"
 import FOReceipts from "./pages/front-office/FOReceipts"
+import FOReceiptForm from "./pages/front-office/FOReceiptForm"
+import FOReceiptDetail from "./pages/front-office/FOReceiptDetail"
+import FOReceiptImports from "./pages/front-office/FOReceiptImports"
+import { PortalReceiptDetail, PortalReceipts } from "./pages/portal/PortalReceipts"
 import FOCommissions from "./pages/front-office/FOCommissions"
 import FOCommissionStatements from "./pages/front-office/FOCommissionStatements"
 import FORequisitions from "./pages/front-office/FORequisitions"
@@ -148,6 +153,7 @@ export default function App() {
         <Route path="system-parameters/users" element={<UserParameters />} />
         <Route path="system-parameters/users/password-policy" element={<PasswordPolicy />} />
         <Route path="system-parameters/reinsurance" element={<ReinsuranceParameters />} />
+        <Route path="system-parameters/documents/branding" element={<RequirePermission permission="system_parameters.manage"><DocumentBranding /></RequirePermission>} />
         <Route path="user-management/permission-groups" element={<PermissionGroups />} />
         <Route path="user-management/permissions" element={<Permissions />} />
         <Route path="user-management/user-groups" element={<UserGroups />} />
@@ -218,6 +224,22 @@ export default function App() {
         <Route path="ordinary-life/approvals" element={<OLApprovals />} />
         <Route path="ordinary-life/audit-history" element={<OLAuditHistory />} />
         <Route
+          path="portal/receipts"
+          element={
+            <RequirePermission permission="front_office.receipts.view">
+              <PortalReceipts />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="portal/receipts/:id"
+          element={
+            <RequirePermission permission="front_office.receipts.view">
+              <PortalReceiptDetail />
+            </RequirePermission>
+          }
+        />
+        <Route
           path="portal/commitments"
           element={
             <RequirePermission permission="ol_commitments.view">
@@ -261,7 +283,20 @@ export default function App() {
         <Route path="group-credit/borrowers" element={<GCBorrowers />} />
         <Route path="group-credit/claims" element={<GCClaims />} />
         <Route path="group-credit/medical-uw" element={<GCMedicalUW />} />
-        <Route path="front-office/receipts" element={<FOReceipts />} />
+        <Route path="front-office/receipts/imports" element={<RequirePermission permission="front_office.receipts.import"><AccessGate><FOReceiptImports /></AccessGate></RequirePermission>} />
+        <Route path="front-office/receipts/new" element={<RequirePermission permission="front_office.receipts.create"><AccessGate><FOReceiptForm /></AccessGate></RequirePermission>} />
+        <Route path="front-office/receipts/:id/edit" element={<RequirePermission permission="front_office.receipts.view"><AccessGate><FOReceiptForm /></AccessGate></RequirePermission>} />
+        <Route path="front-office/receipts/:id" element={<RequirePermission permission="front_office.receipts.view"><AccessGate><FOReceiptDetail /></AccessGate></RequirePermission>} />
+        <Route
+          path="front-office/receipts"
+          element={
+            <RequirePermission permission="front_office.receipts.view">
+              <AccessGate>
+                <FOReceipts />
+              </AccessGate>
+            </RequirePermission>
+          }
+        />
         <Route path="front-office/commissions" element={<FOCommissions />} />
         <Route path="front-office/commission-statements" element={<FOCommissionStatements />} />
         <Route path="front-office/requisitions" element={<FORequisitions />} />

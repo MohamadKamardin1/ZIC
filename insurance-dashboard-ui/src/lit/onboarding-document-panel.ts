@@ -1,5 +1,6 @@
 import { LitElement, css, html } from "lit"
 import { customElement, property, state } from "lit/decorators.js"
+import { AuthenticatedDocumentError, openAuthenticatedDocument } from "../lib/documentClient"
 
 interface OnboardingDocumentRecord {
   id?: string
@@ -25,6 +26,8 @@ export class OnboardingDocumentPanel extends LitElement {
   @property({ type: Boolean }) uploading = false
   @property({ type: String }) emptyLabel = "No documents have been uploaded."
   @state() private selectedType = ""
+  @state() private viewError = ""
+  @state() private viewRequiresLogin = false
 
   static styles = css`
     :host { display: block; font-family: var(--font-sans, Inter, sans-serif); color: var(--foreground, #0f172a); }
@@ -50,11 +53,26 @@ export class OnboardingDocumentPanel extends LitElement {
     .badge.ok { background: var(--color-bg-success-soft, #f0fdf4); color: var(--color-feedback-success, #15803d); }
     .actions { display: flex; gap: 6px; }
     .empty { padding: 24px 0; text-align: center; color: var(--muted-foreground, #64748b); font-size: 12px; }
+    .document-error { margin-bottom: 12px; padding: 10px 12px; border: 1px solid #fecaca; border-radius: 8px; background: #fef2f2; color: #991b1b; font-size: 12px; }
+    .document-error a { margin-left: 6px; font-weight: 700; text-decoration: underline; }
     @media (max-width: 640px) { .row { grid-template-columns: 1fr; gap: 8px; } .actions { justify-content: flex-start; } }
   `
 
   private dispatch(name: string, detail: Record<string, unknown>) {
     this.dispatchEvent(new CustomEvent(name, { detail, bubbles: true, composed: true }))
+  }
+
+  private async viewDocument(url: string) {
+    try {
+      await openAuthenticatedDocument(url, { mode: "preview" })
+      this.viewError = ""
+      this.viewRequiresLogin = false
+    } catch (error) {
+      const authError = error instanceof AuthenticatedDocumentError ? error : undefined
+      this.viewError = authError?.message || "The document could not be opened. Please try again."
+      this.viewRequiresLogin = Boolean(authError?.requiresLogin)
+      this.dispatch("onboarding-document-error", { message: this.viewError, requiresLogin: this.viewRequiresLogin, loginUrl: authError?.loginUrl })
+    }
   }
 
   private onFileSelected(event: Event) {
@@ -70,6 +88,7 @@ export class OnboardingDocumentPanel extends LitElement {
     return html`
       <section class="shell" aria-label="Application documents">
         <div class="header"><div><h3>Required documents</h3><p class="sub">Keep identity, registration, and compliance evidence current.</p></div><strong>${this.documents.length}</strong></div>
+        ${this.viewError ? html`<div class="document-error" role="alert">${this.viewError}${this.viewRequiresLogin ? html` <a href="/login">Sign in again</a>` : ""}</div>` : ""}
         ${this.canUpload ? html`<div class="upload">
           <select aria-label="Document type" .value=${this.selectedType} @change=${(event: Event) => { this.selectedType = (event.target as HTMLSelectElement).value }}>
             <option value="">Select document type</option>
@@ -81,7 +100,7 @@ export class OnboardingDocumentPanel extends LitElement {
         ${this.documents.length === 0 ? html`<div class="empty">${this.emptyLabel}</div>` : this.documents.map((document) => html`
           <div class="row">
             <div><div class="name" title=${document.documentName || "Document"}>${document.documentName || "Untitled document"}</div><div class="meta"><span>${titleize(document.documentType || "Document")}</span><span>·</span><span>${document.mimeType || "File"}</span><span class="badge ${document.isVerified ? "ok" : ""}">${document.isVerified ? "Verified" : "Pending verification"}</span></div></div>
-            <div class="actions">${document.file ? html`<a class="choose" href=${document.file} target="_blank" rel="noreferrer">View</a>` : ""}${this.canVerify && !document.isVerified ? html`<button class="verify" @click=${() => this.dispatch("onboarding-document-action", { action: "verify", document })}>Verify</button>` : ""}<button class="danger" @click=${() => this.dispatch("onboarding-document-action", { action: "delete", document })}>Remove</button></div>
+            <div class="actions">${document.file ? html`<button class="choose" type="button" @click=${() => void this.viewDocument(document.file!)}>View</button>` : ""}${this.canVerify && !document.isVerified ? html`<button class="verify" @click=${() => this.dispatch("onboarding-document-action", { action: "verify", document })}>Verify</button>` : ""}<button class="danger" @click=${() => this.dispatch("onboarding-document-action", { action: "delete", document })}>Remove</button></div>
           </div>
         `)}
       </section>

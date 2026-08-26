@@ -28,6 +28,7 @@ api_v1_patterns = [
     path('dashboard/', include('apps.dashboard.urls')),
     path('system-parameters/', include('apps.system_parameters.urls')),
     path('governance/', include('apps.governance.urls')),
+    path('documents/', include('apps.documents.urls')),
     path('ai/', include('apps.ai_assistant.urls')),
     path('group-life/', include('apps.group_life.urls')),
     path('ordinary-life/', include('apps.ordinary_life.urls')),
@@ -39,8 +40,8 @@ api_v1_patterns = [
     path('ol/proposals/', include('apps.ol_proposals.conversion_urls')),
     path('ol-proposals/', include('apps.ol_proposals.urls')),
     path('ol-commitments/', include('apps.ol_commitments.urls')),
-    path('ol-quotations/', include('apps.ol_quotations.urls')),
     path('ol/quotations/', include('apps.ol_quotations.urls')),
+    path('ol-quotations/', include('apps.ol_quotations.urls')),
     path('group-credit/', include('apps.group_credit.urls')),
     path('front-office/', include('apps.front_office.urls')),
 ]

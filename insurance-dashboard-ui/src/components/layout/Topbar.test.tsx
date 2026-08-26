@@ -3,10 +3,11 @@ import { MemoryRouter } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { Topbar } from "./Topbar"
 
-const { listDashboardMock, listOverdueMock, listProposalNoticeMock, markReadMock, markAllMock, searchMock, navigateMock } = vi.hoisted(() => ({
+const { listDashboardMock, listOverdueMock, listProposalNoticeMock, listReceiptNoticeMock, markReadMock, markAllMock, searchMock, navigateMock } = vi.hoisted(() => ({
   listDashboardMock: vi.fn(),
   listOverdueMock: vi.fn(),
   listProposalNoticeMock: vi.fn(),
+  listReceiptNoticeMock: vi.fn(),
   markReadMock: vi.fn(),
   markAllMock: vi.fn(),
   searchMock: vi.fn(),
@@ -22,6 +23,7 @@ vi.mock("../../lib/api", () => ({
   listDashboardNotifications: listDashboardMock,
   listCommitmentOverdueNotifications: listOverdueMock,
   listProposalNotifications: listProposalNoticeMock,
+  listReceiptNotifications: listReceiptNoticeMock,
   markDashboardNotificationRead: markReadMock,
   markAllDashboardNotificationsRead: markAllMock,
   searchDashboard: searchMock,
@@ -55,6 +57,7 @@ beforeEach(() => {
   listDashboardMock.mockReset()
   listOverdueMock.mockReset()
   listProposalNoticeMock.mockReset()
+  listReceiptNoticeMock.mockReset()
   markReadMock.mockReset()
   markAllMock.mockReset()
   searchMock.mockReset()
@@ -62,6 +65,7 @@ beforeEach(() => {
   listDashboardMock.mockResolvedValue([DASH_NOTICE])
   listOverdueMock.mockResolvedValue([OVERDUE_NOTICE])
   listProposalNoticeMock.mockResolvedValue([])
+  listReceiptNoticeMock.mockResolvedValue([])
   searchMock.mockResolvedValue([])
 })
 
@@ -77,6 +81,32 @@ describe("Topbar bell notification center integration", () => {
 
     fireEvent.click(item)
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/ordinary-life/commitments/9"))
+  })
+
+  it("surfaces receipt lifecycle notifications with deep links that navigate", async () => {
+    listReceiptNoticeMock.mockResolvedValue([
+      {
+        id: "receipt-event-1",
+        kind: "front-office-receipts",
+        title: "Receipt RCT-2026-000001 posted",
+        message: "The receipt is ready for allocation.",
+        status: "UNREAD",
+        route: "/front-office/receipts/receipt-1",
+        entityType: "Receipt",
+        entityId: "receipt-1",
+        isRead: false,
+        createdAt: new Date().toISOString(),
+        deepLink: "/front-office/receipts/receipt-1",
+      },
+    ])
+
+    renderTopbar()
+
+    fireEvent.click(await screen.findByRole("button", { name: "notifications" }))
+
+    const item = await screen.findByText("Receipt RCT-2026-000001 posted")
+    fireEvent.click(item)
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/front-office/receipts/receipt-1"))
   })
 
   it("surfaces proposal lifecycle notifications with deep links that navigate", async () => {

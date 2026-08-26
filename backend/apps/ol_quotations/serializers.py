@@ -530,18 +530,18 @@ class OLQuotationDocumentSerializer(QuotationNestedReadMixin, QuotationValidated
         return obj.template.code if obj.template_id else None
 
     def get_pdf_url(self, obj):
-        from django.core.files.storage import default_storage
-        return default_storage.url(obj.file_reference) if obj.file_reference else None
+        from .services.print_ticket_service import protected_document_url
+        return protected_document_url(obj, "pdf") if obj.file_reference else None
 
     def get_html_url(self, obj):
-        from django.core.files.storage import default_storage
-        return default_storage.url(obj.html_reference) if obj.html_reference else None
+        from .services.print_ticket_service import protected_document_url
+        return protected_document_url(obj, "html") if obj.html_reference else None
 
     class Meta:
         model = OLQuotationDocument
         fields = [
             "id", "quotation", "source_version", "source_version_number", "template", "template_code",
-            "template_version", "document_type", "file_reference", "html_reference", "pdf_url", "html_url",
+            "template_version", "document_type", "pdf_url", "html_url",
             "mime_type", "status", "generated_by", "generated_at", "metadata", "created_at", "updated_at",
             "created_by", "updated_by",
         ]
@@ -976,9 +976,17 @@ class OLQuotationListSerializer(ForeignKeyDisplayMixin, serializers.ModelSeriali
 
 class OLQuotationSerializer(ForeignKeyDisplayMixin, serializers.ModelSerializer):
     status = serializers.SerializerMethodField()
+    wizard_step_completion = serializers.SerializerMethodField()
     agent_display = serializers.SerializerMethodField()
     location_display = serializers.SerializerMethodField()
     currency_display = serializers.SerializerMethodField()
+    partner_display = serializers.SerializerMethodField()
+    linked_partner_display = serializers.SerializerMethodField()
+    product_display = serializers.SerializerMethodField()
+    product_version_display = serializers.SerializerMethodField()
+    identity_type_display = serializers.SerializerMethodField()
+    gender_display = serializers.SerializerMethodField()
+    smoker_status_display = serializers.SerializerMethodField()
     products = OLQuotationProductSerializer(many=True, read_only=True)
     plan_configurations = OLQuotationPlanConfigurationSerializer(many=True, read_only=True)
     members = OLQuotationMemberSerializer(many=True, read_only=True)
@@ -1010,6 +1018,9 @@ class OLQuotationSerializer(ForeignKeyDisplayMixin, serializers.ModelSerializer)
             "current_version_number",
             "wizard_step_completion",
             "identity_type",
+            "identity_type_display",
+            "gender_display",
+            "smoker_status_display",
             "identity_number",
             "date_of_birth",
             "age_at_quote",
@@ -1020,6 +1031,10 @@ class OLQuotationSerializer(ForeignKeyDisplayMixin, serializers.ModelSerializer)
             "agent_display",
             "location_display",
             "currency_display",
+            "partner_display",
+            "linked_partner_display",
+            "product_display",
+            "product_version_display",
             "address",
             "partner_verified",
             "approval_required",
@@ -1081,6 +1096,40 @@ class OLQuotationSerializer(ForeignKeyDisplayMixin, serializers.ModelSerializer)
 
     def get_status(self, obj):
         return QuotationService.effective_status(obj)
+
+    def get_wizard_step_completion(self, obj):
+        return QuotationService.completion_payload(obj)
+
+    def get_partner_display(self, obj):
+        return _display_value(obj.partner)
+
+    def get_linked_partner_display(self, obj):
+        return _display_value(obj.linked_partner)
+
+    def get_product_display(self, obj):
+        return _display_value(obj.product)
+
+    def get_product_version_display(self, obj):
+        return _display_value(obj.product_version)
+
+    @staticmethod
+    def _choice_display(code, value):
+        if not value:
+            return value
+        try:
+            option = next((item for item in ConfigurationService.get_choice_list(code) if item.get("value") == value), None)
+        except Exception:
+            option = None
+        return option.get("label") if option else str(value).replace("_", " ").title()
+
+    def get_identity_type_display(self, obj):
+        return self._choice_display("IDENTIFICATION_TYPE_CHOICES", obj.identity_type)
+
+    def get_gender_display(self, obj):
+        return self._choice_display("GENDER_CHOICES", obj.gender)
+
+    def get_smoker_status_display(self, obj):
+        return self._choice_display("SMOKER_STATUS_CHOICES", obj.smoker_status)
 
     def get_agent_display(self, obj):
         return _display_value(obj.agent_partner or obj.agent)

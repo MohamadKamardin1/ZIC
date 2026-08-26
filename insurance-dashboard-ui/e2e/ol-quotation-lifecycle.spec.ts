@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
-import { mockAccessApi, mockQuotationApi, quotation, seedSuperuserSession } from "./fixtures"
+import { mockAccessApi, mockQuotationApi, mockUnifiedDocumentApi, quotation, seedSuperuserSession } from "./fixtures"
 
 const UUID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i
 
@@ -12,15 +12,18 @@ test.describe("OL quotation lifecycle", () => {
     await seedSuperuserSession(page)
     await mockAccessApi(page)
     await mockQuotationApi(page)
+    await mockUnifiedDocumentApi(page)
   })
 
   test("opens print preview from generated documents", async ({ page }) => {
     await page.goto("/ordinary-life/quotations/quote-1")
     await expect(page.getByText("Q-E2E-0001")).toBeVisible()
     await page.getByRole("button", { name: "Documents" }).click()
+    await expect(page.getByRole("heading", { name: "Quotation documents" })).toBeVisible()
     await page.getByRole("button", { name: "Preview" }).click()
-    await expect(page.getByRole("heading", { name: "Print preview" })).toBeVisible()
-    await expect(page.getByRole("dialog", { name: "Quotation print preview" }).getByText("OL_QUOTATION")).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Quotation documents" }).last()).toBeVisible()
+    await expect(page.locator('iframe[title$="PDF"]').last()).toHaveAttribute("src", /^blob:/)
+    await page.getByRole("button", { name: "Close PDF preview" }).click()
   })
 
   test("requires partner verification before conversion", async ({ page }) => {

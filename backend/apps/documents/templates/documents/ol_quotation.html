@@ -1,0 +1,187 @@
+{% extends "documents/base_print.html" %}
+
+{% block document_content %}
+  <p class="small muted">ORDINARY LIFE QUOTATION</p>
+  <section class="meta-grid">
+    <div class="meta-cell"><span class="meta-label">Quote number</span><span class="meta-value">{{ quote.quote_number }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Version</span><span class="meta-value">v{{ quote.version_number }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Status</span><span class="meta-value">{{ quote.status }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Quote name</span><span class="meta-value">{{ quote.quote_name }}</span></div>
+  </section>
+  <section class="meta-grid">
+    <div class="meta-cell"><span class="meta-label">Quote date</span><span class="meta-value">{{ meta.quote_date }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Expiry date</span><span class="meta-value">{{ meta.expiry_date }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Currency</span><span class="meta-value">{{ meta.currency }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Location / Branch</span><span class="meta-value">{{ meta.location }}{% if meta.branch and meta.branch != '-' %} / {{ meta.branch }}{% endif %}</span></div>
+  </section>
+  <p class="small muted"><strong>Quote Summary</strong> — prepared for {{ prospect.name }} in {{ meta.currency }}.</p>
+  <section class="meta-grid">
+    <div class="meta-cell"><span class="meta-label">Agent / Intermediary</span><span class="meta-value">{{ meta.agent_name }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Agent code</span><span class="meta-value">{{ meta.agent_code }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Terms reference</span><span class="meta-value">{{ validity.terms_reference }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Validity</span><span class="meta-value">{{ validity.days }} days</span></div>
+  </section>
+
+  <section class="section two-column">
+    <div class="column">
+      <h2 class="section-title">Personal Details</h2>
+      <dl class="kv">
+        <div class="kv-row"><dt>Full name</dt><dd>{{ prospect.name }}</dd></div>
+        <div class="kv-row"><dt>Identity type</dt><dd>{{ prospect.identity_type }}</dd></div>
+        <div class="kv-row"><dt>Identity number</dt><dd>{{ prospect.identity_number }}</dd></div>
+        <div class="kv-row"><dt>Date of birth</dt><dd>{{ prospect.date_of_birth }}</dd></div>
+        <div class="kv-row"><dt>Age</dt><dd>{{ prospect.age_at_quote }} years</dd></div>
+      </dl>
+    </div>
+    <div class="column">
+      <h2 class="section-title">Prospect Details</h2>
+      <dl class="kv">
+        <div class="kv-row"><dt>Gender</dt><dd>{{ prospect.gender }}</dd></div>
+        <div class="kv-row"><dt>Smoker status</dt><dd>{{ prospect.smoker_status }}</dd></div>
+        <div class="kv-row"><dt>Location</dt><dd>{{ prospect.location }}</dd></div>
+        <div class="kv-row"><dt>Address</dt><dd>{{ prospect.address }}</dd></div>
+        <div class="kv-row"><dt>Agent</dt><dd>{{ agent.name }} ({{ agent.code }})</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title">Plan &amp; Sub-Products</h2>
+    <p class="small muted">Quote Configurations</p>
+    {% if plans %}
+      <table class="data">
+        <thead><tr><th>Plan code</th><th>Plan name</th><th>Plan type / badges</th><th>Policy term</th><th>Payment frequency</th><th class="numeric">Sum assured</th><th class="numeric">Estimated maturity</th></tr></thead>
+        <tbody>{% for plan in plans %}<tr><td>{{ plan.code }}</td><td>{{ plan.name }}</td><td>{{ plan.plan_type }}{% for badge in plan.badges %} · {{ badge }}{% endfor %}</td><td>{{ plan.policy_term }} years</td><td>{{ plan.payment_frequency }}</td><td class="numeric">{{ plan.sum_assured }}</td><td class="numeric">{{ plan.estimated_maturity_value }}</td></tr>{% endfor %}</tbody>
+      </table>
+    {% endif %}
+    {% for plan in plans %}
+      <article class="plan-card">
+        <div class="plan-card-title">Section {{ forloop.counter }} — {{ plan.code }} — {{ plan.name }}</div>
+        <div>
+          <span class="badge">{{ plan.plan_type }}</span>
+          {% for badge in plan.badges %}<span class="badge{% if badge == 'Joint Life' %} accent{% endif %}">{{ badge }}</span>{% endfor %}
+        </div>
+        {% if plan.description %}<p class="plan-description">{{ plan.description }}</p>{% endif %}
+        <table class="data">
+          <thead><tr><th>Configuration</th><th>Value</th><th>Configuration</th><th>Value</th></tr></thead>
+          <tbody>
+            <tr><td>Sub-product</td><td>{{ plan.sub_product }}</td><td>Policy term</td><td>{{ plan.policy_term }} years</td></tr>
+            <tr><td>Payment period</td><td>{{ plan.payment_period }} years</td><td>Payment frequency</td><td>{{ plan.payment_frequency }}</td></tr>
+            <tr><td>Quote basis</td><td>{{ plan.quote_basis }}</td><td>Sum assured</td><td>{{ plan.sum_assured }}</td></tr>
+            <tr><td>Estimated maturity value</td><td>{{ plan.estimated_maturity_value }}</td><td>Estimated bonus rate</td><td>{{ plan.estimated_bonus_rate }} per mille</td></tr>
+            <tr><td>Joint life</td><td>{{ plan.joint_life_display }}</td><td>Mortgage</td><td>{{ plan.mortgage_display }}</td></tr>
+            <tr><td>Personal Accident (PA)</td><td>{{ plan.personal_accident_display }}</td><td>Premium Waiver (WP)</td><td>{{ plan.premium_waiver_display }}</td></tr>
+            <tr class="total"><td>Basic premium</td><td>{{ plan.basic_premium }}</td><td>Gross premium</td><td>{{ plan.gross_premium }}</td></tr>
+          </tbody>
+        </table>
+      </article>
+    {% empty %}
+      <p class="muted">No selected plans are recorded for this quotation.</p>
+    {% endfor %}
+  </section>
+
+  {% if members %}
+    <section class="section">
+      <h2 class="section-title">Member Coverage Details</h2>
+      <table class="data">
+        <thead><tr><th>Member name</th><th>Role</th><th>Age</th><th>Gender</th><th>Coverage %</th><th class="numeric">Sum assured</th><th class="numeric">Premium</th></tr></thead>
+        <tbody>
+          {% for member in members %}<tr><td>{{ member.name }}</td><td>{% if member.is_principal %}Principal member{% else %}Additional member{% endif %}</td><td>{{ member.age }}</td><td>{{ member.gender }}</td><td>{{ member.coverage_percent }}%</td><td class="numeric">{{ member.sum_assured }}</td><td class="numeric">{{ member.total_premium }}</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </section>
+  {% endif %}
+
+  {% if riders or benefits %}
+    <section class="section">
+      <h2 class="section-title">Riders &amp; Benefits</h2>
+      {% if riders %}
+        <table class="data">
+          <thead><tr><th>Rider</th><th>Plan</th><th>Basis</th><th>Waiting period</th><th class="numeric">Benefit value</th><th class="numeric">Premium</th></tr></thead>
+          <tbody>{% for rider in riders %}<tr><td>{{ rider.name|default:rider.code }}</td><td>{{ rider.plan_name|default:'-' }}</td><td>{{ rider.benefit_basis }}</td><td>{{ rider.waiting_period_days|default:'-' }}</td><td class="numeric">{{ rider.rider_sum_assured }}</td><td class="numeric">{{ rider.premium_amount }}</td></tr>{% endfor %}</tbody>
+        </table>
+      {% endif %}
+      {% if benefits %}
+        <table class="data">
+          <thead><tr><th>Benefit type</th><th>Plan</th><th>Basis</th><th class="numeric">Value</th><th class="numeric">Loading</th><th class="numeric">Discount</th><th class="numeric">Maximum cap</th></tr></thead>
+          <tbody>{% for benefit in benefits %}<tr><td>{{ benefit.name|default:benefit.benefit_type|default:'-' }}</td><td>{{ benefit.plan_name|default:'-' }}</td><td>{{ benefit.basis|default:'-' }}</td><td class="numeric">{{ benefit.value|default:benefit.sum_assured|default:'-' }}</td><td class="numeric">{{ benefit.loading|default:'-' }}</td><td class="numeric">{{ benefit.discount|default:'-' }}</td><td class="numeric">{{ benefit.maximum_cap|default:'-' }}</td></tr>{% endfor %}</tbody>
+        </table>
+      {% endif %}
+    </section>
+  {% endif %}
+
+  {% if funds %}
+    <section class="section">
+      <h2 class="section-title">Investment Fund Allocations</h2>
+      <table class="data">
+        <thead><tr><th>Fund</th><th>Fund type</th><th>Risk profile</th><th>Plan</th><th>Currency</th><th>Valuation</th><th class="numeric">Allocation %</th><th class="numeric">Allocated amount</th></tr></thead>
+        <tbody>{% for fund in funds %}<tr><td><strong>{{ fund.code }}</strong><br>{{ fund.name }}</td><td>{{ fund.fund_type }}</td><td>{{ fund.risk_profile }}</td><td>{{ fund.plan_name|default:'-' }}</td><td>{{ fund.currency }}</td><td>{{ fund.valuation_frequency }}</td><td class="numeric">{{ fund.allocation_percentage }}%</td><td class="numeric">{{ fund.allocation_amount }}</td></tr>{% endfor %}</tbody>
+      </table>
+    </section>
+  {% endif %}
+
+  <section class="section">
+    <h2 class="section-title">Financial Summary</h2>
+    <table class="data summary-box">
+      <thead><tr><th>Component</th><th class="numeric">Amount ({{ quote.currency }})</th></tr></thead>
+      <tbody>
+        <tr><td>Total sum assured</td><td class="numeric">{{ financial.total_sum_assured }}</td></tr>
+        <tr><td>Base premium</td><td class="numeric">{{ financial.base_premium }}</td></tr>
+        <tr><td>Rider premiums</td><td class="numeric">{{ financial.total_rider_premium }}</td></tr>
+        <tr><td>Benefit premiums</td><td class="numeric">{{ financial.total_benefit_premium }}</td></tr>
+        <tr><td>Loadings</td><td class="numeric">{{ financial.total_loading }}</td></tr>
+        <tr><td>Discounts</td><td class="numeric">{{ financial.total_discount }}</td></tr>
+        <tr><td>Taxes</td><td class="numeric">{{ financial.total_tax }}</td></tr>
+        <tr><td>Installment charge</td><td class="numeric">{{ financial.installment_charge }}</td></tr>
+        <tr class="total"><td>Total premium</td><td class="numeric">{{ financial.total_premium }}</td></tr>
+        <tr class="total"><td>Estimated maturity value</td><td class="numeric">{{ financial.estimated_maturity_value }}</td></tr>
+      </tbody>
+    </table>
+    <h3 class="subheading">Premium per Frequency</h3>
+    <table class="data"><thead><tr><th>Frequency</th><th class="numeric">Figures</th><th>Amount in words</th></tr></thead><tbody>{% for premium in financial.premium_per_frequency %}<tr><td>{{ premium.frequency }}</td><td class="numeric">{{ premium.figures }}</td><td>{{ premium.words }}</td></tr>{% endfor %}</tbody></table>
+  </section>
+
+  {% if projections %}
+    <section class="section">
+      <h2 class="section-title">Policy-Year Projections</h2>
+      <table class="data">
+        <thead><tr><th>Policy year</th><th class="numeric">Premiums paid</th><th class="numeric">Bonuses</th><th class="numeric">Surrender value</th><th class="numeric">Paid-up value</th></tr></thead>
+        <tbody>{% for projection in projections %}<tr><td>{{ projection.policy_year }}</td><td class="numeric">{{ projection.premiums_paid }}</td><td class="numeric">{{ projection.bonuses }}</td><td class="numeric">{{ projection.surrender_value }}</td><td class="numeric">{{ projection.paid_up_value }}</td></tr>{% endfor %}</tbody>
+      </table>
+    </section>
+  {% endif %}
+
+  {% if installments %}
+    <section class="section">
+      <h2 class="section-title">Installment Payout Schedule</h2>
+      <p class="small muted">Installment Payouts</p>
+      {% for schedule in installments %}
+        <div class="plan-heading">{{ schedule.plan_code }} — {{ schedule.number_of_installments }} installments — {{ schedule.frequency }} — Annuity period: {{ schedule.annuity_period_years }} years</div>
+        <table class="data">
+          <thead><tr><th>Installment #</th><th>Date</th><th>Description</th><th class="numeric">Rate %</th><th class="numeric">Amount</th><th class="numeric">Paid-up rate</th></tr></thead>
+          <tbody>{% for row in schedule.rows %}<tr><td>{{ row.sequence }}</td><td>{{ row.payout_date|default:'-' }}</td><td>{{ row.description }}</td><td class="numeric">{{ row.rate_percent }}%</td><td class="numeric">{{ row.payout_amount }}</td><td class="numeric">{{ row.paid_up_rate }}%</td></tr>{% empty %}<tr><td colspan="6" class="muted">No payout rows configured.</td></tr>{% endfor %}</tbody>
+        </table>
+      {% endfor %}
+    </section>
+  {% endif %}
+
+  <section class="section terms">
+    <h2 class="section-title">Validity, Terms &amp; Disclaimer</h2>
+    <ol>
+      <li>This quotation is valid for {{ validity.days }} days from {{ quote.quote_date }} and expires on {{ validity.expiry_date }}.</li>
+      <li>The quotation is based on information supplied at the time of calculation and is subject to underwriting acceptance, applicable exclusions, and payment of the required premium.</li>
+      <li>Coverage becomes effective only after policy issuance, premium payment, and satisfaction of all underwriting and compliance requirements.</li>
+      <li>Benefits, maturity values, bonuses, surrender values, and paid-up values are estimates unless expressly stated otherwise in the policy contract.</li>
+      <li>Terms reference: {{ validity.terms_reference }}.</li>
+      <li><strong>This quotation does not constitute an offer or a contract of insurance.</strong> Final policy terms may vary after underwriting and approval.</li>
+    </ol>
+  </section>
+{% endblock %}
+
+{% block signature_block %}
+  <footer class="signature-block">
+    <div class="signature-party"><strong>Customer</strong><div class="signature-line"></div><div>Name: {{ prospect.name }}</div><div class="small muted">Signature &amp; Date</div></div>
+    <div class="signature-party"><strong>Agent / Intermediary</strong><div class="signature-line"></div><div>{{ agent.name }} ({{ agent.code }})</div><div class="small muted">Signature &amp; Date</div></div>
+    <div class="signature-party"><strong>Company Representative</strong><div class="signature-line"></div><div>{{ branding.company_name }}</div><div>Prepared By: {{ generated_by_name|default:prepared_by|default:'ZIC Document Services' }}</div><div class="small muted">Signature &amp; Date</div><div class="small muted">Official Stamp</div></div>
+  </footer>
+{% endblock %}
