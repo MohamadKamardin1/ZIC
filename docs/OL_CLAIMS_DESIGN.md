@@ -124,3 +124,11 @@ Claim option APIs return the same standardized shape used by the platform SmartS
 | `GET /api/v1/ol/claims/options/members/?policy_id=` | Active issued policy members | Policy-specific; labels use member name and relationship while metadata carries DOB, gender, and benefit amount. |
 
 The option envelope includes `data.items`, `data.results`, `data.count`, and a `data.pagination` object with page, page size, total, and navigation flags. Malformed pagination, missing policy references, inactive policies, missing claim types, waiting periods, duplicates, and incompatible benefits all return Error Coach responses with a stable code and resolution steps.
+
+## Mandatory documents and progression
+
+Prompt 4 uses the active claim type’s `require_documents` configuration as the sole source of mandatory evidence. `get_required_documents(claim_type)` resolves the current effective-dated parameter and returns normalized document type codes. `document_requirement_status(claim)` compares those requirements with uploaded document types and returns `required_document_types`, `uploaded_document_types`, `missing_document_types`, and `all_mandatory_uploaded`.
+
+Claim evidence is managed through `GET/POST /api/v1/ol/claims/{claim_id}/documents/`. Multipart uploads are stored through Django’s configured `default_storage` under a claim-number path; controlled `file_reference` values remain supported for managed storage integrations. Uploads are upserted by claim and document type, marked mandatory from the parameter configuration, and audited with actor, source channel, claim number, and document type. The response includes completeness and missing-document data so clients can teach the operator what remains.
+
+`POST /api/v1/ol/claims/{claim_id}/assessment-readiness/` is the progression guard. It returns success only when every configured mandatory document is present. Otherwise it raises `CLAIM_MANDATORY_DOC_MISSING` with the missing and required document types in `error.details` and resolution steps directing the operator to the Documents section. The same requirement summary is available through the readiness `GET` endpoint for non-mutating UI checks.

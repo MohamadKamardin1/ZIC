@@ -127,7 +127,7 @@ GIT:
 
 FINAL OUTPUT: endpoint, validation logic, tests, commit hash, pushed branch.
 
-## [ ] Prompt 4 — Documents & Mandatory Progression Blocking
+## [x] Prompt 4 — Documents & Mandatory Progression Blocking
 You are a senior Django insurance engineer. Continue the ZIC OL Claims backend. Execute ONLY Prompt 4.
 
 MANDATORY RULES:

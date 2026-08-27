@@ -5,6 +5,22 @@ DOC_REF = "docs/OL_CLAIMS_DESIGN.md"
 
 
 CLAIM_ERROR_REGISTRY = {
+    "CLAIM_DOCUMENT_REQUIRED": {
+        "message": "A document type and file are required before the claim can progress.",
+        "status_code": 400,
+        "resolution_steps": [
+            "Select the document type that matches the claim requirement.",
+            "Attach the file or provide a managed storage reference, then retry.",
+        ],
+    },
+    "CLAIM_DOCUMENT_TOO_LARGE": {
+        "message": "The claim document is larger than the supported 20 MB limit.",
+        "status_code": 400,
+        "resolution_steps": [
+            "Reduce the file size to 20 MB or less without removing required evidence.",
+            "Upload the smaller file again from the claim Documents section.",
+        ],
+    },
     "CLAIM_INVALID_REGISTRATION": {
         "message": "The claim registration form needs correction before it can be submitted.",
         "status_code": 400,

@@ -5,6 +5,7 @@ from uuid import uuid4
 from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from rest_framework.test import APITestCase
 
@@ -31,6 +32,7 @@ from apps.ol_claims.models import (
 )
 from apps.ol_claims.options import claim_type_options
 from apps.ol_claims.permissions import ACTIONS, OLClaimPermission, has_ol_claim_permission
+from apps.ol_claims.services.document_service import can_proceed_to_assessment, get_required_documents
 from apps.ol_claims.services.validation import calculate_max_claimable, validate_eligibility
 from apps.ol_proposals.models import OLProposal
 from apps.ol_quotations.models import OLQuotation
@@ -583,3 +585,63 @@ class OLClaimFoundationTestCase(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data["error_code"], "CLAIM_CLAIMANT_REQUIRED")
         self.assertIn("claimant_details.name", response.data["field_errors"])
+
+    def test_document_requirement_engine_blocks_until_all_required_documents_are_uploaded(self):
+        claim_type = OLClaimType.objects.create(
+            code="DOCUMENTED_DEATH_CLAIM",
+            name="Documented Death Claim",
+            claim_category="DEATH",
+            calculation_basis="SUM_ASSURED",
+            duplicate_check_rule="NONE",
+            waiting_period_days=0,
+            payable_to_rules={},
+            require_documents=["DEATH_CERTIFICATE", "IDENTITY_DOCUMENT"],
+            effective_from=date(2026, 1, 1),
+        )
+        claim = self.make_claim()
+        claim.claim_type = claim_type.code
+        claim.save(update_fields=["claim_type", "updated_at"])
+        claim.documents.all().delete()
+        self.assertEqual(get_required_documents(claim_type.code), ["DEATH_CERTIFICATE", "IDENTITY_DOCUMENT"])
+
+        blocked = self.client.post(f"/api/v1/ol/claims/{claim.pk}/assessment-readiness/", {}, format="json")
+        self.assertEqual(blocked.status_code, 422)
+        self.assertEqual(blocked.data["error_code"], "CLAIM_MANDATORY_DOC_MISSING")
+        self.assertEqual(
+            set(blocked.data["error"]["details"]["missing_document_types"]),
+            {"DEATH_CERTIFICATE", "IDENTITY_DOCUMENT"},
+        )
+
+        first = self.client.post(
+            f"/api/v1/ol/claims/{claim.pk}/documents/",
+            {"document_type": "DEATH_CERTIFICATE", "file": SimpleUploadedFile("death.pdf", b"pdf-evidence")},
+            format="multipart",
+            HTTP_X_SOURCE_CHANNEL="WEB",
+        )
+        self.assertEqual(first.status_code, 201)
+        self.assertFalse(first.data["data"]["all_mandatory_uploaded"])
+
+        second = self.client.post(
+            f"/api/v1/ol/claims/{claim.pk}/documents/",
+            {"document_type": "IDENTITY_DOCUMENT", "file_reference": "claims/evidence/identity.pdf"},
+            format="json",
+        )
+        self.assertEqual(second.status_code, 201)
+        self.assertTrue(second.data["data"]["all_mandatory_uploaded"])
+
+        listed = self.client.get(f"/api/v1/ol/claims/{claim.pk}/documents/")
+        self.assertEqual(listed.status_code, 200)
+        self.assertTrue(listed.data["data"]["all_mandatory_uploaded"])
+        self.assertEqual(listed.data["data"]["missing_document_types"], [])
+        self.assertEqual(listed.data["data"]["uploaded"], 2)
+        self.assertEqual(len(listed.data["data"]["results"]), 2)
+        self.assertNotIn(str(claim.pk), listed.data["data"]["results"][0]["document_type"])
+
+        readiness = self.client.post(f"/api/v1/ol/claims/{claim.pk}/assessment-readiness/", {}, format="json")
+        self.assertEqual(readiness.status_code, 200)
+        self.assertTrue(readiness.data["data"]["can_proceed_to_assessment"])
+        self.assertTrue(can_proceed_to_assessment(claim.pk, actor=self.user))
+        self.assertGreaterEqual(
+            AuditLog.objects.filter(action_type="DOCUMENT_UPLOAD", app_label="ol_claims", model_name="claimdocument").count(),
+            2,
+        )
