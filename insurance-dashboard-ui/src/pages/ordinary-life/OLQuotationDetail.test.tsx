@@ -78,9 +78,9 @@ const quotation = {
   plan_configurations: [{ id: "config-1", plan_code: "TERM-20", plan_name: "Twenty Year Term", term_years: 20, payment_period_years: 20, premium_frequency: "ANNUAL", quote_basis: "SUM_ASSURED", estimated_maturity_value: "250000" }],
   members: [{ id: "member-1", full_name: "Asha Applicant", relation: "POLICY_HOLDER", date_of_birth: "1990-01-01", age_at_quote: 36, gender: "MALE", is_principal: true }],
   installment_configurations: [{ id: "installment-1", plan_name: "Twenty Year Term", policy_term_years: 20, payment_mode: "ANNUAL", total_number_of_installments: 1, status: "CONFIGURED", after_maturity_benefits: true }],
-  fund_allocations: [],
-  rider_selections: [],
-  benefits: [],
+  fund_allocations: [{ id: "fund-1", fund_name: "ZIC Balanced Fund", fund_type: "Balanced", risk_profile: "MEDIUM", currency: "TZS", allocation_percent: "100", allocated_amount: "12000" }],
+  rider_selections: [{ id: "rider-1", rider_name: "Family Income Rider", plan_name: "Twenty Year Term", sub_product_name: "Family protection", rider_benefit: "50000", benefit_basis: "FIXED" }],
+  benefits: [{ id: "benefit-1", benefit_type: "Death benefit", basis: "FIXED", value: "50000" }],
 }
 
 const financial = {
@@ -106,6 +106,7 @@ function setupRequestMock(status = "DRAFT") {
   requestMock.mockImplementation(async (path: string, options?: RequestInit) => {
     if (path === "/api/v1/ol-quotations/quotations/quote-1/" && options?.method === undefined) return { ...quotation, status }
     if (path.endsWith("/versions/")) return versions
+    if (path.endsWith("/plan-details/")) return { configurations: quotation.plan_configurations, selected_plan_count: 1, wizard_step_complete: true }
     if (path.startsWith("/api/v1/documents/instances/?")) return unifiedDocuments
     if (path.startsWith("/api/v1/documents/render/") && options?.method === "POST") return unifiedDocuments.results[0]
     if (path.endsWith("/partner-verification/")) return { partner_exists: false, compliant: false, missing_fields: ["first_name", "surname"] }
@@ -133,9 +134,30 @@ describe("OL quotation detail lifecycle", () => {
 
     expect(await screen.findByText("Q-0001")).toBeInTheDocument()
     expect(screen.getAllByText("Asha Family Protection").length).toBeGreaterThanOrEqual(1)
-    for (const label of ["Plans & Sub-Products", "Member Coverage", "Riders", "Projections", "Installment Payouts", "Quote Versions", "Documents"]) {
+    for (const label of ["Plans & Sub-Products", "Member Coverage", "Investment Funds", "Riders", "Projections", "Installment Payouts", "Quote Versions", "Documents"]) {
       expect(screen.getByRole("button", { name: label })).toBeInTheDocument()
     }
+  })
+
+  it("hydrates the quotation header and every populated detail tab", async () => {
+    render(<OLQuotationDetail />)
+    expect((await screen.findAllByText("Asha Family Protection")).length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText("NIN-001")).toBeInTheDocument()
+    expect(screen.getByText("Dar es Salaam")).toBeInTheDocument()
+    expect(screen.getByText("TZS 12,000.00")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Plans & Sub-Products" }))
+    expect(screen.getByText("Twenty Year Term")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Member Coverage" }))
+    expect(screen.getByText("Asha Applicant")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Installment Payouts" }))
+    expect(screen.getByText("Maturity payout")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Projections" }))
+    expect(screen.getByText(/250,000\.00/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Quote Versions" }))
+    expect(screen.getByText("Q-0001")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Documents" }))
+    expect(await screen.findByText("Ordinary Life Quotation")).toBeInTheDocument()
   })
 
   it("shows approval-required and partner verification banners", async () => {
@@ -205,8 +227,12 @@ describe("OL quotation detail lifecycle", () => {
     expect(screen.getByText("Coverage %")).toBeInTheDocument()
     expect(screen.getByText("Basic Premium")).toBeInTheDocument()
 
+    fireEvent.click(screen.getByRole("button", { name: "Investment Funds" }))
+    expect(screen.getByText("ZIC Balanced Fund")).toBeInTheDocument()
+
     fireEvent.click(screen.getByRole("button", { name: "Riders" }))
     expect(screen.getByText("Rider Benefit")).toBeInTheDocument()
+    expect(screen.getByText("Family Income Rider")).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Projections" }))
     expect(screen.getByText("Adjusted Basic")).toBeInTheDocument()

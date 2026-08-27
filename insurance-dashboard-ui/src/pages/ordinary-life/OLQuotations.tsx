@@ -236,8 +236,9 @@ function actionPath(row: QuotationRecord, key: ActionKey, fallback: string): str
   return row.row_actions?.[key]?.url ?? `${API_PREFIX}${row.id}${fallback}`
 }
 
-const columns: TableColumn<QuotationRecord>[] = [
-  { key: "quote_number", label: "Quote number", field: "quote_number", sortable: true },
+function buildQuotationColumns(navigate: (path: string) => void): TableColumn<QuotationRecord>[] {
+  return [
+  { key: "quote_number", label: "Quote number", field: "quote_number", sortable: true, render: (_value, row) => <button type="button" className="font-semibold text-[var(--primary)] underline decoration-[var(--primary)]/35 underline-offset-2 hover:decoration-[var(--primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]" onClick={() => navigate(`/ordinary-life/quotations/${row.id}`)} aria-label={`Open quotation ${row.quote_number}`}>{row.quote_number}</button> },
   { key: "quote_name", label: "Quote name", field: "quote_name", sortable: true },
   { key: "prospect_name", label: "Prospect", field: "prospect_name", sortable: true },
   { key: "plans", label: "Plans", render: (_value, row) => <div><span className="font-semibold">{row.plan_count}</span><span className="ml-2 text-xs text-[var(--muted-foreground)]">{textValue(row.plans_summary)}</span></div> },
@@ -248,11 +249,13 @@ const columns: TableColumn<QuotationRecord>[] = [
   { key: "quote_date", label: "Quote date", field: "quote_date", sortable: true, render: (value) => dateLabel(value as string | null) },
   { key: "agent_name", label: "Agent", render: (_value, row) => renderFk(row.agent, row.agent_display) },
   { key: "created_by_name", label: "Created by", render: (_value, row) => renderFk(row.created_by, row.created_by_display) },
-]
+  ]
+}
 
 export default function OLQuotations() {
   const navigate = useNavigate()
   const { access, canAccess, isSuperAdmin } = useAccess()
+  const columns = useMemo(() => buildQuotationColumns(navigate), [navigate])
   const { toast } = useToast()
   const [filters, setFilters] = useState<FilterValues>({})
   const [refreshKey, setRefreshKey] = useState(0)

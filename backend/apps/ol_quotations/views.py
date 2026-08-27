@@ -654,6 +654,20 @@ class OLQuotationViewSet(QuotationScopedViewSet):
             options["plans"] = []
         return _response(options, "Quotation Plan & Sub-Products options retrieved.")
 
+    @action(detail=True, methods=["get"], url_path="plan-details")
+    def plan_details(self, request, pk=None):
+        quotation = self.get_object()
+        configurations = quotation.plan_configurations.filter(is_selected=True).select_related("product_version__product", "plan").order_by("section_number", "created_at")
+        return _response(
+            {
+                "quotation": OLQuotationSerializer(quotation).data,
+                "configurations": OLQuotationPlanConfigurationSerializer(configurations, many=True).data,
+                "selected_plan_count": configurations.count(),
+                "wizard_step_complete": bool((quotation.wizard_step_completion or {}).get("2_plan_and_sub_products")),
+            },
+            "Quotation selected plans retrieved.",
+        )
+
     @action(detail=True, methods=["post"], url_path="plans")
     def plans(self, request, pk=None):
         quotation = self.get_object()

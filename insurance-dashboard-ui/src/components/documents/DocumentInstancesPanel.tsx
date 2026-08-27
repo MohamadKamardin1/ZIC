@@ -62,6 +62,50 @@ export interface DocumentInstancesPanelProps {
   description?: string
   renderLabel?: string
   className?: string
+  fallbackDocumentEndpoint?: string
+}
+
+function isUuid(value: unknown): boolean {
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+}
+
+function safeDisplay(value: unknown, fallback: string): string {
+  if (value === null || value === undefined || value === "" || isUuid(value)) return fallback
+  return String(value)
+}
+
+function normalizeDocumentRecord(value: unknown): DocumentInstanceRecord | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  const record = value as Record<string, unknown>
+  const metadata = record.metadata && typeof record.metadata === "object" && !Array.isArray(record.metadata) ? record.metadata as Record<string, unknown> : {}
+  const generatedBy = record.generated_by && typeof record.generated_by === "object" && !Array.isArray(record.generated_by) ? record.generated_by as Record<string, unknown> : null
+  const id = record.id ?? record.document_id
+  if (id === null || id === undefined || id === "") return null
+  const templateName = record.template_name ?? metadata.template_name ?? record.template_display ?? record.template_code ?? record.template ?? "Document"
+  const templateVersion = record.template_version ?? metadata.template_version ?? record.version ?? 1
+  const generatedByDisplay = record.generated_by_display ?? record.generated_by_name ?? generatedBy?.name ?? generatedBy?.full_name ?? record.generated_by ?? "System"
+  const generatedAt = record.generated_at ?? record.created_at ?? ""
+  const signedDownloadUrl = record.signed_download_url ?? record.signed_pdf_url ?? record.pdf_url ?? record.download_url ?? null
+  const pageCount = record.page_count ?? metadata.page_count ?? record.pages ?? (signedDownloadUrl ? 1 : 0)
+  return {
+    id: String(id),
+    document_type: String(record.document_type ?? record.type ?? "DOCUMENT"),
+    template_name: safeDisplay(templateName, "Document"),
+    template_version: Number(templateVersion) || 1,
+    generated_by_display: safeDisplay(generatedByDisplay, "System"),
+    generated_at: String(generatedAt ?? ""),
+    page_count: Number(pageCount) || 0,
+    preview_url: typeof record.preview_url === "string" ? record.preview_url : null,
+    download_url: typeof record.download_url === "string" ? record.download_url : (typeof record.pdf_url === "string" ? record.pdf_url : null),
+    signed_download_url: typeof signedDownloadUrl === "string" ? signedDownloadUrl : null,
+    source_display: typeof record.source_display === "string" ? record.source_display : undefined,
+  }
+}
+
+function normalizeDocumentRows(value: unknown): DocumentInstanceRecord[] {
+  const record = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
+  const rawRows = Array.isArray(value) ? value : Array.isArray(record.results) ? record.results : Array.isArray(record.documents) ? record.documents : Array.isArray(record.data) ? record.data : []
+  return rawRows.map(normalizeDocumentRecord).filter((row): row is DocumentInstanceRecord => row !== null)
 }
 
 function asErrorMessage(error: unknown): { message: string; code?: string; loginUrl?: string; settingsUrl?: string } {
@@ -99,6 +143,7 @@ export function DocumentInstancesPanel({
   description = "Generated documents retain their source transaction and approved template version.",
   renderLabel = "Generate document",
   className = "",
+  fallbackDocumentEndpoint,
 }: DocumentInstancesPanelProps) {
   const [records, setRecords] = useState<DocumentInstanceRecord[]>([])
   const [loading, setLoading] = useState(true)
@@ -113,7 +158,17 @@ export function DocumentInstancesPanel({
     try {
       const query = new URLSearchParams({ source_type: sourceType, object_id: objectId, page_size: "50" })
       const payload = await request<DocumentInstancesPayload>(`/api/v1/documents/instances/?${query.toString()}`)
-      setRecords(payload.results ?? [])
+      let rows = normalizeDocumentRows(payload)
+      const needsFallback = !rows.length || rows.some((row) => !row.signed_download_url)
+      if (needsFallback && fallbackDocumentEndpoint) {
+        try {
+          const fallbackRows = normalizeDocumentRows(await request<unknown>(fallbackDocumentEndpoint))
+          if (fallbackRows.length) rows = fallbackRows
+        } catch {
+          // The unified endpoint remains authoritative; a legacy fallback is best effort.
+        }
+      }
+      setRecords(rows)
     } catch (caught) {
       setError(caught)
     } finally {

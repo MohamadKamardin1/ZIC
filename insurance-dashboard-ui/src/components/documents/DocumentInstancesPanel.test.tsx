@@ -69,6 +69,16 @@ describe("DocumentInstancesPanel", () => {
     await waitFor(() => expect(openAuthenticatedDocument).toHaveBeenCalledWith(row.signed_download_url, expect.objectContaining({ kind: "pdf", mode: "download" })))
   })
 
+  it("falls back to legacy quotation documents when a unified row has no secure URL", async () => {
+    vi.mocked(request)
+      .mockResolvedValueOnce({ count: 1, results: [{ ...row, signed_download_url: null, pdf_url: null }] })
+      .mockResolvedValueOnce({ data: [{ id: "legacy-1", document_type: "OL_QUOTATION", template_code: "OL_QUOTATION", template_version: 2, generated_by_name: "Super Admin", generated_at: "2026-08-23T10:00:00Z", pdf_url: "/api/v1/ol-quotations/documents/legacy-1/download/?ticket=legacy-ticket" }] })
+    render(<DocumentInstancesPanel sourceType="ol_quotations.olquotation" objectId="quote-1" documentType="OL_QUOTATION" fallbackDocumentEndpoint="/api/v1/ol-quotations/quotations/quote-1/documents/" />)
+    expect(await screen.findByText("OL_QUOTATION")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }))
+    await waitFor(() => expect(fetchAuthenticatedDocument).toHaveBeenCalledWith("/api/v1/ol-quotations/documents/legacy-1/download/?ticket=legacy-ticket", "pdf"))
+  })
+
   it("shows an ErrorCoach branding deep link for pending templates", async () => {
     const pending = new ApiClientError({ status: 409, code: "TEMPLATE_PENDING", message: "The Receipt template is not configured. Configure document branding in System Parameters.", fieldErrors: {} })
     vi.mocked(request).mockRejectedValueOnce(pending)

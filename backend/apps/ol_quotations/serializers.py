@@ -588,9 +588,39 @@ class OLQuotationVersionSerializer(ForeignKeyDisplayMixin, serializers.ModelSeri
 
 
 class OLQuotationVersionListSerializer(ForeignKeyDisplayMixin, serializers.ModelSerializer):
+    quote_number = serializers.SerializerMethodField()
+    sum_assured = serializers.SerializerMethodField()
+    gross_premium = serializers.SerializerMethodField()
+    currency = serializers.SerializerMethodField()
+
+    @staticmethod
+    def _snapshot(instance):
+        return instance.snapshot if isinstance(instance.snapshot, dict) else {}
+
+    def get_quote_number(self, instance):
+        return self._snapshot(instance).get("quote_number") or getattr(instance.quotation, "quote_number", None)
+
+    def get_sum_assured(self, instance):
+        snapshot = self._snapshot(instance)
+        financial = snapshot.get("financial_summary") if isinstance(snapshot.get("financial_summary"), dict) else {}
+        return snapshot.get("total_sum_assured") or financial.get("total_sum_assured")
+
+    def get_gross_premium(self, instance):
+        snapshot = self._snapshot(instance)
+        financial = snapshot.get("financial_summary") if isinstance(snapshot.get("financial_summary"), dict) else {}
+        return snapshot.get("total_premium") or financial.get("total_premium")
+
+    def get_currency(self, instance):
+        snapshot = self._snapshot(instance)
+        financial = snapshot.get("financial_summary") if isinstance(snapshot.get("financial_summary"), dict) else {}
+        return snapshot.get("currency") or financial.get("currency")
+
     class Meta:
         model = OLQuotationVersion
-        fields = ["id", "version_number", "status", "created_by", "created_at", "change_reason"]
+        fields = [
+            "id", "version_number", "status", "created_by", "created_at", "change_reason",
+            "quote_number", "sum_assured", "gross_premium", "currency",
+        ]
         read_only_fields = fields
 
 

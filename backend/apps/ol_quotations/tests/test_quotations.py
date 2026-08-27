@@ -118,11 +118,16 @@ class OLQuotationAPITests(TestCase):
             name="Quotation Location",
             is_active=True,
         )
-        cls.agent_type = PartnerType.objects.create(
+        cls.agent_type, _ = PartnerType.objects.get_or_create(
             code="AGENT",
-            name="Ordinary Life Agent",
-            is_active=True,
+            defaults={
+                "name": "Ordinary Life Agent",
+                "is_active": True,
+            },
         )
+        if not cls.agent_type.is_active:
+            cls.agent_type.is_active = True
+            cls.agent_type.save(update_fields=["is_active"])
         cls.agent_assignment = PartnerTypeAssignment.objects.create(
             partner=cls.partner,
             partner_type=cls.agent_type,
@@ -2510,6 +2515,38 @@ class OLQuotationAPITests(TestCase):
         self.assertTrue(data["wizard_step_completion"]["personal"])
         self.assertTrue(data["wizard_step_completion"]["plans"])
         self.assertTrue(data["wizard_step_completion"]["financial"])
+
+    def test_plan_details_returns_selected_configurations_for_detail_readers(self):
+        draft = self._prepare_finalizable_lifecycle_quotation("ID-OLQ-PLAN-DETAILS")
+        response = self.client.get(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/plan-details/"
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        data = response.data["data"]
+        self.assertEqual(data["selected_plan_count"], 1)
+        self.assertTrue(data["configurations"])
+        configuration = data["configurations"][0]
+        self.assertIn("plan_display", configuration)
+        self.assertIn("product_version_display", configuration)
+
+    def test_versions_list_includes_snapshot_financial_labels(self):
+        draft = self._prepare_finalizable_lifecycle_quotation("ID-OLQ-VERSION-LIST")
+        finalized = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/finalize/",
+            {},
+            format="json",
+        )
+        self.assertEqual(finalized.status_code, 200, finalized.data)
+        response = self.client.get(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/versions/"
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        rows = response.data["data"]["versions"]
+        self.assertTrue(rows)
+        self.assertIn("quote_number", rows[0])
+        self.assertIn("sum_assured", rows[0])
+        self.assertIn("gross_premium", rows[0])
+        self.assertIn("currency", rows[0])
 
     def test_finalize_requires_current_financial_details(self):
         draft = self.create_draft()

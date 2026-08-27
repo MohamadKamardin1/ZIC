@@ -219,9 +219,12 @@ describe("OL Quotations list", () => {
     expect(openSpy).not.toHaveBeenCalled()
   })
 
-  it("navigates to create and view routes", async () => {
+  it("navigates directly from the quote number as well as through row actions", async () => {
     render(<OLQuotations />)
     await screen.findByText("Q-0001")
+    fireEvent.click(screen.getByRole("button", { name: "Open quotation Q-0001" }))
+    expect(navigateMock).toHaveBeenCalledWith("/ordinary-life/quotations/draft-1")
+
     fireEvent.click(screen.getByRole("button", { name: "Create New Quote" }))
     expect(navigateMock).toHaveBeenCalledWith("/ordinary-life/quotations/new")
 
