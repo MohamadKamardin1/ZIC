@@ -9,7 +9,7 @@ import { useToast } from "../../components/ui/Toast"
 import { MoneyCell, WithdrawalMoneySummary, WithdrawalStatusBadge } from "../../components/withdrawals/WithdrawalPrimitives"
 import { dateLabel } from "../../lib/commitmentsDisplay"
 import { useAccess } from "../../lib/access"
-import { useWithdrawalAudit, useWithdrawalBreakdown, useWithdrawalDetail, useWithdrawalPayments } from "../../lib/withdrawalsHooks"
+import { useWithdrawalActionMutation, useWithdrawalAudit, useWithdrawalBreakdown, useWithdrawalDetail, useWithdrawalPayments } from "../../lib/withdrawalsHooks"
 import type { WithdrawalAction, WithdrawalAuditEntry, WithdrawalBreakdown, WithdrawalDetail, WithdrawalPayment } from "../../lib/withdrawals"
 
 type DetailTab = "overview" | "breakdown" | "payments" | "documents" | "audit"
@@ -70,8 +70,37 @@ function PaymentsTable({ payments }: { payments: WithdrawalPayment[] }) {
   return <div className="overflow-x-auto"><table className="w-full min-w-[700px] text-left text-sm"><caption className="sr-only">Withdrawal payments</caption><thead className="bg-[var(--muted)]/45 text-xs uppercase tracking-[0.08em] text-[var(--muted-foreground)]"><tr><th scope="col" className="px-4 py-3">Payment mode</th><th scope="col" className="px-4 py-3">Receipt reference</th><th scope="col" className="px-4 py-3 text-right">Amount</th><th scope="col" className="px-4 py-3">Payment date</th><th scope="col" className="px-4 py-3">Status</th></tr></thead><tbody className="divide-y">{payments.map((payment) => <tr key={payment.id}><td className="px-4 py-3 font-semibold">{safeText(payment.paymentModeDisplay || payment.paymentMode)}</td><td className="px-4 py-3">{safeText(payment.receiptReference)}</td><td className="px-4 py-3 text-right"><MoneyCell value={payment.amount} currency={payment.currency} /></td><td className="px-4 py-3">{dateLabel(payment.paymentDate)}</td><td className="px-4 py-3"><WithdrawalStatusBadge status={payment.status} /></td></tr>)}</tbody></table></div>
 }
 
-function ActionDialog({ action, detail, open, onClose }: { action: ActionKey | null; detail: WithdrawalDetail; open: boolean; onClose: () => void }) {
-  return <Modal open={open} title={`${action ? ACTION_LABELS[action] : "Withdrawal"} withdrawal`} onClose={onClose}><div className="space-y-4"><div className="rounded-lg border bg-[var(--muted)]/30 p-4"><p className="text-sm font-bold">{detail.withdrawalNumber}</p><p className="mt-1 text-xs text-[var(--muted-foreground)]">{detail.policyholderName} · {detail.policyNumber}</p></div><p className="text-sm leading-6 text-[var(--muted-foreground)]">The controlled {action ? ACTION_LABELS[action].toLowerCase() : "withdrawal"} workflow will validate the latest status, permission, and policy financial state before applying a change.</p>{action && ["reject", "cancel", "reverse"].includes(action) && <label className="block space-y-1.5"><span className="text-xs font-bold">Reason <span className="text-[var(--destructive)]">*</span></span><textarea rows={3} className="w-full rounded-[10px] border bg-[var(--card)] px-3 py-2 text-sm" placeholder={`Explain why this withdrawal should be ${ACTION_LABELS[action].toLowerCase()}.`} /></label>}<div className="flex justify-end gap-2 border-t pt-4"><button type="button" className="button-secondary" onClick={onClose}>Close</button></div></div></Modal>
+function ActionDialog({ action, detail, open, onClose, permitted }: { action: ActionKey | null; detail: WithdrawalDetail; open: boolean; onClose: () => void; permitted: boolean }) {
+  const actionMutation = useWithdrawalActionMutation()
+  const { toast } = useToast()
+  const [reason, setReason] = useState("")
+  const [validationError, setValidationError] = useState("")
+
+  const close = () => {
+    if (actionMutation.isPending) return
+    setReason("")
+    setValidationError("")
+    onClose()
+  }
+
+  const submit = async () => {
+    if (!action || !permitted) return
+    if (!reason.trim()) {
+      setValidationError(action === "reject" ? "Reason for Rejection is required before you can reject this withdrawal." : "Reason for approval is required before you can approve this withdrawal.")
+      return
+    }
+    setValidationError("")
+    try {
+      const result = await actionMutation.mutateAsync({ id: detail.id, action: action as WithdrawalAction, payload: { reason: reason.trim() }, idempotencyKey: `ol-withdrawal:${action}:${detail.id}:${Date.now()}` })
+      const status = result.withdrawal?.statusDisplay || (action === "approve" ? "Approved" : "Rejected")
+      toast({ tone: "success", title: `${ACTION_LABELS[action]} withdrawal`, message: `Status updated to ${status}.` })
+      close()
+    } catch (caught) {
+      setValidationError(caught instanceof Error ? caught.message : "The withdrawal action could not be completed.")
+    }
+  }
+
+  return <Modal open={open} title={`${action ? ACTION_LABELS[action] : "Withdrawal"} withdrawal`} onClose={close}><div className="space-y-4"><div className="rounded-lg border bg-[var(--muted)]/30 p-4"><p className="text-sm font-bold">{detail.withdrawalNumber}</p><p className="mt-1 text-xs text-[var(--muted-foreground)]">{detail.policyholderName} · {detail.policyNumber}</p><div className="mt-3"><WithdrawalStatusBadge status={detail.status} statusDisplay={detail.statusDisplay} /></div></div>{!permitted ? <ErrorCoach title="Action not permitted" message="Your access metadata does not include permission to perform this withdrawal action." resolutionSteps={["Close this dialog and return to the detail page.", "Ask an administrator for the required OL Withdrawals permission."]} /> : <><p className="text-sm leading-6 text-[var(--muted-foreground)]">Confirm the controlled {action ? ACTION_LABELS[action].toLowerCase() : "withdrawal"} action. The latest status, permission, and policy financial state will be validated again by the backend.</p>{action && <label className="block space-y-1.5" htmlFor={`withdrawal-action-reason-${action}`}><span className="text-xs font-bold">{action === "reject" ? "Reason for Rejection" : "Reason for Approval"} <span className="text-[var(--destructive)]">*</span></span><textarea id={`withdrawal-action-reason-${action}`} rows={4} value={reason} onChange={(event) => { setReason(event.target.value); setValidationError("") }} aria-invalid={Boolean(validationError)} className="w-full rounded-[10px] border bg-[var(--card)] px-3 py-2 text-sm outline-none focus:border-[var(--ring)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--ring)_18%,transparent)]" placeholder={action === "reject" ? "Explain why this withdrawal should be rejected." : "Explain why this withdrawal is approved."} /></label>}{validationError && <ErrorCoach title="Withdrawal action needs attention" message={validationError} resolutionSteps={["Enter a clear reason for this controlled action.", "If the backend rejects the action, verify the withdrawal status and your permission."]} />}<div className="flex justify-end gap-2 border-t pt-4"><button type="button" className="button-secondary" onClick={close} disabled={actionMutation.isPending}>Cancel</button><button type="button" className="button-primary" onClick={() => void submit()} disabled={actionMutation.isPending}>{actionMutation.isPending ? "Submitting…" : action === "approve" ? "Confirm Approval" : "Reject"}</button></div></>}</div></Modal>
 }
 
 function OverviewTab({ detail, breakdown, audit }: { detail: WithdrawalDetail; breakdown: WithdrawalBreakdown | null; audit: WithdrawalAuditEntry[] }) {
@@ -127,6 +156,6 @@ export default function OLWithdrawalDetail() {
       {activeTab === "documents" && <DocumentInstancesPanel sourceType="ol_policies.withdrawalrequest" objectId={detail.id} documentType="OL_WITHDRAWAL_STATEMENT" title="Withdrawal documents" description="Generated statements retain the withdrawal source transaction and approved template version." renderLabel="Generate statement" />}
       {activeTab === "audit" && <section className="surface-card p-5"><h2 className="text-base font-extrabold">Audit History</h2><p className="mt-1 text-sm text-[var(--muted-foreground)]">Every status and calculation event is displayed with its actor and source channel.</p><div className="mt-4"><Timeline entries={audit} /></div></section>}
     </MasterDetailPage>
-    <ActionDialog action={action} detail={detail} open={actionDialogOpen} onClose={() => { setAction(null); setSearchParams((current) => { current.delete("action"); return current }) }} />
+    <ActionDialog action={action} detail={detail} open={actionDialogOpen} permitted={action ? can(actionPermission(action)) : false} onClose={() => { setAction(null); setSearchParams((current) => { current.delete("action"); return current }) }} />
   </div>
 }

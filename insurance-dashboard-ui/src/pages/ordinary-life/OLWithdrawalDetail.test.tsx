@@ -5,11 +5,13 @@ import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { WithdrawalAuditEntry, WithdrawalBreakdown, WithdrawalDetail, WithdrawalPayment } from "../../lib/withdrawals"
 
-const { useWithdrawalDetailMock, useWithdrawalBreakdownMock, useWithdrawalPaymentsMock, useWithdrawalAuditMock, toastMock } = vi.hoisted(() => ({
+const { useWithdrawalDetailMock, useWithdrawalBreakdownMock, useWithdrawalPaymentsMock, useWithdrawalAuditMock, useWithdrawalActionMutationMock, useAccessMock, toastMock } = vi.hoisted(() => ({
   useWithdrawalDetailMock: vi.fn(),
   useWithdrawalBreakdownMock: vi.fn(),
   useWithdrawalPaymentsMock: vi.fn(),
   useWithdrawalAuditMock: vi.fn(),
+  useWithdrawalActionMutationMock: vi.fn(),
+  useAccessMock: vi.fn(),
   toastMock: vi.fn(),
 }))
 
@@ -18,27 +20,12 @@ vi.mock("../../lib/withdrawalsHooks", () => ({
   useWithdrawalBreakdown: useWithdrawalBreakdownMock,
   useWithdrawalPayments: useWithdrawalPaymentsMock,
   useWithdrawalAudit: useWithdrawalAuditMock,
+  useWithdrawalActionMutation: useWithdrawalActionMutationMock,
 }))
 
 vi.mock("../../components/ui/Toast", () => ({ useToast: () => ({ toast: toastMock }) }))
 
-vi.mock("../../lib/access", () => ({
-  useAccess: () => ({
-    access: { permissions: [
-      { module: "ol_withdrawals", action: "view" },
-      { module: "ol_withdrawals", action: "approve" },
-      { module: "ol_withdrawals", action: "process_payout" },
-      { module: "ol_withdrawals", action: "cancel" },
-      { module: "ol_withdrawals", action: "reverse" },
-      { module: "ol_withdrawals", action: "print" },
-    ], visibleModules: ["ol_withdrawals"], groups: [] },
-    hasPermission: (permission: string) => ["ol_withdrawals.view", "ol_withdrawals.approve", "ol_withdrawals.process_payout", "ol_withdrawals.cancel", "ol_withdrawals.reverse", "ol_withdrawals.print"].includes(permission),
-    isSuperAdmin: false,
-    canAccess: () => true,
-    isLoading: false,
-    isError: false,
-  }),
-}))
+vi.mock("../../lib/access", () => ({ useAccess: useAccessMock }))
 
 import OLWithdrawalDetail from "./OLWithdrawalDetail"
 
@@ -59,6 +46,15 @@ const breakdown: WithdrawalBreakdown = {
 }
 
 const payments: WithdrawalPayment[] = [{ id: "payment-1", paymentMode: "BANK_TRANSFER", paymentModeDisplay: "Bank transfer", receiptReference: "RCT-2026-000001", amount: "237500.00", currency: "TZS", paymentDate: "2026-08-20T10:00:00Z", status: "COMPLETED", createdAt: "2026-08-20T10:00:00Z" }]
+const actionMutationState = { isPending: false, mutateAsync: vi.fn().mockResolvedValue({ withdrawal: { statusDisplay: "Approved" } }) }
+const fullAccess = { access: { permissions: [
+  { module: "ol_withdrawals", action: "view" },
+  { module: "ol_withdrawals", action: "approve" },
+  { module: "ol_withdrawals", action: "process_payout" },
+  { module: "ol_withdrawals", action: "cancel" },
+  { module: "ol_withdrawals", action: "reverse" },
+  { module: "ol_withdrawals", action: "print" },
+], visibleModules: ["ol_withdrawals"], groups: [] }, hasPermission: (permission: string) => ["ol_withdrawals.view", "ol_withdrawals.approve", "ol_withdrawals.process_payout", "ol_withdrawals.cancel", "ol_withdrawals.reverse", "ol_withdrawals.print"].includes(permission), isSuperAdmin: false, canAccess: () => true, isLoading: false, isError: false }
 const audit: WithdrawalAuditEntry[] = [{ id: "event-1", action: "REQUESTED", actorDisplay: "Sultan Admin", sourceChannel: "API", reason: "Education expenses", createdAt: "2026-08-18T09:00:00Z" }]
 
 const detail: WithdrawalDetail = {
@@ -112,6 +108,9 @@ describe("OL Withdrawal detail Prompt 4", () => {
     useWithdrawalBreakdownMock.mockReset()
     useWithdrawalPaymentsMock.mockReset()
     useWithdrawalAuditMock.mockReset()
+    useWithdrawalActionMutationMock.mockReset().mockReturnValue(actionMutationState)
+    actionMutationState.mutateAsync.mockReset().mockImplementation(({ action }: { action: string }) => Promise.resolve({ withdrawal: { statusDisplay: action === "reject" ? "Rejected" : "Approved" } }))
+    useAccessMock.mockReset().mockReturnValue(fullAccess)
   })
 
   it("renders the header, financial cards, dates, and policy link", async () => {
@@ -126,17 +125,42 @@ describe("OL Withdrawal detail Prompt 4", () => {
     expect(screen.getAllByText("Requested").length).toBeGreaterThan(0)
   })
 
-  it("shows actions according to requested status and opens the controlled action dialog", async () => {
+  it("confirms approval only after a reason and refreshes status feedback", async () => {
     const user = userEvent.setup()
     renderDetail()
     await screen.findAllByText("OL-WDR-2026-000001")
-    expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Approve" }))
+    const approvalDialog = await screen.findByRole("dialog", { name: "Approve withdrawal" })
+    expect(within(approvalDialog).getByRole("button", { name: "Confirm Approval" })).toBeInTheDocument()
+    await user.click(within(approvalDialog).getByRole("button", { name: "Confirm Approval" }))
+    expect(await within(approvalDialog).findByText(/Reason for approval is required/)).toBeInTheDocument()
+    await user.type(within(approvalDialog).getByRole("textbox", { name: /Reason for Approval/ }), "Eligibility checks completed")
+    await user.click(within(approvalDialog).getByRole("button", { name: "Confirm Approval" }))
+    await expect.poll(() => actionMutationState.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ id: "withdrawal-requested-1", action: "approve", payload: { reason: "Eligibility checks completed" } }))
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: "Approve withdrawal", message: "Status updated to Approved." }))
+  })
+
+  it("requires a rejection reason and then submits the rejection action", async () => {
+    const user = userEvent.setup()
+    renderDetail()
+    await screen.findAllByText("OL-WDR-2026-000001")
     await user.click(screen.getByRole("button", { name: "Reject" }))
     const rejectDialog = await screen.findByRole("dialog", { name: "Reject withdrawal" })
-    expect(rejectDialog).toHaveTextContent("Reason")
-    expect(within(rejectDialog).getByRole("textbox", { name: /Reason/ })).toBeInTheDocument()
+    await user.click(within(rejectDialog).getByRole("button", { name: "Reject" }))
+    expect(await within(rejectDialog).findByText(/Reason for Rejection is required/)).toBeInTheDocument()
+    await user.type(within(rejectDialog).getByRole("textbox", { name: /Reason for Rejection/ }), "Insufficient documentation")
+    await user.click(within(rejectDialog).getByRole("button", { name: "Reject" }))
+    await expect.poll(() => actionMutationState.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ id: "withdrawal-requested-1", action: "reject", payload: { reason: "Insufficient documentation" } }))
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: "Reject withdrawal", message: "Status updated to Rejected." }))
+  })
+
+  it("hides approval and rejection actions when the permission is absent", async () => {
+    useAccessMock.mockReturnValue({ ...fullAccess, access: { ...fullAccess.access, permissions: [{ module: "ol_withdrawals", action: "view" }, { module: "ol_withdrawals", action: "print" }] }, hasPermission: (permission: string) => permission === "ol_withdrawals.view" || permission === "ol_withdrawals.print" })
+    renderDetail()
+    await screen.findAllByText("OL-WDR-2026-000001")
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Reject" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Print" })).toBeInTheDocument()
   })
 
   it("renders the backend breakdown and payment data when tabs are selected", async () => {

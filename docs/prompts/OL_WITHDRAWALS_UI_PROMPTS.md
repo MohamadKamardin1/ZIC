@@ -183,7 +183,7 @@ GIT:
 
 FINAL OUTPUT: tab behavior, tests, commit hash, pushed branch.
 
-## [ ] Prompt 6 — Approval & Rejection Actions
+## [x] Prompt 6 — Approval & Rejection Actions
 
 You are a senior frontend engineer. Continue the ZIC Withdrawals UI. Execute ONLY Prompt 6.
 
