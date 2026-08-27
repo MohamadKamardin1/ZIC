@@ -220,7 +220,7 @@ export default function App() {
         <Route path="ordinary-life/policies" element={<RequirePermission permission="ol_policies.view"><OLPolicies /></RequirePermission>} />
         <Route path="ordinary-life/policies/new" element={<RequirePermission permission="ol_policies.create"><PolicyIssuanceWizard /></RequirePermission>} />
         <Route path="ordinary-life/policies/:policyId" element={<RequirePermission permission="ol_policies.view"><PolicyDetailPage /></RequirePermission>} />
-        <Route path="ordinary-life/loans" element={<OLLoans />} />
+        <Route path="ordinary-life/loans" element={<RequirePermission permission="ol_loans.view"><OLLoans /></RequirePermission>} />
         <Route path="ordinary-life/withdrawals" element={<OLWithdrawals />} />
         <Route path="ordinary-life/claims" element={<OLClaims />} />
         <Route path="ordinary-life/maturity-installments" element={<OLMaturityInstallments />} />
