@@ -191,6 +191,16 @@ export const loansHandlers = [
     const loan = findLoan(String(params.loanId))
     return loan ? data({ loan_id: loan.id, currency: loan.currency, principal: loan.principal_amount, total_repaid: loan.total_repaid, outstanding_balance: loan.outstanding_balance, accrued_interest: "6666.67", accrued_penalty: "0.00", as_of: "2026-08-27" }) : error(404, "LOAN_NOT_FOUND", "The loan could not be found.", ["Return to the Loans register and choose an available loan."])
   }),
+  http.get(`*${LOANS_BASE}/:loanId/schedule/`, ({ params, request }) => {
+    const loan = findLoan(String(params.loanId))
+    if (!loan) return error(404, "LOAN_NOT_FOUND", "The loan could not be found.", ["Return to the Loans register and choose an available loan."])
+    const detail = detailFor(loan)
+    const rows = detail.schedules
+    const totalScheduled = rows.reduce((sum, row) => sum + Number(row.principal_due) + Number(row.interest_due) + Number(row.penalty_due), 0).toFixed(2)
+    const totalPaid = rows.reduce((sum, row) => sum + Number(row.amount_paid), 0).toFixed(2)
+    const remainingBalance = rows.reduce((sum, row) => sum + Number(row.balance), 0).toFixed(2)
+    return data({ ...page(rows, new URL(request.url)), aggregates: { total_scheduled: totalScheduled, total_paid: totalPaid, remaining_balance: remainingBalance } })
+  }),
   http.get(`*${LOANS_BASE}/:loanId/`, ({ params }) => {
     const loan = findLoan(String(params.loanId))
     return loan ? data(detailFor(loan)) : error(404, "LOAN_NOT_FOUND", "The loan could not be found.", ["Return to the Loans register and choose an available loan."])

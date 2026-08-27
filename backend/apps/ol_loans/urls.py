@@ -7,6 +7,7 @@ from .document_views import OLLoanAgreementPrintView, OLLoanSchedulePrintView
 from .integration_views import OLLoanDashboardHooksView
 from .portal_views import OLLoanPortalDetailView, OLLoanPortalListView
 from .repayment_views import OLLoanRepayView
+from .schedule_views import OLLoanScheduleView
 from .views import OLLoanDetailView, OLLoanExportView, OLLoanKPIView, OLLoanListView, OLLoanOptionsView
 
 
@@ -26,6 +27,7 @@ urlpatterns = [
     path("loans/<uuid:loan_id>/approve/", OLLoanApproveView.as_view(), name="loan-approve"),
     path("loans/<uuid:loan_id>/disburse/", OLLoanDisburseView.as_view(), name="loan-disburse"),
     path("loans/<uuid:loan_id>/balance/", OLLoanBalanceView.as_view(), name="loan-balance"),
+    path("loans/<uuid:loan_id>/schedule/", OLLoanScheduleView.as_view(), name="loan-schedule"),
     path("loans/<uuid:loan_id>/repay/", OLLoanRepayView.as_view(), name="loan-repay"),
     path("loans/<uuid:loan_id>/reject/", OLLoanRejectView.as_view(), name="loan-reject"),
     path("loans/", OLLoanListView.as_view(), name="loan-list"),

@@ -35,6 +35,13 @@ export interface Paginated<T> {
   previous: boolean | string | null
   page?: number
   pageSize?: number
+  aggregates?: Record<string, string | number>
+}
+
+export interface LoanScheduleAggregates {
+  totalScheduled: string
+  totalPaid: string
+  remainingBalance: string
 }
 
 export interface LoanOption {
@@ -118,7 +125,9 @@ export interface LoanScheduleRow {
   penaltyPaid: string
   amountPaid: string
   balance: string
+  totalDue: string
   status: string
+  statusDisplay: string
 }
 
 export interface LoanRepaymentRow {
@@ -300,7 +309,7 @@ export function normalizeLoan(row: Record<string, unknown>): LoanRecord {
   }
 }
 
-function normalizeSchedule(row: Record<string, unknown>): LoanScheduleRow {
+export function normalizeSchedule(row: Record<string, unknown>): LoanScheduleRow {
   return {
     id: stringValue(row, "id"),
     installmentNumber: Number(pick(row, "installmentNumber", "installment_number") ?? 0),
@@ -313,7 +322,9 @@ function normalizeSchedule(row: Record<string, unknown>): LoanScheduleRow {
     penaltyPaid: amountValue(row, "penaltyPaid", "penalty_paid"),
     amountPaid: amountValue(row, "amountPaid", "amount_paid"),
     balance: amountValue(row, "balance"),
+    totalDue: amountValue(row, "totalDue", "total_due") !== "0.00" ? amountValue(row, "totalDue", "total_due") : (Number(amountValue(row, "principalDue", "principal_due")) + Number(amountValue(row, "interestDue", "interest_due")) + Number(amountValue(row, "penaltyDue", "penalty_due"))).toFixed(2),
     status: stringValue(row, "status").toUpperCase(),
+    statusDisplay: stringValue(row, "statusDisplay", "status_display", "status"),
   }
 }
 
@@ -509,6 +520,26 @@ export function getLoan(id: string): Promise<LoanDetail> {
 
 export function getLoanBalance(id: string): Promise<Record<string, unknown>> {
   return request<Record<string, unknown>>(`${LOANS_API_PREFIX}/loans/${encodeURIComponent(id)}/balance/`)
+}
+
+export function getLoanSchedule(id: string, params: { page?: number; pageSize?: number } = {}): Promise<Paginated<LoanScheduleRow> & { aggregates?: LoanScheduleAggregates }> {
+  const search = new URLSearchParams()
+  if (params.page) search.set("page", String(params.page))
+  if (params.pageSize) search.set("page_size", String(params.pageSize))
+  const query = search.toString()
+  return request<unknown>(`${LOANS_API_PREFIX}/loans/${encodeURIComponent(id)}/schedule/${query ? `?${query}` : ""}`).then((payload) => {
+    const page = normalizePaginated(payload, normalizeSchedule)
+    const record = isRecord(payload) ? payload : {}
+    const rawAggregates = isRecord(record.aggregates) ? record.aggregates : {}
+    return {
+      ...page,
+      aggregates: {
+        totalScheduled: amountValue(rawAggregates, "totalScheduled", "total_scheduled"),
+        totalPaid: amountValue(rawAggregates, "totalPaid", "total_paid"),
+        remainingBalance: amountValue(rawAggregates, "remainingBalance", "remaining_balance"),
+      },
+    }
+  })
 }
 
 function withIdempotencyKey(headers: HeadersInit | undefined, idempotencyKey?: string): HeadersInit | undefined {

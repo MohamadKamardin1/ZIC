@@ -4,7 +4,7 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
-from apps.ol_loans.models import LoanStatus, OLLoan
+from apps.ol_loans.models import LoanScheduleStatus, LoanStatus, OLLoan, OLLoanSchedule
 from apps.ol_policies.models import Policy
 from apps.ol_proposals.models import OLProposal
 from apps.ol_quotations.models import OLQuotation
@@ -80,6 +80,29 @@ class OLLoanApiTestCase(APITestCase):
         self.assertEqual(row["partner_display"], self.partner.legal_name)
         self.assertEqual(row["status_display"], "Requested")
         self.assertEqual(row["currency"], "TZS")
+
+    def test_schedule_endpoint_returns_paginated_contractual_rows_and_aggregates(self):
+        OLLoanSchedule.objects.create(
+            loan=self.loan,
+            installment_number=1,
+            due_date=date.today(),
+            principal_due=Decimal("80000.00"),
+            interest_due=Decimal("6666.67"),
+            penalty_due=Decimal("0.00"),
+            principal_paid=Decimal("80000.00"),
+            interest_paid=Decimal("6666.67"),
+            amount_paid=Decimal("86666.67"),
+            balance=Decimal("0.00"),
+            status=LoanScheduleStatus.PAID,
+        )
+        self.client.force_authenticate(self.staff)
+        response = self.client.get(f"/api/v1/ol/loans/{self.loan.pk}/schedule/?page=1&page_size=1")
+        self.assertEqual(response.status_code, 200)
+        payload = response.data["data"]
+        self.assertEqual(payload["count"], 1)
+        self.assertEqual(payload["page_size"], 1)
+        self.assertEqual(payload["results"][0]["installment_number"], 1)
+        self.assertEqual(payload["results"][0]["status"], LoanScheduleStatus.PAID)
 
     def test_retrieve_includes_child_collections_and_missing_loan_is_structured(self):
         self.client.force_authenticate(self.staff)

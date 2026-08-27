@@ -36,6 +36,15 @@ describe("OL Loans MSW contract", () => {
     expect(unknownBody).toMatchObject({ errorCode: "OPTIONS_ENTITY_NOT_FOUND", error: { code: "OPTIONS_ENTITY_NOT_FOUND" } })
   })
 
+  it("returns a paginated schedule and full-schedule aggregates", async () => {
+    const response = await fetch("http://localhost/api/v1/ol/loans/loan-active-1/schedule/?page=1&page_size=1")
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.data.results).toHaveLength(1)
+    expect(body.data.results[0]).toMatchObject({ installment_number: 1, status: "PAID" })
+    expect(body.data).toMatchObject({ count: 2, next: true, aggregates: { total_scheduled: "173333.34", total_paid: "86666.67", remaining_balance: "86666.67" } })
+  })
+
   it("returns KPI and secure print contracts", async () => {
     const [kpiResponse, printResponse] = await Promise.all([
       fetch("http://localhost/api/v1/ol/loans/kpis/"),
