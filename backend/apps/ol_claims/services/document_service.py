@@ -64,6 +64,9 @@ def can_proceed_to_assessment(claim_id, *, actor=None, source_channel="API"):
                 "required_document_types": status["required_document_types"],
             },
         )
+    from .medical import assert_medical_ready
+
+    assert_medical_ready(claim)
     return True
 
 

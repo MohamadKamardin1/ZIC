@@ -2,7 +2,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .errors import not_found
-from .models import ClaimSourceChannel, OLClaim
+from .models import ClaimMedicalStatus, ClaimSourceChannel, OLClaim
 from .permissions import HasOLClaimPermission
 from .serializers import OLClaimDocumentSerializer
 from .services.document_service import can_proceed_to_assessment, document_requirement_status, upload_document
@@ -88,7 +88,18 @@ class ClaimAssessmentReadinessView(APIView):
     def get(self, request, claim_id):
         claim = _claim(claim_id)
         requirement = document_requirement_status(claim)
-        return Response({"data": {"claim_number": claim.claim_number, "can_proceed_to_assessment": not requirement["missing_document_types"], **requirement}})
+        medical_blocked = claim.medical_status in {ClaimMedicalStatus.PENDING, ClaimMedicalStatus.REJECTED}
+        return Response(
+            {
+                "data": {
+                    "claim_number": claim.claim_number,
+                    "can_proceed_to_assessment": not requirement["missing_document_types"] and not medical_blocked,
+                    "medical_status": claim.medical_status,
+                    "medical_blocked": medical_blocked,
+                    **requirement,
+                }
+            }
+        )
 
     def post(self, request, claim_id):
         can_proceed_to_assessment(claim_id, actor=request.user, source_channel=_source_channel(request))

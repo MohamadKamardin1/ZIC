@@ -5,6 +5,46 @@ DOC_REF = "docs/OL_CLAIMS_DESIGN.md"
 
 
 CLAIM_ERROR_REGISTRY = {
+    "CLAIM_MEDICAL_REVIEW_REQUIRED": {
+        "message": "Medical review must be completed before claim assessment can proceed.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Open the Medical Review section and record a Cleared or Loading outcome.",
+            "If the medical evidence is insufficient, obtain the required report and retry the review.",
+        ],
+    },
+    "CLAIM_MEDICAL_REJECTED": {
+        "message": "Medical review rejected this claim and assessment cannot proceed.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Review the medical decision and recorded reason in the claim timeline.",
+            "Escalate or reopen the claim only through the approved Claims governance process.",
+        ],
+    },
+    "CLAIM_INVALID_MEDICAL_RESULT": {
+        "message": "The medical result is incomplete or unsupported.",
+        "status_code": 400,
+        "resolution_steps": [
+            "Choose Cleared, Rejected, or Loading.",
+            "Provide a reason when rejecting and a valid loading factor when applying loading.",
+        ],
+    },
+    "CLAIM_INVALID_MEDICAL_STATUS": {
+        "message": "A medical result cannot be recorded from the claim's current medical status.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Request medical review first, then record one outcome exactly once.",
+            "Refresh the claim to confirm the current medical status before retrying.",
+        ],
+    },
+    "CLAIM_LOADING_FACTOR_INVALID": {
+        "message": "The medical loading factor is invalid.",
+        "status_code": 400,
+        "resolution_steps": [
+            "Enter a loading factor greater than zero and no greater than 10.",
+            "Alternatively provide a loading percentage that produces a factor in the supported range.",
+        ],
+    },
     "CLAIM_DOCUMENT_REQUIRED": {
         "message": "A document type and file are required before the claim can progress.",
         "status_code": 400,

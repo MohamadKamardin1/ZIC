@@ -5,6 +5,8 @@ AGGREGATE_TYPE = "OLClaim"
 CLAIM_REGISTERED = "ClaimRegistered"
 CLAIM_ASSESSED = "ClaimAssessed"
 CLAIM_DOCUMENT_UPLOADED = "ClaimDocumentUploaded"
+CLAIM_MEDICAL_REQUIRED = "ClaimMedicalRequired"
+CLAIM_MEDICAL_RESULT_RECORDED = "ClaimMedicalResultRecorded"
 CLAIM_REQUISITIONED = "ClaimRequisitioned"
 CLAIM_APPROVED = "ClaimApproved"
 CLAIM_SETTLED = "ClaimSettled"
@@ -14,6 +16,8 @@ CLAIM_DOMAIN_EVENTS = (
     CLAIM_REGISTERED,
     CLAIM_ASSESSED,
     CLAIM_DOCUMENT_UPLOADED,
+    CLAIM_MEDICAL_REQUIRED,
+    CLAIM_MEDICAL_RESULT_RECORDED,
     CLAIM_REQUISITIONED,
     CLAIM_APPROVED,
     CLAIM_SETTLED,
@@ -54,28 +58,45 @@ def emit_claim_event(
 
 
 def emit_claim_registered(claim, **kwargs):
-    return emit_claim_event(CLAIM_REGISTERED, claim, to_status=claim.status, **kwargs)
+    kwargs.setdefault("to_status", claim.status)
+    return emit_claim_event(CLAIM_REGISTERED, claim, **kwargs)
 
 
 def emit_claim_assessed(claim, **kwargs):
-    return emit_claim_event(CLAIM_ASSESSED, claim, to_status=claim.status, **kwargs)
+    kwargs.setdefault("to_status", claim.status)
+    return emit_claim_event(CLAIM_ASSESSED, claim, **kwargs)
 
 
 def emit_claim_document_uploaded(claim, **kwargs):
-    return emit_claim_event(CLAIM_DOCUMENT_UPLOADED, claim, to_status=claim.status, **kwargs)
+    kwargs.setdefault("to_status", claim.status)
+    return emit_claim_event(CLAIM_DOCUMENT_UPLOADED, claim, **kwargs)
+
+
+def emit_claim_medical_required(claim, **kwargs):
+    kwargs.setdefault("to_status", claim.status)
+    return emit_claim_event(CLAIM_MEDICAL_REQUIRED, claim, **kwargs)
+
+
+def emit_claim_medical_result(claim, **kwargs):
+    kwargs.setdefault("to_status", claim.status)
+    return emit_claim_event(CLAIM_MEDICAL_RESULT_RECORDED, claim, **kwargs)
 
 
 def emit_claim_requisitioned(claim, **kwargs):
-    return emit_claim_event(CLAIM_REQUISITIONED, claim, to_status=claim.status, **kwargs)
+    kwargs.setdefault("to_status", claim.status)
+    return emit_claim_event(CLAIM_REQUISITIONED, claim, **kwargs)
 
 
 def emit_claim_approved(claim, **kwargs):
-    return emit_claim_event(CLAIM_APPROVED, claim, to_status=claim.status, **kwargs)
+    kwargs.setdefault("to_status", claim.status)
+    return emit_claim_event(CLAIM_APPROVED, claim, **kwargs)
 
 
 def emit_claim_settled(claim, **kwargs):
-    return emit_claim_event(CLAIM_SETTLED, claim, to_status=claim.status, **kwargs)
+    kwargs.setdefault("to_status", claim.status)
+    return emit_claim_event(CLAIM_SETTLED, claim, **kwargs)
 
 
 def emit_claim_cancelled(claim, **kwargs):
-    return emit_claim_event(CLAIM_CANCELLED, claim, to_status=claim.status, **kwargs)
+    kwargs.setdefault("to_status", claim.status)
+    return emit_claim_event(CLAIM_CANCELLED, claim, **kwargs)

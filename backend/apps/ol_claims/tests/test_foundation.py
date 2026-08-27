@@ -21,6 +21,7 @@ from apps.ol_claims.admin import (
 )
 from apps.ol_claims.errors import CLAIM_ERROR_REGISTRY, registry_error
 from apps.ol_claims.models import (
+    ClaimMedicalStatus,
     ClaimStatus,
     ClaimantType,
     OLClaim,
@@ -33,12 +34,13 @@ from apps.ol_claims.models import (
 from apps.ol_claims.options import claim_type_options
 from apps.ol_claims.permissions import ACTIONS, OLClaimPermission, has_ol_claim_permission
 from apps.ol_claims.services.document_service import can_proceed_to_assessment, get_required_documents
+from apps.ol_claims.services.medical import evaluate_medical_requirements, record_medical_result, require_medical_review
 from apps.ol_claims.services.validation import calculate_max_claimable, validate_eligibility
 from apps.ol_proposals.models import OLProposal
 from apps.ol_quotations.models import OLQuotation
 from apps.ol_policies.models import Policy, PolicyBenefit, PolicyMember
 from apps.partners.models import Partner
-from apps.ol_parameters.models import OLClaimReason, OLClaimType
+from apps.ol_parameters.models import OLClaimReason, OLClaimType, OLMedicalCode, OLMedicalLimit
 from apps.users.models import UserPermission
 
 
@@ -645,3 +647,106 @@ class OLClaimFoundationTestCase(APITestCase):
             AuditLog.objects.filter(action_type="DOCUMENT_UPLOAD", app_label="ol_claims", model_name="claimdocument").count(),
             2,
         )
+
+    def test_medical_parameter_sets_pending_and_blocks_assessment(self):
+        claim_type = OLClaimType.objects.create(
+            code="MEDICAL_REQUIRED_CLAIM",
+            name="Medical Required Claim",
+            claim_category="CRITICAL_ILLNESS",
+            calculation_basis="SUM_ASSURED",
+            duplicate_check_rule="NONE",
+            waiting_period_days=0,
+            payable_to_rules={"medical_required": True},
+            require_documents=[],
+            effective_from=date(2026, 1, 1),
+        )
+        claim = self.make_claim()
+        claim.claim_type = claim_type.code
+        claim.save(update_fields=["claim_type", "updated_at"])
+        evaluated = evaluate_medical_requirements(claim, actor=self.user, source_channel="WEB")
+        claim.refresh_from_db()
+        self.assertTrue(evaluated["medical_required"])
+        self.assertEqual(claim.medical_status, ClaimMedicalStatus.PENDING)
+        self.assertEqual(claim.status, ClaimStatus.PENDING_MEDICAL)
+        with self.assertRaises(Exception) as raised:
+            can_proceed_to_assessment(claim.pk, actor=self.user)
+        self.assertEqual(raised.exception.error_code, "CLAIM_MEDICAL_REVIEW_REQUIRED")
+
+    def test_medical_results_clear_reject_or_apply_loading(self):
+        OLClaimType.objects.create(
+            code="MEDICAL_OUTCOME_CLAIM",
+            name="Medical Outcome Claim",
+            claim_category="DISABILITY",
+            calculation_basis="SUM_ASSURED",
+            duplicate_check_rule="NONE",
+            waiting_period_days=0,
+            payable_to_rules={},
+            require_documents=[],
+            effective_from=date(2026, 1, 1),
+        )
+        cleared = self.make_claim()
+        cleared.claim_type = "MEDICAL_OUTCOME_CLAIM"
+        cleared.save(update_fields=["claim_type", "updated_at"])
+        require_medical_review(cleared.pk, actor=self.user, reason="Review requested.")
+        cleared = record_medical_result(cleared.pk, result="CLEARED", reason="Evidence supports the claim.", actor=self.user)
+        self.assertEqual(cleared.medical_status, ClaimMedicalStatus.CLEARED)
+        self.assertEqual(cleared.status, ClaimStatus.REGISTERED)
+
+        rejected = self.make_claim()
+        rejected.claim_type = "MEDICAL_OUTCOME_CLAIM"
+        rejected.save(update_fields=["claim_type", "updated_at"])
+        require_medical_review(rejected.pk, actor=self.user, reason="Review requested.")
+        rejected = record_medical_result(rejected.pk, result="REJECTED", reason="Evidence does not support the claim.", actor=self.user)
+        self.assertEqual(rejected.medical_status, ClaimMedicalStatus.REJECTED)
+        self.assertEqual(rejected.status, ClaimStatus.REJECTED)
+
+        loading = self.make_claim()
+        loading.claim_type = "MEDICAL_OUTCOME_CLAIM"
+        loading.save(update_fields=["claim_type", "updated_at"])
+        before_amount = loading.items.get().calculated_amount
+        require_medical_review(loading.pk, actor=self.user, reason="Review requested.")
+        loading = record_medical_result(loading.pk, result="LOADING", loading_factor=Decimal("1.2500"), actor=self.user)
+        loading.refresh_from_db()
+        self.assertEqual(loading.medical_status, ClaimMedicalStatus.LOADING)
+        self.assertEqual(loading.status, ClaimStatus.REGISTERED)
+        self.assertEqual(loading.items.get().calculated_amount, (before_amount * Decimal("1.25")).quantize(Decimal("0.01")))
+        self.assertEqual(loading.medical_loading_factor, Decimal("1.2500"))
+
+    def test_medical_limit_parameter_triggers_review_when_claim_exceeds_limit(self):
+        claim_type = OLClaimType.objects.create(
+            code="LIMITED_MEDICAL_CLAIM",
+            name="Limited Medical Claim",
+            claim_category="MEDICAL",
+            calculation_basis="SUM_ASSURED",
+            duplicate_check_rule="NONE",
+            waiting_period_days=0,
+            payable_to_rules={},
+            require_documents=[],
+            effective_from=date(2026, 1, 1),
+        )
+        medical_code = OLMedicalCode.objects.create(
+            code="MEDICAL_EXAM",
+            name="Medical examination",
+            medical_category="EXAMINATION",
+            effective_from=date(2026, 1, 1),
+        )
+        OLMedicalLimit.objects.create(
+            code="MEDICAL_LIMIT_1M",
+            name="Medical limit above one million",
+            medical_code=medical_code,
+            age_from=0,
+            age_to=150,
+            sum_assured_from=Decimal("1000000.00"),
+            sum_assured_to=Decimal("100000000.00"),
+            limit_type="MEDICAL",
+            limit_amount=Decimal("1000000.00"),
+            required_frequency="ANNUAL",
+            mandatory_flag=False,
+            effective_from=date(2026, 1, 1),
+        )
+        claim = self.make_claim()
+        claim.claim_type = claim_type.code
+        claim.save(update_fields=["claim_type", "updated_at"])
+        evaluated = evaluate_medical_requirements(claim, actor=self.user)
+        self.assertTrue(evaluated["medical_required"])
+        self.assertIn("MEDICAL_LIMIT_1M", claim.medical_reason)

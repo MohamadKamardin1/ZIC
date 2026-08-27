@@ -39,6 +39,14 @@ class ClaimSourceChannel(models.TextChoices):
     BATCH = "BATCH", "Batch"
 
 
+class ClaimMedicalStatus(models.TextChoices):
+    NONE = "NONE", "No medical review"
+    PENDING = "PENDING", "Pending medical review"
+    CLEARED = "CLEARED", "Medical review cleared"
+    REJECTED = "REJECTED", "Medical review rejected"
+    LOADING = "LOADING", "Medical loading applied"
+
+
 class ClaimRequisitionStatus(models.TextChoices):
     DRAFT = "DRAFT", "Draft"
     REQUISITIONED = "REQUISITIONED", "Requisitioned"
@@ -87,6 +95,24 @@ class OLClaim(UUIDModel, AuditedModel):
     description = models.TextField(blank=True, default="")
     assessment_notes = models.TextField(blank=True, default="")
     fraud_flag = models.BooleanField(default=False, db_index=True)
+    medical_status = models.CharField(
+        max_length=20,
+        choices=ClaimMedicalStatus.choices,
+        default=ClaimMedicalStatus.NONE,
+        db_index=True,
+    )
+    medical_result = models.CharField(max_length=30, blank=True, default="")
+    medical_reason = models.TextField(blank=True, default="")
+    medical_requested_at = models.DateTimeField(null=True, blank=True)
+    medical_reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ol_claims_medical_reviewed",
+    )
+    medical_reviewed_at = models.DateTimeField(null=True, blank=True)
+    medical_loading_factor = models.DecimalField(max_digits=8, decimal_places=4, null=True, blank=True)
     registered_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -116,6 +142,7 @@ class OLClaim(UUIDModel, AuditedModel):
             models.Index(fields=["policy_ref", "status"], name="ol_claim_policy_status_idx"),
             models.Index(fields=["claim_type", "claim_date"], name="ol_claim_type_date_idx"),
             models.Index(fields=["status", "fraud_flag"], name="ol_claim_status_fraud_idx"),
+            models.Index(fields=["medical_status", "status"], name="ol_claim_medical_status_idx"),
         ]
 
     def __str__(self):

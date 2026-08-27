@@ -171,6 +171,8 @@ class OLClaimDetailSerializer(OLClaimListSerializer):
     registered_by_display = serializers.SerializerMethodField()
     admitted_by_display = serializers.SerializerMethodField()
     source_channel_display = serializers.CharField(source="get_source_channel_display", read_only=True)
+    medical_status_display = serializers.CharField(source="get_medical_status_display", read_only=True)
+    medical_reviewed_by_display = serializers.SerializerMethodField()
     policy_context = serializers.SerializerMethodField()
 
     class Meta(OLClaimListSerializer.Meta):
@@ -181,6 +183,14 @@ class OLClaimDetailSerializer(OLClaimListSerializer):
             "settled_date",
             "source_channel",
             "source_channel_display",
+            "medical_status",
+            "medical_status_display",
+            "medical_result",
+            "medical_reason",
+            "medical_requested_at",
+            "medical_reviewed_by_display",
+            "medical_reviewed_at",
+            "medical_loading_factor",
             "registered_by_display",
             "admitted_by_display",
             "claimant",
@@ -203,6 +213,10 @@ class OLClaimDetailSerializer(OLClaimListSerializer):
 
     def get_admitted_by_display(self, obj):
         user = obj.admitted_by
+        return user.get_full_name() or user.email if user else "System"
+
+    def get_medical_reviewed_by_display(self, obj):
+        user = obj.medical_reviewed_by
         return user.get_full_name() or user.email if user else "System"
 
     def get_policy_context(self, obj):

@@ -161,7 +161,7 @@ GIT:
 
 FINAL OUTPUT: document endpoints, progression guard, tests, commit hash, pushed branch.
 
-## [ ] Prompt 5 — Medical & Underwriting Integration
+## [x] Prompt 5 — Medical & Underwriting Integration
 You are a senior Django insurance engineer. Continue the ZIC OL Claims backend. Execute ONLY Prompt 5.
 
 MANDATORY RULES:
