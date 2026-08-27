@@ -89,7 +89,7 @@ GIT:
 
 FINAL OUTPUT: validation logic, options endpoints, tests, commit hash, pushed branch.
 
-## [ ] Prompt 3 — Claim Registration & Creation
+## [x] Prompt 3 — Claim Registration & Creation
 You are a senior Django insurance engineer. Continue the ZIC OL Claims backend. Execute ONLY Prompt 3.
 
 MANDATORY RULES:

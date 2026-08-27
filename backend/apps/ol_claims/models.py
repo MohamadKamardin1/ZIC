@@ -60,6 +60,8 @@ class OLClaim(UUIDModel, AuditedModel):
     """An auditable Ordinary Life claim and its policy-level lifecycle state."""
 
     claim_number = models.CharField(max_length=45, unique=True, db_index=True, blank=True)
+    idempotency_key = models.CharField(max_length=64, unique=True, null=True, blank=True, db_index=True)
+    idempotency_fingerprint = models.JSONField(default=dict, blank=True)
     policy_ref = models.ForeignKey(
         "ol_policies.Policy",
         on_delete=models.PROTECT,

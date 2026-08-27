@@ -5,6 +5,38 @@ DOC_REF = "docs/OL_CLAIMS_DESIGN.md"
 
 
 CLAIM_ERROR_REGISTRY = {
+    "CLAIM_INVALID_REGISTRATION": {
+        "message": "The claim registration form needs correction before it can be submitted.",
+        "status_code": 400,
+        "resolution_steps": [
+            "Correct each highlighted claim field.",
+            "Select a configured claim type and provide claimant information before retrying.",
+        ],
+    },
+    "CLAIM_IDEMPOTENCY_REQUIRED": {
+        "message": "An idempotency key is required to register a claim safely.",
+        "status_code": 400,
+        "resolution_steps": [
+            "Retry the request with a unique X-Idempotency-Key header.",
+            "Reuse the same key when retrying the same submission so the original claim is returned.",
+        ],
+    },
+    "CLAIM_IDEMPOTENCY_CONFLICT": {
+        "message": "This idempotency key was already used for a different claim submission.",
+        "status_code": 409,
+        "resolution_steps": [
+            "Use the existing claim returned for the original key, or generate a new key for a new submission.",
+            "Do not reuse a key after changing policy, claim type, or claim date.",
+        ],
+    },
+    "CLAIM_CLAIMANT_REQUIRED": {
+        "message": "Claimant information is required before the claim can be registered.",
+        "status_code": 400,
+        "resolution_steps": [
+            "Select an issued policy member or provide claimant_details with a name and claimant_type.",
+            "Verify the claimant relationship and identity information before retrying.",
+        ],
+    },
     "CLAIM_TYPE_NOT_CONFIGURED": {
         "message": "The selected claim type is not configured for current use.",
         "status_code": 422,

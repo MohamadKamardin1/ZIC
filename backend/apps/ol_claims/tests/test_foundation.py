@@ -452,3 +452,134 @@ class OLClaimFoundationTestCase(APITestCase):
         members_response = self.client.get(f"/api/v1/ol/claims/options/members/?policy_id={self.policy.pk}")
         self.assertEqual(members_response.status_code, 200)
         self.assertEqual(members_response.data["data"]["items"][0]["label"], "Asha Mwinyi — PRINCIPAL")
+
+    def test_registration_creates_claimant_item_and_audit_event(self):
+        claim_type = OLClaimType.objects.create(
+            code="DEATH_CLAIM",
+            name="Death Claim",
+            claim_category="DEATH",
+            calculation_basis="SUM_ASSURED",
+            duplicate_check_rule="POLICY_AND_TYPE",
+            waiting_period_days=0,
+            payable_to_rules={},
+            require_documents=["DEATH_CERTIFICATE"],
+            effective_from=date(2026, 1, 1),
+        )
+        member = PolicyMember.objects.create(
+            policy=self.policy,
+            member_relation="PRINCIPAL",
+            name="Asha Mwinyi",
+            dob=date(1990, 6, 15),
+            gender="FEMALE",
+            benefit_amount=Decimal("25000000.00"),
+        )
+        response = self.client.post(
+            f"/api/v1/ol/policies/{self.policy.pk}/claims/",
+            {
+                "claim_type": claim_type.code,
+                "claim_date": "2026-04-01",
+                "cause_of_claim": "Natural death",
+                "description": "Registration test claim.",
+                "member_id": str(member.pk),
+                "benefit_type": "DEATH",
+            },
+            format="json",
+            HTTP_X_IDEMPOTENCY_KEY="claim-registration-001",
+            HTTP_X_SOURCE_CHANNEL="WEB",
+        )
+        self.assertEqual(response.status_code, 201)
+        claim = OLClaim.objects.get(claim_number=response.data["data"]["claim_number"])
+        self.assertEqual(claim.status, ClaimStatus.REGISTERED)
+        self.assertEqual(claim.claimant_ref.name, "Asha Mwinyi")
+        self.assertEqual(claim.items.get().calculated_amount, Decimal("25000000.00"))
+        self.assertEqual(claim.source_channel, "WEB")
+        self.assertTrue(DomainEvent.objects.filter(event_type="ClaimRegistered", aggregate_id=str(claim.pk)).exists())
+        self.assertTrue(
+            AuditLog.objects.filter(
+                app_label="ol_claims",
+                model_name="olclaim",
+                object_id=str(claim.pk),
+                action_type="CREATE",
+            ).exists()
+        )
+
+    def test_registration_retry_returns_original_claim_and_changed_payload_conflicts(self):
+        OLClaimType.objects.create(
+            code="DISABILITY_CLAIM",
+            name="Disability Claim",
+            claim_category="DISABILITY",
+            calculation_basis="SUM_ASSURED",
+            duplicate_check_rule="NONE",
+            waiting_period_days=0,
+            payable_to_rules={},
+            effective_from=date(2026, 1, 1),
+        )
+        payload = {
+            "claim_type": "DISABILITY_CLAIM",
+            "claim_date": "2026-04-01",
+            "claimant_details": {
+                "claimant_type": "POLICYHOLDER",
+                "name": "Asha Mwinyi",
+                "relationship": "Policyholder",
+                "identity_number": "NIDA-001",
+                "age": 36,
+                "gender": "FEMALE",
+            },
+        }
+        first = self.client.post(
+            f"/api/v1/ol/policies/{self.policy.pk}/claims/",
+            payload,
+            format="json",
+            HTTP_X_IDEMPOTENCY_KEY="claim-registration-002",
+        )
+        retry = self.client.post(
+            f"/api/v1/ol/policies/{self.policy.pk}/claims/",
+            payload,
+            format="json",
+            HTTP_X_IDEMPOTENCY_KEY="claim-registration-002",
+        )
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(retry.status_code, 200)
+        self.assertEqual(first.data["data"]["claim_number"], retry.data["data"]["claim_number"])
+        self.assertEqual(OLClaim.objects.filter(idempotency_key="claim-registration-002").count(), 1)
+
+        changed = {**payload, "description": "Changed after first submission."}
+        conflict = self.client.post(
+            f"/api/v1/ol/policies/{self.policy.pk}/claims/",
+            changed,
+            format="json",
+            HTTP_X_IDEMPOTENCY_KEY="claim-registration-002",
+        )
+        self.assertEqual(conflict.status_code, 409)
+        self.assertEqual(conflict.data["error_code"], "CLAIM_IDEMPOTENCY_CONFLICT")
+        self.assertTrue(conflict.data["resolution_steps"])
+
+    def test_registration_requires_idempotency_and_claimant_details(self):
+        response = self.client.post(
+            f"/api/v1/ol/policies/{self.policy.pk}/claims/",
+            {"claim_type": "DEATH_CLAIM", "claim_date": "2026-04-01"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["error_code"], "CLAIM_IDEMPOTENCY_REQUIRED")
+        self.assertTrue(response.data["resolution_steps"])
+
+        OLClaimType.objects.create(
+            code="DEATH_CLAIM",
+            name="Death Claim",
+            claim_category="DEATH",
+            calculation_basis="SUM_ASSURED",
+            duplicate_check_rule="NONE",
+            waiting_period_days=0,
+            payable_to_rules={},
+            effective_from=date(2026, 1, 1),
+        )
+        response = self.client.post(
+            f"/api/v1/ol/policies/{self.policy.pk}/claims/",
+            {"claim_type": "DEATH_CLAIM", "claim_date": "2026-04-01"},
+            format="json",
+            HTTP_X_IDEMPOTENCY_KEY="claim-registration-003",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["error_code"], "CLAIM_CLAIMANT_REQUIRED")
+        self.assertIn("claimant_details.name", response.data["field_errors"])
