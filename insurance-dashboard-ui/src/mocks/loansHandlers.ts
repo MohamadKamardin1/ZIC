@@ -145,8 +145,8 @@ function detailFor(loan: LoanMockRow) {
       { id: `${loan.id}-schedule-1`, installment_number: 1, due_date: "2026-03-01", principal_due: "80000.00", interest_due: "6666.67", penalty_due: "0.00", principal_paid: "80000.00", interest_paid: "6666.67", penalty_paid: "0.00", amount_paid: "86666.67", balance: "0.00", status: "PAID" },
       { id: `${loan.id}-schedule-2`, installment_number: 2, due_date: "2026-04-01", principal_due: "80000.00", interest_due: "6666.67", penalty_due: "0.00", principal_paid: "0.00", interest_paid: "0.00", penalty_paid: "0.00", amount_paid: "0.00", balance: "86666.67", status: "DUE" },
     ],
-    repayments: loan.total_repaid !== "0.00" ? [{ id: `${loan.id}-repayment-1`, receipt_ref: "RCT-2026-000013", receipt_number: "RCT-2026-000013", amount: loan.total_repaid, currency: loan.currency, exchange_rate: "1.00000000", allocation_breakdown: { principal: loan.total_repaid, interest: "0.00", penalty: "0.00" }, reason: "Monthly payroll deduction", created_at: "2026-07-01T10:00:00Z" }] : [],
-    interest_accruals: [{ id: `${loan.id}-accrual-1`, period_start: "2026-02-01", period_end: "2026-03-01", principal_base: loan.principal_amount, interest_amount: "6666.67", penalty_amount: "0.00", cumulative_interest: "6666.67", created_at: "2026-03-01T00:00:00Z" }],
+    repayments: loan.total_repaid !== "0.00" ? [{ id: `${loan.id}-repayment-1`, receipt_ref: "RCT-2026-000013", receipt_number: "RCT-2026-000013", receipt_id: `${loan.id}-receipt-1`, amount: loan.total_repaid, currency: loan.currency, exchange_rate: "1.00000000", allocation_breakdown: { principal: loan.total_repaid, interest: "0.00", penalty: "0.00" }, reason: "Monthly payroll deduction", source_channel: "SYSTEM", created_at: "2026-07-01T10:00:00Z" }] : [],
+    interest_accruals: [{ id: `${loan.id}-accrual-1`, period_start: "2026-02-01", period_end: "2026-03-01", principal_base: loan.principal_amount, interest_amount: "6666.67", penalty_amount: "0.00", cumulative_interest: "6666.67", source_channel: "SYSTEM", created_at: "2026-03-01T00:00:00Z" }],
     offsets: [],
     audit_timeline: [{ action: "REQUEST", actor_name: "Sultan Admin", source_channel: "API", created_at: loan.created_at }, { action: "DISBURSE", actor_name: "Sultan Admin", source_channel: "API", created_at: loan.disbursement_date }],
     header: { loan_number: loan.loan_number, policy_number: loan.policy_number, policyholder_name: loan.policyholder_name, product: loan.product_display, agent: loan.agent_display, branch: loan.branch_display, principal: loan.principal_amount, outstanding_balance: loan.outstanding_balance, currency: loan.currency, status: loan.status, status_display: loan.status_display },
@@ -200,6 +200,16 @@ export const loansHandlers = [
     const totalPaid = rows.reduce((sum, row) => sum + Number(row.amount_paid), 0).toFixed(2)
     const remainingBalance = rows.reduce((sum, row) => sum + Number(row.balance), 0).toFixed(2)
     return data({ ...page(rows, new URL(request.url)), aggregates: { total_scheduled: totalScheduled, total_paid: totalPaid, remaining_balance: remainingBalance } })
+  }),
+  http.get(`*${LOANS_BASE}/:loanId/repayments/`, ({ params, request }) => {
+    const loan = findLoan(String(params.loanId))
+    if (!loan) return error(404, "LOAN_NOT_FOUND", "The loan could not be found.", ["Return to the Loans register and choose an available loan."])
+    return data(page(detailFor(loan).repayments, new URL(request.url)))
+  }),
+  http.get(`*${LOANS_BASE}/:loanId/accruals/`, ({ params, request }) => {
+    const loan = findLoan(String(params.loanId))
+    if (!loan) return error(404, "LOAN_NOT_FOUND", "The loan could not be found.", ["Return to the Loans register and choose an available loan."])
+    return data(page(detailFor(loan).interest_accruals, new URL(request.url)))
   }),
   http.get(`*${LOANS_BASE}/:loanId/`, ({ params }) => {
     const loan = findLoan(String(params.loanId))

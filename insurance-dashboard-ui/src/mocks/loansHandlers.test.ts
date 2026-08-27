@@ -45,6 +45,19 @@ describe("OL Loans MSW contract", () => {
     expect(body.data).toMatchObject({ count: 2, next: true, aggregates: { total_scheduled: "173333.34", total_paid: "86666.67", remaining_balance: "86666.67" } })
   })
 
+  it("returns immutable repayment and accrual histories", async () => {
+    const [repaymentResponse, accrualResponse] = await Promise.all([
+      fetch("http://localhost/api/v1/ol/loans/loan-active-1/repayments/"),
+      fetch("http://localhost/api/v1/ol/loans/loan-active-1/accruals/"),
+    ])
+    expect(repaymentResponse.status).toBe(200)
+    expect(accrualResponse.status).toBe(200)
+    const repayments = await repaymentResponse.json()
+    const accruals = await accrualResponse.json()
+    expect(repayments.data.results[0]).toMatchObject({ source_channel: "SYSTEM", receipt_number: "RCT-2026-000013", allocation_breakdown: { principal: "250000.00" } })
+    expect(accruals.data.results[0]).toMatchObject({ period_start: "2026-02-01", period_end: "2026-03-01", cumulative_interest: "6666.67" })
+  })
+
   it("returns KPI and secure print contracts", async () => {
     const [kpiResponse, printResponse] = await Promise.all([
       fetch("http://localhost/api/v1/ol/loans/kpis/"),

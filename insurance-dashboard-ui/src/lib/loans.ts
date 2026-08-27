@@ -134,11 +134,13 @@ export interface LoanRepaymentRow {
   id: string
   receiptRef: string
   receiptNumber: string
+  receiptId?: string
   amount: string
   currency: string
   exchangeRate: string
   allocationBreakdown: Record<string, unknown>
   reason: string
+  sourceChannel: string
   createdAt: string
 }
 
@@ -150,6 +152,7 @@ export interface LoanInterestAccrualRow {
   interestAmount: string
   penaltyAmount: string
   cumulativeInterest: string
+  sourceChannel: string
   createdAt: string
 }
 
@@ -333,6 +336,7 @@ function normalizeRepayment(row: Record<string, unknown>): LoanRepaymentRow {
     id: stringValue(row, "id"),
     receiptRef: stringValue(row, "receiptRef", "receipt_ref"),
     receiptNumber: stringValue(row, "receiptNumber", "receipt_number"),
+    receiptId: nullableString(row, "receiptId", "receipt_id") ?? undefined,
     amount: amountValue(row, "amount"),
     currency: stringValue(row, "currency") || "TZS",
     exchangeRate: stringValue(row, "exchangeRate", "exchange_rate") || "1",
@@ -340,6 +344,7 @@ function normalizeRepayment(row: Record<string, unknown>): LoanRepaymentRow {
       ? pick(row, "allocationBreakdown", "allocation_breakdown") as Record<string, unknown>
       : {},
     reason: stringValue(row, "reason"),
+    sourceChannel: stringValue(row, "sourceChannel", "source_channel"),
     createdAt: stringValue(row, "createdAt", "created_at"),
   }
 }
@@ -353,6 +358,7 @@ function normalizeAccrual(row: Record<string, unknown>): LoanInterestAccrualRow 
     interestAmount: amountValue(row, "interestAmount", "interest_amount"),
     penaltyAmount: amountValue(row, "penaltyAmount", "penalty_amount"),
     cumulativeInterest: amountValue(row, "cumulativeInterest", "cumulative_interest"),
+    sourceChannel: stringValue(row, "sourceChannel", "source_channel"),
     createdAt: stringValue(row, "createdAt", "created_at"),
   }
 }
@@ -520,6 +526,22 @@ export function getLoan(id: string): Promise<LoanDetail> {
 
 export function getLoanBalance(id: string): Promise<Record<string, unknown>> {
   return request<Record<string, unknown>>(`${LOANS_API_PREFIX}/loans/${encodeURIComponent(id)}/balance/`)
+}
+
+export function getLoanRepayments(id: string, params: { page?: number; pageSize?: number } = {}): Promise<Paginated<LoanRepaymentRow>> {
+  const search = new URLSearchParams()
+  if (params.page) search.set("page", String(params.page))
+  if (params.pageSize) search.set("page_size", String(params.pageSize))
+  const query = search.toString()
+  return request<unknown>(`${LOANS_API_PREFIX}/loans/${encodeURIComponent(id)}/repayments/${query ? `?${query}` : ""}`).then((payload) => normalizePaginated(payload, normalizeRepayment))
+}
+
+export function getLoanAccruals(id: string, params: { page?: number; pageSize?: number } = {}): Promise<Paginated<LoanInterestAccrualRow>> {
+  const search = new URLSearchParams()
+  if (params.page) search.set("page", String(params.page))
+  if (params.pageSize) search.set("page_size", String(params.pageSize))
+  const query = search.toString()
+  return request<unknown>(`${LOANS_API_PREFIX}/loans/${encodeURIComponent(id)}/accruals/${query ? `?${query}` : ""}`).then((payload) => normalizePaginated(payload, normalizeAccrual))
 }
 
 export function getLoanSchedule(id: string, params: { page?: number; pageSize?: number } = {}): Promise<Paginated<LoanScheduleRow> & { aggregates?: LoanScheduleAggregates }> {

@@ -5,6 +5,8 @@ import {
   getLoanBalance,
   getLoanKPIs,
   getLoanOptions,
+  getLoanRepayments,
+  getLoanAccruals,
   getLoanSchedule,
   listLoans,
   loanAction,
@@ -31,6 +33,8 @@ export const loanOptionsKey = (kind: LoanOptionKind, params: Record<string, unkn
 export const loanDetailKey = (id?: string | null) => ["ol-loans", "detail", id ?? "none"] as const
 export const loanBalanceKey = (id?: string | null) => ["ol-loans", "balance", id ?? "none"] as const
 export const loanScheduleKey = (id?: string | null, page = 1, pageSize = 20) => ["ol-loans", "schedule", id ?? "none", page, pageSize] as const
+export const loanRepaymentsKey = (id?: string | null, page = 1, pageSize = 20) => ["ol-loans", "repayments", id ?? "none", page, pageSize] as const
+export const loanAccrualsKey = (id?: string | null, page = 1, pageSize = 20) => ["ol-loans", "accruals", id ?? "none", page, pageSize] as const
 
 export function invalidateLoanQueries(queryClient: ReturnType<typeof useQueryClient>, id?: string | null) {
   void queryClient.invalidateQueries({ queryKey: ["ol-loans", "list"] })
@@ -40,6 +44,8 @@ export function invalidateLoanQueries(queryClient: ReturnType<typeof useQueryCli
     void queryClient.invalidateQueries({ queryKey: loanDetailKey(id) })
     void queryClient.invalidateQueries({ queryKey: loanBalanceKey(id) })
     void queryClient.invalidateQueries({ queryKey: ["ol-loans", "schedule", id] })
+    void queryClient.invalidateQueries({ queryKey: ["ol-loans", "repayments", id] })
+    void queryClient.invalidateQueries({ queryKey: ["ol-loans", "accruals", id] })
   }
 }
 
@@ -84,6 +90,24 @@ export function useLoanBalance(id?: string | null, enabled = true) {
     queryFn: () => getLoanBalance(id as string),
     enabled: Boolean(id) && enabled,
     staleTime: 30_000,
+  })
+}
+
+export function useLoanRepayments(id?: string | null, page = 1, pageSize = 20, enabled = true) {
+  return useQuery({
+    queryKey: loanRepaymentsKey(id, page, pageSize),
+    queryFn: () => getLoanRepayments(id as string, { page, pageSize }),
+    enabled: Boolean(id) && enabled,
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function useLoanAccruals(id?: string | null, page = 1, pageSize = 20, enabled = true) {
+  return useQuery({
+    queryKey: loanAccrualsKey(id, page, pageSize),
+    queryFn: () => getLoanAccruals(id as string, { page, pageSize }),
+    enabled: Boolean(id) && enabled,
+    placeholderData: keepPreviousData,
   })
 }
 

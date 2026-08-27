@@ -72,6 +72,7 @@ class OLLoanScheduleSerializer(serializers.ModelSerializer):
 
 class OLLoanRepaymentSerializer(serializers.ModelSerializer):
     receipt_number = serializers.CharField(source="receipt_allocation.receipt.receipt_number", read_only=True)
+    receipt_id = serializers.CharField(source="receipt_allocation.receipt.id", read_only=True)
 
     class Meta:
         model = OLLoanRepayment
@@ -79,11 +80,13 @@ class OLLoanRepaymentSerializer(serializers.ModelSerializer):
             "id",
             "receipt_ref",
             "receipt_number",
+            "receipt_id",
             "amount",
             "currency",
             "exchange_rate",
             "allocation_breakdown",
             "reason",
+            "source_channel",
             "created_at",
         )
 

@@ -4,7 +4,7 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
-from apps.ol_loans.models import LoanScheduleStatus, LoanStatus, OLLoan, OLLoanSchedule
+from apps.ol_loans.models import LoanScheduleStatus, LoanStatus, OLLoan, OLLoanInterestAccrual, OLLoanRepayment, OLLoanSchedule
 from apps.ol_policies.models import Policy
 from apps.ol_proposals.models import OLProposal
 from apps.ol_quotations.models import OLQuotation
@@ -103,6 +103,35 @@ class OLLoanApiTestCase(APITestCase):
         self.assertEqual(payload["page_size"], 1)
         self.assertEqual(payload["results"][0]["installment_number"], 1)
         self.assertEqual(payload["results"][0]["status"], LoanScheduleStatus.PAID)
+
+    def test_history_endpoints_return_immutable_repayment_and_accrual_rows(self):
+        OLLoanRepayment.objects.create(
+            loan=self.loan,
+            receipt_ref="RCT-LOAN-API-001",
+            amount=Decimal("125000.00"),
+            currency="TZS",
+            allocation_breakdown={"principal": "100000.00", "interest": "20000.00", "penalty": "5000.00"},
+            source_channel="SYSTEM",
+        )
+        OLLoanInterestAccrual.objects.create(
+            loan=self.loan,
+            period_start=date.today().replace(day=1),
+            period_end=date.today(),
+            principal_base=Decimal("1000000.00"),
+            interest_amount=Decimal("10000.00"),
+            penalty_amount=Decimal("500.00"),
+            cumulative_interest=Decimal("10500.00"),
+            source_channel="SYSTEM",
+        )
+        self.client.force_authenticate(self.staff)
+        repayments = self.client.get(f"/api/v1/ol/loans/{self.loan.pk}/repayments/")
+        accruals = self.client.get(f"/api/v1/ol/loans/{self.loan.pk}/accruals/")
+        self.assertEqual(repayments.status_code, 200)
+        self.assertEqual(accruals.status_code, 200)
+        self.assertEqual(repayments.data["data"]["results"][0]["source_channel"], "SYSTEM")
+        self.assertEqual(repayments.data["data"]["results"][0]["allocation_breakdown"]["principal"], "100000.00")
+        self.assertEqual(accruals.data["data"]["results"][0]["interest_amount"], "10000.00")
+        self.assertEqual(accruals.data["data"]["results"][0]["cumulative_interest"], "10500.00")
 
     def test_retrieve_includes_child_collections_and_missing_loan_is_structured(self):
         self.client.force_authenticate(self.staff)
