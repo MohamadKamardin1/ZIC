@@ -91,6 +91,7 @@ import FOReceiptDetail from "./pages/front-office/FOReceiptDetail"
 import FOReceiptImports from "./pages/front-office/FOReceiptImports"
 import { PortalReceiptDetail, PortalReceipts } from "./pages/portal/PortalReceipts"
 import { PortalPolicies, PortalPolicyDetail } from "./pages/portal/PortalPolicies"
+import { PartnerLoans, PartnerLoanDetail } from "./pages/portal/PartnerLoans"
 import FOCommissions from "./pages/front-office/FOCommissions"
 import FOCommissionStatements from "./pages/front-office/FOCommissionStatements"
 import FORequisitions from "./pages/front-office/FORequisitions"
@@ -286,6 +287,8 @@ export default function App() {
             </RequirePermission>
           }
         />
+        <Route path="portal/loans" element={<PartnerLoans />} />
+        <Route path="portal/loans/:loanNumber" element={<PartnerLoanDetail />} />
         <Route path="group-life/quotations" element={<GLQuotations />} />
         <Route path="group-life/schemes" element={<GLSchemes />} />
         <Route path="group-life/members" element={<GLMembers />} />

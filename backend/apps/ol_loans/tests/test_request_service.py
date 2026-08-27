@@ -140,6 +140,46 @@ class PolicyLoanRequestTestCase(TestCase):
             HTTP_X_REQUEST_ID="loan-request-test",
         )
 
+    def test_portal_request_requires_request_permission(self):
+        viewer = User.objects.create_user(
+            username="ol-loan-portal-viewer",
+            email="ol-loan-portal-viewer@example.com",
+            password="Strong-portal-viewer-password-123!",
+        )
+        self.client.force_authenticate(viewer)
+        response = self.client.post(
+            "/api/v1/ol/loans/portal/request/",
+            {"policy_number": self.policy.policy_number},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403, response.data)
+
+    def test_portal_request_uses_policy_number_and_portal_source_channel(self):
+        response = self.client.post(
+            "/api/v1/ol/loans/portal/request/",
+            {
+                "policy_number": self.policy.policy_number,
+                "requested_amount": "250000.00",
+                "term_months": 12,
+                "repayment_mode": "PAYMENT_SCHEDULE",
+                "reason": "Education expenses through partner portal",
+            },
+            format="json",
+            HTTP_X_IDEMPOTENCY_KEY="portal-loan-request-001",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertTrue(response.data["data"]["loan_number"])
+        self.assertNotIn(str(self.policy.pk), str(response.data))
+        loan = OLLoan.objects.get()
+        self.assertEqual(loan.partner, self.partner)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                object_id=str(loan.pk),
+                action="LOAN_REQUESTED",
+                source_channel="PORTAL",
+            ).exists()
+        )
+
     def test_success_creates_requested_loan_with_snapshot_event_and_audit(self):
         response = self.post_request()
         self.assertEqual(response.status_code, 201, response.data)

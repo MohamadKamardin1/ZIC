@@ -7,7 +7,7 @@ from .offset_views import OLLoanOffsetView
 from .document_views import OLLoanAgreementPrintView, OLLoanSchedulePrintView
 from .integration_views import OLLoanDashboardHooksView
 from .history_views import OLLoanAccrualsView, OLLoanRepaymentsView
-from .portal_views import OLLoanPortalDetailView, OLLoanPortalListView
+from .portal_views import OLLoanPortalDetailView, OLLoanPortalListView, OLLoanPortalRequestView
 from .repayment_views import OLLoanRepayView
 from .schedule_views import OLLoanScheduleView
 from .views import OLLoanDetailView, OLLoanExportView, OLLoanKPIView, OLLoanListView, OLLoanOptionsView
@@ -23,7 +23,9 @@ urlpatterns = [
     path("loans/bulk-reject/", OLLoanBulkRejectView.as_view(), name="loan-bulk-reject"),
     path("loans/dashboard/", OLLoanDashboardHooksView.as_view(), name="loan-dashboard-hooks"),
     path("loans/portal/", OLLoanPortalListView.as_view(), name="loan-portal-list"),
+    path("loans/portal/request/", OLLoanPortalRequestView.as_view(), name="loan-portal-request"),
     path("loans/portal/<uuid:loan_id>/", OLLoanPortalDetailView.as_view(), name="loan-portal-detail"),
+    path("loans/portal/<str:loan_id>/", OLLoanPortalDetailView.as_view(), name="loan-portal-detail-by-number"),
     path("loans/<uuid:loan_id>/print-agreement/", OLLoanAgreementPrintView.as_view(), name="loan-print-agreement"),
     path("loans/<uuid:loan_id>/print-schedule/", OLLoanSchedulePrintView.as_view(), name="loan-print-schedule"),
     path("loans/<uuid:loan_id>/approve/", OLLoanApproveView.as_view(), name="loan-approve"),

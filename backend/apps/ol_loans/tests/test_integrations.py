@@ -221,6 +221,10 @@ class OLLoanIntegrationsTestCase(TestCase):
         self.assertEqual(hidden.status_code, 404)
         self.assertNotIn(str(self.other_loan.pk), str(hidden.data))
         self.assertNotIn("approve", str(hidden.data).lower())
+        by_number = client.get("/api/v1/ol/loans/portal/LOAN-INTEGRATION-001/")
+        self.assertEqual(by_number.status_code, 200, by_number.data)
+        self.assertEqual(by_number.data["data"]["loan_number"], "LOAN-INTEGRATION-001")
+        self.assertNotIn(str(self.loan.pk), str(by_number.data))
 
     def test_dashboard_hooks_endpoint_returns_aggregates(self):
         client = APIClient()

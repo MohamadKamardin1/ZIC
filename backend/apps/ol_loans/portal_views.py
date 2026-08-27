@@ -1,8 +1,15 @@
+from uuid import UUID
+
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.ol_policies.models import Policy
+
 from .models import OLLoan
+from .permissions import has_ol_loan_permission
+from .serializers import OLLoanPortalRequestSerializer
+from .services.request_service import _resolve_product, request_policy_loan
 
 
 def _portal_error(message, status_code=404):
@@ -38,6 +45,7 @@ def _schedule_payload(loan):
 def _portal_payload(loan, *, detail=False):
     policy = loan.policy_ref
     snapshot = policy.contract_snapshot if isinstance(policy.contract_snapshot, dict) else {}
+    product = _resolve_product(policy)
     payload = {
         "loan_number": loan.loan_number,
         "policy_number": getattr(policy, "policy_number", "Not recorded"),
@@ -53,6 +61,11 @@ def _portal_payload(loan, *, detail=False):
         "disbursement_date": loan.disbursement_date,
         "maturity_date": loan.maturity_date,
         "product": snapshot.get("product_name") or snapshot.get("plan_name") or policy.product_plan_ref or "Not recorded",
+        "request_allowed": bool(
+            product.allow_loans
+            if product is not None
+            else snapshot.get("loan_request_allowed", snapshot.get("allow_loans", snapshot.get("allows_loans", False)))
+        ),
     }
     if detail:
         payload.update(
@@ -87,16 +100,67 @@ class OLLoanPortalListView(APIView):
         )
 
 
+class MustRequestPortalLoanPermission(IsAuthenticated):
+    def has_permission(self, request, view):
+        return bool(super().has_permission(request, view) and has_ol_loan_permission(request.user, "request"))
+
+
+class OLLoanPortalRequestView(APIView):
+    permission_classes = [MustRequestPortalLoanPermission]
+
+    def post(self, request):
+        serializer = OLLoanPortalRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        policy = (
+            Policy.objects.filter(
+                policy_number__iexact=data["policy_number"],
+                partner__in=request.user.visible_partners(),
+            )
+            .select_related("partner")
+            .first()
+        )
+        if policy is None:
+            return _portal_error("The selected policy is not available in your partner portal.")
+        result = request_policy_loan(
+            policy.pk,
+            requested_amount=data["requested_amount"],
+            term_months=data["term_months"],
+            repayment_mode=data["repayment_mode"],
+            reason=data["reason"],
+            idempotency_key=request.headers.get("X-Idempotency-Key", ""),
+            as_of=data.get("as_of"),
+            actor=request.user,
+            request=request,
+            source_channel="PORTAL",
+        )
+        return Response(
+            {
+                "success": True,
+                "data": _portal_payload(result.loan),
+                "meta": {"created": result.created, "idempotent_replay": not result.created},
+            },
+            status=201 if result.created else 200,
+        )
+
+
 class OLLoanPortalDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, loan_id):
-        loan = (
-            OLLoan.objects.filter(pk=loan_id, partner__in=request.user.visible_partners())
+        scoped_loans = (
+            OLLoan.objects.filter(partner__in=request.user.visible_partners())
             .select_related("partner", "policy_ref")
             .prefetch_related("schedules")
-            .first()
         )
+        loan = scoped_loans.filter(loan_number=str(loan_id)).first()
+        if loan is None:
+            try:
+                loan_uuid = UUID(str(loan_id))
+            except (TypeError, ValueError, AttributeError):
+                loan_uuid = None
+            if loan_uuid is not None:
+                loan = scoped_loans.filter(pk=loan_uuid).first()
         if loan is None:
             return _portal_error("The requested loan is not available in your partner portal.")
         return Response({"success": True, "data": _portal_payload(loan, detail=True)})

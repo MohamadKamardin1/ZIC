@@ -210,6 +210,10 @@ class OLLoanRequestSerializer(serializers.Serializer):
     as_of = serializers.DateField(required=False)
 
 
+class OLLoanPortalRequestSerializer(OLLoanRequestSerializer):
+    policy_number = serializers.CharField(max_length=100, trim_whitespace=True)
+
+
 class OLLoanDisbursementRequestSerializer(serializers.Serializer):
     payment_mode = serializers.CharField(max_length=40, trim_whitespace=True)
     bank_account_code = serializers.CharField(max_length=50, required=False, allow_blank=True, trim_whitespace=True)
