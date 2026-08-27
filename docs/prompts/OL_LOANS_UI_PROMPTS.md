@@ -39,7 +39,7 @@ FINAL OUTPUT: hooks, primitives, tests, commit hash, pushed branch.
 
 ---
 
-## [ ] Prompt 2/10 — Loans Dashboard KPIs & List Page
+## [x] Prompt 2/10 — Loans Dashboard KPIs & List Page
 
 ```text
 You are a senior frontend engineer. Continue the ZIC Loans UI. Execute ONLY Prompt 2 from the saved series file.
