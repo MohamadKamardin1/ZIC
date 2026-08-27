@@ -9,7 +9,7 @@ import { useToast } from "../../components/ui/Toast"
 import { MoneyCell, WithdrawalMoneySummary, WithdrawalStatusBadge } from "../../components/withdrawals/WithdrawalPrimitives"
 import { dateLabel } from "../../lib/commitmentsDisplay"
 import { useAccess } from "../../lib/access"
-import { useWithdrawalActionMutation, useWithdrawalAudit, useWithdrawalBreakdown, useWithdrawalDetail, useWithdrawalPayments } from "../../lib/withdrawalsHooks"
+import { useWithdrawalActionMutation, useWithdrawalAudit, useWithdrawalBreakdown, useWithdrawalDetail, useWithdrawalOptions, useWithdrawalPayments } from "../../lib/withdrawalsHooks"
 import type { WithdrawalAction, WithdrawalAuditEntry, WithdrawalBreakdown, WithdrawalDetail, WithdrawalPayment } from "../../lib/withdrawals"
 
 type DetailTab = "overview" | "breakdown" | "payments" | "documents" | "audit"
@@ -72,27 +72,41 @@ function PaymentsTable({ payments }: { payments: WithdrawalPayment[] }) {
 
 function ActionDialog({ action, detail, open, onClose, permitted }: { action: ActionKey | null; detail: WithdrawalDetail; open: boolean; onClose: () => void; permitted: boolean }) {
   const actionMutation = useWithdrawalActionMutation()
+  const paymentModeQuery = useWithdrawalOptions("payment-modes", {}, open && action === "process_payout")
   const { toast } = useToast()
   const [reason, setReason] = useState("")
+  const [paymentMode, setPaymentMode] = useState("")
+  const [receiptReference, setReceiptReference] = useState("")
   const [validationError, setValidationError] = useState("")
+  const paymentModes = paymentModeQuery.data?.results ?? []
 
   const close = () => {
     if (actionMutation.isPending) return
     setReason("")
+    setPaymentMode("")
+    setReceiptReference("")
     setValidationError("")
     onClose()
   }
 
   const submit = async () => {
     if (!action || !permitted) return
-    if (!reason.trim()) {
-      setValidationError(action === "reject" ? "Reason for Rejection is required before you can reject this withdrawal." : "Reason for approval is required before you can approve this withdrawal.")
+    const needsReason = action !== "process_payout"
+    if (needsReason && !reason.trim()) {
+      const label = action === "reject" ? "Reason for Rejection" : action === "cancel" ? "Reason for Cancellation" : action === "reverse" ? "Reason for Reversal" : "Reason for approval"
+      setValidationError(`${label} is required before you can continue.`)
+      return
+    }
+    if (action === "process_payout" && (!paymentMode || !receiptReference.trim())) {
+      setValidationError("Payment Mode and Receipt Reference are required before payout processing.")
       return
     }
     setValidationError("")
     try {
-      const result = await actionMutation.mutateAsync({ id: detail.id, action: action as WithdrawalAction, payload: { reason: reason.trim() }, idempotencyKey: `ol-withdrawal:${action}:${detail.id}:${Date.now()}` })
-      const status = result.withdrawal?.statusDisplay || (action === "approve" ? "Approved" : "Rejected")
+      const payload = action === "process_payout" ? { payment_mode: paymentMode, receipt_reference: receiptReference.trim() } : { reason: reason.trim() }
+      const result = await actionMutation.mutateAsync({ id: detail.id, action: action as WithdrawalAction, payload, idempotencyKey: `ol-withdrawal:${action}:${detail.id}:${Date.now()}` })
+      const fallbackStatus: Record<ActionKey, string> = { approve: "Approved", reject: "Rejected", process_payout: "Paid", cancel: "Cancelled", reverse: "Reversed" }
+      const status = result.withdrawal?.statusDisplay || fallbackStatus[action]
       toast({ tone: "success", title: `${ACTION_LABELS[action]} withdrawal`, message: `Status updated to ${status}.` })
       close()
     } catch (caught) {
@@ -100,7 +114,10 @@ function ActionDialog({ action, detail, open, onClose, permitted }: { action: Ac
     }
   }
 
-  return <Modal open={open} title={`${action ? ACTION_LABELS[action] : "Withdrawal"} withdrawal`} onClose={close}><div className="space-y-4"><div className="rounded-lg border bg-[var(--muted)]/30 p-4"><p className="text-sm font-bold">{detail.withdrawalNumber}</p><p className="mt-1 text-xs text-[var(--muted-foreground)]">{detail.policyholderName} · {detail.policyNumber}</p><div className="mt-3"><WithdrawalStatusBadge status={detail.status} statusDisplay={detail.statusDisplay} /></div></div>{!permitted ? <ErrorCoach title="Action not permitted" message="Your access metadata does not include permission to perform this withdrawal action." resolutionSteps={["Close this dialog and return to the detail page.", "Ask an administrator for the required OL Withdrawals permission."]} /> : <><p className="text-sm leading-6 text-[var(--muted-foreground)]">Confirm the controlled {action ? ACTION_LABELS[action].toLowerCase() : "withdrawal"} action. The latest status, permission, and policy financial state will be validated again by the backend.</p>{action && <label className="block space-y-1.5" htmlFor={`withdrawal-action-reason-${action}`}><span className="text-xs font-bold">{action === "reject" ? "Reason for Rejection" : "Reason for Approval"} <span className="text-[var(--destructive)]">*</span></span><textarea id={`withdrawal-action-reason-${action}`} rows={4} value={reason} onChange={(event) => { setReason(event.target.value); setValidationError("") }} aria-invalid={Boolean(validationError)} className="w-full rounded-[10px] border bg-[var(--card)] px-3 py-2 text-sm outline-none focus:border-[var(--ring)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--ring)_18%,transparent)]" placeholder={action === "reject" ? "Explain why this withdrawal should be rejected." : "Explain why this withdrawal is approved."} /></label>}{validationError && <ErrorCoach title="Withdrawal action needs attention" message={validationError} resolutionSteps={["Enter a clear reason for this controlled action.", "If the backend rejects the action, verify the withdrawal status and your permission."]} />}<div className="flex justify-end gap-2 border-t pt-4"><button type="button" className="button-secondary" onClick={close} disabled={actionMutation.isPending}>Cancel</button><button type="button" className="button-primary" onClick={() => void submit()} disabled={actionMutation.isPending}>{actionMutation.isPending ? "Submitting…" : action === "approve" ? "Confirm Approval" : "Reject"}</button></div></>}</div></Modal>
+  const reasonLabel = action === "reject" ? "Reason for Rejection" : action === "cancel" ? "Reason for Cancellation" : action === "reverse" ? "Reason for Reversal" : "Reason for Approval"
+  const submitLabel = action === "approve" ? "Confirm Approval" : action === "reject" ? "Reject" : action === "process_payout" ? "Confirm Payout Processed" : action === "cancel" ? "Cancel Request" : "Reverse Withdrawal"
+
+  return <Modal open={open} title={`${action ? ACTION_LABELS[action] : "Withdrawal"} withdrawal`} onClose={close}><div className="space-y-4"><div className="rounded-lg border bg-[var(--muted)]/30 p-4"><p className="text-sm font-bold">{detail.withdrawalNumber}</p><p className="mt-1 text-xs text-[var(--muted-foreground)]">{detail.policyholderName} · {detail.policyNumber}</p><div className="mt-3 flex flex-wrap items-center gap-3"><WithdrawalStatusBadge status={detail.status} statusDisplay={detail.statusDisplay} /><MoneyCell value={detail.netPayout} currency={detail.currency} label="Net payout" /></div></div>{!permitted ? <ErrorCoach title="Action not permitted" message="Your access metadata does not include permission to perform this withdrawal action." resolutionSteps={["Close this dialog and return to the detail page.", "Ask an administrator for the required OL Withdrawals permission."]} /> : <><p className="text-sm leading-6 text-[var(--muted-foreground)]">Confirm the controlled {action ? ACTION_LABELS[action].toLowerCase() : "withdrawal"} action. The latest status, permission, and policy financial state will be validated again by the backend.</p>{action === "process_payout" && <div className="grid gap-4 sm:grid-cols-2"><label className="block space-y-1.5"><span className="text-xs font-bold">Payment Mode <span className="text-[var(--destructive)]">*</span></span><select value={paymentMode} onChange={(event) => { setPaymentMode(event.target.value); setValidationError("") }} aria-label="Payment Mode" className="h-11 w-full rounded-[10px] border bg-[var(--card)] px-3 text-sm outline-none focus:border-[var(--ring)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--ring)_18%,transparent)]"><option value="">Select payment mode</option>{paymentModes.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><label className="block space-y-1.5"><span className="text-xs font-bold">Receipt Reference <span className="text-[var(--destructive)]">*</span></span><input value={receiptReference} onChange={(event) => { setReceiptReference(event.target.value); setValidationError("") }} aria-label="Receipt Reference" className="h-11 w-full rounded-[10px] border bg-[var(--card)] px-3 text-sm outline-none focus:border-[var(--ring)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--ring)_18%,transparent)]" placeholder="Front Office receipt reference" /></label></div>}{action === "process_payout" && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">Net Payout to process: <strong><MoneyCell value={detail.netPayout} currency={detail.currency} /></strong></div>}{action === "reverse" && <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"><RotateCcw size={16} className="mt-0.5 shrink-0" aria-hidden="true" /><span>This will restore the policy cash value. Are you sure?</span></div>}{action !== "process_payout" && action && <label className="block space-y-1.5" htmlFor={`withdrawal-action-reason-${action}`}><span className="text-xs font-bold">{reasonLabel} <span className="text-[var(--destructive)]">*</span></span><textarea id={`withdrawal-action-reason-${action}`} rows={4} value={reason} onChange={(event) => { setReason(event.target.value); setValidationError("") }} aria-invalid={Boolean(validationError)} className="w-full rounded-[10px] border bg-[var(--card)] px-3 py-2 text-sm outline-none focus:border-[var(--ring)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--ring)_18%,transparent)]" placeholder={`Enter ${reasonLabel.toLowerCase()}.`} /></label>}{validationError && <ErrorCoach title="Withdrawal action needs attention" message={validationError} resolutionSteps={["Complete every required action field.", "If the backend rejects the action, verify the withdrawal status and your permission."]} />}<div className="flex justify-end gap-2 border-t pt-4"><button type="button" className="button-secondary" onClick={close} disabled={actionMutation.isPending}>Cancel</button><button type="button" className="button-primary" onClick={() => void submit()} disabled={actionMutation.isPending}>{actionMutation.isPending ? "Submitting…" : submitLabel}</button></div></>}</div></Modal>
 }
 
 function OverviewTab({ detail, breakdown, audit }: { detail: WithdrawalDetail; breakdown: WithdrawalBreakdown | null; audit: WithdrawalAuditEntry[] }) {

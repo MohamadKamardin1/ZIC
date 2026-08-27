@@ -5,12 +5,13 @@ import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { WithdrawalAuditEntry, WithdrawalBreakdown, WithdrawalDetail, WithdrawalPayment } from "../../lib/withdrawals"
 
-const { useWithdrawalDetailMock, useWithdrawalBreakdownMock, useWithdrawalPaymentsMock, useWithdrawalAuditMock, useWithdrawalActionMutationMock, useAccessMock, toastMock } = vi.hoisted(() => ({
+const { useWithdrawalDetailMock, useWithdrawalBreakdownMock, useWithdrawalPaymentsMock, useWithdrawalAuditMock, useWithdrawalActionMutationMock, useWithdrawalOptionsMock, useAccessMock, toastMock } = vi.hoisted(() => ({
   useWithdrawalDetailMock: vi.fn(),
   useWithdrawalBreakdownMock: vi.fn(),
   useWithdrawalPaymentsMock: vi.fn(),
   useWithdrawalAuditMock: vi.fn(),
   useWithdrawalActionMutationMock: vi.fn(),
+  useWithdrawalOptionsMock: vi.fn(),
   useAccessMock: vi.fn(),
   toastMock: vi.fn(),
 }))
@@ -21,6 +22,7 @@ vi.mock("../../lib/withdrawalsHooks", () => ({
   useWithdrawalPayments: useWithdrawalPaymentsMock,
   useWithdrawalAudit: useWithdrawalAuditMock,
   useWithdrawalActionMutation: useWithdrawalActionMutationMock,
+  useWithdrawalOptions: useWithdrawalOptionsMock,
 }))
 
 vi.mock("../../components/ui/Toast", () => ({ useToast: () => ({ toast: toastMock }) }))
@@ -109,7 +111,8 @@ describe("OL Withdrawal detail Prompt 4", () => {
     useWithdrawalPaymentsMock.mockReset()
     useWithdrawalAuditMock.mockReset()
     useWithdrawalActionMutationMock.mockReset().mockReturnValue(actionMutationState)
-    actionMutationState.mutateAsync.mockReset().mockImplementation(({ action }: { action: string }) => Promise.resolve({ withdrawal: { statusDisplay: action === "reject" ? "Rejected" : "Approved" } }))
+    useWithdrawalOptionsMock.mockReset().mockReturnValue({ data: { results: [{ value: "BANK_TRANSFER", label: "Bank transfer", meta: {} }] }, isLoading: false, error: null })
+    actionMutationState.mutateAsync.mockReset().mockImplementation(({ action }: { action: string }) => Promise.resolve({ withdrawal: { statusDisplay: ({ approve: "Approved", reject: "Rejected", process_payout: "Paid", cancel: "Cancelled", reverse: "Reversed" } as Record<string, string>)[action] } }))
     useAccessMock.mockReset().mockReturnValue(fullAccess)
   })
 
@@ -152,6 +155,51 @@ describe("OL Withdrawal detail Prompt 4", () => {
     await user.click(within(rejectDialog).getByRole("button", { name: "Reject" }))
     await expect.poll(() => actionMutationState.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ id: "withdrawal-requested-1", action: "reject", payload: { reason: "Insufficient documentation" } }))
     expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: "Reject withdrawal", message: "Status updated to Rejected." }))
+  })
+
+  it("processes an approved payout with payment mode and receipt reference", async () => {
+    const user = userEvent.setup()
+    renderDetail({ ...detail, status: "APPROVED", statusDisplay: "Approved", allowedActions: ["process_payout", "print"] })
+    await screen.findAllByText("OL-WDR-2026-000001")
+    await user.click(screen.getByRole("button", { name: "Process Payout" }))
+    const payoutDialog = await screen.findByRole("dialog", { name: "Process Payout withdrawal" })
+    expect(within(payoutDialog).getByText(/Net Payout to process/)).toBeInTheDocument()
+    await user.click(within(payoutDialog).getByRole("button", { name: "Confirm Payout Processed" }))
+    expect(await within(payoutDialog).findByText(/Payment Mode and Receipt Reference are required/)).toBeInTheDocument()
+    await user.selectOptions(within(payoutDialog).getByRole("combobox", { name: "Payment Mode" }), "BANK_TRANSFER")
+    await user.type(within(payoutDialog).getByRole("textbox", { name: "Receipt Reference" }), "RCT-2026-000002")
+    await user.click(within(payoutDialog).getByRole("button", { name: "Confirm Payout Processed" }))
+    await expect.poll(() => actionMutationState.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ id: "withdrawal-requested-1", action: "process_payout", payload: { payment_mode: "BANK_TRANSFER", receipt_reference: "RCT-2026-000002" } }))
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: "Process Payout withdrawal", message: "Status updated to Paid." }))
+  })
+
+  it("requires a cancellation reason for a requested withdrawal", async () => {
+    const user = userEvent.setup()
+    renderDetail({ ...detail, allowedActions: ["cancel", "print"] })
+    await screen.findAllByText("OL-WDR-2026-000001")
+    await user.click(screen.getAllByRole("button", { name: "Cancel" })[0])
+    const cancelDialog = await screen.findByRole("dialog", { name: "Cancel withdrawal" })
+    await user.click(within(cancelDialog).getByRole("button", { name: "Cancel Request" }))
+    expect(await within(cancelDialog).findByText(/Reason for Cancellation is required/)).toBeInTheDocument()
+    await user.type(within(cancelDialog).getByRole("textbox", { name: /Reason for Cancellation/ }), "Customer requested cancellation")
+    await user.click(within(cancelDialog).getByRole("button", { name: "Cancel Request" }))
+    await expect.poll(() => actionMutationState.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ action: "cancel", payload: { reason: "Customer requested cancellation" } }))
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: "Cancel withdrawal", message: "Status updated to Cancelled." }))
+  })
+
+  it("shows the restoration warning and requires a reason before reversing a paid withdrawal", async () => {
+    const user = userEvent.setup()
+    renderDetail({ ...detail, status: "PAID", statusDisplay: "Paid", allowedActions: ["reverse", "print"] })
+    await screen.findAllByText("OL-WDR-2026-000001")
+    await user.click(screen.getByRole("button", { name: "Reverse" }))
+    const reverseDialog = await screen.findByRole("dialog", { name: "Reverse withdrawal" })
+    expect(reverseDialog).toHaveTextContent("This will restore the policy cash value. Are you sure?")
+    await user.click(within(reverseDialog).getByRole("button", { name: "Reverse Withdrawal" }))
+    expect(await within(reverseDialog).findByText(/Reason for Reversal is required/)).toBeInTheDocument()
+    await user.type(within(reverseDialog).getByRole("textbox", { name: /Reason for Reversal/ }), "Correcting a duplicate payout")
+    await user.click(within(reverseDialog).getByRole("button", { name: "Reverse Withdrawal" }))
+    await expect.poll(() => actionMutationState.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ action: "reverse", payload: { reason: "Correcting a duplicate payout" } }))
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: "Reverse withdrawal", message: "Status updated to Reversed." }))
   })
 
   it("hides approval and rejection actions when the permission is absent", async () => {
