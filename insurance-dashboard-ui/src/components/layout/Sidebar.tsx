@@ -103,7 +103,7 @@ const NAV: NavItem[] = [
     { label: "Proposals", icon: FileText, path: "/ordinary-life/proposals", permission: { module: "ol_proposals", action: "view" } },
     { label: "Policies", icon: ShieldCheck, path: "/ordinary-life/policies" },
     { label: "Loans", icon: FileText, path: "/ordinary-life/loans", permission: { module: "ol_loans", action: "view" } },
-    { label: "Withdrawals", icon: FileText, path: "/ordinary-life/withdrawals" },
+    { label: "Withdrawals", icon: FileText, path: "/ordinary-life/withdrawals", permission: { module: "ol_withdrawals", action: "view" } },
     { label: "Claims", icon: FileText, path: "/ordinary-life/claims" },
     { label: "Maturity Installments", icon: FileText, path: "/ordinary-life/maturity-installments" },
     { label: "Ordinary Life Parameters", icon: Settings, children: OL_PARAMETER_CHILDREN },
