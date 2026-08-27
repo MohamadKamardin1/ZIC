@@ -1,6 +1,6 @@
  OL LOANS UI — FULL SERIES (10 Prompts)
 
-## [ ] Prompt 1/10 — Save Series File + Foundation + Contract-First API Layer
+## [x] Prompt 1/10 — Save Series File + Foundation + Contract-First API Layer
 
 ```text
 You are a senior frontend engineer for the ZIC Life Insurance Platform. The OL Loans backend is complete. Build the Loans UI. The user pasted the FULL 10-prompt series at once.
