@@ -166,3 +166,46 @@ The release seed result contains ten scenario rows and five proof payloads. It i
 ## Authorization and source channels
 
 The supported OL Loan source channels are `WEB`, `API`, `ADMIN`, `SYSTEM`, `IMPORT`, `PORTAL`, `BATCH`, and `MANUAL`. Policy settlement events are mapped to `SYSTEM` at the persistence seam. Every financial response includes a correlation ID when available; every audit record includes actor, reason, before/after state, and source channel.
+
+
+## Final UI release contracts
+
+The partner portal exposes sanitized, partner-scoped data only:
+
+| Method and path | Permission/scope | Purpose |
+| --- | --- | --- |
+| `GET /api/v1/ol/loans/portal/` | Authenticated partner visibility | Paginated loans belonging to the current partner. |
+| `GET /api/v1/ol/loans/portal/{loan_number}/` | Authenticated partner visibility | Read-only detail addressed by human-readable loan number. |
+| `POST /api/v1/ol/loans/portal/request/` | Partner loan-request permission and ownership checks | Creates a request from a policy number using the canonical request validation service. |
+
+Portal payloads include `loan_number`, `policy_number`, partner-safe display labels, balances, status, schedule rows where permitted, and `request_allowed`. They do not use a raw UUID as a visible label or navigation key. Portal users cannot disburse, repay, offset, reverse, or print through the staff action API.
+
+Loan document generation uses the unified document pipeline:
+
+| Method and path | Permission | Purpose |
+| --- | --- | --- |
+| `POST /api/v1/ol/loans/{id}/print-agreement/` | `ol_loans.print` | Generate and store a branded loan agreement instance. |
+| `POST /api/v1/ol/loans/{id}/print-schedule/` | `ol_loans.print` | Generate and store a branded repayment schedule instance. |
+| `GET /api/v1/documents/instances/?source_type=OL_LOAN&object_id={id}` | `ol_loans.print`/document visibility | List generated loan document instances with template version, page count, generated-by display, and timestamps. |
+| `GET /api/v1/documents/instances/{instance_id}/download/?ticket={ticket}` | Bearer token or valid short-lived ticket | Stream the PDF for authenticated preview/download or signed new-tab access. |
+
+A successful print response returns `instance`, `preview_url` or an authenticated preview source, and `signed_download_url`. The signed ticket is short-lived and single-purpose; the server rechecks expiry, document identity, permission, and ticket integrity. The browser must not open a raw unauthenticated `/api/` URL in a new tab.
+
+Loan UI financial actions use the following authenticated endpoints and return the standard `data` envelope plus correlation metadata:
+
+```http
+POST /api/v1/ol/loans/<loan-id>/disburse/
+POST /api/v1/ol/loans/<loan-id>/repay/
+POST /api/v1/ol/loans/<loan-id>/offset/
+```
+
+Each request carries `X-Idempotency-Key`. Disbursement requires an approved loan and payment mode; repayment requires a positive amount no greater than the current balance, payment mode, and a receipt or approved manual reference; offset requires `source_type`, `source_id`, and a positive `payout_amount`. The backend remains authoritative for lifecycle, balance, ownership, and duplicate-operation checks.
+
+The final UI release verification command is:
+
+```bash
+cd insurance-dashboard-ui
+pnpm exec playwright test e2e/ol-loans-prompt10.spec.ts --reporter=line
+```
+
+The full frontend and affected backend verification commands remain documented in `insurance-dashboard-ui/docs/E2E.md` and `docs/OL_LOANS_ADMIN_GUIDE.md`.
