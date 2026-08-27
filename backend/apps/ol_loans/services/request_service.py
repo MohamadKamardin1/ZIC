@@ -179,6 +179,91 @@ def _active_loan_exists(policy):
     return OLLoan.objects.filter(policy_ref=policy, status__in=ACTIVE_LOAN_STATUSES).order_by("created_at").first()
 
 
+def get_policy_loan_eligibility(policy_id, *, as_of=None, actor=None, request=None, source_channel="API"):
+    """Return a read-only, parameter-resolved limit for the loan request form."""
+    policy = Policy.objects.select_related("partner").filter(pk=policy_id).first()
+    if policy is None:
+        raise loan_not_found(str(policy_id))
+
+    base = {
+        "policy_id": str(policy.pk),
+        "policy_number": policy.policy_number,
+        "currency": (policy.currency or "TZS").upper(),
+        "policy_status": policy.status,
+        "eligible": False,
+        "available_loan_limit": "0.00",
+        "minimum_loan_amount": "0.00",
+        "maximum_loan_amount": "0.00",
+        "repayment_modes": [],
+        "approval_required": False,
+    }
+    if policy.status not in {PolicyStatus.ACTIVE, PolicyStatus.PAID_UP}:
+        return {
+            **base,
+            "error_code": "LOAN_INELIGIBLE",
+            "message": "Policy is not eligible for loans.",
+            "resolution_steps": [
+                "Open the policy and confirm it is Active or Paid-up.",
+                "Reinstate or correct the policy lifecycle status before requesting a loan.",
+            ],
+        }
+
+    as_of = _date(as_of)
+    config = get_loan_config(policy, as_of=as_of, actor=actor, request=request, source_channel=source_channel)
+    product = _resolve_product(policy)
+    if product is not None and not product.allow_loans:
+        return {
+            **base,
+            "error_code": "LOAN_INELIGIBLE",
+            "message": "The selected OL product does not allow policy loans.",
+            "resolution_steps": [
+                "Review the product’s Allow Loans setting under OL Parameters > Product Setup.",
+                "Use a policy issued from a product that permits policy loans.",
+            ],
+        }
+    if not config.allow_policy_loans:
+        return {
+            **base,
+            "error_code": "LOAN_INELIGIBLE",
+            "message": "Policy loans are disabled by the effective OL Loan System Setup.",
+            "resolution_steps": [
+                "Open Ordinary Life Parameters > Loan Setup.",
+                "Activate a Loan System Setup row with policy loans enabled for this product and plan.",
+            ],
+        }
+
+    existing = _active_loan_exists(policy)
+    cash_value = _policy_cash_value(policy)
+    available_limit = (cash_value * config.max_loan_percentage / Decimal("100")).quantize(Decimal("0.01"))
+    existing_balance = existing.outstanding_balance if existing else Decimal("0.00")
+    remaining = max(Decimal("0.00"), available_limit - existing_balance)
+    minimum = config.min_loan_amount or Decimal("0.00")
+    maximum = min(value for value in (remaining, config.max_loan_amount) if value is not None)
+    currency = (config.loan_currency or policy.currency or "TZS").upper()
+    response = {
+        **base,
+        "currency": currency,
+        "cash_value": f"{cash_value:.2f}",
+        "max_loan_percentage": f"{config.max_loan_percentage:.2f}",
+        "available_loan_limit": f"{remaining:.2f}",
+        "minimum_loan_amount": f"{minimum:.2f}",
+        "maximum_loan_amount": f"{maximum:.2f}",
+        "repayment_modes": _option_codes(config),
+        "approval_required": config.require_approval,
+    }
+    if existing:
+        return {
+            **response,
+            "error_code": "LOAN_ACTIVE_EXISTS",
+            "message": "This policy already has an active or pending loan.",
+            "resolution_steps": [
+                f"Review existing loan {existing.loan_number} before creating another request.",
+                "Repay, settle, or close the existing loan according to policy rules.",
+            ],
+        }
+    return {**response, "eligible": maximum > Decimal("0.00")}
+
+
 @transaction.atomic
 def request_policy_loan(
     policy_id,

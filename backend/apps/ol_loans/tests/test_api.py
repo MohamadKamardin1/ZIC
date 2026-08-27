@@ -1,5 +1,6 @@
 from datetime import date
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
@@ -67,6 +68,25 @@ class OLLoanApiTestCase(APITestCase):
             status=LoanStatus.REQUESTED,
             reason="Education support",
         )
+
+    def test_policy_loan_eligibility_endpoint_returns_limit_contract(self):
+        eligibility = {
+            "policy_id": str(self.loan.policy_ref_id),
+            "policy_number": self.loan.policy_ref.policy_number,
+            "currency": "TZS",
+            "policy_status": "ACTIVE",
+            "eligible": True,
+            "available_loan_limit": "1250000.00",
+            "minimum_loan_amount": "100000.00",
+            "maximum_loan_amount": "1250000.00",
+            "repayment_modes": ["MONTHLY"],
+        }
+        self.client.force_authenticate(self.staff)
+        with patch("apps.ol_loans.request_views.get_policy_loan_eligibility", return_value=eligibility):
+            response = self.client.get(f"/api/v1/ol/policies/{self.loan.policy_ref_id}/loans/eligibility/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["data"]["available_loan_limit"], "1250000.00")
+        self.assertEqual(response.data["data"]["repayment_modes"], ["MONTHLY"])
 
     def test_list_supports_search_pagination_and_display_fields(self):
         self.client.force_authenticate(self.staff)

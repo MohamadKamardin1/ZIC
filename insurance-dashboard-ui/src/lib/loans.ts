@@ -201,6 +201,24 @@ export interface LoanKpis {
   timestamp: string
 }
 
+export interface LoanEligibility {
+  policyId: string
+  policyNumber: string
+  currency: string
+  policyStatus: string
+  eligible: boolean
+  cashValue: string
+  maxLoanPercentage: string
+  availableLoanLimit: string
+  minimumLoanAmount: string
+  maximumLoanAmount: string
+  repaymentModes: string[]
+  approvalRequired: boolean
+  errorCode?: string
+  message?: string
+  resolutionSteps?: string[]
+}
+
 export interface LoanRequestPayload {
   requestedAmount: string | number
   termMonths: number
@@ -571,6 +589,11 @@ function withIdempotencyKey(headers: HeadersInit | undefined, idempotencyKey?: s
   return next
 }
 
+export function getPolicyLoanEligibility(policyId: string, asOf?: string): Promise<LoanEligibility> {
+  const query = asOf ? `?as_of=${encodeURIComponent(asOf)}` : ""
+  return request<unknown>(`${LOANS_API_PREFIX}/policies/${encodeURIComponent(policyId)}/loans/eligibility/${query}`).then(normalizeEligibility)
+}
+
 export function createLoanRequest(policyId: string, payload: LoanRequestPayload, idempotencyKey?: string): Promise<LoanActionResult> {
   return request<unknown>(`${LOANS_API_PREFIX}/policies/${encodeURIComponent(policyId)}/loans/request/`, {
     method: "POST",
@@ -626,7 +649,29 @@ export function loanAction(id: string, action: LoanAction | string, payload: Rec
   }
 }
 
-export function normalizeActionResult(payload: unknown): LoanActionResult {
+export function normalizeEligibility(payload: unknown): LoanEligibility {
+  const record = isRecord(payload) ? payload : {}
+  const stringList = Array.isArray(record.repayment_modes) ? record.repayment_modes.map((value) => String(value)) : Array.isArray(record.repaymentModes) ? record.repaymentModes.map((value) => String(value)) : []
+  return {
+    policyId: stringValue(record, "policy_id", "policyId"),
+    policyNumber: stringValue(record, "policy_number", "policyNumber"),
+    currency: stringValue(record, "currency") || "TZS",
+    policyStatus: stringValue(record, "policy_status", "policyStatus"),
+    eligible: Boolean(record.eligible),
+    cashValue: amountValue(record, "cash_value", "cashValue"),
+    maxLoanPercentage: amountValue(record, "max_loan_percentage", "maxLoanPercentage"),
+    availableLoanLimit: amountValue(record, "available_loan_limit", "availableLoanLimit"),
+    minimumLoanAmount: amountValue(record, "minimum_loan_amount", "minimumLoanAmount"),
+    maximumLoanAmount: amountValue(record, "maximum_loan_amount", "maximumLoanAmount"),
+    repaymentModes: stringList,
+    approvalRequired: Boolean(record.approval_required ?? record.approvalRequired),
+    errorCode: nullableString(record, "error_code", "errorCode") ?? undefined,
+    message: nullableString(record, "message") ?? undefined,
+    resolutionSteps: Array.isArray(record.resolution_steps) ? record.resolution_steps.map((value) => String(value)) : undefined,
+  }
+}
+
+function normalizeActionResult(payload: unknown): LoanActionResult {
   const record = isRecord(payload) ? payload : {}
   const rawLoan = isRecord(record.loan) ? record.loan : record.id || record.loanNumber || record.loan_number ? record : undefined
   const schedules = Array.isArray(record.schedules) ? record.schedules : []

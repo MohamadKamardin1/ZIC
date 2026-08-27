@@ -223,6 +223,11 @@ export const loansHandlers = [
     const filtered = loans.filter((loan) => (!q || `${loan.loan_number} ${loan.policy_number} ${loan.policyholder_name} ${loan.partner_display}`.toLowerCase().includes(q)) && (!status || loan.status === status) && (!product || loan.product_display.toLowerCase().includes(product)))
     return data(page(filtered, url))
   }),
+  http.get(`*${LOANS_BASE.replace("/loans", "/policies")}/:policyId/loans/eligibility/`, ({ params }) => {
+    const policyId = String(params.policyId)
+    const isLapsed = policyId.includes("lapsed")
+    return data({ policy_id: policyId, policy_number: isLapsed ? "ZIC-OL-2025-000099" : "ZIC-OL-2026-000001", currency: "TZS", policy_status: isLapsed ? "LAPSED" : "ACTIVE", eligible: !isLapsed, cash_value: "2500000.00", max_loan_percentage: "50.00", available_loan_limit: isLapsed ? "0.00" : "1250000.00", minimum_loan_amount: "100000.00", maximum_loan_amount: isLapsed ? "0.00" : "1250000.00", repayment_modes: ["MONTHLY", "DEDUCTION_FROM_MATURITY"], approval_required: true, ...(isLapsed ? { error_code: "LOAN_INELIGIBLE", message: "Policy is not eligible for loans.", resolution_steps: ["Select an Active or Paid-up policy with loans enabled.", "Review the policy lifecycle status before requesting a loan."] } : {}) })
+  }),
   http.post(`*${LOANS_BASE.replace("/loans", "/policies")}/:policyId/loans/request/`, async ({ params, request }) => {
     const body = await request.json() as { requested_amount?: string | number; term_months?: number; repayment_mode?: string; reason?: string }
     const amount = Number(body.requested_amount ?? 0)

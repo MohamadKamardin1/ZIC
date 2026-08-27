@@ -4,12 +4,28 @@ from rest_framework.views import APIView
 
 from .permissions import has_ol_loan_permission
 from .serializers import OLLoanListSerializer, OLLoanRequestSerializer
-from .services.request_service import request_policy_loan
+from .services.request_service import get_policy_loan_eligibility, request_policy_loan
 
 
 class MustRequestOLLoanPermission(IsAuthenticated):
     def has_permission(self, request, view):
         return bool(super().has_permission(request, view) and has_ol_loan_permission(request.user, "request"))
+
+
+class PolicyLoanEligibilityView(APIView):
+    """GET /api/v1/ol/policies/{policy_id}/loans/eligibility/."""
+
+    permission_classes = [MustRequestOLLoanPermission]
+
+    def get(self, request, policy_id):
+        eligibility = get_policy_loan_eligibility(
+            policy_id,
+            as_of=request.query_params.get("as_of"),
+            actor=request.user,
+            request=request,
+            source_channel="API",
+        )
+        return Response({"data": eligibility})
 
 
 class PolicyLoanRequestView(APIView):

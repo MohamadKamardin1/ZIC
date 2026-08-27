@@ -20,7 +20,7 @@ from .integration_views import (
 from .issuance_views import PolicyIssueView
 from .lifecycle_views import PolicyReinstateView
 from .maturity_views import PolicyMaturityApproveView, PolicyMaturityPayView, PolicyMaturityView
-from apps.ol_loans.request_views import PolicyLoanRequestView
+from apps.ol_loans.request_views import PolicyLoanEligibilityView, PolicyLoanRequestView
 from .termination_views import PolicyCancelView, PolicyPaidUpView, PolicySurrenderView
 from .views import PolicyDetailView, PolicyExportView, PolicyKPIsView, PolicyListView
 
@@ -34,6 +34,7 @@ urlpatterns = [
     path("policies/<uuid:policy_id>/surrender/", PolicySurrenderView.as_view(), name="policy-surrender"),
     path("policies/<uuid:policy_id>/paid-up/", PolicyPaidUpView.as_view(), name="policy-paid-up"),
     path("policies/<uuid:policy_id>/cancel/", PolicyCancelView.as_view(), name="policy-cancel"),
+    path("policies/<uuid:policy_id>/loans/eligibility/", PolicyLoanEligibilityView.as_view(), name="policy-loan-eligibility"),
     path("policies/<uuid:policy_id>/loans/request/", PolicyLoanRequestView.as_view(), name="policy-loan-request"),
     path("policies/<uuid:policy_id>/loans/", PolicyLoanListCreateView.as_view(), name="policy-loans"),
     path("policies/loans/<uuid:loan_id>/approve/", PolicyLoanApproveView.as_view(), name="policy-loan-approve"),

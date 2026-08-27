@@ -5,6 +5,7 @@ import {
   getLoanBalance,
   getLoanKPIs,
   getLoanOptions,
+  getPolicyLoanEligibility,
   getLoanRepayments,
   getLoanAccruals,
   getLoanSchedule,
@@ -17,6 +18,7 @@ import {
   type LoanDisbursementPayload,
   type LoanListFilters,
   type LoanKpis,
+  type LoanEligibility,
   type LoanOption,
   type LoanOptionKind,
   type LoanPrintResult,
@@ -30,6 +32,7 @@ import {
 export const loanListKey = (filters: LoanListFilters = {}) => ["ol-loans", "list", filters] as const
 export const loanKpisKey = (filters: LoanListFilters = {}) => ["ol-loans", "kpis", filters] as const
 export const loanOptionsKey = (kind: LoanOptionKind, params: Record<string, unknown> = {}) => ["ol-loans", "options", kind, params] as const
+export const loanEligibilityKey = (policyId?: string | null, asOf?: string) => ["ol-loans", "eligibility", policyId ?? "none", asOf ?? "today"] as const
 export const loanDetailKey = (id?: string | null) => ["ol-loans", "detail", id ?? "none"] as const
 export const loanBalanceKey = (id?: string | null) => ["ol-loans", "balance", id ?? "none"] as const
 export const loanScheduleKey = (id?: string | null, page = 1, pageSize = 20) => ["ol-loans", "schedule", id ?? "none", page, pageSize] as const
@@ -47,6 +50,15 @@ export function invalidateLoanQueries(queryClient: ReturnType<typeof useQueryCli
     void queryClient.invalidateQueries({ queryKey: ["ol-loans", "repayments", id] })
     void queryClient.invalidateQueries({ queryKey: ["ol-loans", "accruals", id] })
   }
+}
+
+export function usePolicyLoanEligibility(policyId?: string | null, asOf?: string, enabled = true) {
+  return useQuery<LoanEligibility>({
+    queryKey: loanEligibilityKey(policyId, asOf),
+    queryFn: () => getPolicyLoanEligibility(policyId as string, asOf),
+    enabled: Boolean(policyId) && enabled,
+    staleTime: 30_000,
+  })
 }
 
 export function useLoanList(filters: LoanListFilters = {}) {
