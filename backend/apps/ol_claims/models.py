@@ -95,6 +95,10 @@ class OLClaim(UUIDModel, AuditedModel):
     description = models.TextField(blank=True, default="")
     assessment_notes = models.TextField(blank=True, default="")
     fraud_flag = models.BooleanField(default=False, db_index=True)
+    fraud_flag_reason = models.TextField(blank=True, default="")
+    waiver_of_premium_days = models.PositiveIntegerField(default=0)
+    waiver_of_premium_until = models.DateField(null=True, blank=True)
+    waiver_of_premium_applied = models.BooleanField(default=False)
     medical_status = models.CharField(
         max_length=20,
         choices=ClaimMedicalStatus.choices,

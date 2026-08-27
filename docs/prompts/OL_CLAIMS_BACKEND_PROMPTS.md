@@ -196,7 +196,7 @@ GIT:
 
 FINAL OUTPUT: medical logic, endpoints, tests, commit hash, pushed branch.
 
-## [ ] Prompt 6 — Assessment & Fraud Logic
+## [x] Prompt 6 — Assessment & Fraud Logic
 You are a senior Django insurance engineer. Continue the ZIC OL Claims backend. Execute ONLY Prompt 6.
 
 MANDATORY RULES:

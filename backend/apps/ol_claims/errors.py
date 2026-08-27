@@ -5,6 +5,46 @@ DOC_REF = "docs/OL_CLAIMS_DESIGN.md"
 
 
 CLAIM_ERROR_REGISTRY = {
+    "CLAIM_NOTE_REQUIRED": {
+        "message": "An internal claim note cannot be empty.",
+        "status_code": 400,
+        "resolution_steps": [
+            "Enter the operational observation or decision that should be retained in the claim file.",
+            "Do not include sensitive credentials or unrelated personal information.",
+        ],
+    },
+    "CLAIM_ASSESSMENT_REQUIRED": {
+        "message": "Assessment details are required before this claim can be assessed.",
+        "status_code": 400,
+        "resolution_steps": [
+            "Enter the assessed amount and assessment notes.",
+            "Confirm mandatory documents and medical review are complete, then retry.",
+        ],
+    },
+    "CLAIM_ASSESSMENT_AMOUNT_INVALID": {
+        "message": "The assessed amount is invalid or exceeds the calculated claim limit.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Enter a non-negative assessed amount no greater than the calculated maximum.",
+            "Open the claim benefit breakdown to review the authoritative calculated amount.",
+        ],
+    },
+    "CLAIM_FRAUD_REASON_REQUIRED": {
+        "message": "A fraud flag reason is required when a claim is marked for fraud review.",
+        "status_code": 400,
+        "resolution_steps": [
+            "Describe the evidence or control exception that triggered the fraud flag.",
+            "Leave the fraud flag off when no fraud concern has been identified.",
+        ],
+    },
+    "CLAIM_WAIVER_INPUT_INVALID": {
+        "message": "The waiver-of-premium period is invalid.",
+        "status_code": 400,
+        "resolution_steps": [
+            "Enter a whole-number waiver period of zero or more days.",
+            "Confirm that the selected claim type permits waiver of premium.",
+        ],
+    },
     "CLAIM_MEDICAL_REVIEW_REQUIRED": {
         "message": "Medical review must be completed before claim assessment can proceed.",
         "status_code": 422,

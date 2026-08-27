@@ -34,6 +34,7 @@ from apps.ol_claims.models import (
 from apps.ol_claims.options import claim_type_options
 from apps.ol_claims.permissions import ACTIONS, OLClaimPermission, has_ol_claim_permission
 from apps.ol_claims.services.document_service import can_proceed_to_assessment, get_required_documents
+from apps.ol_claims.services.assessment import add_file_note, assess_claim
 from apps.ol_claims.services.medical import evaluate_medical_requirements, record_medical_result, require_medical_review
 from apps.ol_claims.services.validation import calculate_max_claimable, validate_eligibility
 from apps.ol_proposals.models import OLProposal
@@ -750,3 +751,90 @@ class OLClaimFoundationTestCase(APITestCase):
         evaluated = evaluate_medical_requirements(claim, actor=self.user)
         self.assertTrue(evaluated["medical_required"])
         self.assertIn("MEDICAL_LIMIT_1M", claim.medical_reason)
+
+    def _assessment_claim_type(self):
+        return OLClaimType.objects.create(
+            code="ASSESSABLE_CLAIM",
+            name="Assessable Claim",
+            claim_category="DEATH",
+            calculation_basis="SUM_ASSURED",
+            duplicate_check_rule="NONE",
+            waiting_period_days=0,
+            payable_to_rules={},
+            require_documents=[],
+            allow_waiver_of_premium=True,
+            effective_from=date(2026, 1, 1),
+        )
+
+    def test_assessment_updates_amount_status_fraud_waiver_and_note(self):
+        claim_type = self._assessment_claim_type()
+        claim = self.make_claim()
+        claim.claim_type = claim_type.code
+        claim.save(update_fields=["claim_type", "updated_at"])
+        response = self.client.post(
+            f"/api/v1/ol/claims/{claim.pk}/assess/",
+            {
+                "assessed_amount": "20000000.00",
+                "assessment_notes": "Evidence reviewed and liability confirmed.",
+                "fraud_flag": True,
+                "fraud_flag_reason": "Identity and payment evidence require enhanced review.",
+                "waiver_of_premium_days": 30,
+            },
+            format="json",
+            HTTP_X_SOURCE_CHANNEL="WEB",
+        )
+        self.assertEqual(response.status_code, 200)
+        claim.refresh_from_db()
+        self.assertEqual(claim.status, ClaimStatus.ASSESSED)
+        self.assertTrue(claim.fraud_flag)
+        self.assertEqual(claim.fraud_flag_reason, "Identity and payment evidence require enhanced review.")
+        self.assertEqual(claim.items.get().approved_amount, Decimal("20000000.00"))
+        self.assertTrue(claim.waiver_of_premium_applied)
+        self.assertEqual(claim.waiver_of_premium_days, 30)
+        self.assertEqual(claim.policy_ref.contract_snapshot["premium_waiver"]["claim_number"], claim.claim_number)
+        self.assertTrue(DomainEvent.objects.filter(event_type="ClaimAssessed", aggregate_id=str(claim.pk)).exists())
+        self.assertTrue(AuditLog.objects.filter(action_type="ASSESS", app_label="ol_claims", model_name="olclaim").exists())
+
+        note_response = self.client.post(
+            f"/api/v1/ol/claims/{claim.pk}/notes/",
+            {"note_text": "Assessment completed by Claims Administration."},
+            format="json",
+        )
+        self.assertEqual(note_response.status_code, 201)
+        notes = self.client.get(f"/api/v1/ol/claims/{claim.pk}/notes/")
+        self.assertEqual(notes.status_code, 200)
+        self.assertEqual(notes.data["data"][0]["note_text"], "Assessment completed by Claims Administration.")
+
+    def test_assessment_rejects_amount_above_calculated_maximum_and_missing_fraud_reason(self):
+        claim_type = self._assessment_claim_type()
+        too_high = self.make_claim()
+        too_high.claim_type = claim_type.code
+        too_high.save(update_fields=["claim_type", "updated_at"])
+        response = self.client.post(
+            f"/api/v1/ol/claims/{too_high.pk}/assess/",
+            {"assessed_amount": "25000001.00", "assessment_notes": "Reviewed."},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.data["error_code"], "CLAIM_ASSESSMENT_AMOUNT_INVALID")
+        self.assertIn("assessed_amount", response.data["field_errors"])
+        too_high.refresh_from_db()
+        self.assertEqual(too_high.status, ClaimStatus.REGISTERED)
+
+        fraud_claim = self.make_claim()
+        fraud_claim.claim_type = claim_type.code
+        fraud_claim.save(update_fields=["claim_type", "updated_at"])
+        response = self.client.post(
+            f"/api/v1/ol/claims/{fraud_claim.pk}/assess/",
+            {"assessed_amount": "20000000.00", "assessment_notes": "Reviewed.", "fraud_flag": True},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["error_code"], "CLAIM_FRAUD_REASON_REQUIRED")
+        self.assertIn("fraud_flag_reason", response.data["field_errors"])
+
+    def test_assessment_service_rejects_empty_internal_note(self):
+        claim = self.make_claim()
+        with self.assertRaises(Exception) as raised:
+            add_file_note(claim.pk, note_text="", actor=self.user)
+        self.assertEqual(raised.exception.error_code, "CLAIM_NOTE_REQUIRED")
