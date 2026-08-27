@@ -350,6 +350,7 @@ class PolicyDetailSerializer(PolicyListSerializer):
     linked_proposal = serializers.SerializerMethodField()
     linked_commitments = serializers.SerializerMethodField()
     installments = serializers.SerializerMethodField()
+    ol_loan_summary = serializers.SerializerMethodField()
 
     class Meta(PolicyListSerializer.Meta):
         fields = PolicyListSerializer.Meta.fields + (
@@ -367,6 +368,7 @@ class PolicyDetailSerializer(PolicyListSerializer):
             "linked_proposal",
             "linked_commitments",
             "installments",
+            "ol_loan_summary",
         )
 
     def get_linked_proposal(self, obj):
@@ -403,3 +405,8 @@ class PolicyDetailSerializer(PolicyListSerializer):
         snapshot = obj.contract_snapshot if isinstance(obj.contract_snapshot, dict) else {}
         installments = snapshot.get("installments", [])
         return installments if isinstance(installments, list) else []
+
+    def get_ol_loan_summary(self, obj):
+        from apps.ol_loans.services.integration_service import policy_loan_summary
+
+        return policy_loan_summary(obj.pk)

@@ -193,6 +193,23 @@ def reinstate_policy(
             details={"status": policy.status},
         )
 
+    # Keep policy servicing independent of loan internals: the OL Loans
+    # integration seam reports only whether an uncleared default remains.
+    from apps.ol_loans.services.integration_service import reinstatement_loan_guard
+
+    loan_guard = reinstatement_loan_guard(policy.pk)
+    if not loan_guard["allowed"]:
+        raise registry_error(
+            "POLICY_LAPSED",
+            message="The policy cannot be reinstated while an OL Loan default remains uncleared.",
+            details={"blocking_loans": loan_guard["blocking_loans"]},
+            resolution_steps=[
+                "Collect or reconcile the outstanding defaulted loan balance.",
+                "Confirm the loan is cleared or its eligible policy payout offset is completed.",
+                "Retry policy reinstatement after the loan status is updated.",
+            ],
+        )
+
     window = _resolve_reinstatement_window(policy, as_of)
     if window is None:
         raise registry_error(

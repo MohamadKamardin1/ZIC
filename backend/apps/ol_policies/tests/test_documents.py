@@ -96,31 +96,35 @@ class PolicyDocumentsTestCase(APITestCase):
             premium=Decimal("5000.00"),
         )
         self.templates = {
-            "POLICY_CONTRACT": DocumentTemplate.objects.create(
+            "POLICY_CONTRACT": DocumentTemplate.objects.update_or_create(
                 code="POLICY_CONTRACT_UNIFIED",
-                name="Policy Contract",
-                document_type="POLICY_CONTRACT",
                 version=1,
-                layout_template_path="documents/policy_contract.html",
-                variables_schema={
-                    "policy": "object", "prospect": "object", "agent": "object", "plans": "array",
-                    "members": "array", "benefits": "array", "riders": "array", "premium_schedule": "array",
-                    "financial": "object", "legal_clauses": "array", "signatures": "array", "branding": "object", "quote": "object",
+                defaults={
+                    "name": "Policy Contract",
+                    "document_type": "POLICY_CONTRACT",
+                    "layout_template_path": "documents/policy_contract.html",
+                    "variables_schema": {
+                        "policy": "object", "prospect": "object", "agent": "object", "plans": "array",
+                        "members": "array", "benefits": "array", "riders": "array", "premium_schedule": "array",
+                        "financial": "object", "legal_clauses": "array", "signatures": "array", "branding": "object", "quote": "object",
+                    },
+                    "is_active": True,
                 },
-                is_active=True,
-            ),
-            "POLICY_SCHEDULE": DocumentTemplate.objects.create(
+            )[0],
+            "POLICY_SCHEDULE": DocumentTemplate.objects.update_or_create(
                 code="POLICY_SCHEDULE_UNIFIED",
-                name="Schedule of Benefits",
-                document_type="POLICY_SCHEDULE",
                 version=1,
-                layout_template_path="documents/policy_schedule.html",
-                variables_schema={
-                    "policy": "object", "prospect": "object", "plans": "array", "members": "array",
-                    "benefits": "array", "riders": "array", "branding": "object", "quote": "object",
+                defaults={
+                    "name": "Schedule of Benefits",
+                    "document_type": "POLICY_SCHEDULE",
+                    "layout_template_path": "documents/policy_schedule.html",
+                    "variables_schema": {
+                        "policy": "object", "prospect": "object", "plans": "array", "members": "array",
+                        "benefits": "array", "riders": "array", "branding": "object", "quote": "object",
+                    },
+                    "is_active": True,
                 },
-                is_active=True,
-            ),
+            )[0],
         }
         self.client.force_authenticate(self.user)
 
