@@ -132,6 +132,10 @@ class OLClaim(UUIDModel, AuditedModel):
         related_name="ol_claims_admitted",
     )
     settled_date = models.DateField(null=True, blank=True)
+    settlement_amount = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
+    payment_reference = models.CharField(max_length=160, blank=True, default="")
+    reinsurance_snapshot = models.JSONField(default=dict, blank=True)
+    policy_update_snapshot = models.JSONField(default=dict, blank=True)
     source_channel = models.CharField(
         max_length=20,
         choices=ClaimSourceChannel.choices,

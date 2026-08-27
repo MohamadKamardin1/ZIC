@@ -21,6 +21,7 @@ class PolicyStatus(models.TextChoices):
     EXPIRED = "EXPIRED", "Expired"
     CANCELLED = "CANCELLED", "Cancelled"
     CLAIM_SETTLED = "CLAIM_SETTLED", "Claim settled"
+    MATURITY_SETTLED = "MATURITY_SETTLED", "Maturity settled"
     TERMINATED = "TERMINATED", "Terminated"
 
 
@@ -168,12 +169,19 @@ class PolicyMember(UUIDModel, AuditedModel):
         return f"{self.name} ({self.member_relation})"
 
 
+class PolicyRiderStatus(models.TextChoices):
+    ACTIVE = "ACTIVE", "Active"
+    EXHAUSTED = "EXHAUSTED", "Exhausted"
+
+
 class PolicyRider(UUIDModel, AuditedModel):
     policy = models.ForeignKey(Policy, on_delete=models.PROTECT, related_name="riders")
     rider_code = models.CharField(max_length=100)
     sum_assured = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
     amount = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
     premium = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    status = models.CharField(max_length=20, choices=PolicyRiderStatus.choices, default=PolicyRiderStatus.ACTIVE, db_index=True)
+    exhausted_at = models.DateField(null=True, blank=True)
 
     class Meta:
         db_table = "ol_policies_policy_rider"

@@ -37,11 +37,12 @@ from apps.ol_claims.services.document_service import can_proceed_to_assessment, 
 from apps.ol_claims.services.assessment import add_file_note, assess_claim
 from apps.ol_claims.services.loan_offset import apply_loan_offset, calculate_net_payout
 from apps.ol_claims.services.requisition import raise_requisition
+from apps.ol_claims.services.settlement import settle_claim
 from apps.ol_claims.services.medical import evaluate_medical_requirements, record_medical_result, require_medical_review
 from apps.ol_claims.services.validation import calculate_max_claimable, validate_eligibility
 from apps.ol_proposals.models import OLProposal
 from apps.ol_quotations.models import OLQuotation
-from apps.ol_policies.models import LoanStatus, Policy, PolicyBenefit, PolicyLoan, PolicyMember
+from apps.ol_policies.models import LoanStatus, Policy, PolicyBenefit, PolicyLoan, PolicyMember, PolicyRider, PolicyRiderStatus, PolicyStatus
 from apps.governance.services.approval_service import ApprovalService
 from apps.partners.models import Partner
 from apps.ol_parameters.models import OLClaimReason, OLClaimType, OLMedicalCode, OLMedicalLimit
@@ -755,11 +756,11 @@ class OLClaimFoundationTestCase(APITestCase):
         self.assertTrue(evaluated["medical_required"])
         self.assertIn("MEDICAL_LIMIT_1M", claim.medical_reason)
 
-    def _assessment_claim_type(self):
+    def _assessment_claim_type(self, code="ASSESSABLE_CLAIM", claim_category="DEATH"):
         return OLClaimType.objects.create(
-            code="ASSESSABLE_CLAIM",
-            name="Assessable Claim",
-            claim_category="DEATH",
+            code=code,
+            name=f"{claim_category.title()} Assessable Claim",
+            claim_category=claim_category,
             calculation_basis="SUM_ASSURED",
             duplicate_check_rule="NONE",
             waiting_period_days=0,
@@ -991,3 +992,120 @@ class OLClaimFoundationTestCase(APITestCase):
         self.assertEqual(requisition.payment_requisition.status, "REJECTED")
         self.assertTrue(DomainEvent.objects.filter(event_type="ClaimRejected", aggregate_id=str(claim.pk)).exists())
         self.assertTrue(AuditLog.objects.filter(action_type="CLAIM_PAYMENT_REJECTED", object_id=str(claim.pk)).exists())
+
+    def _approved_claim_for_settlement(self, claim_type=None):
+        claim = self.make_claim()
+        claim.requisition.delete()
+        claim.refresh_from_db()
+        claim_type = claim_type or self._assessment_claim_type()
+        claim.claim_type = claim_type.code
+        claim.save(update_fields=["claim_type", "updated_at"])
+        assess_claim(claim.pk, assessed_amount=Decimal("20000000.00"), assessment_notes="Benefit confirmed.", actor=self.user)
+        requisition = raise_requisition(
+            claim.pk,
+            bank_details={"account_number": "0123456789", "account_name": "Asha Mwinyi"},
+            narration="Claim payment approved for settlement.",
+            actor=self.user,
+            source_channel="WEB",
+        )
+        approval = ApprovalRequest.objects.get(pk=requisition.approval_request_id)
+        ApprovalService.approve(approval.pk, reviewed_by=self.user, comments="Settlement payment approved.")
+        claim.refresh_from_db()
+        return claim
+
+    def test_settlement_updates_claim_policy_payment_and_reinsurance_evidence(self):
+        self.policy.contract_snapshot = {**self.policy.contract_snapshot, "reinsurance_retention_rate": "60"}
+        self.policy.save(update_fields=["contract_snapshot", "updated_at"])
+        claim = self._approved_claim_for_settlement()
+        response = self.client.post(
+            f"/api/v1/ol/claims/{claim.pk}/settle/",
+            {"payment_reference": "FO-PAY-CLM-0001", "payment_status": "CONFIRMED"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        claim.refresh_from_db()
+        self.policy.refresh_from_db()
+        claim.requisition.refresh_from_db()
+        claim.requisition.payment_requisition.refresh_from_db()
+        self.assertTrue(response.data["data"]["changed"])
+        self.assertEqual(claim.status, ClaimStatus.SETTLED)
+        self.assertEqual(claim.settlement_amount, Decimal("20000000.00"))
+        self.assertEqual(claim.payment_reference, "FO-PAY-CLM-0001")
+        self.assertEqual(claim.settled_date, date.today())
+        self.assertEqual(self.policy.status, PolicyStatus.CLAIM_SETTLED)
+        self.assertEqual(claim.requisition.status, "PAID")
+        self.assertEqual(claim.requisition.payment_requisition.status, "PAID")
+        self.assertEqual(claim.reinsurance_snapshot["retention_amount"], "12000000.00")
+        self.assertEqual(claim.reinsurance_snapshot["ceded_amount"], "8000000.00")
+        self.assertEqual(claim.policy_update_snapshot["policy_status_before"], PolicyStatus.ACTIVE)
+        self.assertEqual(claim.policy_update_snapshot["policy_status_after"], PolicyStatus.CLAIM_SETTLED)
+        self.assertTrue(DomainEvent.objects.filter(event_type="ClaimSettled", aggregate_id=str(claim.pk)).exists())
+        self.assertTrue(AuditLog.objects.filter(action_type="CLAIM_SETTLED", object_id=str(claim.pk)).exists())
+
+        retry = self.client.post(
+            f"/api/v1/ol/claims/{claim.pk}/settle/",
+            {"payment_reference": "FO-PAY-CLM-0001", "payment_status": "CONFIRMED"},
+            format="json",
+        )
+        self.assertEqual(retry.status_code, 200, retry.data)
+        self.assertFalse(retry.data["data"]["changed"])
+        self.assertEqual(DomainEvent.objects.filter(event_type="ClaimSettled", aggregate_id=str(claim.pk)).count(), 1)
+
+    def test_maturity_settlement_updates_policy_to_maturity_settled(self):
+        maturity_type = self._assessment_claim_type("MATURITY_SETTLEMENT", "MATURITY")
+        claim = self._approved_claim_for_settlement(maturity_type)
+        settled, changed = settle_claim(
+            claim.pk,
+            payment_reference="FO-PAY-MAT-0001",
+            payment_status="PAID",
+            actor=self.user,
+            source_channel="SYSTEM",
+        )
+        self.assertTrue(changed)
+        self.assertEqual(settled.status, ClaimStatus.SETTLED)
+        self.policy.refresh_from_db()
+        self.assertEqual(self.policy.status, PolicyStatus.MATURITY_SETTLED)
+
+    def test_partial_settlement_exhausts_matching_rider_and_keeps_policy_active(self):
+        partial_type = self._assessment_claim_type("CRITICAL_ILLNESS_SETTLEMENT", "CRITICAL_ILLNESS")
+        PolicyRider.objects.create(
+            policy=self.policy,
+            rider_code="DEATH_BENEFIT",
+            sum_assured=Decimal("25000000.00"),
+            amount=Decimal("25000000.00"),
+            premium=Decimal("10000.00"),
+            status=PolicyRiderStatus.ACTIVE,
+            created_by=self.user,
+        )
+        claim = self._approved_claim_for_settlement(partial_type)
+        settle_claim(
+            claim.pk,
+            payment_reference="FO-PAY-PARTIAL-0001",
+            actor=self.user,
+            source_channel="WEB",
+        )
+        rider = PolicyRider.objects.get(policy=self.policy, rider_code="DEATH_BENEFIT")
+        self.assertEqual(rider.status, PolicyRiderStatus.EXHAUSTED)
+        self.assertEqual(rider.exhausted_at, date.today())
+        self.policy.refresh_from_db()
+        self.assertEqual(self.policy.status, PolicyStatus.ACTIVE)
+
+    def test_settlement_requires_front_office_confirmation_and_payment_reference(self):
+        claim = self._approved_claim_for_settlement()
+        response = self.client.post(
+            f"/api/v1/ol/claims/{claim.pk}/settle/",
+            {"payment_reference": "FO-PAY-CLM-0002", "payment_status": "PENDING"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 422, response.data)
+        self.assertEqual(response.data["error_code"], "CLAIM_SETTLEMENT_PAYMENT_NOT_CONFIRMED")
+        claim.refresh_from_db()
+        self.assertEqual(claim.status, ClaimStatus.APPROVED)
+
+        response = self.client.post(
+            f"/api/v1/ol/claims/{claim.pk}/settle/",
+            {"payment_status": "CONFIRMED"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertEqual(response.data["error_code"], "CLAIM_SETTLEMENT_PAYMENT_REFERENCE_REQUIRED")

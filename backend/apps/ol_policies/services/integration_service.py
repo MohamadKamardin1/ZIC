@@ -160,7 +160,7 @@ def reinsurance_risk_data(policy_id, *, actor=None):
 
 
 @transaction.atomic
-def apply_claim_settled(*, policy_id=None, claim_id="", claim_type="", settlement_amount=None, exhausted=False, actor=None, request=None, source_channel="EVENT"):
+def apply_claim_settled(*, policy_id=None, claim_id="", claim_type="", settlement_amount=None, exhausted=False, target_status=None, actor=None, request=None, source_channel="EVENT"):
     policy_id = policy_id or ""
     policy = Policy.objects.select_for_update().filter(pk=policy_id).first()
     if policy is None:
@@ -174,8 +174,12 @@ def apply_claim_settled(*, policy_id=None, claim_id="", claim_type="", settlemen
         return policy, False
     before = {"status": policy.status, "policy_number": policy.policy_number}
     exhausted = bool(exhausted) or str(claim_type).upper() in {"DEATH", "TOTAL_DISABILITY", "FULL_SA"}
-    if exhausted:
-        policy.status = PolicyStatus.CLAIM_SETTLED
+    if target_status is None and exhausted:
+        target_status = PolicyStatus.CLAIM_SETTLED
+    if target_status and target_status != policy.status:
+        policy.status = target_status
+        if actor:
+            policy.updated_by = actor
         policy.save(update_fields=["status", "updated_by", "updated_at"] if actor else ["status", "updated_at"])
     after = {"status": policy.status, "policy_number": policy.policy_number}
     reason = f"Claim {claim_id or 'settlement'} settled against policy {policy.policy_number}."
@@ -212,6 +216,7 @@ def apply_claim_settled(*, policy_id=None, claim_id="", claim_type="", settlemen
             "claim_type": str(claim_type),
             "settlement_amount": str(_decimal(settlement_amount)),
             "exhausted": exhausted,
+            "target_status": target_status,
             "status": policy.status,
         },
     )

@@ -305,7 +305,7 @@ GIT:
 
 FINAL OUTPUT: requisition endpoint, approval integration, tests, commit hash, pushed branch.
 
-## [ ] Prompt 9 — Settlement, Discharge & Policy Updates
+## [x] Prompt 9 — Settlement, Discharge & Policy Updates
 You are a senior Django insurance engineer. Continue the ZIC OL Claims backend. Execute ONLY Prompt 9.
 
 MANDATORY RULES:
