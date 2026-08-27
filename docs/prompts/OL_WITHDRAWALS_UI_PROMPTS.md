@@ -113,7 +113,7 @@ GIT:
 
 FINAL OUTPUT: wizard behavior, validation logic, tests, commit hash, pushed branch.
 
-## [ ] Prompt 4 — Withdrawal Detail Page: Header & Overview
+## [x] Prompt 4 — Withdrawal Detail Page: Header & Overview
 
 You are a senior frontend engineer. Continue the ZIC Withdrawals UI. Execute ONLY Prompt 4.
 

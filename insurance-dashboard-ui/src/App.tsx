@@ -72,6 +72,7 @@ import OLLoans from "./pages/ordinary-life/OLLoans"
 import OLLoanDetailPage from "./pages/ordinary-life/OLLoanDetailPage"
 import OLWithdrawals from "./pages/ordinary-life/OLWithdrawals"
 import OLWithdrawalRequest from "./pages/ordinary-life/OLWithdrawalRequest"
+import OLWithdrawalDetail from "./pages/ordinary-life/OLWithdrawalDetail"
 import OLClaims from "./pages/ordinary-life/OLClaims"
 import OLMaturityInstallments from "./pages/ordinary-life/OLMaturityInstallments"
 import GLQuotations from "./pages/group-life/GLQuotations"
@@ -227,6 +228,7 @@ export default function App() {
         <Route path="ordinary-life/loans/:loanId" element={<RequirePermission permission="ol_loans.view"><OLLoanDetailPage /></RequirePermission>} />
         <Route path="ordinary-life/withdrawals" element={<RequirePermission permission="ol_withdrawals.view"><OLWithdrawals /></RequirePermission>} />
         <Route path="ordinary-life/withdrawals/new" element={<RequirePermission permission="ol_withdrawals.request"><OLWithdrawalRequest /></RequirePermission>} />
+        <Route path="ordinary-life/withdrawals/:id" element={<RequirePermission permission="ol_withdrawals.view"><OLWithdrawalDetail /></RequirePermission>} />
         <Route path="ordinary-life/claims" element={<OLClaims />} />
         <Route path="ordinary-life/maturity-installments" element={<OLMaturityInstallments />} />
         <Route path="ordinary-life/documents" element={<OLDocuments />} />
