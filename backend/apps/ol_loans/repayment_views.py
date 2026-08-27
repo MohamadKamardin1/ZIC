@@ -23,6 +23,7 @@ class OLLoanRepayView(APIView):
             loan_id,
             amount=data["amount"],
             currency=data["currency"],
+            payment_mode=data.get("payment_mode", ""),
             exchange_rate=data.get("exchange_rate"),
             receipt_ref=data.get("receipt_ref", ""),
             reason=data.get("reason", ""),

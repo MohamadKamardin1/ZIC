@@ -271,7 +271,7 @@ class OLLoanRepaymentTestCase(TestCase):
         self.assertEqual(denied.status_code, 403, denied.data)
 
         self.client.force_authenticate(self.user)
-        payload = {"amount": "500.00", "currency": "TZS", "payment_date": "2026-02-15", "reason": "API partial"}
+        payload = {"amount": "500.00", "currency": "TZS", "payment_mode": "BANK_TRANSFER", "payment_date": "2026-02-15", "reason": "API partial"}
         response = self.client.post(
             f"/api/v1/ol/loans/{loan.pk}/repay/",
             payload,
@@ -280,6 +280,7 @@ class OLLoanRepaymentTestCase(TestCase):
         )
         self.assertEqual(response.status_code, 201, response.data)
         self.assertEqual(response.data["meta"]["allocation_breakdown"]["penalty"], "20.00")
+        self.assertEqual(response.data["meta"]["allocation_breakdown"]["payment_mode"], "BANK_TRANSFER")
         replay = self.client.post(
             f"/api/v1/ol/loans/{loan.pk}/repay/",
             payload,

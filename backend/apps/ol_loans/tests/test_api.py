@@ -88,6 +88,29 @@ class OLLoanApiTestCase(APITestCase):
         self.assertEqual(response.data["data"]["available_loan_limit"], "1250000.00")
         self.assertEqual(response.data["data"]["repayment_modes"], ["MONTHLY"])
 
+    def test_offset_endpoint_posts_payout_reconciliation(self):
+        self.loan.status = LoanStatus.ACTIVE
+        self.loan.outstanding_balance = Decimal("1000000.00")
+        self.loan.save(update_fields=["status", "outstanding_balance", "updated_at"])
+        self.client.force_authenticate(self.staff)
+        response = self.client.post(
+            f"/api/v1/ol/loans/{self.loan.pk}/offset/",
+            {
+                "source_type": "CLAIM",
+                "source_id": "CLM-LOAN-API-001",
+                "payout_amount": "250000.00",
+                "reason": "Claim payout reconciliation",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["data"]["offset"]["source_type"], "CLAIM")
+        self.assertEqual(response.data["data"]["offset"]["offset_amount"], "250000.00")
+        self.assertEqual(response.data["meta"]["remaining_payout"], "0.00")
+        self.loan.refresh_from_db()
+        self.assertEqual(self.loan.outstanding_balance, Decimal("750000.00"))
+        self.assertEqual(self.loan.status, LoanStatus.OFFSET_ON_CLAIM)
+
     def test_list_supports_search_pagination_and_display_fields(self):
         self.client.force_authenticate(self.staff)
         response = self.client.get("/api/v1/ol/loans/?q=API-001&page=1&page_size=10")

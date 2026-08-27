@@ -220,10 +220,18 @@ class OLLoanDisbursementRequestSerializer(serializers.Serializer):
 class OLLoanRepaymentRequestSerializer(serializers.Serializer):
     amount = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=Decimal("0.01"))
     currency = serializers.CharField(max_length=3)
+    payment_mode = serializers.CharField(max_length=40, required=False, allow_blank=True, trim_whitespace=True)
     exchange_rate = serializers.DecimalField(max_digits=18, decimal_places=8, min_value=Decimal("0.00000001"), required=False)
     receipt_ref = serializers.CharField(max_length=120, required=False, allow_blank=True, trim_whitespace=True)
     reason = serializers.CharField(max_length=2000, required=False, allow_blank=True, trim_whitespace=True)
     payment_date = serializers.DateField(required=False)
+
+
+class OLLoanOffsetRequestSerializer(serializers.Serializer):
+    source_type = serializers.ChoiceField(choices=("SURRENDER", "MATURITY", "CLAIM"))
+    source_id = serializers.CharField(max_length=120, trim_whitespace=True)
+    payout_amount = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=Decimal("0.01"))
+    reason = serializers.CharField(max_length=2000, required=False, allow_blank=True, trim_whitespace=True)
 
 
 class OLLoanApprovalSerializer(serializers.Serializer):
