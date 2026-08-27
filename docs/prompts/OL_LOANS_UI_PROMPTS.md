@@ -77,7 +77,7 @@ FINAL OUTPUT: page behavior, tests, commit hash, pushed branch.
 
 ---
 
-## [ ] Prompt 3/10 — Loan Detail Page: Header & Overview Tab
+## [x] Prompt 3/10 — Loan Detail Page: Header & Overview Tab
 
 ```text
 You are a senior frontend engineer. Continue the ZIC Loans UI. Execute ONLY Prompt 3.
