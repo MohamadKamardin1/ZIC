@@ -49,6 +49,7 @@ api_v1_patterns = [
     path('group-credit/', include('apps.group_credit.urls')),
     path('front-office/', include('apps.front_office.urls')),
     path('portal/receipts/', include('apps.front_office.receipts.portal_urls')),
+    path('portal/withdrawals/', include('apps.ol_policies.portal_withdrawal_urls')),
 ]
 
 urlpatterns = [

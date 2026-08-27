@@ -132,6 +132,34 @@ export interface WithdrawalDetail extends WithdrawalRecord {
   policyContext?: Record<string, unknown>
 }
 
+export interface PortalWithdrawal {
+  id: string
+  requestNumber: string
+  policyId: string
+  policyNumber: string
+  policyholderDisplay: string
+  productDisplay: string
+  currency: string
+  grossAmount: string
+  feeAmount?: string
+  netPayout: string
+  cashValueBefore?: string
+  loanBalanceBefore?: string
+  cashValueAfter?: string
+  status: string
+  statusDisplay: string
+  requestedAt: string | null
+  reason: string
+  requestAllowed: boolean
+}
+
+export interface PortalWithdrawalRequestPayload {
+  policyId: string
+  amount: string | number
+  reason: string
+  asOf?: string
+}
+
 export interface WithdrawalKpis {
   totalWithdrawnCurrentMonth: string
   totalWithdrawnCurrentMonthCount: number
@@ -221,7 +249,30 @@ function arrayValue(row: Record<string, unknown>, ...keys: string[]): unknown[] 
   return Array.isArray(value) ? value : []
 }
 
-export function normalizeWithdrawal(row: Record<string, unknown>): WithdrawalRecord {
+export function normalizePortalWithdrawal(row: Record<string, unknown>): PortalWithdrawal {
+  return {
+    id: stringValue(row, "id"),
+    requestNumber: stringValue(row, "requestNumber", "request_number"),
+    policyId: stringValue(row, "policyId", "policy_id"),
+    policyNumber: stringValue(row, "policyNumber", "policy_number"),
+    policyholderDisplay: stringValue(row, "policyholderDisplay", "policyholder_display", "policyholderName", "policyholder_name"),
+    productDisplay: stringValue(row, "productDisplay", "product_display", "product_plan", "product"),
+    currency: stringValue(row, "currency") || "TZS",
+    grossAmount: amountValue(row, "grossAmount", "gross_amount", "amount"),
+    feeAmount: row.feeAmount !== undefined || row.fee_amount !== undefined ? amountValue(row, "feeAmount", "fee_amount") : undefined,
+    netPayout: amountValue(row, "netPayout", "net_payout", "netAmount", "net_amount"),
+    cashValueBefore: row.cashValueBefore !== undefined || row.cash_value_before !== undefined ? amountValue(row, "cashValueBefore", "cash_value_before") : undefined,
+    loanBalanceBefore: row.loanBalanceBefore !== undefined || row.loan_balance_before !== undefined ? amountValue(row, "loanBalanceBefore", "loan_balance_before") : undefined,
+    cashValueAfter: row.cashValueAfter !== undefined || row.cash_value_after !== undefined ? amountValue(row, "cashValueAfter", "cash_value_after") : undefined,
+    status: stringValue(row, "status"),
+    statusDisplay: stringValue(row, "statusDisplay", "status_display", "status"),
+    requestedAt: nullableString(row, "requestedAt", "requested_at", "requestDate", "request_date"),
+    reason: stringValue(row, "reason"),
+    requestAllowed: Boolean(pick(row, "requestAllowed", "request_allowed")),
+  }
+}
+
+function normalizeWithdrawal(row: Record<string, unknown>): WithdrawalRecord {
   const policyDisplay = stringValue(row, "policyDisplay", "policy_display", "policyNumber", "policy_number")
   const policyholderDisplay = stringValue(row, "policyholderDisplay", "policyholder_display", "policyholderName", "policyholder_name", "partnerDisplay", "partner_display")
   return {
@@ -389,6 +440,24 @@ function withIdempotencyKey(idempotencyKey?: string): HeadersInit | undefined {
 
 function actionPath(action: WithdrawalAction): string {
   return action === "process_payout" ? "process-payout" : action
+}
+
+export function listPortalWithdrawals(params: { q?: string; status?: string; page?: number; pageSize?: number } = {}): Promise<Paginated<PortalWithdrawal>> {
+  const search = new URLSearchParams()
+  if (params.q) search.set("q", params.q)
+  if (params.status) search.set("status", params.status)
+  if (params.page) search.set("page", String(params.page))
+  if (params.pageSize) search.set("page_size", String(params.pageSize))
+  const query = search.toString()
+  return request<unknown>(`/api/v1/portal/withdrawals/${query ? `?${query}` : ""}`).then((payload) => normalizePaginated(payload, normalizePortalWithdrawal))
+}
+
+export function getPortalWithdrawal(id: string): Promise<PortalWithdrawal> {
+  return request<unknown>(`/api/v1/portal/withdrawals/${encodeURIComponent(id)}/`).then((payload) => normalizePortalWithdrawal(isRecord(payload) ? payload : {}))
+}
+
+export function requestPortalWithdrawal(payload: PortalWithdrawalRequestPayload): Promise<WithdrawalActionResult> {
+  return request<unknown>("/api/v1/portal/withdrawals/", { method: "POST", body: JSON.stringify({ policy_id: payload.policyId, amount: payload.amount, reason: payload.reason, ...(payload.asOf ? { as_of: payload.asOf } : {}) }) }).then(normalizeActionResult)
 }
 
 export function listWithdrawals(filters: WithdrawalListFilters = {}): Promise<Paginated<WithdrawalRecord>> {

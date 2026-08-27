@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
 from apps.common.models import DomainEvent
-from apps.ol_policies.models import Policy, PolicyNotificationLog, PolicyStatus
+from apps.ol_policies.models import Policy, PolicyAuditLog, PolicyNotificationLog, PolicyStatus, WithdrawalRequest
 from apps.ol_policies.services.integration_service import (
     notify_policy_event,
     policy_dashboard_hooks,
@@ -110,6 +110,54 @@ class PolicyIntegrationTestCase(APITestCase):
         self.assertNotIn("sum_assured", detail.data["data"])
         denied = self.client.get(f"/api/v1/ol/policies/portal/{self.other_policy.pk}/")
         self.assertEqual(denied.status_code, 404)
+
+    def test_portal_withdrawals_are_partner_scoped_and_sensitive_fields_are_sanitized(self):
+        own_withdrawal = WithdrawalRequest.objects.create(
+            policy=self.policy,
+            amount=Decimal("100000.00"),
+            cash_value_before=Decimal("1000000.00"),
+            loan_balance_before=Decimal("25000.00"),
+            net_amount=Decimal("95000.00"),
+            reason="Education expenses",
+        )
+        other_withdrawal = WithdrawalRequest.objects.create(
+            policy=self.other_policy,
+            amount=Decimal("50000.00"),
+            cash_value_before=Decimal("1000000.00"),
+            loan_balance_before=Decimal("0.00"),
+            net_amount=Decimal("50000.00"),
+            reason="Other expenses",
+        )
+        self.client.force_authenticate(self.portal)
+        listing = self.client.get("/api/v1/portal/withdrawals/?page=1&page_size=10")
+        self.assertEqual(listing.status_code, 200)
+        self.assertEqual(listing.data["data"]["count"], 1)
+        self.assertEqual(listing.data["data"]["results"][0]["request_number"], own_withdrawal.request_number)
+        self.assertNotIn("fee_amount", listing.data["data"]["results"][0])
+        self.assertNotIn("cash_value_before", listing.data["data"]["results"][0])
+
+        detail = self.client.get(f"/api/v1/portal/withdrawals/{own_withdrawal.pk}/")
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.data["data"]["policyholder_display"], "ZIC-INT-P-0001 — Hassan Salim")
+        self.assertNotIn("loan_balance_before", detail.data["data"])
+
+        denied = self.client.get(f"/api/v1/portal/withdrawals/{other_withdrawal.pk}/")
+        self.assertEqual(denied.status_code, 404)
+
+        self.client.force_authenticate(user=None)
+        unauthenticated = self.client.get("/api/v1/portal/withdrawals/")
+        self.assertEqual(unauthenticated.status_code, 401)
+
+    def test_portal_withdrawal_request_reuses_finance_service_and_audits_portal_channel(self):
+        self.policy.contract_snapshot = {**self.policy.contract_snapshot, "cash_value": "1000000.00", "allow_withdrawals": True}
+        self.policy.save(update_fields=["contract_snapshot"])
+        self.client.force_authenticate(self.portal)
+        response = self.client.post("/api/v1/portal/withdrawals/", {"policy_id": str(self.policy.pk), "amount": "100000.00", "reason": "Education expenses"}, format="json")
+        self.assertEqual(response.status_code, 201)
+        created = WithdrawalRequest.objects.get(pk=response.data["data"]["id"])
+        self.assertEqual(created.policy_id, self.policy.pk)
+        self.assertEqual(created.reason, "Education expenses")
+        self.assertTrue(PolicyAuditLog.objects.filter(policy=self.policy, source_channel="PORTAL", reason="Education expenses").exists())
 
     def test_claim_data_and_reinsurance_risk_data_are_available_to_authorized_policy_users(self):
         self.client.force_authenticate(self.staff)

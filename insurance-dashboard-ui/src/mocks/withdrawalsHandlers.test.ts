@@ -67,6 +67,27 @@ describe("OL Withdrawals MSW contract", () => {
     expect(print.data).toMatchObject({ instance: { document_type: "OL_WITHDRAWAL_STATEMENT", template_version: 1 }, signed_download_url: expect.stringContaining("ticket=mock-withdrawal-withdrawal-paid-1") })
   })
 
+  it("returns only linked partner withdrawals and sanitizes sensitive fields by default", async () => {
+    const listingResponse = await fetch("http://localhost/api/v1/portal/withdrawals/?page=1&page_size=10")
+    expect(listingResponse.status).toBe(200)
+    const listingBody = await listingResponse.json()
+    expect(listingBody.data.count).toBe(1)
+    expect(listingBody.data.results[0]).toMatchObject({ request_number: "OL-WDR-2026-000001", policy_number: "ZIC-OL-2026-000001", status_display: "Requested", request_allowed: true })
+    expect(listingBody.data.results[0]).not.toHaveProperty("fee_amount")
+    expect(listingBody.data.results[0]).not.toHaveProperty("cash_value_before")
+
+    const detailResponse = await fetch("http://localhost/api/v1/portal/withdrawals/withdrawal-requested-1/")
+    expect(detailResponse.status).toBe(200)
+    const detailBody = await detailResponse.json()
+    expect(detailBody.data).toMatchObject({ request_number: "OL-WDR-2026-000001", policyholder_display: "P-000001 — Amani Salum" })
+    expect(detailBody.data).not.toHaveProperty("loan_balance_before")
+
+    const requestResponse = await fetch("http://localhost/api/v1/portal/withdrawals/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ policy_id: "policy-aman-1", amount: "125000.00", reason: "Education fees" }) })
+    expect(requestResponse.status).toBe(201)
+    const requestBody = await requestResponse.json()
+    expect(requestBody.data.withdrawal).toMatchObject({ policy_id: "policy-aman-1", status: "REQUESTED", reason: "Education fees" })
+  })
+
   it("returns teachable lifecycle validation and changes a requested withdrawal to approved", async () => {
     const invalidResponse = await fetch("http://localhost/api/v1/ol/withdrawals/withdrawal-requested-1/reject/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) })
     expect(invalidResponse.status).toBe(400)

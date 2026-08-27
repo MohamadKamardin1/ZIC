@@ -73,6 +73,7 @@ import OLLoanDetailPage from "./pages/ordinary-life/OLLoanDetailPage"
 import OLWithdrawals from "./pages/ordinary-life/OLWithdrawals"
 import OLWithdrawalRequest from "./pages/ordinary-life/OLWithdrawalRequest"
 import OLWithdrawalDetail from "./pages/ordinary-life/OLWithdrawalDetail"
+import { PartnerWithdrawals, PartnerWithdrawalDetail } from "./pages/portal/PartnerWithdrawals"
 import OLClaims from "./pages/ordinary-life/OLClaims"
 import OLMaturityInstallments from "./pages/ordinary-life/OLMaturityInstallments"
 import GLQuotations from "./pages/group-life/GLQuotations"
@@ -293,6 +294,8 @@ export default function App() {
         />
         <Route path="portal/loans" element={<PartnerLoans />} />
         <Route path="portal/loans/:loanNumber" element={<PartnerLoanDetail />} />
+        <Route path="portal/withdrawals" element={<PartnerWithdrawals />} />
+        <Route path="portal/withdrawals/:id" element={<PartnerWithdrawalDetail />} />
         <Route path="group-life/quotations" element={<GLQuotations />} />
         <Route path="group-life/schemes" element={<GLSchemes />} />
         <Route path="group-life/members" element={<GLMembers />} />

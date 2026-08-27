@@ -3,13 +3,16 @@ import {
   getWithdrawal,
   getWithdrawalAudit,
   getWithdrawalBreakdown,
+  getPortalWithdrawal,
   getWithdrawalEligibility,
   getWithdrawalKpis,
   getWithdrawalOptions,
   getWithdrawalPayments,
   estimateWithdrawal,
+  listPortalWithdrawals,
   listWithdrawals,
   printWithdrawalStatement,
+  requestPortalWithdrawal,
   requestWithdrawal,
   withdrawalAction,
   type Paginated,
@@ -22,6 +25,8 @@ import {
   type WithdrawalEstimate,
   type WithdrawalKpis,
   type WithdrawalListFilters,
+  type PortalWithdrawal,
+  type PortalWithdrawalRequestPayload,
   type WithdrawalOption,
   type WithdrawalOptionKind,
   type WithdrawalPayment,
@@ -30,6 +35,8 @@ import {
   type WithdrawalRequestPayload,
 } from "./withdrawals"
 
+export const portalWithdrawalListKey = (params: Record<string, unknown> = {}) => ["portal-withdrawals", "list", params] as const
+export const portalWithdrawalDetailKey = (id?: string | null) => ["portal-withdrawals", "detail", id ?? "none"] as const
 export const withdrawalListKey = (filters: WithdrawalListFilters = {}) => ["ol-withdrawals", "list", filters] as const
 export const withdrawalKpisKey = (filters: WithdrawalListFilters = {}) => ["ol-withdrawals", "kpis", filters] as const
 export const withdrawalOptionsKey = (kind: WithdrawalOptionKind, params: Record<string, unknown> = {}) => ["ol-withdrawals", "options", kind, params] as const
@@ -49,6 +56,23 @@ export function invalidateWithdrawalQueries(queryClient: ReturnType<typeof useQu
     void queryClient.invalidateQueries({ queryKey: ["ol-withdrawals", "payments", id] })
     void queryClient.invalidateQueries({ queryKey: ["ol-withdrawals", "audit", id] })
   }
+}
+
+export function usePortalWithdrawals(params: { q?: string; status?: string; page?: number; pageSize?: number } = {}, enabled = true) {
+  return useQuery<Paginated<PortalWithdrawal>>({
+    queryKey: portalWithdrawalListKey(params),
+    queryFn: () => listPortalWithdrawals(params),
+    enabled,
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function usePortalWithdrawal(id?: string | null, enabled = true) {
+  return useQuery<PortalWithdrawal>({
+    queryKey: portalWithdrawalDetailKey(id),
+    queryFn: () => getPortalWithdrawal(id as string),
+    enabled: Boolean(id) && enabled,
+  })
 }
 
 export function useWithdrawalList(filters: WithdrawalListFilters = {}, enabled = true) {
@@ -125,6 +149,17 @@ export function useWithdrawalAudit(id?: string | null, page = 1, pageSize = 20, 
 export function useEstimateWithdrawalMutation() {
   return useMutation<WithdrawalEstimate, Error, { policyId: string; amount: string | number }>({
     mutationFn: ({ policyId, amount }) => estimateWithdrawal(policyId, amount),
+  })
+}
+
+export function usePortalWithdrawalRequestMutation() {
+  const queryClient = useQueryClient()
+  return useMutation<WithdrawalActionResult, Error, PortalWithdrawalRequestPayload>({
+    mutationFn: (payload) => requestPortalWithdrawal(payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["portal-withdrawals"] })
+      void queryClient.invalidateQueries({ queryKey: ["ol-withdrawals"] })
+    },
   })
 }
 

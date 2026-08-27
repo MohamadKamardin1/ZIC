@@ -2,6 +2,7 @@ import { http, HttpResponse } from "msw"
 
 const WITHDRAWALS_BASE = "/api/v1/ol/withdrawals"
 const POLICY_WITHDRAWALS_BASE = "/api/v1/ol/policies"
+const PORTAL_WITHDRAWALS_BASE = "/api/v1/portal/withdrawals"
 
 export type WithdrawalMockRow = {
   id: string
@@ -136,6 +137,27 @@ function findWithdrawal(id: string) {
   return withdrawals.find((row) => row.id === id)
 }
 
+function portalFor(row: WithdrawalMockRow, includeSensitive = false) {
+  const payload: Record<string, unknown> = {
+    id: row.id,
+    request_number: row.withdrawal_number,
+    policy_id: row.policy_id,
+    policy_number: row.policy_number,
+    policyholder_display: row.policyholder_display,
+    product_display: row.product_display,
+    currency: row.currency,
+    gross_amount: row.gross_amount,
+    net_payout: row.net_payout,
+    status: row.status,
+    status_display: row.status_display,
+    requested_at: row.requested_at,
+    reason: row.reason,
+    request_allowed: row.status === "REQUESTED",
+  }
+  if (includeSensitive) Object.assign(payload, { fee_amount: row.fee_amount, cash_value_before: row.cash_value_before, loan_balance_before: row.loan_balance_before, cash_value_after: row.cash_value_after })
+  return payload
+}
+
 function detailFor(row: WithdrawalMockRow) {
   return {
     ...row,
@@ -166,6 +188,29 @@ function detailFor(row: WithdrawalMockRow) {
 }
 
 export const withdrawalsHandlers = [
+  http.get(`*${PORTAL_WITHDRAWALS_BASE}/:withdrawalId/`, ({ params }) => {
+    const row = findWithdrawal(String(params.withdrawalId))
+    return row ? data(portalFor(row)) : error(404, "WITHDRAWAL_NOT_FOUND", "The partner-scoped withdrawal could not be found.", ["Return to My Withdrawals and choose an available request."])
+  }),
+  http.get(`*${PORTAL_WITHDRAWALS_BASE}/`, ({ request }) => {
+    const url = new URL(request.url)
+    const q = (url.searchParams.get("q") ?? "").toLowerCase()
+    const status = url.searchParams.get("status")
+    const scoped = withdrawals.filter((row) => row.policy_id === "policy-aman-1")
+    const filtered = scoped.filter((row) => (!q || `${row.withdrawal_number} ${row.policy_number} ${row.policyholder_display}`.toLowerCase().includes(q)) && (!status || row.status === status))
+    return data(page(filtered.map((row) => portalFor(row)), url))
+  }),
+  http.post(`*${PORTAL_WITHDRAWALS_BASE}/`, async ({ request }) => {
+    const body = await request.json().catch(() => ({})) as { policy_id?: string; amount?: string | number; reason?: string }
+    const policy = policyOptions.find((item) => item.value === String(body.policy_id))
+    const amount = Number(body.amount ?? 0)
+    if (!policy) return error(404, "POLICY_NOT_FOUND", "The selected policy is not linked to your partner account.", ["Choose one of your linked policies."])
+    if (!Number.isFinite(amount) || amount <= 0) return error(400, "WITHDRAWAL_AMOUNT_REQUIRED", "Enter a withdrawal amount greater than zero.", ["Enter a valid amount before submitting the request."], { amount: ["Amount must be greater than zero."] })
+    if (!String(body.reason ?? "").trim()) return error(400, "REASON_REQUIRED", "Explain why the withdrawal is being requested.", ["Enter a clear reason."], { reason: ["Reason is required."] })
+    const row: WithdrawalMockRow = { ...initialWithdrawals[0], id: `portal-withdrawal-${Date.now()}`, withdrawal_number: "OL-WDR-2026-000004", policy_id: policy.value, policy_number: String(policy.meta.policy_number), policy_display: policy.label, policyholder_name: String(policy.meta.policyholder_name), policyholder_display: policy.label, gross_amount: amount.toFixed(2), fee_amount: (amount * 0.05).toFixed(2), net_payout: (amount * 0.95).toFixed(2), cash_value_before: String(policy.meta.cash_value), loan_balance_before: String(policy.meta.loan_balance), cash_value_after: (Number(policy.meta.cash_value) - amount).toFixed(2), status: "REQUESTED", status_display: "Requested", reason: String(body.reason), requested_at: "2026-08-27T08:00:00Z", approved_at: null, processed_at: null, paid_at: null, allowed_actions: ["view", "print"], created_at: "2026-08-27T08:00:00Z", updated_at: "2026-08-27T08:00:00Z" }
+    withdrawals = [row, ...withdrawals]
+    return data({ withdrawal: row }, 201)
+  }),
   http.get(`*${WITHDRAWALS_BASE}/options/:kind/`, ({ params, request }) => {
     const options = optionCatalogs[String(params.kind)]
     if (!options) return error(404, "OPTIONS_ENTITY_NOT_FOUND", "This withdrawal option catalog is not registered.", ["Choose a registered withdrawal option catalog.", "Ask an administrator to configure the withdrawal parameters."])

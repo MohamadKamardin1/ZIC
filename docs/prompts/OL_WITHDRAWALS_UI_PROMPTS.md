@@ -251,7 +251,7 @@ GIT:
 
 FINAL OUTPUT: modal behaviors, tests, commit hash, pushed branch.
 
-## [ ] Prompt 8 — Partner Portal Withdrawals View
+## [x] Prompt 8 — Partner Portal Withdrawals View
 
 You are a senior frontend engineer. Continue the ZIC Withdrawals UI. Execute ONLY Prompt 8.
 
