@@ -296,3 +296,52 @@ class OLClaimRequisition(UUIDModel, AuditedModel):
         if not self.requisition_number:
             self.requisition_number = generate_requisition_number()
         super().save(*args, **kwargs)
+
+
+class ClaimLoanOffsetStatus(models.TextChoices):
+    APPLIED = "APPLIED", "Applied"
+    REVERSED = "REVERSED", "Reversed"
+
+
+class OLClaimLoanOffset(UUIDModel, AuditedModel):
+    """Immutable financial evidence linking a claim payout to a policy-loan offset."""
+
+    claim = models.OneToOneField(OLClaim, on_delete=models.PROTECT, related_name="loan_offset")
+    loan = models.ForeignKey(
+        "ol_policies.PolicyLoan",
+        on_delete=models.PROTECT,
+        related_name="claim_offsets",
+    )
+    gross_amount = models.DecimalField(max_digits=18, decimal_places=2)
+    offset_amount = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    net_payout = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    status = models.CharField(max_length=20, choices=ClaimLoanOffsetStatus.choices, default=ClaimLoanOffsetStatus.APPLIED, db_index=True)
+    applied_at = models.DateTimeField(default=timezone.now, db_index=True)
+    reason = models.TextField(blank=True, default="")
+    loan_breakdown = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        db_table = "ol_claims_loan_offset"
+        ordering = ["-applied_at"]
+        indexes = [
+            models.Index(fields=["loan", "status"], name="ol_claim_offset_loan_idx"),
+            models.Index(fields=["claim", "applied_at"], name="ol_claim_offset_claim_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.claim.claim_number}: {self.loan.loan_number}"
+
+    def clean(self):
+        errors = {}
+        if self.gross_amount < 0:
+            errors["gross_amount"] = "Gross claim amount cannot be negative."
+        if self.offset_amount < 0:
+            errors["offset_amount"] = "Loan offset cannot be negative."
+        if self.net_payout < 0:
+            errors["net_payout"] = "Net payout cannot be negative."
+        if self.offset_amount > self.gross_amount:
+            errors["offset_amount"] = "Loan offset cannot exceed gross claim amount."
+        if self.net_payout != self.gross_amount - self.offset_amount:
+            errors["net_payout"] = "Net payout must equal gross claim amount less loan offset."
+        if errors:
+            raise ValidationError(errors)

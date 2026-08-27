@@ -233,7 +233,7 @@ GIT:
 
 FINAL OUTPUT: assessment endpoint, validation rules, tests, commit hash, pushed branch.
 
-## [ ] Prompt 7 — Loan Offset & Financial Interaction
+## [x] Prompt 7 — Loan Offset & Financial Interaction
 You are a senior Django finance engineer. Continue the ZIC OL Claims backend. Execute ONLY Prompt 7.
 
 MANDATORY RULES:

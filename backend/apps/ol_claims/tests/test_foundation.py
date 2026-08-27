@@ -35,11 +35,12 @@ from apps.ol_claims.options import claim_type_options
 from apps.ol_claims.permissions import ACTIONS, OLClaimPermission, has_ol_claim_permission
 from apps.ol_claims.services.document_service import can_proceed_to_assessment, get_required_documents
 from apps.ol_claims.services.assessment import add_file_note, assess_claim
+from apps.ol_claims.services.loan_offset import apply_loan_offset, calculate_net_payout
 from apps.ol_claims.services.medical import evaluate_medical_requirements, record_medical_result, require_medical_review
 from apps.ol_claims.services.validation import calculate_max_claimable, validate_eligibility
 from apps.ol_proposals.models import OLProposal
 from apps.ol_quotations.models import OLQuotation
-from apps.ol_policies.models import Policy, PolicyBenefit, PolicyMember
+from apps.ol_policies.models import LoanStatus, Policy, PolicyBenefit, PolicyLoan, PolicyMember
 from apps.partners.models import Partner
 from apps.ol_parameters.models import OLClaimReason, OLClaimType, OLMedicalCode, OLMedicalLimit
 from apps.users.models import UserPermission
@@ -838,3 +839,62 @@ class OLClaimFoundationTestCase(APITestCase):
         with self.assertRaises(Exception) as raised:
             add_file_note(claim.pk, note_text="", actor=self.user)
         self.assertEqual(raised.exception.error_code, "CLAIM_NOTE_REQUIRED")
+
+    def test_financial_summary_deducts_active_loans_and_applies_offset(self):
+        claim_type = self._assessment_claim_type()
+        claim = self.make_claim()
+        claim.claim_type = claim_type.code
+        claim.save(update_fields=["claim_type", "updated_at"])
+        assess_claim(claim.pk, assessed_amount=Decimal("20000000.00"), assessment_notes="Benefit confirmed.", actor=self.user)
+        loan = PolicyLoan.objects.create(
+            policy=claim.policy_ref,
+            principal_amount=Decimal("5000000.00"),
+            outstanding_principal=Decimal("5000000.00"),
+            outstanding_interest=Decimal("1000000.00"),
+            currency="TZS",
+            status=LoanStatus.DISBURSED,
+        )
+        summary = calculate_net_payout(claim.pk)
+        self.assertEqual(summary["gross_amount"], Decimal("20000000.00"))
+        self.assertEqual(summary["loan_offset"], Decimal("6000000.00"))
+        self.assertEqual(summary["net_payout"], Decimal("14000000.00"))
+        self.assertFalse(summary["loan_offset_applied"])
+
+        api_summary = self.client.get(f"/api/v1/ol/claims/{claim.pk}/financial-summary/")
+        self.assertEqual(api_summary.status_code, 200)
+        self.assertEqual(api_summary.data["data"]["net_payout"], Decimal("14000000.00"))
+        self.assertEqual(api_summary.data["data"]["loan_breakdown"], [])
+
+        offset = apply_loan_offset(claim.pk, actor=self.user, source_channel="WEB")
+        self.assertEqual(offset.offset_amount, Decimal("6000000.00"))
+        self.assertEqual(offset.net_payout, Decimal("14000000.00"))
+        loan.refresh_from_db()
+        self.assertEqual(loan.outstanding_principal, Decimal("0.00"))
+        self.assertEqual(loan.outstanding_interest, Decimal("0.00"))
+        self.assertEqual(loan.status, LoanStatus.REPAID)
+        self.assertEqual(loan.repayments.count(), 1)
+        self.assertTrue(DomainEvent.objects.filter(event_type="ClaimLoanOffsetApplied", aggregate_id=str(claim.pk)).exists())
+        self.assertTrue(AuditLog.objects.filter(action_type="LOAN_OFFSET", app_label="ol_claims", model_name="claimloanoffset").exists())
+        self.assertEqual(calculate_net_payout(claim.pk)["loan_offset_applied"], True)
+
+    def test_financial_summary_closes_loan_when_balance_exceeds_gross(self):
+        claim_type = self._assessment_claim_type()
+        claim = self.make_claim()
+        claim.claim_type = claim_type.code
+        claim.save(update_fields=["claim_type", "updated_at"])
+        assess_claim(claim.pk, assessed_amount=Decimal("20000000.00"), assessment_notes="Benefit confirmed.", actor=self.user)
+        loan = PolicyLoan.objects.create(
+            policy=claim.policy_ref,
+            principal_amount=Decimal("30000000.00"),
+            outstanding_principal=Decimal("30000000.00"),
+            outstanding_interest=Decimal("5000000.00"),
+            currency="TZS",
+            status=LoanStatus.PARTIALLY_REPAID,
+        )
+        offset = apply_loan_offset(claim.pk, actor=self.user)
+        self.assertEqual(offset.offset_amount, Decimal("20000000.00"))
+        self.assertEqual(offset.net_payout, Decimal("0.00"))
+        loan.refresh_from_db()
+        self.assertEqual(loan.outstanding_principal, Decimal("0.00"))
+        self.assertEqual(loan.outstanding_interest, Decimal("0.00"))
+        self.assertEqual(loan.status, LoanStatus.REPAID)

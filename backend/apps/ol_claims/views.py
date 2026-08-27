@@ -76,6 +76,7 @@ def _base_queryset():
             "claimant_ref",
             "registered_by",
             "admitted_by",
+            "loan_offset",
         )
         .prefetch_related("items", "claimants", "documents", "file_notes", "requisition")
         .order_by("-created_at", "claim_number")

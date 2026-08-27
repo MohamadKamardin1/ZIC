@@ -5,6 +5,7 @@ from .models import (
     OLClaimDocument,
     OLClaimFileNote,
     OLClaimItem,
+    OLClaimLoanOffset,
     OLClaimRequisition,
     OLClaimant,
 )
@@ -178,6 +179,44 @@ class OLClaimFileNoteAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         return has_ol_claim_permission(request.user, "assess")
+
+
+@admin.register(OLClaimLoanOffset)
+class OLClaimLoanOffsetAdmin(admin.ModelAdmin):
+    list_display = ("claim", "loan", "gross_amount", "offset_amount", "net_payout", "status", "applied_at")
+    list_filter = ("status", "applied_at")
+    search_fields = ("claim__claim_number", "claim__policy_ref__policy_number", "loan__loan_number")
+    readonly_fields = (
+        "id",
+        "claim",
+        "loan",
+        "gross_amount",
+        "offset_amount",
+        "net_payout",
+        "status",
+        "applied_at",
+        "reason",
+        "loan_breakdown",
+        "created_by",
+        "created_at",
+        "updated_by",
+        "updated_at",
+    )
+
+    def has_module_permission(self, request):
+        return has_ol_claim_permission(request.user, "view")
+
+    def has_view_permission(self, request, obj=None):
+        return has_ol_claim_permission(request.user, "view")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(OLClaimRequisition)

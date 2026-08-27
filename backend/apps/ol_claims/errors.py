@@ -13,6 +13,14 @@ CLAIM_ERROR_REGISTRY = {
             "Do not include sensitive credentials or unrelated personal information.",
         ],
     },
+    "CLAIM_FINANCIAL_SUMMARY_UNAVAILABLE": {
+        "message": "A financial summary cannot be calculated until the claim has a positive approved amount.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Complete claim assessment and approve a positive benefit amount.",
+            "Refresh the Financial Summary section and retry the calculation.",
+        ],
+    },
     "CLAIM_ASSESSMENT_REQUIRED": {
         "message": "Assessment details are required before this claim can be assessed.",
         "status_code": 400,

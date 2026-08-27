@@ -3,6 +3,7 @@ from rest_framework import serializers
 from .models import (
     OLClaim,
     OLClaimDocument,
+    OLClaimLoanOffset,
     OLClaimFileNote,
     OLClaimItem,
     OLClaimRequisition,
@@ -87,6 +88,24 @@ class OLClaimDocumentSerializer(serializers.ModelSerializer):
         return user.get_full_name() or user.email if user else "System"
 
 
+class OLClaimLoanOffsetSerializer(serializers.ModelSerializer):
+    loan_number = serializers.CharField(source="loan.loan_number", read_only=True)
+
+    class Meta:
+        model = OLClaimLoanOffset
+        fields = (
+            "loan_number",
+            "gross_amount",
+            "offset_amount",
+            "net_payout",
+            "status",
+            "applied_at",
+            "reason",
+            "loan_breakdown",
+        )
+        read_only_fields = fields
+
+
 class OLClaimFileNoteSerializer(serializers.ModelSerializer):
     created_by_display = serializers.SerializerMethodField()
 
@@ -168,6 +187,7 @@ class OLClaimDetailSerializer(OLClaimListSerializer):
     documents = OLClaimDocumentSerializer(many=True, read_only=True)
     file_notes = OLClaimFileNoteSerializer(many=True, read_only=True)
     requisition = OLClaimRequisitionSerializer(read_only=True)
+    loan_offset = OLClaimLoanOffsetSerializer(read_only=True)
     registered_by_display = serializers.SerializerMethodField()
     admitted_by_display = serializers.SerializerMethodField()
     source_channel_display = serializers.CharField(source="get_source_channel_display", read_only=True)
@@ -202,6 +222,7 @@ class OLClaimDetailSerializer(OLClaimListSerializer):
             "documents",
             "file_notes",
             "requisition",
+            "loan_offset",
             "policy_context",
             "created_at",
             "updated_at",
