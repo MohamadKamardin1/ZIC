@@ -309,7 +309,7 @@ FINAL OUTPUT: portal behavior, tests, commit hash, pushed branch.
 
 ---
 
-## [ ] Prompt 9/10 — Documents & Printouts UI
+## [x] Prompt 9/10 — Documents & Printouts UI
 
 ```text
 You are a senior frontend engineer. Continue the ZIC Loans UI. Execute ONLY Prompt 9.
