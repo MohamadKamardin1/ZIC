@@ -5,6 +5,38 @@ DOC_REF = "docs/OL_CLAIMS_DESIGN.md"
 
 
 CLAIM_ERROR_REGISTRY = {
+    "CLAIM_TYPE_NOT_CONFIGURED": {
+        "message": "The selected claim type is not configured for current use.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Choose an active claim type from the Claims parameters catalog.",
+            "Ask Claims Configuration to activate or effective-date the required claim type.",
+        ],
+    },
+    "CLAIM_INVALID_DATE": {
+        "message": "The claim date is invalid.",
+        "status_code": 400,
+        "resolution_steps": [
+            "Enter a real calendar date in the policy service period.",
+            "Use the date format YYYY-MM-DD when calling the API.",
+        ],
+    },
+    "CLAIM_POLICY_REQUIRED": {
+        "message": "A policy is required to load claim-specific options.",
+        "status_code": 400,
+        "resolution_steps": [
+            "Select a policy before loading covered benefits or members.",
+            "Retry the options request with the policy_id query parameter.",
+        ],
+    },
+    "CLAIM_POLICY_NOT_FOUND": {
+        "message": "The requested policy could not be found for claim options.",
+        "status_code": 404,
+        "resolution_steps": [
+            "Select an existing policy from the policy search results.",
+            "Ask Policy Administration to verify the policy reference if it was recently migrated.",
+        ],
+    },
     "CLAIM_POLICY_INACTIVE": {
         "message": "This policy is not active and cannot receive a new claim.",
         "status_code": 422,

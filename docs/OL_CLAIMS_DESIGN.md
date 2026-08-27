@@ -94,3 +94,33 @@ A repeatable `seed_ol_claim_permissions` management command creates the permissi
 The existing `ol_policies.Policy` model is the source of policy truth, so `OLClaim.policy_ref` is a protected foreign key rather than a duplicated policy number. Claim types, benefit types, reasons, waiting periods, and mandatory documents are represented as strings in the foundation because the parameter app owns their evolving catalogs; later prompts will resolve and validate those codes through the OL Claim Setup configuration APIs.
 
 Claim amount is not stored directly on `OLClaim` in the foundation. The authoritative claim amount is the sum of claim items, where calculated and approved amounts are held at benefit level. This prevents a second total from drifting and gives assessment and loan-offset services a precise audit surface. Requisitions are one-to-one with a claim for the first release; a later payment or retry design can add a controlled requisition history without changing the initial claim identity.
+
+## Validation engine and option contract
+
+Prompt 2 introduces the `validate_eligibility(policy, member, claim_type, claim_date)` service as the single registration gate. It resolves an active, effective-dated `OLClaimType`, checks policy status, applies a configured lapsed grace period, enforces the claim-type waiting period from risk commencement, evaluates explicit product or benefit compatibility rules, and applies the configured duplicate rule against settled claims. Each check writes a central audit record with the policy number, check name, pass/fail result, actor, source channel, and resolution details before the service returns or raises a structured error.
+
+The benefit base service, `calculate_max_claimable(policy, benefit_type)`, uses the configured claim type calculation basis. `SUM_ASSURED` reads the issued policy sum assured, `CASH_VALUE` reads the policy contract snapshot, `BENEFIT_AMOUNT` resolves the matching issued policy benefit, `FIXED_AMOUNT` and `PERCENTAGE` use configured `payable_to_rules`, and a configured maximum cap is always applied. Amounts are returned to two decimal places and never computed or trusted in the frontend.
+
+Claim option APIs return the same standardized shape used by the platform SmartSelect components:
+
+```json
+{
+  "value": "DEATH_CLAIM",
+  "label": "DEATH_CLAIM — Death Claim",
+  "meta": {
+    "claim_category": "DEATH",
+    "calculation_basis": "SUM_ASSURED",
+    "waiting_period_days": 0,
+    "require_documents": ["DEATH_CERTIFICATE"]
+  }
+}
+```
+
+| Endpoint | Scope | Notes |
+|---|---|---|
+| `GET /api/v1/ol/claims/options/types/` | Active current claim types | Supports `q`, `page`, and `page_size`; returns calculation and document metadata. |
+| `GET /api/v1/ol/claims/options/reasons/` | Active current claim reasons | Supports `q` and optional `claim_type` code or UUID filter. |
+| `GET /api/v1/ol/claims/options/benefits/?policy_id=` | Issued policy benefits and riders | Policy-specific; requires `policy_id` and returns policy number in metadata, never in the label as an internal UUID. |
+| `GET /api/v1/ol/claims/options/members/?policy_id=` | Active issued policy members | Policy-specific; labels use member name and relationship while metadata carries DOB, gender, and benefit amount. |
+
+The option envelope includes `data.items`, `data.results`, `data.count`, and a `data.pagination` object with page, page size, total, and navigation flags. Malformed pagination, missing policy references, inactive policies, missing claim types, waiting periods, duplicates, and incompatible benefits all return Error Coach responses with a stable code and resolution steps.

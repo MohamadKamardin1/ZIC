@@ -9,6 +9,7 @@ from django.core.management import call_command
 from rest_framework.test import APITestCase
 
 from apps.common.models import DomainEvent
+from apps.governance.models import AuditLog
 from apps.ol_claims.admin import (
     OLClaimAdmin,
     OLClaimDocumentAdmin,
@@ -28,11 +29,14 @@ from apps.ol_claims.models import (
     OLClaimRequisition,
     OLClaimant,
 )
+from apps.ol_claims.options import claim_type_options
 from apps.ol_claims.permissions import ACTIONS, OLClaimPermission, has_ol_claim_permission
+from apps.ol_claims.services.validation import calculate_max_claimable, validate_eligibility
 from apps.ol_proposals.models import OLProposal
 from apps.ol_quotations.models import OLQuotation
-from apps.ol_policies.models import Policy
+from apps.ol_policies.models import Policy, PolicyBenefit, PolicyMember
 from apps.partners.models import Partner
+from apps.ol_parameters.models import OLClaimReason, OLClaimType
 from apps.users.models import UserPermission
 
 
@@ -249,3 +253,202 @@ class OLClaimFoundationTestCase(APITestCase):
         self.assertEqual(event.payload["claim_number"], claim.claim_number)
         self.assertEqual(event.payload["source_channel"], "WEB")
         self.assertEqual(DomainEvent.objects.filter(pk=event.pk).count(), 1)
+
+    def test_validation_accepts_active_policy_and_audits_each_check(self):
+        claim_type = OLClaimType.objects.create(
+            code="DEATH_CLAIM",
+            name="Death Claim",
+            description="Configured death claim.",
+            claim_category="DEATH",
+            calculation_basis="SUM_ASSURED",
+            duplicate_check_rule="POLICY_AND_TYPE",
+            waiting_period_days=0,
+            payable_to_rules={"default": "beneficiary"},
+            require_documents=["DEATH_CERTIFICATE"],
+            require_approval=True,
+            effective_from=date(2026, 1, 1),
+        )
+        result = validate_eligibility(
+            self.policy,
+            None,
+            claim_type.code,
+            date(2026, 4, 1),
+            actor=self.user,
+            source_channel="WEB",
+        )
+        self.assertTrue(result["eligible"])
+        self.assertEqual(result["claim_category"], "DEATH")
+        self.assertEqual(result["require_documents"], ["DEATH_CERTIFICATE"])
+        self.assertGreaterEqual(
+            AuditLog.objects.filter(entity_type="ol_claims.claim_validation", object_id=str(self.policy.pk)).count(),
+            4,
+        )
+
+    def test_waiting_period_blocks_claim_with_teachable_error(self):
+        claim_type = OLClaimType.objects.create(
+            code="CRITICAL_ILLNESS_CLAIM",
+            name="Critical Illness Claim",
+            claim_category="CRITICAL_ILLNESS",
+            calculation_basis="SUM_ASSURED",
+            duplicate_check_rule="POLICY_AND_REASON",
+            waiting_period_days=90,
+            payable_to_rules={"default": "policyholder"},
+            effective_from=date(2026, 1, 1),
+        )
+        with self.assertRaises(Exception) as raised:
+            validate_eligibility(
+                self.policy,
+                None,
+                claim_type.code,
+                date(2026, 2, 1),
+                actor=self.user,
+            )
+        self.assertEqual(raised.exception.error_code, "CLAIM_WAITING_PERIOD_ACTIVE")
+        self.assertTrue(raised.exception.resolution_steps)
+
+    def test_inactive_policy_blocks_claim_registration(self):
+        claim_type = OLClaimType.objects.create(
+            code="DISABILITY_CLAIM",
+            name="Disability Claim",
+            claim_category="DISABILITY",
+            calculation_basis="BENEFIT_AMOUNT",
+            duplicate_check_rule="NONE",
+            waiting_period_days=0,
+            payable_to_rules={"default": "policyholder"},
+            effective_from=date(2026, 1, 1),
+        )
+        self.policy.status = "EXPIRED"
+        self.policy.save(update_fields=["status"])
+        with self.assertRaises(Exception) as raised:
+            validate_eligibility(self.policy, None, claim_type.code, date(2026, 4, 1), actor=self.user)
+        self.assertEqual(raised.exception.error_code, "CLAIM_POLICY_INACTIVE")
+
+    def test_duplicate_settled_claim_is_blocked_by_configured_rule(self):
+        claim_type = OLClaimType.objects.create(
+            code="MATURITY_CLAIM",
+            name="Maturity Claim",
+            claim_category="MATURITY",
+            calculation_basis="BENEFIT_AMOUNT",
+            duplicate_check_rule="POLICY_AND_TYPE",
+            waiting_period_days=0,
+            payable_to_rules={"default": "policyholder"},
+            effective_from=date(2026, 1, 1),
+        )
+        existing = OLClaim.objects.create(
+            policy_ref=self.policy,
+            claim_type=claim_type.code,
+            claim_date=date(2026, 3, 1),
+            status=ClaimStatus.SETTLED,
+            registered_by=self.user,
+            created_by=self.user,
+        )
+        claimant = OLClaimant.objects.create(
+            claim=existing,
+            claimant_type=ClaimantType.POLICYHOLDER,
+            name="Asha Mwinyi",
+            created_by=self.user,
+        )
+        existing.claimant_ref = claimant
+        existing.save(update_fields=["claimant_ref", "updated_at"])
+        with self.assertRaises(Exception) as raised:
+            validate_eligibility(self.policy, claimant, claim_type.code, date(2026, 4, 1), actor=self.user)
+        self.assertEqual(raised.exception.error_code, "CLAIM_DUPLICATE")
+
+    def test_benefit_calculation_uses_configured_basis_and_amount(self):
+        sum_assured_type = OLClaimType.objects.create(
+            code="DEATH_CALCULATION",
+            name="Death Calculation",
+            claim_category="DEATH",
+            calculation_basis="SUM_ASSURED",
+            duplicate_check_rule="NONE",
+            payable_to_rules={},
+            effective_from=date(2026, 1, 1),
+        )
+        self.assertEqual(
+            calculate_max_claimable(self.policy, "DEATH", claim_type=sum_assured_type.code),
+            Decimal("25000000.00"),
+        )
+
+        benefit_type = OLClaimType.objects.create(
+            code="BENEFIT_CALCULATION",
+            name="Benefit Calculation",
+            claim_category="CRITICAL_ILLNESS",
+            calculation_basis="BENEFIT_AMOUNT",
+            duplicate_check_rule="NONE",
+            payable_to_rules={},
+            effective_from=date(2026, 1, 1),
+        )
+        PolicyBenefit.objects.create(
+            policy=self.policy,
+            benefit_type="CRITICAL_ILLNESS",
+            calculation_basis="FIXED",
+            amount=Decimal("4000000.00"),
+        )
+        self.assertEqual(
+            calculate_max_claimable(self.policy, "CRITICAL_ILLNESS", claim_type=benefit_type.code),
+            Decimal("4000000.00"),
+        )
+
+    def test_claim_option_endpoints_return_active_labeled_data(self):
+        claim_type = OLClaimType.objects.create(
+            code="DEATH_CLAIM",
+            name="Death Claim",
+            claim_category="DEATH",
+            calculation_basis="SUM_ASSURED",
+            duplicate_check_rule="POLICY_AND_TYPE",
+            waiting_period_days=0,
+            payable_to_rules={},
+            effective_from=date(2026, 1, 1),
+        )
+        OLClaimReason.objects.create(
+            code="NATURAL_DEATH",
+            name="Natural death",
+            claim_type=claim_type,
+            reason_category="EVENT",
+            effective_from=date(2026, 1, 1),
+        )
+        OLClaimType.objects.create(
+            code="INACTIVE_CLAIM",
+            name="Inactive Claim",
+            claim_category="OTHER",
+            calculation_basis="FIXED_AMOUNT",
+            duplicate_check_rule="NONE",
+            payable_to_rules={},
+            is_active=False,
+            effective_from=date(2026, 1, 1),
+        )
+        PolicyMember.objects.create(
+            policy=self.policy,
+            member_relation="PRINCIPAL",
+            name="Asha Mwinyi",
+            dob=date(1990, 6, 15),
+            gender="FEMALE",
+            benefit_amount=Decimal("25000000.00"),
+        )
+        PolicyBenefit.objects.create(
+            policy=self.policy,
+            benefit_type="DEATH_BENEFIT",
+            calculation_basis="FIXED",
+            amount=Decimal("25000000.00"),
+        )
+
+        types_response = self.client.get("/api/v1/ol/claims/options/types/?q=Death&page=1&page_size=1")
+        self.assertEqual(types_response.status_code, 200)
+        type_items = types_response.data["data"]["items"]
+        self.assertEqual(len(type_items), 1)
+        self.assertEqual(type_items[0]["value"], "DEATH_CLAIM")
+        self.assertEqual(type_items[0]["label"], "DEATH_CLAIM — Death Claim")
+        self.assertNotIn("INACTIVE_CLAIM", str(types_response.data))
+
+        reasons_response = self.client.get("/api/v1/ol/claims/options/reasons/?claim_type=DEATH_CLAIM")
+        self.assertEqual(reasons_response.status_code, 200)
+        self.assertEqual(reasons_response.data["data"]["items"][0]["label"], "NATURAL_DEATH — Natural death")
+
+        benefits_response = self.client.get(f"/api/v1/ol/claims/options/benefits/?policy_id={self.policy.pk}")
+        self.assertEqual(benefits_response.status_code, 200)
+        self.assertEqual(benefits_response.data["data"]["items"][0]["label"], "DEATH_BENEFIT — Benefit")
+        self.assertNotIn(str(self.policy.pk), benefits_response.data["data"]["items"][0]["label"])
+
+        members_response = self.client.get(f"/api/v1/ol/claims/options/members/?policy_id={self.policy.pk}")
+        self.assertEqual(members_response.status_code, 200)
+        self.assertEqual(members_response.data["data"]["items"][0]["label"], "Asha Mwinyi — PRINCIPAL")

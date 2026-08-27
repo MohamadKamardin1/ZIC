@@ -50,7 +50,7 @@ GIT:
 
 FINAL OUTPUT: design summary, models, permissions, events, error codes, tests, commit hash, pushed branch.
 
-## [ ] Prompt 2 — Claim Parameters & Validation Engine
+## [x] Prompt 2 — Claim Parameters & Validation Engine
 You are a senior Django insurance configuration engineer. Continue the ZIC OL Claims backend. Execute ONLY Prompt 2 from the saved series file.
 
 MANDATORY RULES:
