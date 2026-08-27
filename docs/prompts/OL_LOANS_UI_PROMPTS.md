@@ -150,7 +150,7 @@ FINAL OUTPUT: table behavior, tests, commit hash, pushed branch.
 
 ---
 
-## [ ] Prompt 5/10 — Repayments & Accrual History Tabs
+## [x] Prompt 5/10 — Repayments & Accrual History Tabs
 
 ```text
 You are a senior frontend engineer. Continue the ZIC Loans UI. Execute ONLY Prompt 5.
