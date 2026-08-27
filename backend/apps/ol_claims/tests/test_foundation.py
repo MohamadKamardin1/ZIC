@@ -5,11 +5,14 @@ from uuid import uuid4
 from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from rest_framework.test import APITestCase
 
 from apps.common.models import DomainEvent
+from apps.dashboard.models import DashboardNotification
+from apps.documents.models import DocumentInstance, DocumentTemplate
 from apps.governance.models import ApprovalRequest, AuditLog
 from apps.ol_claims.admin import (
     OLClaimAdmin,
@@ -44,6 +47,7 @@ from apps.ol_proposals.models import OLProposal
 from apps.ol_quotations.models import OLQuotation
 from apps.ol_policies.models import LoanStatus, Policy, PolicyBenefit, PolicyLoan, PolicyMember, PolicyRider, PolicyRiderStatus, PolicyStatus
 from apps.governance.services.approval_service import ApprovalService
+from apps.ol_policies.models import PolicyNotificationLog
 from apps.partners.models import Partner
 from apps.ol_parameters.models import OLClaimReason, OLClaimType, OLMedicalCode, OLMedicalLimit
 from apps.users.models import UserPermission
@@ -1192,3 +1196,149 @@ class OLClaimFoundationTestCase(APITestCase):
         self.assertIn(included.claim_number, body)
         self.assertNotIn(excluded.claim_number, body)
         self.assertNotIn(str(self.policy.pk), body)
+
+    def _portal_user(self, partner):
+        return get_user_model().objects.create_user(
+            username=f"portal-{partner.partner_number.lower()}",
+            email=f"{partner.partner_number.lower()}@portal.example.com",
+            password="Strong-portal-password-123!",
+            user_type="PORTAL_USER",
+            partner_id=partner.pk,
+            first_name="Portal",
+            last_name="User",
+        )
+
+    def test_claim_portal_is_scoped_to_linked_partner(self):
+        claim = self.make_claim()
+        portal_user = self._portal_user(self.partner)
+        self.client.force_authenticate(portal_user)
+        listing = self.client.get("/api/v1/portal/claims/")
+        self.assertEqual(listing.status_code, 200, listing.data)
+        self.assertEqual(listing.data["data"]["count"], 1)
+        detail = self.client.get(f"/api/v1/portal/claims/{claim.claim_number}/")
+        self.assertEqual(detail.status_code, 200, detail.data)
+        self.assertEqual(detail.data["data"]["claim_number"], claim.claim_number)
+
+        other_partner = Partner.objects.create(
+            partner_number="ZIC-CLM-P-0002",
+            partner_type="CLIENT",
+            partner_category="INDIVIDUAL",
+            party_type="INDIVIDUAL",
+            legal_name="Other Portal Partner",
+            email="other.portal@example.com",
+        )
+        other_user = self._portal_user(other_partner)
+        self.client.force_authenticate(other_user)
+        other_listing = self.client.get("/api/v1/portal/claims/")
+        self.assertEqual(other_listing.status_code, 200, other_listing.data)
+        self.assertEqual(other_listing.data["data"]["count"], 0)
+        blocked = self.client.get(f"/api/v1/portal/claims/{claim.claim_number}/")
+        self.assertEqual(blocked.status_code, 404, blocked.data)
+        self.assertEqual(blocked.data["error_code"], "PORTAL_RESOURCE_NOT_FOUND")
+        self.assertNotIn(str(claim.pk), str(blocked.data))
+
+    def test_claim_portal_registration_reuses_validated_service(self):
+        OLClaimType.objects.create(
+            code="PORTAL_DEATH_CLAIM",
+            name="Portal Death Claim",
+            claim_category="DEATH",
+            calculation_basis="SUM_ASSURED",
+            duplicate_check_rule="NONE",
+            waiting_period_days=0,
+            payable_to_rules={},
+            require_documents=["DEATH_CERTIFICATE"],
+            effective_from=date(2026, 1, 1),
+        )
+        PolicyBenefit.objects.create(
+            policy=self.policy,
+            benefit_type="DEATH_BENEFIT",
+            calculation_basis="FIXED",
+            amount=Decimal("25000000.00"),
+        )
+        portal_user = self._portal_user(self.partner)
+        self.client.force_authenticate(portal_user)
+        payload = {
+            "policy_number": self.policy.policy_number,
+            "claim_type": "PORTAL_DEATH_CLAIM",
+            "claim_date": "2026-05-01",
+            "cause_of_claim": "Natural causes",
+            "description": "Portal registration test.",
+            "claimant_details": {
+                "claimant_type": "INSURED",
+                "relationship": "Principal member",
+                "name": "Asha Mwinyi",
+                "identity_number": "NIDA-PORTAL-0001",
+                "age": 36,
+                "gender": "FEMALE",
+            },
+            "benefit_type": "DEATH_BENEFIT",
+        }
+        response = self.client.post(
+            "/api/v1/portal/claims/register/",
+            payload,
+            format="json",
+            HTTP_X_IDEMPOTENCY_KEY="portal-claim-registration-001",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        claim = OLClaim.objects.get(claim_number=response.data["data"]["claim_number"])
+        self.assertEqual(claim.source_channel, "PORTAL")
+        self.assertEqual(claim.registered_by, portal_user)
+        self.assertTrue(DomainEvent.objects.filter(event_type="ClaimRegistered", aggregate_id=str(claim.pk)).exists())
+        replay = self.client.post(
+            "/api/v1/portal/claims/register/",
+            payload,
+            format="json",
+            HTTP_X_IDEMPOTENCY_KEY="portal-claim-registration-001",
+        )
+        self.assertEqual(replay.status_code, 200, replay.data)
+        self.assertEqual(replay.data["meta"]["idempotent_replay"], True)
+
+    def test_claim_notifications_are_idempotent_and_use_human_readable_copy(self):
+        claim = self.make_claim()
+        portal_user = self._portal_user(self.partner)
+        DomainEvent.objects.create(
+            event_type="ClaimRegistered",
+            aggregate_type="OLClaim",
+            aggregate_id=str(claim.pk),
+            payload={"claim_number": claim.claim_number},
+        )
+        DomainEvent.objects.create(
+            event_type="ClaimRegistered",
+            aggregate_type="OLClaim",
+            aggregate_id=str(claim.pk),
+            payload={"claim_number": claim.claim_number},
+        )
+        notification_logs = PolicyNotificationLog.objects.filter(policy=self.policy, event_type="ClaimRegistered")
+        self.assertEqual(notification_logs.count(), 3)
+        self.assertEqual(set(notification_logs.values_list("channel", flat=True)), {"EMAIL", "SMS"})
+        self.assertEqual(notification_logs.values("channel", "recipient").distinct().count(), 3)
+        self.assertEqual(
+            DashboardNotification.objects.filter(owner=portal_user, external_key=f"claim:{claim.pk}:ClaimRegistered").count(),
+            1,
+        )
+        notification = DashboardNotification.objects.get(owner=portal_user, external_key=f"claim:{claim.pk}:ClaimRegistered")
+        self.assertIn(claim.claim_number, notification.message)
+        self.assertNotIn(str(claim.pk), notification.title + notification.message + notification.route)
+
+    def test_discharge_voucher_uses_unified_pdf_pipeline_and_rejected_watermark(self):
+        claim = self.make_claim()
+        response = self.client.post(f"/api/v1/ol/claims/{claim.pk}/print-discharge-voucher/", {}, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        data = response.data["data"]
+        self.assertTrue(data["signed_download_url"])
+        self.assertTrue(data["preview_blob_base64_or_url"])
+        instance = DocumentInstance.objects.get(pk=data["id"])
+        self.assertEqual(instance.document_type, "DISCHARGE_VOUCHER")
+        self.assertEqual(instance.source_object_id, str(claim.pk))
+        self.assertEqual(instance.mime_type, "application/pdf")
+        self.assertGreaterEqual(instance.page_count, 1)
+
+        claim.status = ClaimStatus.REJECTED
+        claim.save(update_fields=["status", "updated_at"])
+        rejected = self.client.post(f"/api/v1/ol/claims/{claim.pk}/print-discharge-voucher/", {}, format="json")
+        self.assertEqual(rejected.status_code, 201, rejected.data)
+        rejected_instance = DocumentInstance.objects.get(pk=rejected.data["data"]["id"])
+        with default_storage.open(rejected_instance.preview_reference, "rb") as rendered_html:
+            html = rendered_html.read().decode("utf-8")
+        self.assertIn("REJECTED", html)
+        self.assertIn("DISCHARGE VOUCHER", html)

@@ -9,3 +9,4 @@ class OLClaimsConfig(AppConfig):
 
     def ready(self):
         from apps.ol_claims import approval_receivers  # noqa: F401
+        from apps.ol_claims import integration_receivers  # noqa: F401

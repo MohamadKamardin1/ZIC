@@ -1,7 +1,9 @@
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .errors import not_found
+from apps.documents.services.engine import DocumentEngine, DocumentEngineError
+
+from .errors import not_found, registry_error
 from .models import ClaimMedicalStatus, ClaimSourceChannel, OLClaim
 from .permissions import HasOLClaimPermission
 from .serializers import OLClaimDocumentSerializer
@@ -113,3 +115,49 @@ class ClaimAssessmentReadinessView(APIView):
                 }
             }
         )
+
+
+def _render_discharge_response(request, claim_id):
+    try:
+        instance = DocumentEngine.render(
+            document_type="DISCHARGE_VOUCHER",
+            object_id=claim_id,
+            actor=request.user,
+            request=request,
+        )
+        payload = DocumentEngine.payload(instance, request=request, actor=request.user, signed=True)
+        return Response(
+            {
+                "success": True,
+                "status_code": 201,
+                "message": "Claim discharge voucher rendered successfully.",
+                "data": {
+                    **payload,
+                    "instance": payload,
+                    "preview_blob_base64_or_url": payload["preview_url"],
+                    "signed_download_url": payload["signed_download_url"],
+                },
+            },
+            status=201,
+        )
+    except DocumentEngineError as exc:
+        payload = {
+            "success": False,
+            "status_code": exc.status_code,
+            "message": str(exc),
+            "error": str(exc),
+            "code": exc.code,
+        }
+        if exc.resolution_steps:
+            payload["resolution_steps"] = exc.resolution_steps
+        return Response(payload, status=exc.status_code)
+
+
+class ClaimDischargeVoucherPrintView(APIView):
+    action = "print"
+    permission_classes = [HasOLClaimPermission]
+
+    def post(self, request, claim_id):
+        if not OLClaim.objects.filter(pk=claim_id).exists():
+            raise registry_error("CLAIM_NOT_FOUND")
+        return _render_discharge_response(request, claim_id)

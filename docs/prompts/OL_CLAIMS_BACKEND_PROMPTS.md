@@ -378,7 +378,7 @@ GIT:
 
 FINAL OUTPUT: endpoint contract, KPI rules, tests, commit hash, pushed branch.
 
-## [ ] Prompt 11 — Integrations: Portal, Notifications & Documents
+## [x] Prompt 11 — Integrations: Portal, Notifications & Documents
 You are a senior Django integration engineer. Continue the ZIC OL Claims backend. Execute ONLY Prompt 11.
 
 MANDATORY RULES:

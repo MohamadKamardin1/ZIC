@@ -1,7 +1,7 @@
 from django.urls import path
 
 from .assessment_views import ClaimAssessmentView, ClaimNotesView
-from .document_views import ClaimAssessmentReadinessView, ClaimDocumentsView
+from .document_views import ClaimAssessmentReadinessView, ClaimDischargeVoucherPrintView, ClaimDocumentsView
 from .financial_views import ClaimFinancialSummaryView
 from .medical_views import ClaimMedicalEvaluationView, ClaimMedicalRequirementView, ClaimMedicalResultView
 from .requisition_views import ClaimRaiseRequisitionView
@@ -27,6 +27,7 @@ urlpatterns = [
     path("claims/<uuid:claim_id>/financial-summary/", ClaimFinancialSummaryView.as_view(), name="claim-financial-summary"),
     path("claims/<uuid:claim_id>/raise-requisition/", ClaimRaiseRequisitionView.as_view(), name="claim-raise-requisition"),
     path("claims/<uuid:claim_id>/settle/", ClaimSettlementView.as_view(), name="claim-settle"),
+    path("claims/<uuid:claim_id>/print-discharge-voucher/", ClaimDischargeVoucherPrintView.as_view(), name="claim-discharge-voucher-print"),
     path("claims/<uuid:claim_id>/medical/evaluate/", ClaimMedicalEvaluationView.as_view(), name="claim-medical-evaluate"),
     path("claims/<uuid:claim_id>/medical/require/", ClaimMedicalRequirementView.as_view(), name="claim-medical-require"),
     path("claims/<uuid:claim_id>/medical/result/", ClaimMedicalResultView.as_view(), name="claim-medical-result"),

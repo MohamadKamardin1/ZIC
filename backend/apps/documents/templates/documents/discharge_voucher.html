@@ -1,0 +1,62 @@
+{% extends "documents/base_print.html" %}
+{% block document_content %}
+<section class="meta-grid">
+  <div class="meta-cell"><span class="meta-label">Claim Number</span><span class="meta-value">{{ meta.claim_number }}</span></div>
+  <div class="meta-cell"><span class="meta-label">Policy Number</span><span class="meta-value">{{ meta.policy_number }}</span></div>
+  <div class="meta-cell"><span class="meta-label">Claim Date</span><span class="meta-value">{{ meta.claim_date|date:"Y-m-d" }}</span></div>
+  <div class="meta-cell"><span class="meta-label">Status</span><span class="meta-value">{{ meta.status }}</span></div>
+</section>
+<section class="section">
+  <h2 class="section-title">Claim and Policy</h2>
+  <div class="two-column">
+    <div class="column">
+      <dl class="kv">
+        <div class="kv-row"><dt>Claim Type</dt><dd>{{ claim.type }}</dd></div>
+        <div class="kv-row"><dt>Cause</dt><dd>{{ claim.cause }}</dd></div>
+        <div class="kv-row"><dt>Description</dt><dd>{{ claim.description }}</dd></div>
+        <div class="kv-row"><dt>Admitted Date</dt><dd>{{ claim.admitted_date|date:"Y-m-d"|default:"Not recorded" }}</dd></div>
+      </dl>
+    </div>
+    <div class="column">
+      <dl class="kv">
+        <div class="kv-row"><dt>Product / Plan</dt><dd>{{ policy.product }}</dd></div>
+        <div class="kv-row"><dt>Policy Status</dt><dd>{{ policy.status }}</dd></div>
+        <div class="kv-row"><dt>Currency</dt><dd>{{ policy.currency }}</dd></div>
+        <div class="kv-row"><dt>Payment Reference</dt><dd>{{ claim.payment_reference }}</dd></div>
+      </dl>
+    </div>
+  </div>
+</section>
+<section class="section">
+  <h2 class="section-title">Policyholder and Claimant</h2>
+  <table class="data">
+    <thead><tr><th>Role</th><th>Name</th><th>Reference</th><th>Relationship</th></tr></thead>
+    <tbody>
+      <tr><td>Policyholder</td><td>{{ policyholder.name }}</td><td>{{ policyholder.number }}</td><td>Policyholder</td></tr>
+      <tr><td>Claimant</td><td>{{ claimant.name }}</td><td>{{ claimant.identity_number }}</td><td>{{ claimant.relationship }}</td></tr>
+    </tbody>
+  </table>
+</section>
+<section class="section">
+  <h2 class="section-title">Settlement Summary</h2>
+  <table class="data">
+    <thead><tr><th>Description</th><th class="numeric">Amount</th></tr></thead>
+    <tbody>
+      <tr><td>Approved claim amount</td><td class="numeric">{{ financial.approved_amount }}</td></tr>
+      <tr><td>Policy loan offset</td><td class="numeric">{{ financial.loan_offset }}</td></tr>
+      <tr class="total"><td>Net settlement payable</td><td class="numeric">{{ financial.net_payout }}</td></tr>
+    </tbody>
+  </table>
+  <p class="small muted">Settlement amount recorded: {{ financial.settlement_amount }}. This voucher is evidence of the claim settlement instruction and should be retained with the claim file.</p>
+</section>
+<section class="section">
+  <h2 class="section-title">Acknowledgement</h2>
+  <p>I acknowledge receipt of the settlement described above, subject to the applicable policy terms and the payment confirmation recorded against this claim.</p>
+  <p class="small muted">Generated from claim {{ claim.number }}. Template version {{ template_version }}.</p>
+</section>
+{% endblock %}
+{% block signature_block %}
+<footer class="signature-block">
+  {% for signature in signatures %}<div class="signature-party"><div class="signature-line"></div><strong>{{ signature.label }}</strong><br>{{ signature.name }}<br><span class="small muted">Signature &amp; Date</span></div>{% endfor %}
+</footer>
+{% endblock %}

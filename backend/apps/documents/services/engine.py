@@ -567,6 +567,75 @@ def _quotation_context(source, branding: dict[str, Any], template: DocumentTempl
     return context
 
 
+def _claim_discharge_context(source, branding: dict[str, Any], template: DocumentTemplate):
+    policy = source.policy_ref
+    partner = getattr(policy, "partner", None)
+    claimant = getattr(source, "claimant_ref", None) or source.claimants.filter(is_active=True).first()
+    currency = _safe_document_text(getattr(policy, "currency", None), "TZS").upper()
+    money = QuotationDocumentServiceMoney.format
+    status_code = str(source.status or "").upper()
+    status_display = _safe_document_text(source.get_status_display() if hasattr(source, "get_status_display") else source.status, "Not recorded")
+    approved_amount = sum(
+        ((item.approved_amount if item.approved_amount is not None else item.calculated_amount) or Decimal("0.00") for item in source.items.all()),
+        Decimal("0.00"),
+    )
+    settlement_amount = source.settlement_amount if source.settlement_amount is not None else approved_amount
+    offset = getattr(source, "loan_offset", None)
+    offset_amount = getattr(offset, "offset_amount", Decimal("0.00")) if offset else Decimal("0.00")
+    return {
+        "document_title": "DISCHARGE VOUCHER",
+        "branding": branding,
+        "template_version": template.version,
+        "quote": {"status_watermark": status_code if status_code in {"CANCELLED", "REJECTED"} else ""},
+        "status_watermark": status_code if status_code in {"CANCELLED", "REJECTED"} else "",
+        "claim": {
+            "number": _safe_document_text(source.claim_number, "Not recorded"),
+            "type": _safe_document_text(source.claim_type, "Not recorded"),
+            "date": source.claim_date,
+            "status": status_display,
+            "status_code": status_code,
+            "cause": _safe_document_text(source.cause_of_claim, "Not recorded"),
+            "description": _safe_document_text(source.description, "Not recorded"),
+            "admitted_date": source.admitted_date,
+            "settled_date": source.settled_date,
+            "payment_reference": _safe_document_text(source.payment_reference, "Not assigned"),
+        },
+        "policy": {
+            "number": _safe_document_text(getattr(policy, "policy_number", None), "Not recorded"),
+            "product": _safe_document_text(getattr(policy, "product_plan_ref", None), "Not recorded"),
+            "status": _safe_document_text(getattr(policy, "status", None), "Not recorded"),
+            "currency": currency,
+        },
+        "policyholder": {
+            "name": _safe_document_text(getattr(partner, "legal_name", None) or getattr(partner, "partner_number", None), "Not recorded"),
+            "number": _safe_document_text(getattr(partner, "partner_number", None), "Not recorded"),
+        },
+        "claimant": {
+            "name": _safe_document_text(getattr(claimant, "name", None), "Not recorded"),
+            "relationship": _safe_document_text(getattr(claimant, "relationship", None), "Not recorded"),
+            "identity_number": _safe_document_text(getattr(claimant, "identity_number", None), "Not recorded"),
+        },
+        "meta": {
+            "claim_number": _safe_document_text(source.claim_number, "Not recorded"),
+            "policy_number": _safe_document_text(getattr(policy, "policy_number", None), "Not recorded"),
+            "claim_date": source.claim_date,
+            "status": status_display,
+            "currency": currency,
+        },
+        "financial": {
+            "approved_amount": money(approved_amount, currency),
+            "loan_offset": money(offset_amount, currency),
+            "settlement_amount": money(settlement_amount, currency),
+            "net_payout": money(max(settlement_amount - offset_amount, Decimal("0.00")), currency),
+        },
+        "signatures": [
+            {"label": "Claimant / Policyholder", "name": _safe_document_text(getattr(claimant, "name", None) or getattr(partner, "legal_name", None), "Not recorded")},
+            {"label": "Agent / Intermediary", "name": "Not assigned"},
+            {"label": "Company Representative", "name": _safe_document_text(branding.get("company_name"), "Zanzibar Insurance Corporation")},
+        ],
+    }
+
+
 def _receipt_context(source, branding: dict[str, Any], template: DocumentTemplate):
     amount = getattr(source, "amount", Decimal("0")) or Decimal("0")
     currency = _safe_document_text(getattr(source, "currency", None), "TZS").upper()
@@ -870,6 +939,29 @@ DocumentTypeRegistry.register(
 
 DocumentTypeRegistry.register(
     DocumentTypeDefinition(
+        document_type="DISCHARGE_VOUCHER",
+        source_app_label="ol_claims",
+        source_model="olclaim",
+        template_code="OL_CLAIM_DISCHARGE_VOUCHER_UNIFIED",
+        layout_template_path="documents/discharge_voucher.html",
+        permission="ol_claims.print",
+        context_builder=_claim_discharge_context,
+        title="Claim Discharge Voucher",
+        variables_schema={
+            "claim": "object",
+            "policy": "object",
+            "policyholder": "object",
+            "claimant": "object",
+            "meta": "object",
+            "financial": "object",
+            "signatures": "array",
+            "branding": "object",
+        },
+    )
+)
+
+DocumentTypeRegistry.register(
+    DocumentTypeDefinition(
         document_type="OL_LOAN_AGREEMENT",
         source_app_label="ol_loans",
         source_model="olloan",
@@ -938,7 +1030,6 @@ DocumentTypeRegistry.register(
 
 
 for _pending_document_type, _pending_title in (
-    ("DISCHARGE_VOUCHER", "Discharge Voucher"),
     ("COMMISSION_STATEMENT", "Commission Statement"),
     ("DEBIT_NOTE", "Debit Note"),
     ("PREMIUM_STATEMENT", "Premium Statement"),
@@ -971,6 +1062,10 @@ class DocumentEngine:
             return False
         if getattr(actor, "is_superuser", False):
             return True
+        if permission_code == "ol_claims.print":
+            from apps.ol_claims.permissions import has_ol_claim_permission
+
+            return has_ol_claim_permission(actor, "print")
         if permission_code == "ol_quotations.print":
             from apps.ol_quotations.permissions import has_quotation_permission
 
@@ -1035,7 +1130,7 @@ class DocumentEngine:
             quotation = getattr(source, "quotation", None)
             partner_id = getattr(quotation, "partner_id", None) if quotation is not None else None
         if partner_id is None:
-            policy = getattr(source, "policy", None)
+            policy = getattr(source, "policy", None) or getattr(source, "policy_ref", None)
             partner_id = getattr(policy, "partner_id", None) if policy is not None else None
         if partner_id is None:
             return True

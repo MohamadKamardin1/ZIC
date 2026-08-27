@@ -325,6 +325,14 @@ CLAIM_ERROR_REGISTRY = {
             "Complete the required preceding workflow step before retrying.",
         ],
     },
+    "PORTAL_RESOURCE_NOT_FOUND": {
+        "message": "The requested claim or policy is not available in your partner portal.",
+        "status_code": 404,
+        "resolution_steps": [
+            "Confirm that the policy belongs to your linked partner profile.",
+            "Use the policy or claim number shown in your portal records.",
+        ],
+    },
 }
 
 
