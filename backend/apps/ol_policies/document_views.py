@@ -4,7 +4,7 @@ from rest_framework.views import APIView
 from apps.documents.services.engine import DocumentEngine, DocumentEngineError
 
 from .errors import not_found
-from .models import Policy
+from .models import Policy, WithdrawalRequest
 from .permissions import HasOLPolicyPermission
 
 
@@ -46,6 +46,16 @@ def _render_response(request, document_type, policy_id):
         )
     except DocumentEngineError as exc:
         return _failure(exc)
+
+
+class WithdrawalStatementPrintView(APIView):
+    action = "print"
+    permission_classes = [HasOLPolicyPermission]
+
+    def post(self, request, withdrawal_id):
+        if not WithdrawalRequest.objects.filter(pk=withdrawal_id).exists():
+            raise not_found(withdrawal_id)
+        return _render_response(request, "OL_WITHDRAWAL_STATEMENT", withdrawal_id)
 
 
 class PolicyContractPrintView(APIView):

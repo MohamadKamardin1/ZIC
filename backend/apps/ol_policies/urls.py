@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .document_views import PolicyContractPrintView, PolicySchedulePrintView
+from .document_views import PolicyContractPrintView, PolicySchedulePrintView, WithdrawalStatementPrintView
 from .endorsement_views import PolicyEndorsementDetailView, PolicyEndorsementListCreateView
 from .finance_views import (
     PolicyLoanApproveView,
@@ -41,6 +41,7 @@ urlpatterns = [
     path("policies/loans/<uuid:loan_id>/disburse/", PolicyLoanDisburseView.as_view(), name="policy-loan-disburse"),
     path("policies/loans/<uuid:loan_id>/repay/", PolicyLoanRepayView.as_view(), name="policy-loan-repay"),
     path("policies/<uuid:policy_id>/withdrawals/", PolicyWithdrawalListCreateView.as_view(), name="policy-withdrawals"),
+    path("withdrawals/<uuid:withdrawal_id>/print-statement/", WithdrawalStatementPrintView.as_view(), name="withdrawal-print-statement"),
     path("policies/<uuid:policy_id>/maturity/", PolicyMaturityView.as_view(), name="policy-maturity"),
     path("policies/<uuid:policy_id>/print-contract/", PolicyContractPrintView.as_view(), name="policy-print-contract"),
     path("policies/<uuid:policy_id>/print-schedule/", PolicySchedulePrintView.as_view(), name="policy-print-schedule"),

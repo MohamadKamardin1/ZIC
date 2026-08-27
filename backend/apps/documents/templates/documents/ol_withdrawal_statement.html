@@ -1,0 +1,51 @@
+{% extends "documents/base_print.html" %}
+
+{% block document_content %}
+  {% if status_watermark %}<div class="draft-watermark">{{ status_watermark }}</div>{% endif %}
+  <section class="meta-grid">
+    <div class="meta-cell"><span class="meta-label">Withdrawal number</span><span class="meta-value">{{ withdrawal.number }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Request date</span><span class="meta-value">{{ withdrawal.date|date:'Y-m-d'|default:'-' }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Policy number</span><span class="meta-value">{{ policy.number }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Status</span><span class="meta-value">{{ withdrawal.status }}</span></div>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title">Policyholder and policy</h2>
+    <table class="data">
+      <tbody>
+        <tr><td>Policyholder</td><td>{{ parties.policyholder }}</td><td>Policy number</td><td>{{ policy.number }}</td></tr>
+        <tr><td>Product / plan</td><td>{{ withdrawal.product }}</td><td>Policy status</td><td>{{ policy.status }}</td></tr>
+        <tr><td>Agent / intermediary</td><td>{{ parties.agent }}</td><td>Currency</td><td>{{ policy.currency }}</td></tr>
+        <tr><td>Reason</td><td colspan="3">{{ withdrawal.reason }}</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title">Withdrawal calculation</h2>
+    <table class="data">
+      <thead><tr><th>Calculation item</th><th class="numeric">Amount</th></tr></thead>
+      <tbody>
+        <tr><td>Cash value before</td><td class="numeric">{{ financial.cash_value_before }}</td></tr>
+        <tr><td>Gross withdrawal</td><td class="numeric">{{ financial.gross_withdrawal }}</td></tr>
+        <tr><td>Withdrawal fee</td><td class="numeric">{{ financial.withdrawal_fee }}</td></tr>
+        <tr><td>Loan balance before</td><td class="numeric">{{ financial.loan_balance_before }}</td></tr>
+        <tr class="total"><td>Net payout</td><td class="numeric"><strong>{{ financial.net_payout }}</strong></td></tr>
+        <tr><td>Cash value after</td><td class="numeric">{{ financial.cash_value_after }}</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title">Payment and validity notes</h2>
+    <p>The net payout shown above is subject to the approved withdrawal request, reconciliation of the official ZIC ledger, and the applicable payment process.</p>
+    <p>For cancelled or reversed requests, this statement is retained as an auditable transaction record and carries the corresponding status watermark.</p>
+    <p class="muted small">This document is system generated for the named policyholder and does not constitute an offer for insurance or a change to the underlying policy contract. Contact Zanzibar Insurance Corporation for clarification.</p>
+  </section>
+{% endblock %}
+
+{% block signature_block %}
+  <footer class="signature-block">
+    {% for signature in signatures %}<div class="signature-party"><strong>{{ signature.label }}</strong><div class="signature-line"></div><div>{{ signature.name }}</div><div class="small muted">Signature &amp; Date</div></div>{% endfor %}
+  </footer>
+{% endblock %}

@@ -8,7 +8,7 @@ from pypdf import PdfReader
 from rest_framework.test import APITestCase
 
 from apps.documents.models import DocumentInstance, DocumentTemplate
-from apps.ol_policies.models import Policy, PolicyBenefit, PolicyMember, PolicyRider, PolicyStatus
+from apps.ol_policies.models import Policy, PolicyBenefit, PolicyMember, PolicyRider, PolicyStatus, WithdrawalRequest
 from apps.ol_proposals.models import OLProposal
 from apps.ol_quotations.models import OLQuotation
 from apps.partners.models import Partner
@@ -95,6 +95,15 @@ class PolicyDocumentsTestCase(APITestCase):
             amount=Decimal("300000.00"),
             premium=Decimal("5000.00"),
         )
+        self.withdrawal = WithdrawalRequest.objects.create(
+            policy=self.policy,
+            request_date=date.today(),
+            amount=Decimal("250000.00"),
+            cash_value_before=Decimal("2500000.00"),
+            loan_balance_before=Decimal("150000.00"),
+            net_amount=Decimal("237500.00"),
+            reason="Education expenses",
+        )
         self.templates = {
             "POLICY_CONTRACT": DocumentTemplate.objects.update_or_create(
                 code="POLICY_CONTRACT_UNIFIED",
@@ -108,6 +117,17 @@ class PolicyDocumentsTestCase(APITestCase):
                         "members": "array", "benefits": "array", "riders": "array", "premium_schedule": "array",
                         "financial": "object", "legal_clauses": "array", "signatures": "array", "branding": "object", "quote": "object",
                     },
+                    "is_active": True,
+                },
+            )[0],
+            "OL_WITHDRAWAL_STATEMENT": DocumentTemplate.objects.update_or_create(
+                code="OL_WITHDRAWAL_STATEMENT_UNIFIED",
+                version=1,
+                defaults={
+                    "name": "Withdrawal Statement",
+                    "document_type": "OL_WITHDRAWAL_STATEMENT",
+                    "layout_template_path": "documents/ol_withdrawal_statement.html",
+                    "variables_schema": {"withdrawal": "object", "policy": "object", "parties": "object", "financial": "object", "signatures": "array", "branding": "object"},
                     "is_active": True,
                 },
             )[0],
@@ -173,6 +193,37 @@ class PolicyDocumentsTestCase(APITestCase):
         for expected in ("SCHEDULE OF BENEFITS", "Coverage Details", "Asha Mohammed", "DEATH_BENEFIT"):
             self.assertIn(expected, text)
         self.assertEqual(DocumentInstance.objects.filter(source_object_id=str(self.policy.pk), document_type="POLICY_SCHEDULE").count(), 1)
+
+    def test_withdrawal_statement_pdf_uses_unified_engine_and_signed_download(self):
+        response = self._render(f"/api/v1/ol/withdrawals/{self.withdrawal.pk}/print-statement/")
+        payload = response.data["data"]
+        self.assertEqual(payload["mime_type"], "application/pdf")
+        self.assertGreaterEqual(payload["page_count"], 1)
+        self.assertTrue(payload["signed_download_url"])
+        instance = DocumentInstance.objects.get(pk=payload["id"])
+        self.assertEqual(instance.document_type, "OL_WITHDRAWAL_STATEMENT")
+        self.assertEqual(instance.source_type, "ol_policies.withdrawalrequest")
+        self.assertEqual(instance.source_object_id, str(self.withdrawal.pk))
+        self.assertEqual(instance.template_version, 1)
+        ticket = parse_qs(urlparse(payload["signed_download_url"]).query)["ticket"][0]
+        downloaded = self.client.get(f"/api/v1/documents/instances/{instance.pk}/download/?ticket={ticket}")
+        self.assertEqual(downloaded.status_code, 200)
+        self.assertEqual(downloaded["Content-Type"], "application/pdf")
+        pdf_bytes = b"".join(downloaded.streaming_content)
+        self.assertGreater(len(pdf_bytes), 1000)
+        text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_bytes)).pages)
+        for expected in ("WITHDRAWAL STATEMENT", self.withdrawal.request_number, "Asha Mohammed", "Withdrawal calculation", "Net payout", "Company Representative"):
+            self.assertIn(expected, text)
+
+    def test_cancelled_withdrawal_statement_has_status_watermark(self):
+        self.withdrawal.status = "CANCELLED"
+        self.withdrawal.save(update_fields=["status", "updated_at"])
+        response = self._render(f"/api/v1/ol/withdrawals/{self.withdrawal.pk}/print-statement/")
+        instance = DocumentInstance.objects.get(pk=response.data["data"]["id"])
+        html = self.client.get(f"/api/v1/documents/instances/{instance.pk}/preview/")
+        self.assertEqual(html.status_code, 200)
+        html_bytes = b"".join(html.streaming_content)
+        self.assertIn(b"CANCELLED", html_bytes)
 
     def test_surrendered_policy_has_status_watermark_in_contract_html(self):
         self.policy.status = PolicyStatus.SURRENDERED

@@ -1,12 +1,12 @@
 import { useState } from "react"
 import { ArrowLeft, Clipboard, Check, FileText, RotateCcw, ShieldCheck, XCircle } from "lucide-react"
 import { useNavigate, useParams, useSearchParams } from "react-router-dom"
-import { DocumentInstancesPanel } from "../../components/documents/DocumentInstancesPanel"
 import { ErrorCoach } from "../../components/ErrorCoach"
 import Modal from "../../components/shared/Modal"
 import { MasterDetailPage } from "../../components/ui/Patterns"
 import { useToast } from "../../components/ui/Toast"
 import { MoneyCell, WithdrawalMoneySummary, WithdrawalStatusBadge } from "../../components/withdrawals/WithdrawalPrimitives"
+import { WithdrawalDocumentsPanel } from "../../components/withdrawals/WithdrawalDocumentsPanel"
 import { dateLabel } from "../../lib/commitmentsDisplay"
 import { useAccess } from "../../lib/access"
 import { useWithdrawalActionMutation, useWithdrawalAudit, useWithdrawalBreakdown, useWithdrawalDetail, useWithdrawalOptions, useWithdrawalPayments } from "../../lib/withdrawalsHooks"
@@ -170,7 +170,7 @@ export default function OLWithdrawalDetail() {
       {activeTab === "overview" && <OverviewTab detail={detail} breakdown={breakdown} audit={audit} />}
       {activeTab === "breakdown" && (breakdownQuery.isLoading ? <div className="surface-card p-5" role="status">Loading withdrawal breakdown…</div> : breakdownQuery.error ? <ErrorCoach title="Breakdown could not be loaded" message={breakdownQuery.error.message} resolutionSteps={["Retry the breakdown request.", "Confirm that the withdrawal calculation is available."]} /> : breakdown ? <BreakdownSection breakdown={breakdown} currency={detail.currency} /> : <div className="surface-card p-5 text-sm text-[var(--muted-foreground)]">No financial breakdown has been returned for this withdrawal.</div>)}
       {activeTab === "payments" && <section className="surface-card p-5"><h2 className="text-base font-extrabold">Payout Payments</h2><p className="mt-1 text-sm text-[var(--muted-foreground)]">Payments are read-only and linked to the withdrawal requisition.</p><div className="mt-4"><PaymentsTable payments={payments} /></div></section>}
-      {activeTab === "documents" && <DocumentInstancesPanel sourceType="ol_policies.withdrawalrequest" objectId={detail.id} documentType="OL_WITHDRAWAL_STATEMENT" title="Withdrawal documents" description="Generated statements retain the withdrawal source transaction and approved template version." renderLabel="Generate statement" />}
+      {activeTab === "documents" && <WithdrawalDocumentsPanel withdrawal={detail} canPrint={can("ol_withdrawals.print")} />}
       {activeTab === "audit" && <section className="surface-card p-5"><h2 className="text-base font-extrabold">Audit History</h2><p className="mt-1 text-sm text-[var(--muted-foreground)]">Every status and calculation event is displayed with its actor and source channel.</p><div className="mt-4"><Timeline entries={audit} /></div></section>}
     </MasterDetailPage>
     <ActionDialog action={action} detail={detail} open={actionDialogOpen} permitted={action ? can(actionPermission(action)) : false} onClose={() => { setAction(null); setSearchParams((current) => { current.delete("action"); return current }) }} />

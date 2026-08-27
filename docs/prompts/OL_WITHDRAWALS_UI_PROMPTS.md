@@ -284,7 +284,7 @@ GIT:
 
 FINAL OUTPUT: portal behavior, commit hash, pushed branch.
 
-## [ ] Prompt 9 — Documents & Printouts UI
+## [x] Prompt 9 — Documents & Printouts UI
 
 You are a senior frontend engineer. Continue the ZIC Withdrawals UI. Execute ONLY Prompt 9.
 

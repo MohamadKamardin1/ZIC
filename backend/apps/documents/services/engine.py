@@ -30,6 +30,7 @@ from apps.system_parameters.services.config_service import ConfigurationService
 
 from ..models import DocumentInstance, DocumentTemplate
 from .policy_documents import policy_contract_context, policy_schedule_context
+from .withdrawal_documents import withdrawal_statement_context
 
 logger = logging.getLogger(__name__)
 
@@ -907,6 +908,28 @@ DocumentTypeRegistry.register(
             "parties": "object",
             "schedule": "array",
             "schedule_summary": "object",
+            "signatures": "array",
+            "branding": "object",
+        },
+    )
+)
+
+
+DocumentTypeRegistry.register(
+    DocumentTypeDefinition(
+        document_type="OL_WITHDRAWAL_STATEMENT",
+        source_app_label="ol_policies",
+        source_model="withdrawalrequest",
+        template_code="OL_WITHDRAWAL_STATEMENT_UNIFIED",
+        layout_template_path="documents/ol_withdrawal_statement.html",
+        permission="ol_withdrawals.print",
+        context_builder=withdrawal_statement_context,
+        title="Withdrawal Statement",
+        variables_schema={
+            "withdrawal": "object",
+            "policy": "object",
+            "parties": "object",
+            "financial": "object",
             "signatures": "array",
             "branding": "object",
         },
