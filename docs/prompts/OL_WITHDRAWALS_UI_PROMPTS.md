@@ -36,7 +36,7 @@ GIT:
 
 FINAL OUTPUT: hooks, primitives, tests, commit hash, pushed branch.
 
-## [ ] Prompt 2 — Withdrawals List Page & Dashboard KPIs
+## [x] Prompt 2 — Withdrawals List Page & Dashboard KPIs
 
 You are a senior frontend engineer. Continue the ZIC Withdrawals UI. Execute ONLY Prompt 2 from the saved series file.
 
