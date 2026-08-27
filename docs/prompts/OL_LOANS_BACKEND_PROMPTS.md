@@ -459,7 +459,7 @@ FINAL OUTPUT: templates, print endpoints, audit utility, tests, commit hash, pus
 
 ---
 
-## [ ] Prompt 11/12 — Integrations: Policy Servicing, Claims, Portal, Notifications
+## [x] Prompt 11/12 — Integrations: Policy Servicing, Claims, Portal, Notifications
 
 ```text
 You are a senior Django integration engineer. Continue the ZIC OL Loans backend. Execute ONLY Prompt 11.
