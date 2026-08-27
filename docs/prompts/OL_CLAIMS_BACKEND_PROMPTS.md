@@ -342,7 +342,7 @@ GIT:
 
 FINAL OUTPUT: settlement endpoint, policy updates, tests, commit hash, pushed branch.
 
-## [ ] Prompt 10 — List, Detail, KPI & Export APIs
+## [x] Prompt 10 — List, Detail, KPI & Export APIs
 You are a senior Django API engineer. Continue the ZIC OL Claims backend. Execute ONLY Prompt 10.
 
 MANDATORY RULES:

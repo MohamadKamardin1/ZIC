@@ -1,4 +1,7 @@
+from django.db.models import Q
 from rest_framework import serializers
+
+from apps.governance.models import AuditLog
 
 from .models import (
     OLClaim,
@@ -9,6 +12,8 @@ from .models import (
     OLClaimRequisition,
     OLClaimant,
 )
+from .permissions import has_ol_claim_permission
+from .services.loan_offset import calculate_net_payout
 
 
 def _partner_name(partner):
@@ -184,7 +189,12 @@ class OLClaimListSerializer(serializers.ModelSerializer):
         return sum((item.approved_amount or item.calculated_amount for item in obj.items.all()), 0)
 
     def get_allowed_actions(self, obj):
-        return _allowed_actions(obj.status)
+        actions = _allowed_actions(obj.status)
+        request = self.context.get("request")
+        user = getattr(request, "user", None) if request else None
+        if user and not getattr(user, "is_superuser", False):
+            actions = [action for action in actions if has_ol_claim_permission(user, action)]
+        return actions
 
 
 class OLClaimDetailSerializer(OLClaimListSerializer):
@@ -200,6 +210,8 @@ class OLClaimDetailSerializer(OLClaimListSerializer):
     medical_status_display = serializers.CharField(source="get_medical_status_display", read_only=True)
     medical_reviewed_by_display = serializers.SerializerMethodField()
     policy_context = serializers.SerializerMethodField()
+    financial_summary = serializers.SerializerMethodField()
+    audit_timeline = serializers.SerializerMethodField()
 
     class Meta(OLClaimListSerializer.Meta):
         fields = OLClaimListSerializer.Meta.fields + (
@@ -234,6 +246,8 @@ class OLClaimDetailSerializer(OLClaimListSerializer):
             "requisition",
             "loan_offset",
             "policy_context",
+            "financial_summary",
+            "audit_timeline",
             "created_at",
             "updated_at",
         )
@@ -253,6 +267,40 @@ class OLClaimDetailSerializer(OLClaimListSerializer):
     def get_medical_reviewed_by_display(self, obj):
         user = obj.medical_reviewed_by
         return user.get_full_name() or user.email if user else "System"
+
+    def get_financial_summary(self, obj):
+        summary = calculate_net_payout(obj.pk)
+        return {
+            "gross_amount": str(summary["gross_amount"]),
+            "active_loan_balance": str(summary["loan_offset"]),
+            "planned_loan_offset": str(summary["loan_offset"]),
+            "applied_loan_offset": str(summary["loan_offset"] if summary["loan_offset_applied"] else 0),
+            "net_payout": str(summary["net_payout"]),
+            "currency": obj.policy_ref.currency,
+            "loan_breakdown": summary.get("loan_breakdown", []),
+        }
+
+    def get_audit_timeline(self, obj):
+        logs = AuditLog.objects.filter(
+            app_label="ol_claims",
+        ).filter(
+            Q(object_id=str(obj.pk))
+            | Q(entity_id=obj.pk)
+            | Q(entity_repr__startswith=f"{obj.claim_number} —")
+        ).select_related("user").order_by("timestamp", "created_at")
+        return [
+            {
+                "action": log.action or log.action_type,
+                "action_display": log.get_action_type_display() if hasattr(log, "get_action_type_display") else log.action_type,
+                "timestamp": log.timestamp,
+                "actor_display": (log.user.get_full_name() or log.user.email) if log.user else "System",
+                "reason": log.reason or log.description,
+                "source_channel": log.source_channel,
+                "before_state": log.before_state or {},
+                "after_state": log.after_state or {},
+            }
+            for log in logs
+        ]
 
     def get_policy_context(self, obj):
         policy = obj.policy_ref

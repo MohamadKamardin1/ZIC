@@ -1109,3 +1109,86 @@ class OLClaimFoundationTestCase(APITestCase):
         )
         self.assertEqual(response.status_code, 400, response.data)
         self.assertEqual(response.data["error_code"], "CLAIM_SETTLEMENT_PAYMENT_REFERENCE_REQUIRED")
+
+    def test_claim_list_columns_filters_search_and_display_fields(self):
+        claim = self.make_claim()
+        claim.fraud_flag = True
+        claim.save(update_fields=["fraud_flag", "updated_at"])
+        other = self.make_claim()
+        response = self.client.get("/api/v1/ol/claims/?q=" + claim.claim_number + "&fraud_flag=true&page_size=10")
+        self.assertEqual(response.status_code, 200, response.data)
+        payload = response.data["data"]
+        self.assertEqual(payload["count"], 1)
+        row = payload["results"][0]
+        self.assertEqual(row["claim_number"], claim.claim_number)
+        self.assertEqual(row["policy_number"], self.policy.policy_number)
+        self.assertEqual(row["policyholder_name"], "Asha Mwinyi")
+        self.assertEqual(row["product_display"], "OL_TERM_STANDARD")
+        self.assertIn("status_display", row)
+        self.assertIn("allowed_actions", row)
+        self.assertNotIn(str(self.policy.pk), row["policy_number"])
+        self.assertNotEqual(row["claim_number"], other.claim_number)
+
+    def test_claim_kpis_aggregate_real_time_amounts_and_filters(self):
+        outstanding_one = self.make_claim()
+        outstanding_two = self.make_claim()
+        settled = self.make_claim()
+        settled.status = ClaimStatus.SETTLED
+        settled.settlement_amount = Decimal("5000000.00")
+        settled.settled_date = date.today()
+        settled.save(update_fields=["status", "settlement_amount", "settled_date", "updated_at"])
+        pending = self.make_claim()
+        pending.status = ClaimStatus.ASSESSMENT
+        pending.save(update_fields=["status", "updated_at"])
+
+        response = self.client.get("/api/v1/ol/claims/kpis/")
+        self.assertEqual(response.status_code, 200, response.data)
+        data = response.data["data"]
+        self.assertEqual(data["total_claims"], 4)
+        self.assertEqual(data["outstanding_amount"], "75000000.00")
+        self.assertEqual(data["settled_amount_period"], "5000000.00")
+        self.assertEqual(data["pending_assessment_count"], 3)
+        self.assertEqual(data["currency"], "TZS")
+        self.assertTrue(data["timestamp"])
+
+        settled_response = self.client.get("/api/v1/ol/claims/kpis/?status=SETTLED")
+        self.assertEqual(settled_response.status_code, 200, settled_response.data)
+        settled_data = settled_response.data["data"]
+        self.assertEqual(settled_data["total_claims"], 1)
+        self.assertEqual(settled_data["outstanding_amount"], "0.00")
+        self.assertEqual(settled_data["settled_amount_period"], "5000000.00")
+        self.assertEqual(outstanding_one.status, ClaimStatus.REGISTERED)
+        self.assertEqual(outstanding_two.status, ClaimStatus.REGISTERED)
+
+    def test_claim_detail_includes_financials_audit_timeline_and_allowed_actions(self):
+        claim = self.make_claim()
+        add_file_note(claim.pk, note_text="Detail timeline note.", actor=self.user)
+        response = self.client.get(f"/api/v1/ol/claims/{claim.pk}/")
+        self.assertEqual(response.status_code, 200, response.data)
+        data = response.data["data"]
+        self.assertEqual(data["claim_number"], claim.claim_number)
+        self.assertIn("claimant", data)
+        self.assertIn("items", data)
+        self.assertIn("documents", data)
+        self.assertIn("file_notes", data)
+        self.assertIn("financial_summary", data)
+        self.assertIn("audit_timeline", data)
+        self.assertEqual(data["financial_summary"]["currency"], "TZS")
+        self.assertEqual(data["allowed_actions"], ["view", "assess", "cancel", "print"])
+        self.assertTrue(any(item["after_state"].get("note_text") == "Detail timeline note." for item in data["audit_timeline"]))
+
+    def test_claim_csv_export_respects_filters_and_uses_readable_columns(self):
+        included = self.make_claim()
+        included.fraud_flag = True
+        included.save(update_fields=["fraud_flag", "updated_at"])
+        excluded = self.make_claim()
+        excluded.fraud_flag = False
+        excluded.save(update_fields=["fraud_flag", "updated_at"])
+        response = self.client.get("/api/v1/ol/claims/export/?fraud_flag=true")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/csv", response["Content-Type"])
+        body = response.content.decode("utf-8")
+        self.assertIn("Claim Number,Policy Number,Policyholder Name", body)
+        self.assertIn(included.claim_number, body)
+        self.assertNotIn(excluded.claim_number, body)
+        self.assertNotIn(str(self.policy.pk), body)

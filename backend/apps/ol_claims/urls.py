@@ -13,7 +13,7 @@ from .options import (
     ClaimTypeOptionsView,
 )
 from .registration_views import ClaimRegistrationView
-from .views import ClaimDetailView, ClaimListView
+from .views import ClaimDetailView, ClaimExportView, ClaimKpisView, ClaimListView
 
 
 app_name = "ol_claims"
@@ -34,6 +34,8 @@ urlpatterns = [
     path("claims/options/reasons/", ClaimReasonOptionsView.as_view(), name="claim-options-reasons"),
     path("claims/options/benefits/", ClaimBenefitOptionsView.as_view(), name="claim-options-benefits"),
     path("claims/options/members/", ClaimMemberOptionsView.as_view(), name="claim-options-members"),
+    path("claims/kpis/", ClaimKpisView.as_view(), name="claim-kpis"),
+    path("claims/export/", ClaimExportView.as_view(), name="claim-export"),
     path("claims/", ClaimListView.as_view(), name="claim-list"),
     path("claims/<uuid:claim_id>/", ClaimDetailView.as_view(), name="claim-detail"),
 ]
