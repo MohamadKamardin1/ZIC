@@ -229,7 +229,7 @@ FINAL OUTPUT: modal behavior, validation logic, tests, commit hash, pushed branc
 
 ---
 
-## [ ] Prompt 7/10 — Repay, Disburse & Offset Action Modals
+## [x] Prompt 7/10 — Repay, Disburse & Offset Action Modals
 
 ```text
 You are a senior frontend engineer. Continue the ZIC Loans UI. Execute ONLY Prompt 7.
