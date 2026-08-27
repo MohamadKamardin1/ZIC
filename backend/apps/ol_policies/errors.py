@@ -45,6 +45,77 @@ POLICY_ERROR_REGISTRY = {
             "Confirm that the policy is in an eligible in-force status and has sufficient cash value.",
         ],
     },
+    "WITHDRAWAL_NOT_FOUND": {
+        "message": "The requested withdrawal could not be found.",
+        "status_code": 404,
+        "resolution_steps": [
+            "Return to the Withdrawals register and select an available request.",
+            "If the request was recently migrated, ask Policy Administration to verify its reference.",
+        ],
+    },
+    "WITHDRAWAL_LIMIT_EXCEEDED": {
+        "message": "The requested withdrawal exceeds the available cash-value limit.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Reduce the amount to the Available Limit shown for the policy.",
+            "Review active loan balances and earlier withdrawal requests before retrying.",
+        ],
+    },
+    "WITHDRAWAL_POLICY_INELIGIBLE": {
+        "message": "This policy is not eligible for a withdrawal under its current status or product configuration.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Select an Active or Paid-up policy with withdrawals enabled.",
+            "Ask Policy Administration to review the product and policy parameters if eligibility looks incorrect.",
+        ],
+    },
+    "WITHDRAWAL_AMOUNT_REQUIRED": {
+        "message": "Enter a withdrawal amount greater than zero.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Enter a positive amount in the policy currency.",
+            "Keep the amount at or below the Available Limit.",
+        ],
+    },
+    "WITHDRAWAL_REASON_REQUIRED": {
+        "message": "Explain why the withdrawal is being requested or changed.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Enter a clear business reason before submitting this request.",
+        ],
+    },
+    "WITHDRAWAL_ACTION_INVALID": {
+        "message": "This withdrawal action is not allowed in its current status.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Refresh the withdrawal and review the current status.",
+            "Choose one of the actions shown in the server-provided action list.",
+        ],
+    },
+    "WITHDRAWAL_PAYMENT_REQUIRED": {
+        "message": "Payment mode and receipt reference are required before completing the payout.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Select a configured payment mode.",
+            "Enter the official receipt or transaction reference and retry.",
+        ],
+    },
+    "WITHDRAWAL_INVALID_PAGINATION": {
+        "message": "The withdrawals list pagination values are invalid.",
+        "status_code": 400,
+        "resolution_steps": [
+            "Use positive whole numbers for page and page_size.",
+            "Retry with page_size no greater than 100.",
+        ],
+    },
+    "WITHDRAWAL_OPTIONS_ENTITY_NOT_FOUND": {
+        "message": "This withdrawal option catalog is not registered.",
+        "status_code": 404,
+        "resolution_steps": [
+            "Choose a registered withdrawal option catalog.",
+            "Ask an administrator to configure the required withdrawal parameters.",
+        ],
+    },
     "POLICY_LAPSED": {
         "message": "The policy is lapsed and cannot complete this action without reinstatement.",
         "status_code": 422,

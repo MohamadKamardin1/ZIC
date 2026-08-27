@@ -1,9 +1,10 @@
 from datetime import date
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from uuid import uuid4
 
 from django.db import transaction
 from django.db.models import Q
+from django.utils import timezone
 
 from apps.front_office.models import FORequisition
 from apps.governance.services.audit_service import AuditService
@@ -26,6 +27,7 @@ from ..models import (
     PolicyLoan,
     PolicyLoanRepayment,
     PolicyStatus,
+    WithdrawalPayment,
     WithdrawalRequest,
     WithdrawalStatus,
 )
@@ -334,10 +336,10 @@ def request_policy_withdrawal(policy_id, *, amount, reason="", as_of=None, actor
 
         raise not_found(policy_id)
     if policy.status not in {PolicyStatus.ACTIVE, PolicyStatus.PAID_UP}:
-        raise registry_error("POLICY_LOAN_BLOCKED", message=f"A {policy.get_status_display()} policy cannot request a withdrawal.")
+        raise registry_error("WITHDRAWAL_POLICY_INELIGIBLE", message=f"A {policy.get_status_display()} policy cannot request a withdrawal.")
     snapshot = dict(policy.contract_snapshot or {})
     if snapshot.get("allow_withdrawals") is False:
-        raise registry_error("POLICY_LOAN_BLOCKED", message="Withdrawals are not enabled for this policy product.")
+        raise registry_error("WITHDRAWAL_POLICY_INELIGIBLE", message="Withdrawals are not enabled for this policy product.")
     amount = _decimal(amount)
     cash_value = _cash_value(policy)
     loan_balance = _loan_balance(policy)
@@ -345,9 +347,9 @@ def request_policy_withdrawal(policy_id, *, amount, reason="", as_of=None, actor
     available = max(Decimal("0.00"), cash_value - loan_balance - previous)
     if amount <= 0 or amount > available:
         raise registry_error(
-            "POLICY_LOAN_BLOCKED",
+            "WITHDRAWAL_LIMIT_EXCEEDED",
             message="The requested withdrawal exceeds the available cash value after loan balances and prior withdrawals.",
-            details={"cash_value": str(cash_value), "loan_balance": str(loan_balance), "prior_withdrawals": str(previous), "available": str(available), "requested_amount": str(amount)},
+            details={"cash_value": str(cash_value), "loan_balance": str(loan_balance), "prior_withdrawals": str(previous), "available": str(available), "available_limit": str(available), "requested_amount": str(amount)},
             field_errors={"amount": [f"Enter an amount no greater than {available}. "]},
         )
     requires_approval = bool(snapshot.get("withdrawal_requires_approval", False))
@@ -381,4 +383,194 @@ def request_policy_withdrawal(policy_id, *, amount, reason="", as_of=None, actor
         event_type_code=POLICY_WITHDRAWAL_REQUESTED,
         metadata={"withdrawal_number": withdrawal.request_number, "amount": str(amount), "requisition_number": requisition.requisition_number},
     )
+    return withdrawal
+
+
+def _withdrawal_finance_context(policy, as_of):
+    snapshot = policy.contract_snapshot if isinstance(policy.contract_snapshot, dict) else {}
+    cash_value = _cash_value(policy)
+    loan_balance = _loan_balance(policy)
+    previous = _decimal(snapshot.get("withdrawals_total"))
+    available = max(Decimal("0.00"), cash_value - loan_balance - previous)
+    configured_rate = snapshot.get("withdrawal_fee_rate", snapshot.get("withdrawal_fee_percent", "0"))
+    fee_rate = _decimal(configured_rate)
+    fee_basis = str(snapshot.get("withdrawal_fee_basis", "NONE") or "NONE").upper()
+    if fee_rate > 0 and fee_basis == "NONE":
+        fee_basis = "PERCENTAGE"
+    return {
+        "as_of": as_of,
+        "cash_value": cash_value,
+        "loan_balance": loan_balance,
+        "prior_withdrawals": previous,
+        "available": available,
+        "fee_rate": fee_rate,
+        "fee_basis": fee_basis,
+    }
+
+
+def _withdrawal_fee(amount, context):
+    basis = context["fee_basis"]
+    rate = context["fee_rate"]
+    if basis in {"PERCENTAGE", "PERCENT", "RATE"}:
+        return (amount * rate / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if basis in {"FIXED", "FIXED_AMOUNT"}:
+        return min(amount, rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return Decimal("0.00")
+
+
+def withdrawal_eligibility(policy_id, *, as_of=None):
+    as_of = _date(as_of)
+    policy = Policy.objects.select_related("partner", "agent").filter(pk=policy_id).first()
+    if policy is None:
+        from ..errors import not_found
+
+        raise not_found(policy_id)
+    context = _withdrawal_finance_context(policy, as_of)
+    eligible = policy.status in {PolicyStatus.ACTIVE, PolicyStatus.PAID_UP} and (policy.contract_snapshot or {}).get("allow_withdrawals") is not False
+    return policy, context, eligible
+
+
+def estimate_policy_withdrawal(policy_id, *, amount, as_of=None):
+    policy, context, eligible = withdrawal_eligibility(policy_id, as_of=as_of)
+    amount = _decimal(amount, Decimal("-1"))
+    if amount <= 0:
+        raise registry_error("WITHDRAWAL_AMOUNT_REQUIRED", field_errors={"amount": ["Enter an amount greater than zero."]})
+    if not eligible:
+        raise registry_error("WITHDRAWAL_POLICY_INELIGIBLE")
+    if amount > context["available"]:
+        raise registry_error(
+            "WITHDRAWAL_LIMIT_EXCEEDED",
+            details={"available_limit": str(context["available"]), "requested_amount": str(amount)},
+            field_errors={"amount": [f"Enter an amount no greater than {context['available']:.2f} {policy.currency}."]},
+        )
+    fee = _withdrawal_fee(amount, context)
+    return policy, context, {"requested_amount": amount, "fee": fee, "net": amount - fee}
+
+
+@transaction.atomic
+def request_staff_withdrawal(policy_id, *, amount, reason="", as_of=None, actor=None, request=None, source_channel="WEB", idempotency_key=""):
+    as_of = _date(as_of)
+    policy = Policy.objects.select_for_update().select_related("partner", "agent").filter(pk=policy_id).first()
+    if policy is None:
+        from ..errors import not_found
+
+        raise not_found(policy_id)
+    reason = (reason or "").strip()
+    if not reason:
+        raise registry_error("WITHDRAWAL_REASON_REQUIRED", field_errors={"reason": ["Explain why the withdrawal is being requested."]})
+    if idempotency_key:
+        existing = WithdrawalRequest.objects.filter(policy=policy, idempotency_key=idempotency_key).first()
+        if existing:
+            return existing
+    context = _withdrawal_finance_context(policy, as_of)
+    amount = _decimal(amount, Decimal("-1"))
+    if amount <= 0:
+        raise registry_error("WITHDRAWAL_AMOUNT_REQUIRED", field_errors={"amount": ["Enter an amount greater than zero."]})
+    if policy.status not in {PolicyStatus.ACTIVE, PolicyStatus.PAID_UP} or (policy.contract_snapshot or {}).get("allow_withdrawals") is False:
+        raise registry_error("WITHDRAWAL_POLICY_INELIGIBLE")
+    if amount > context["available"]:
+        raise registry_error(
+            "WITHDRAWAL_LIMIT_EXCEEDED",
+            details={"cash_value": str(context["cash_value"]), "loan_balance": str(context["loan_balance"]), "prior_withdrawals": str(context["prior_withdrawals"]), "available": str(context["available"]), "available_limit": str(context["available"]), "requested_amount": str(amount)},
+            field_errors={"amount": [f"Enter an amount no greater than {context['available']:.2f} {policy.currency}."]},
+        )
+    fee = _withdrawal_fee(amount, context)
+    before = _policy_snapshot(policy)
+    requires_approval = bool((policy.contract_snapshot or {}).get("withdrawal_requires_approval", True))
+    status = WithdrawalStatus.REQUESTED if requires_approval else WithdrawalStatus.APPROVED
+    now = timezone.now()
+    requisition = _create_requisition(policy, amount - fee, f"Policy withdrawal {policy.policy_number}.", prefix="WITH")
+    withdrawal = WithdrawalRequest.objects.create(
+        policy=policy,
+        request_date=as_of,
+        amount=amount,
+        cash_value_before=context["cash_value"],
+        loan_balance_before=context["loan_balance"],
+        cash_value_after=context["cash_value"] - amount,
+        fee_amount=fee,
+        fee_rate=context["fee_rate"],
+        fee_basis=context["fee_basis"],
+        net_amount=amount - fee,
+        status=status,
+        approved_at=now if status == WithdrawalStatus.APPROVED else None,
+        payment_requisition=requisition,
+        reason=reason,
+        approval_reason="Automatically approved by policy configuration." if status == WithdrawalStatus.APPROVED else "",
+        idempotency_key=idempotency_key or "",
+        created_by=actor,
+        updated_by=actor,
+    )
+    snapshot = dict(policy.contract_snapshot or {})
+    snapshot["withdrawals_total"] = str(context["prior_withdrawals"] + amount)
+    policy.contract_snapshot = snapshot
+    policy.updated_by = actor
+    policy.save(update_fields=["contract_snapshot", "updated_by", "updated_at"])
+    _audit_event(policy, "PolicyWithdrawalRequested", before, reason, actor=actor, request=request, source_channel=source_channel, event_type_code=POLICY_WITHDRAWAL_REQUESTED, metadata={"withdrawal_number": withdrawal.request_number, "amount": str(amount), "fee_amount": str(fee), "net_amount": str(amount - fee), "requisition_number": requisition.requisition_number})
+    return withdrawal
+
+
+def _restore_withdrawal_amount(policy, amount, actor=None):
+    snapshot = dict(policy.contract_snapshot or {})
+    previous = _decimal(snapshot.get("withdrawals_total"))
+    snapshot["withdrawals_total"] = str(max(Decimal("0.00"), previous - amount))
+    policy.contract_snapshot = snapshot
+    policy.updated_by = actor
+    policy.save(update_fields=["contract_snapshot", "updated_by", "updated_at"])
+
+
+@transaction.atomic
+def transition_policy_withdrawal(withdrawal_id, *, action, reason="", payment_mode="", receipt_reference="", actor=None, request=None, source_channel="WEB"):
+    withdrawal = WithdrawalRequest.objects.select_for_update().select_related("policy", "policy__partner", "policy__agent").filter(pk=withdrawal_id).first()
+    if withdrawal is None:
+        raise registry_error("WITHDRAWAL_NOT_FOUND")
+    action = (action or "").lower().replace("-", "_")
+    reason = (reason or "").strip()
+    if action in {"approve", "reject", "cancel", "reverse"} and not reason:
+        raise registry_error("WITHDRAWAL_REASON_REQUIRED", field_errors={"reason": ["Enter a clear reason before confirming this action."]})
+    allowed = {
+        "approve": {WithdrawalStatus.REQUESTED},
+        "reject": {WithdrawalStatus.REQUESTED},
+        "process_payout": {WithdrawalStatus.APPROVED},
+        "cancel": {WithdrawalStatus.REQUESTED, WithdrawalStatus.APPROVED},
+        "reverse": {WithdrawalStatus.PAID},
+        "offset": {WithdrawalStatus.APPROVED, WithdrawalStatus.PROCESSING, WithdrawalStatus.PAID},
+    }
+    if action not in allowed or withdrawal.status not in allowed[action]:
+        raise registry_error("WITHDRAWAL_ACTION_INVALID", details={"action": action, "current_status": withdrawal.status})
+    policy = withdrawal.policy
+    before = _policy_snapshot(policy)
+    now = timezone.now()
+    if action == "approve":
+        withdrawal.status = WithdrawalStatus.APPROVED
+        withdrawal.approved_at = now
+        withdrawal.approval_reason = reason
+    elif action == "reject":
+        withdrawal.status = WithdrawalStatus.DECLINED
+        withdrawal.cancellation_reason = reason
+        _restore_withdrawal_amount(policy, withdrawal.amount, actor)
+    elif action == "cancel":
+        withdrawal.status = WithdrawalStatus.CANCELLED
+        withdrawal.cancelled_at = now
+        withdrawal.cancellation_reason = reason
+        _restore_withdrawal_amount(policy, withdrawal.amount, actor)
+    elif action == "reverse":
+        withdrawal.status = WithdrawalStatus.REVERSED
+        withdrawal.reversed_at = now
+        withdrawal.reversal_reason = reason
+        _restore_withdrawal_amount(policy, withdrawal.amount, actor)
+        withdrawal.cash_value_after = withdrawal.cash_value_before
+    elif action == "process_payout":
+        if not str(payment_mode or "").strip() or not str(receipt_reference or "").strip():
+            raise registry_error("WITHDRAWAL_PAYMENT_REQUIRED", field_errors={"payment_mode": ["Select a payment mode."], "receipt_reference": ["Enter the official receipt or transaction reference."]})
+        withdrawal.status = WithdrawalStatus.PAID
+        withdrawal.processed_at = now
+        withdrawal.paid_at = now
+        withdrawal.payment_mode = str(payment_mode).strip()
+        withdrawal.receipt_reference = str(receipt_reference).strip()
+        WithdrawalPayment.objects.create(withdrawal=withdrawal, payment_mode=withdrawal.payment_mode, receipt_reference=withdrawal.receipt_reference, amount=withdrawal.net_amount, currency=policy.currency, payment_date=now, status="COMPLETED", created_by=actor, updated_by=actor)
+    elif action == "offset":
+        reason = reason or "Withdrawal offset recorded during reconciliation."
+    withdrawal.updated_by = actor
+    withdrawal.save()
+    _audit_event(policy, f"PolicyWithdrawal{action.title().replace('_', '')}", before, reason or f"Withdrawal {action} completed.", actor=actor, request=request, source_channel=source_channel, metadata={"withdrawal_number": withdrawal.request_number, "action": action, "payment_mode": payment_mode, "receipt_reference": receipt_reference})
     return withdrawal

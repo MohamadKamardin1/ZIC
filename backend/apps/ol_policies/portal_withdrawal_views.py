@@ -6,10 +6,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .errors import not_found
+from .errors import registry_error
 from .models import Policy, PolicyStatus, WithdrawalRequest
 from .serializers import WithdrawalRequestSerializer
-from .services.finance_service import request_policy_withdrawal
+from .services.finance_service import request_policy_withdrawal, withdrawal_eligibility
 
 
 def _partner_display(partner):
@@ -33,6 +33,11 @@ def _partner_display(partner):
 def _portal_payload(withdrawal, *, include_sensitive=False):
     policy = withdrawal.policy
     fee_amount = Decimal(withdrawal.amount) - Decimal(withdrawal.net_amount)
+    try:
+        _, eligibility_context, request_allowed = withdrawal_eligibility(policy.pk)
+        request_allowed = bool(request_allowed and eligibility_context["available"] > 0)
+    except Exception:
+        request_allowed = False
     payload = {
         "id": str(withdrawal.pk),
         "request_number": withdrawal.request_number,
@@ -47,7 +52,7 @@ def _portal_payload(withdrawal, *, include_sensitive=False):
         "status_display": withdrawal.get_status_display(),
         "requested_at": withdrawal.request_date,
         "reason": withdrawal.reason,
-        "request_allowed": policy.status in {PolicyStatus.ACTIVE, PolicyStatus.PAID_UP},
+        "request_allowed": request_allowed,
     }
     if include_sensitive:
         payload.update(
@@ -87,8 +92,15 @@ class PartnerPortalWithdrawalListView(APIView):
             )
         if status:
             queryset = queryset.filter(status=status)
-        paginator = Paginator(queryset, max(1, min(int(request.query_params.get("page_size", 20) or 20), 100)))
-        page = paginator.get_page(request.query_params.get("page", 1))
+        try:
+            page_size = int(request.query_params.get("page_size", 20) or 20)
+            page_number = int(request.query_params.get("page", 1) or 1)
+        except (TypeError, ValueError):
+            raise registry_error("WITHDRAWAL_INVALID_PAGINATION", field_errors={"page": ["Page and page_size must be positive whole numbers."]}) from None
+        if page_size < 1 or page_number < 1:
+            raise registry_error("WITHDRAWAL_INVALID_PAGINATION", field_errors={"page": ["Page and page_size must be positive whole numbers."]})
+        paginator = Paginator(queryset, min(page_size, 100))
+        page = paginator.get_page(page_number)
         return Response(
             {
                 "data": {
@@ -106,9 +118,10 @@ class PartnerPortalWithdrawalListView(APIView):
         policy_id = request.data.get("policy_id")
         policy = _visible_policy(request, policy_id)
         if policy is None:
-            raise not_found(policy_id)
-        if policy.status not in {PolicyStatus.ACTIVE, PolicyStatus.PAID_UP}:
-            return Response({"error": {"code": "WITHDRAWAL_POLICY_INELIGIBLE", "message": "Policy is not eligible for withdrawals.", "resolution_steps": ["Choose an Active or Paid-up policy.", "Contact ZIC Finance if the policy status needs review."]}}, status=400)
+            raise registry_error("POLICY_NOT_FOUND")
+        _, eligibility_context, eligible = withdrawal_eligibility(policy.pk, as_of=request.data.get("as_of"))
+        if not eligible or eligibility_context["available"] <= 0:
+            return Response({"error": {"code": "WITHDRAWAL_POLICY_INELIGIBLE", "message": "Policy is not eligible for withdrawals under its current status, product configuration, or available cash value.", "resolution_steps": ["Choose an Active or Paid-up policy with withdrawals enabled.", "Review the Available Limit and active loan balance before retrying."]}}, status=422)
         try:
             amount = Decimal(str(request.data.get("amount")))
         except (InvalidOperation, TypeError):
@@ -125,5 +138,5 @@ class PartnerPortalWithdrawalDetailView(APIView):
     def get(self, request, withdrawal_id):
         withdrawal = WithdrawalRequest.objects.filter(pk=withdrawal_id, policy__partner__in=request.user.visible_partners()).select_related("policy", "policy__partner").first()
         if withdrawal is None:
-            raise not_found(withdrawal_id)
+            raise registry_error("WITHDRAWAL_NOT_FOUND")
         return Response({"data": _portal_payload(withdrawal, include_sensitive=_include_sensitive(request))})

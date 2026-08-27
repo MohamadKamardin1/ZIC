@@ -146,8 +146,8 @@ export default function OLWithdrawalDetail() {
     return Boolean(hasPermission?.(permission) || keys.includes(permission.toLowerCase()))
   }
 
-  if (detailQuery.isLoading || !detail) return <div className="p-5" role="status">Loading withdrawal detail…</div>
   if (detailQuery.error) return <div className="space-y-4 p-5"><ErrorCoach title="Withdrawal detail could not be loaded" message={detailQuery.error.message} resolutionSteps={["Return to the Withdrawals register and select an available request.", "Confirm the backend is running and your session has ol_withdrawals.view."]} /><button type="button" className="button-secondary inline-flex items-center gap-2" onClick={() => navigate("/ordinary-life/withdrawals")}><ArrowLeft size={16} aria-hidden="true" />Back to Withdrawals</button></div>
+  if (detailQuery.isLoading || !detail) return <div className="p-5" role="status">Loading withdrawal detail…</div>
 
   const status = String(detail.status).toUpperCase()
   const backendActions = new Set(detail.allowedActions.map((item) => item.toLowerCase().replace(/-/g, "_")))

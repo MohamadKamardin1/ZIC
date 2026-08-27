@@ -3,7 +3,7 @@
 {% block document_content %}
   {% if status_watermark %}<div class="draft-watermark">{{ status_watermark }}</div>{% endif %}
   <section class="meta-grid">
-    <div class="meta-cell"><span class="meta-label">Withdrawal number</span><span class="meta-value">{{ withdrawal.number }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Withdrawal number</span><span class="meta-value nowrap">{{ withdrawal.number }}</span></div>
     <div class="meta-cell"><span class="meta-label">Request date</span><span class="meta-value">{{ withdrawal.date|date:'Y-m-d'|default:'-' }}</span></div>
     <div class="meta-cell"><span class="meta-label">Policy number</span><span class="meta-value">{{ policy.number }}</span></div>
     <div class="meta-cell"><span class="meta-label">Status</span><span class="meta-value">{{ withdrawal.status }}</span></div>

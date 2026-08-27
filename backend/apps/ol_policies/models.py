@@ -249,7 +249,9 @@ class LoanStatus(models.TextChoices):
 class WithdrawalStatus(models.TextChoices):
     REQUESTED = "REQUESTED", "Requested"
     APPROVED = "APPROVED", "Approved"
+    PROCESSING = "PROCESSING", "Processing payout"
     PAID = "PAID", "Paid"
+    REVERSED = "REVERSED", "Reversed"
     DECLINED = "DECLINED", "Declined"
     CANCELLED = "CANCELLED", "Cancelled"
 
@@ -325,7 +327,22 @@ class WithdrawalRequest(UUIDModel, AuditedModel):
     cash_value_before = models.DecimalField(max_digits=18, decimal_places=2)
     loan_balance_before = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     net_amount = models.DecimalField(max_digits=18, decimal_places=2)
+    fee_amount = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    fee_rate = models.DecimalField(max_digits=12, decimal_places=6, default=0)
+    fee_basis = models.CharField(max_length=40, default="NONE")
+    cash_value_after = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
     status = models.CharField(max_length=25, choices=WithdrawalStatus.choices, default=WithdrawalStatus.REQUESTED)
+    approved_at = models.DateTimeField(null=True, blank=True)
+    processed_at = models.DateTimeField(null=True, blank=True)
+    paid_at = models.DateTimeField(null=True, blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    reversed_at = models.DateTimeField(null=True, blank=True)
+    payment_mode = models.CharField(max_length=50, blank=True, default="")
+    receipt_reference = models.CharField(max_length=100, blank=True, default="")
+    approval_reason = models.TextField(blank=True, default="")
+    cancellation_reason = models.TextField(blank=True, default="")
+    reversal_reason = models.TextField(blank=True, default="")
+    idempotency_key = models.CharField(max_length=120, blank=True, default="", db_index=True)
     payment_requisition = models.ForeignKey(
         "front_office.FORequisition",
         on_delete=models.SET_NULL,
@@ -348,7 +365,32 @@ class WithdrawalRequest(UUIDModel, AuditedModel):
     def save(self, *args, **kwargs):
         if not self.request_number:
             self.request_number = f"WITH-{timezone.localdate():%Y%m%d}-{uuid.uuid4().hex[:10].upper()}"
+        if self.cash_value_after is None and self.cash_value_before is not None:
+            self.cash_value_after = max(self.cash_value_before - self.amount, 0)
         super().save(*args, **kwargs)
+
+
+class WithdrawalPayment(UUIDModel, AuditedModel):
+    withdrawal = models.ForeignKey(WithdrawalRequest, on_delete=models.PROTECT, related_name="payments")
+    payment_mode = models.CharField(max_length=50)
+    receipt_reference = models.CharField(max_length=100)
+    amount = models.DecimalField(max_digits=18, decimal_places=2)
+    currency = models.CharField(max_length=3, default="TZS")
+    payment_date = models.DateTimeField(default=timezone.now)
+    status = models.CharField(max_length=25, default="COMPLETED")
+
+    class Meta:
+        db_table = "ol_policies_withdrawal_payment"
+        ordering = ["-payment_date", "-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["withdrawal", "receipt_reference"], name="ol_withdrawal_payment_receipt_uq"),
+        ]
+        indexes = [
+            models.Index(fields=["withdrawal", "status"], name="ol_withdrawal_payment_st_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.withdrawal.request_number} — {self.receipt_reference}"
 
 
 class PolicyNotificationLog(UUIDModel):

@@ -6,6 +6,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
 
+from apps.documents.models import DocumentTemplate
 from apps.ol_parameters.models import (
     OLCommissionRateType,
     OLInvestmentFund,
@@ -648,6 +649,26 @@ class Command(BaseCommand):
                     "is_active": True,
                 },
             )
+
+        DocumentTemplate.objects.update_or_create(
+            code="OL_WITHDRAWAL_STATEMENT_UNIFIED",
+            version=1,
+            defaults={
+                "name": "OL Withdrawal Statement",
+                "document_type": "OL_WITHDRAWAL_STATEMENT",
+                "layout_template_path": "documents/ol_withdrawal_statement.html",
+                "variables_schema": {
+                    "withdrawal": "object",
+                    "policy": "object",
+                    "parties": "object",
+                    "financial": "object",
+                    "signatures": "array",
+                    "branding": "object",
+                },
+                "branding_config_reference": "COMPANY_BRANDING",
+                "is_active": True,
+            },
+        )
 
         self.stdout.write(self.style.SUCCESS("Zanzibar Insurance OL demo seed completed successfully."))
         self.stdout.write("Seeded all OL parameter groups, four calculation approaches, maturity and commission setups, 3 operational products, 6 plans, rating bands, riders, and 3 investment funds.")

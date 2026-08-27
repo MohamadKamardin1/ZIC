@@ -5,12 +5,14 @@ from .errors import not_found
 from .models import Policy, PolicyLoan, WithdrawalRequest
 from .permissions import HasOLPolicyPermission
 from .serializers import PolicyLoanSerializer, WithdrawalRequestSerializer
+from .staff_withdrawal_views import HasOLWithdrawalPermission
 from .services.finance_service import (
     approve_policy_loan,
     disburse_policy_loan,
     repay_policy_loan,
     request_policy_loan,
     request_policy_withdrawal,
+    request_staff_withdrawal,
 )
 
 
@@ -87,10 +89,10 @@ class PolicyLoanRepayView(APIView):
 
 
 class PolicyWithdrawalListCreateView(APIView):
-    permission_classes = [HasOLPolicyPermission]
+    permission_classes = [HasOLWithdrawalPermission]
 
     def get_permissions(self):
-        self.action = "service" if self.request.method == "POST" else "retrieve"
+        self.action = "request" if self.request.method == "POST" else "view"
         return super().get_permissions()
 
     def get(self, request, policy_id):
@@ -100,13 +102,14 @@ class PolicyWithdrawalListCreateView(APIView):
         return Response({"data": WithdrawalRequestSerializer(withdrawals, many=True).data})
 
     def post(self, request, policy_id):
-        withdrawal = request_policy_withdrawal(
+        withdrawal = request_staff_withdrawal(
             policy_id,
             amount=request.data.get("amount"),
-            reason=request.data.get("reason", ""),
+            reason=request.data.get("reason") or "Policy withdrawal request.",
             as_of=request.data.get("as_of"),
             actor=request.user,
             request=request,
             source_channel="API",
+            idempotency_key=request.headers.get("X-Idempotency-Key", ""),
         )
         return Response({"data": WithdrawalRequestSerializer(withdrawal).data}, status=201)

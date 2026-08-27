@@ -3,9 +3,10 @@ from rest_framework.views import APIView
 
 from apps.documents.services.engine import DocumentEngine, DocumentEngineError
 
-from .errors import not_found
+from .errors import not_found, registry_error
 from .models import Policy, WithdrawalRequest
 from .permissions import HasOLPolicyPermission
+from .staff_withdrawal_views import HasOLWithdrawalPermission
 
 
 def _failure(exc):
@@ -50,11 +51,11 @@ def _render_response(request, document_type, policy_id):
 
 class WithdrawalStatementPrintView(APIView):
     action = "print"
-    permission_classes = [HasOLPolicyPermission]
+    permission_classes = [HasOLWithdrawalPermission]
 
     def post(self, request, withdrawal_id):
         if not WithdrawalRequest.objects.filter(pk=withdrawal_id).exists():
-            raise not_found(withdrawal_id)
+            raise registry_error("WITHDRAWAL_NOT_FOUND")
         return _render_response(request, "OL_WITHDRAWAL_STATEMENT", withdrawal_id)
 
 

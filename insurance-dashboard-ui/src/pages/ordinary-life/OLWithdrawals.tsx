@@ -155,11 +155,11 @@ export default function OLWithdrawals() {
   }, [])
 
   const actions: RowAction<WithdrawalRecord>[] = useMemo(() => [
-    { key: "view", label: "View", onSelect: (row) => setActionTarget({ action: "view", row }) },
+    { key: "view", label: "View", onSelect: (row) => navigate(`/ordinary-life/withdrawals/${encodeURIComponent(row.id)}`) },
     { key: "approve", label: "Approve", isVisible: (row) => row.status.toUpperCase() === "REQUESTED", onSelect: (row) => setActionTarget({ action: "approve", row }) },
     { key: "reject", label: "Reject", tone: "danger", isVisible: (row) => row.status.toUpperCase() === "REQUESTED", onSelect: (row) => setActionTarget({ action: "reject", row }) },
     { key: "print", label: "Print", onSelect: (row) => setActionTarget({ action: "print", row }) },
-  ], [])
+  ], [navigate])
 
   const canAction = useCallback((action: RowAction<WithdrawalRecord>, row: WithdrawalRecord) => {
     const actionKey = action.key as ActionKey
@@ -171,7 +171,7 @@ export default function OLWithdrawals() {
 
   const columns: TableColumn<WithdrawalRecord>[] = useMemo(() => [
     { key: "withdrawal_number", label: "Withdrawal number", field: "withdrawalNumber", sortable: true, render: (_value, row) => <span className="font-bold">{row.withdrawalNumber || "—"}</span> },
-    { key: "policy_number", label: "Policy number", field: "policyNumber", sortable: true, render: (_value, row) => <button type="button" className="font-semibold text-[var(--primary)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]" onClick={() => setActionTarget({ action: "view", row })}>{row.policyNumber || row.policyDisplay || "—"}</button> },
+    { key: "policy_number", label: "Policy number", field: "policyNumber", sortable: true, render: (_value, row) => <button type="button" className="font-semibold text-[var(--primary)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]" onClick={() => navigate(`/ordinary-life/withdrawals/${encodeURIComponent(row.id)}`)}>{row.policyNumber || row.policyDisplay || "—"}</button> },
     { key: "policyholder_name", label: "Policyholder", field: "policyholderName", sortable: true, render: (_value, row) => <div><span className="font-semibold">{row.policyholderName || "—"}</span><span className="mt-1 block text-xs text-[var(--muted-foreground)]">{row.policyholderDisplay && row.policyholderDisplay !== row.policyholderName ? row.policyholderDisplay : ""}</span></div> },
     { key: "product", label: "Product", field: "productDisplay", sortable: true, render: (_value, row) => row.productDisplay || "—" },
     { key: "gross_amount", label: "Gross amount", field: "grossAmount", sortable: true, align: "right", render: (_value, row) => <MoneyCell value={row.grossAmount} currency={row.currency} /> },

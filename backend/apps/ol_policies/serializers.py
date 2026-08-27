@@ -14,6 +14,7 @@ from .models import (
     PolicyMember,
     PolicyRider,
     SurrenderRequest,
+    WithdrawalPayment,
     WithdrawalRequest,
 )
 
@@ -183,30 +184,149 @@ class PolicyLoanSerializer(serializers.ModelSerializer):
         return getattr(obj.payment_requisition, "requisition_number", "") if obj.payment_requisition else ""
 
 
+def _policy_snapshot_value(policy, *keys):
+    snapshot = policy.contract_snapshot if isinstance(policy.contract_snapshot, dict) else {}
+    for key in keys:
+        value = snapshot.get(key)
+        if value not in (None, ""):
+            return str(value)
+    return ""
+
+
+def _policy_label(policy):
+    return " — ".join(part for part in (policy.policy_number, _partner_label(policy.partner)) if part) or "Unnamed policy"
+
+
+class WithdrawalPaymentSerializer(serializers.ModelSerializer):
+    payment_mode_display = serializers.CharField(source="payment_mode", read_only=True)
+
+    class Meta:
+        model = WithdrawalPayment
+        fields = (
+            "id",
+            "payment_mode",
+            "payment_mode_display",
+            "receipt_reference",
+            "amount",
+            "currency",
+            "payment_date",
+            "status",
+            "created_at",
+        )
+        read_only_fields = fields
+
+
 class WithdrawalRequestSerializer(serializers.ModelSerializer):
     policy_number = serializers.CharField(source="policy.policy_number", read_only=True)
+    policy_id = serializers.UUIDField(source="policy.id", read_only=True)
+    policy_display = serializers.SerializerMethodField()
+    policyholder_name = serializers.SerializerMethodField()
+    policyholder_display = serializers.SerializerMethodField()
+    product_display = serializers.SerializerMethodField()
+    agent_display = serializers.SerializerMethodField()
+    branch_display = serializers.SerializerMethodField()
+    currency = serializers.CharField(source="policy.currency", read_only=True)
+    gross_amount = serializers.DecimalField(source="amount", max_digits=18, decimal_places=2, read_only=True)
+    fee_amount = serializers.DecimalField(max_digits=18, decimal_places=2, read_only=True)
+    net_payout = serializers.DecimalField(source="net_amount", max_digits=18, decimal_places=2, read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
     payment_requisition_number = serializers.SerializerMethodField()
+    allowed_actions = serializers.SerializerMethodField()
+    payments = WithdrawalPaymentSerializer(many=True, read_only=True)
 
     class Meta:
         model = WithdrawalRequest
         fields = (
             "id",
             "request_number",
+            "policy_id",
             "policy_number",
+            "policy_display",
+            "policyholder_name",
+            "policyholder_display",
+            "product_display",
+            "agent_display",
+            "branch_display",
+            "currency",
             "request_date",
             "amount",
+            "gross_amount",
             "cash_value_before",
             "loan_balance_before",
+            "cash_value_after",
+            "fee_amount",
+            "fee_rate",
+            "fee_basis",
             "net_amount",
+            "net_payout",
             "status",
+            "status_display",
+            "approved_at",
+            "processed_at",
+            "paid_at",
+            "cancelled_at",
+            "reversed_at",
+            "payment_mode",
+            "receipt_reference",
             "payment_requisition_number",
             "reason",
+            "approval_reason",
+            "cancellation_reason",
+            "reversal_reason",
+            "allowed_actions",
+            "payments",
             "created_at",
+            "updated_at",
         )
         read_only_fields = fields
 
+    def get_policy_display(self, obj):
+        return _policy_label(obj.policy)
+
+    def get_policyholder_name(self, obj):
+        partner = obj.policy.partner
+        return " ".join(value for value in (getattr(partner, "first_name", ""), getattr(partner, "other_name", ""), getattr(partner, "surname", "")) if value) or getattr(partner, "legal_name", "") or "Unnamed policyholder"
+
+    def get_policyholder_display(self, obj):
+        return _partner_label(obj.policy.partner)
+
+    def get_product_display(self, obj):
+        code = obj.policy.product_plan_ref or ""
+        snapshot_name = _policy_snapshot_value(obj.policy, "product_display", "product_name")
+        if snapshot_name:
+            return " — ".join(part for part in (code, snapshot_name) if part)
+        try:
+            from apps.ol_parameters.models import OLProduct
+
+            product = OLProduct.objects.filter(code=code, is_active=True).first()
+        except Exception:
+            product = None
+        return " — ".join(part for part in (code, getattr(product, "name", "")) if part) or "Unspecified product/plan"
+
+    def get_agent_display(self, obj):
+        return _partner_label(obj.policy.agent) if obj.policy.agent else _policy_snapshot_value(obj.policy, "agent_display", "agent_name", "agent_code")
+
+    def get_branch_display(self, obj):
+        return _policy_snapshot_value(obj.policy, "branch_display", "branch_name", "branch_code", "location_display", "location_name")
+
     def get_payment_requisition_number(self, obj):
         return getattr(obj.payment_requisition, "requisition_number", "") if obj.payment_requisition else ""
+
+    def get_allowed_actions(self, obj):
+        return withdrawal_allowed_actions(obj.status)
+
+
+def withdrawal_allowed_actions(status):
+    actions = {
+        "REQUESTED": ["view", "approve", "reject", "cancel", "print"],
+        "APPROVED": ["view", "process_payout", "cancel", "print"],
+        "PROCESSING": ["view", "print"],
+        "PAID": ["view", "reverse", "print"],
+        "REVERSED": ["view", "print"],
+        "DECLINED": ["view", "print"],
+        "CANCELLED": ["view", "print"],
+    }
+    return actions.get((status or "").upper(), ["view"])
 
 
 class SurrenderRequestSerializer(serializers.ModelSerializer):

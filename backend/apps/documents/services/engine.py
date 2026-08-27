@@ -985,6 +985,15 @@ class DocumentEngine:
             from apps.ol_policies.permissions import has_ol_policy_permission
 
             return has_ol_policy_permission(actor, "print")
+        if permission_code == "ol_withdrawals.print":
+            if hasattr(actor, "has_permission") and actor.has_permission("ol_withdrawals.print"):
+                return True
+            if hasattr(actor, "has_module_permission"):
+                if actor.has_module_permission("ol_withdrawals", "PRINT"):
+                    return True
+            from apps.ol_policies.permissions import has_ol_policy_permission
+
+            return has_ol_policy_permission(actor, "print")
         if permission_code == "ol_commitments.view":
             from apps.ol_commitments.permissions import has_ol_commitment_permission
 
@@ -1025,6 +1034,9 @@ class DocumentEngine:
         if partner_id is None:
             quotation = getattr(source, "quotation", None)
             partner_id = getattr(quotation, "partner_id", None) if quotation is not None else None
+        if partner_id is None:
+            policy = getattr(source, "policy", None)
+            partner_id = getattr(policy, "partner_id", None) if policy is not None else None
         if partner_id is None:
             return True
         if hasattr(actor, "can_access_partner"):
