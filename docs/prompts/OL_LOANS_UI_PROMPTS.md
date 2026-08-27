@@ -116,7 +116,7 @@ FINAL OUTPUT: page structure, tests, commit hash, pushed branch.
 
 ---
 
-## [ ] Prompt 4/10 — Repayment Schedule Tab & Visualization
+## [x] Prompt 4/10 — Repayment Schedule Tab & Visualization
 
 ```text
 You are a senior frontend engineer. Continue the ZIC Loans UI. Execute ONLY Prompt 4.
