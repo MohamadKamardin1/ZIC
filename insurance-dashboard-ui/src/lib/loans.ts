@@ -71,6 +71,7 @@ export interface LoanListFilters {
 }
 
 export interface LoanRecord {
+  [key: string]: unknown
   id: string
   loanNumber: string
   policyNumber: string
