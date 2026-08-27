@@ -74,6 +74,7 @@ export interface LoanRecord {
   [key: string]: unknown
   id: string
   loanNumber: string
+  policyId?: string
   policyNumber: string
   policyDisplay: string
   policyholderName: string
@@ -264,6 +265,7 @@ export function normalizeLoan(row: Record<string, unknown>): LoanRecord {
   return {
     id: stringValue(row, "id", "uuid"),
     loanNumber: stringValue(row, "loanNumber", "loan_number"),
+    policyId: nullableString(row, "policyId", "policy_id") ?? undefined,
     policyNumber: stringValue(row, "policyNumber", "policy_number", "policyDisplay", "policy_display"),
     policyDisplay: stringValue(row, "policyDisplay", "policy_display", "policyNumber", "policy_number"),
     policyholderName: stringValue(row, "policyholderName", "policyholder_name", "partnerDisplay", "partner_display"),

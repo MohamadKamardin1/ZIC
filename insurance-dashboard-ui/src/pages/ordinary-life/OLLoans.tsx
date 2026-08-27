@@ -107,7 +107,7 @@ export default function OLLoans() {
   const { toast } = useToast()
   const [filters, setFilters] = useState<FilterValues>({})
   const [refreshKey, setRefreshKey] = useState(0)
-  const [requestOpen, setRequestOpen] = useState(false)
+  const [requestOpen, setRequestOpen] = useState(() => new URLSearchParams(window.location.search).get("request") === "1")
   const [actionTarget, setActionTarget] = useState<ActionTarget>(null)
 
   const kpiFilters = useMemo<LoanListFilters>(() => {
@@ -143,7 +143,7 @@ export default function OLLoans() {
 
   const columns: TableColumn<LoanRecord>[] = useMemo(() => [
     { key: "loan_number", label: "Loan number", field: "loanNumber", sortable: true, render: (_value, row) => <span className="font-bold">{row.loanNumber || "—"}</span> },
-    { key: "policy_number", label: "Policy number", field: "policyNumber", sortable: true, render: (_value, row) => <button type="button" className="font-semibold text-[var(--primary)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]" onClick={() => navigate(`/ordinary-life/policies/${row.policyNumber}`)}>{row.policyNumber || row.policyDisplay || "—"}</button> },
+    { key: "policy_number", label: "Policy number", field: "policyNumber", sortable: true, render: (_value, row) => <button type="button" className="font-semibold text-[var(--primary)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]" onClick={() => navigate(`/ordinary-life/policies/${row.policyId ?? row.policyNumber}`)}>{row.policyNumber || row.policyDisplay || "—"}</button> },
     { key: "policyholder_name", label: "Policyholder", field: "policyholderName", sortable: true, render: (_value, row) => <div><span className="font-semibold">{row.policyholderName || row.partnerDisplay || "—"}</span><span className="mt-1 block text-xs text-[var(--muted-foreground)]">{row.partnerDisplay && row.partnerDisplay !== row.policyholderName ? row.partnerDisplay : ""}</span></div> },
     { key: "product", label: "Product", field: "productDisplay", sortable: true, render: (_value, row) => row.productDisplay || "—" },
     { key: "principal_amount", label: "Principal amount", field: "principalAmount", sortable: true, align: "right", render: (_value, row) => <MoneyCell value={row.principalAmount} currency={row.currency} /> },
