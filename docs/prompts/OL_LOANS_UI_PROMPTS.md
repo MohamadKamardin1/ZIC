@@ -272,7 +272,7 @@ FINAL OUTPUT: modal behaviors, tests, commit hash, pushed branch.
 
 ---
 
-## [ ] Prompt 8/10 — Partner Portal Loans View
+## [x] Prompt 8/10 — Partner Portal Loans View
 
 ```text
 You are a senior frontend engineer. Continue the ZIC Loans UI. Execute ONLY Prompt 8.
