@@ -149,7 +149,7 @@ GIT:
 
 FINAL OUTPUT: page structure, tests, commit hash, pushed branch.
 
-## [ ] Prompt 5 — Breakdown Tab & Impact Analysis
+## [x] Prompt 5 — Breakdown Tab & Impact Analysis
 
 You are a senior frontend engineer. Continue the ZIC Withdrawals UI. Execute ONLY Prompt 5.
 
