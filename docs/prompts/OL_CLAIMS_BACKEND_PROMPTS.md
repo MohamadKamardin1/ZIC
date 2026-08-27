@@ -1,5 +1,5 @@
 OL CLAIMS BACKEND — FULL PROMPT SERIES (12 Prompts)
-## [ ] Prompt 1 — Save Series File + Claim Domain Foundation
+## [x] Prompt 1 — Save Series File + Claim Domain Foundation
 You are a senior Django insurance platform engineer. Build the ZIC Ordinary Life Claims backend. The user pasted the FULL 12-prompt series at once.
 
 META-INSTRUCTION (HIGHEST PRIORITY):

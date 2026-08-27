@@ -78,6 +78,7 @@ INSTALLED_APPS = [
     'apps.ol_proposals.apps.OLProposalsConfig',
     'apps.ol_commitments.apps.OLCommitmentsConfig',
     'apps.ol_policies.apps.OLPoliciesConfig',
+    'apps.ol_claims.apps.OLClaimsConfig',
     'apps.ol_loans.apps.OLLoansConfig',
     'apps.group_credit',
     'apps.front_office.apps.FrontOfficeConfig',
