@@ -3,9 +3,11 @@ import {
   getWithdrawal,
   getWithdrawalAudit,
   getWithdrawalBreakdown,
+  getWithdrawalEligibility,
   getWithdrawalKpis,
   getWithdrawalOptions,
   getWithdrawalPayments,
+  estimateWithdrawal,
   listWithdrawals,
   printWithdrawalStatement,
   requestWithdrawal,
@@ -16,6 +18,8 @@ import {
   type WithdrawalAuditEntry,
   type WithdrawalBreakdown,
   type WithdrawalDetail,
+  type WithdrawalEligibility,
+  type WithdrawalEstimate,
   type WithdrawalKpis,
   type WithdrawalListFilters,
   type WithdrawalOption,
@@ -30,6 +34,7 @@ export const withdrawalListKey = (filters: WithdrawalListFilters = {}) => ["ol-w
 export const withdrawalKpisKey = (filters: WithdrawalListFilters = {}) => ["ol-withdrawals", "kpis", filters] as const
 export const withdrawalOptionsKey = (kind: WithdrawalOptionKind, params: Record<string, unknown> = {}) => ["ol-withdrawals", "options", kind, params] as const
 export const withdrawalDetailKey = (id?: string | null) => ["ol-withdrawals", "detail", id ?? "none"] as const
+export const withdrawalEligibilityKey = (policyId?: string | null, asOf?: string) => ["ol-withdrawals", "eligibility", policyId ?? "none", asOf ?? "today"] as const
 export const withdrawalBreakdownKey = (id?: string | null) => ["ol-withdrawals", "breakdown", id ?? "none"] as const
 export const withdrawalPaymentsKey = (id?: string | null, page = 1, pageSize = 20) => ["ol-withdrawals", "payments", id ?? "none", page, pageSize] as const
 export const withdrawalAuditKey = (id?: string | null, page = 1, pageSize = 20) => ["ol-withdrawals", "audit", id ?? "none", page, pageSize] as const
@@ -74,6 +79,15 @@ export function useWithdrawalOptions(kind: WithdrawalOptionKind, params: { q?: s
   })
 }
 
+export function useWithdrawalEligibility(policyId?: string | null, asOf?: string, enabled = true) {
+  return useQuery<WithdrawalEligibility>({
+    queryKey: withdrawalEligibilityKey(policyId, asOf),
+    queryFn: () => getWithdrawalEligibility(policyId as string, asOf),
+    enabled: Boolean(policyId) && enabled,
+    staleTime: 30_000,
+  })
+}
+
 export function useWithdrawalDetail(id?: string | null, enabled = true) {
   return useQuery<WithdrawalDetail>({
     queryKey: withdrawalDetailKey(id),
@@ -105,6 +119,12 @@ export function useWithdrawalAudit(id?: string | null, page = 1, pageSize = 20, 
     queryFn: () => getWithdrawalAudit(id as string, { page, pageSize }),
     enabled: Boolean(id) && enabled,
     placeholderData: keepPreviousData,
+  })
+}
+
+export function useEstimateWithdrawalMutation() {
+  return useMutation<WithdrawalEstimate, Error, { policyId: string; amount: string | number }>({
+    mutationFn: ({ policyId, amount }) => estimateWithdrawal(policyId, amount),
   })
 }
 

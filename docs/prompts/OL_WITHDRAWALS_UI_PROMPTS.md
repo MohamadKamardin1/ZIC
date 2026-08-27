@@ -70,7 +70,7 @@ GIT:
 
 FINAL OUTPUT: page behavior, tests, commit hash, pushed branch.
 
-## [ ] Prompt 3 — Withdrawal Request Wizard (Eligibility & Calculation)
+## [x] Prompt 3 — Withdrawal Request Wizard (Eligibility & Calculation)
 
 You are a senior frontend engineer. Continue the ZIC Withdrawals UI. Execute ONLY Prompt 3.
 

@@ -181,6 +181,22 @@ export const withdrawalsHandlers = [
     const pending = filtered.filter((row) => row.status === "REQUESTED")
     return data({ total_withdrawn_current_month: totalWithdrawn, total_withdrawn_current_month_count: filtered.length, pending_approvals_count: pending.length, pending_approvals_amount: pending.reduce((sum, row) => sum + Number(row.gross_amount), 0).toFixed(2), processing_payouts_count: filtered.filter((row) => row.status === "PROCESSING").length, average_fee_amount: filtered.length ? (filtered.reduce((sum, row) => sum + Number(row.fee_amount), 0) / filtered.length).toFixed(2) : "0.00", currency: "TZS", timestamp: "2026-08-27T08:00:00Z" })
   }),
+  http.get(`*${POLICY_WITHDRAWALS_BASE}/:policyId/withdrawals/eligibility/`, ({ params }) => {
+    const policyId = String(params.policyId)
+    if (policyId.includes("lapsed")) return data({ policy_id: policyId, policy_number: "ZIC-OL-2024-000099", policyholder_display: "P-000099 — Lapsed Policyholder", currency: "TZS", policy_status: "LAPSED", eligible: false, cash_value: "800000.00", loan_balance: "0.00", available_limit: "0.00", fee_rate: "5.0000", fee_basis: "5% fixed", error_code: "WITHDRAWAL_POLICY_INELIGIBLE", message: "Policy is not eligible for withdrawals.", resolution_steps: ["Select an Active or Paid-up policy.", "Review the policy lifecycle status before requesting a withdrawal."] })
+    const policy = policyOptions.find((item) => item.value === policyId)
+    if (!policy) return error(404, "POLICY_NOT_FOUND", "The selected policy could not be found.", ["Search again and select an active policy."])
+    return data({ policy_id: policyId, policy_number: policy.meta.policy_number, policyholder_display: policy.label, currency: policy.meta.currency, policy_status: policy.meta.status, eligible: true, cash_value: policy.meta.cash_value, loan_balance: policy.meta.loan_balance, available_limit: policy.meta.available_limit, fee_rate: "5.0000", fee_basis: "5% fixed" })
+  }),
+  http.post(`*${WITHDRAWALS_BASE}/estimate/`, async ({ request }) => {
+    const body = await request.json() as { policy_id?: string; amount?: string | number }
+    const policy = policyOptions.find((item) => item.value === String(body.policy_id))
+    const amount = Number(body.amount ?? 0)
+    if (!policy) return error(404, "POLICY_NOT_FOUND", "The selected policy could not be found.", ["Search again and select an active policy."])
+    if (!Number.isFinite(amount) || amount <= 0) return error(400, "WITHDRAWAL_AMOUNT_REQUIRED", "Enter a withdrawal amount greater than zero.", ["Enter an amount greater than zero before requesting an estimate."], { amount: ["Amount must be greater than zero."] })
+    const fee = amount * 0.05
+    return data({ policy_id: policy.value, currency: String(policy.meta.currency), requested_amount: amount.toFixed(2), estimated_fee: fee.toFixed(2), estimated_net_payout: (amount - fee).toFixed(2), fee_rate: "5.0000", fee_basis: "5% fixed" })
+  }),
   http.get(`*${WITHDRAWALS_BASE}/:withdrawalId/breakdown/`, ({ params }) => {
     const row = findWithdrawal(String(params.withdrawalId))
     return row ? data(detailFor(row).breakdown) : error(404, "WITHDRAWAL_NOT_FOUND", "The withdrawal could not be found.", ["Return to the Withdrawals register and choose an available request."])

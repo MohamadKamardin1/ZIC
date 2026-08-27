@@ -144,6 +144,33 @@ export interface WithdrawalKpis {
   timestamp: string
 }
 
+export interface WithdrawalEligibility {
+  policyId: string
+  policyNumber: string
+  policyholderDisplay: string
+  currency: string
+  policyStatus: string
+  eligible: boolean
+  cashValue: string
+  loanBalance: string
+  availableLimit: string
+  feeRate: string
+  feeBasis: string
+  errorCode?: string
+  message?: string
+  resolutionSteps?: string[]
+}
+
+export interface WithdrawalEstimate {
+  policyId: string
+  currency: string
+  requestedAmount: string
+  estimatedFee: string
+  estimatedNetPayout: string
+  feeRate: string
+  feeBasis: string
+}
+
 export interface WithdrawalRequestPayload {
   amount: string | number
   reason: string
@@ -380,6 +407,15 @@ export function getWithdrawal(id: string): Promise<WithdrawalDetail> {
   return request<unknown>(`${WITHDRAWALS_API_PREFIX}/${encodeURIComponent(id)}/`).then(normalizeWithdrawalDetail)
 }
 
+export function getWithdrawalEligibility(policyId: string, asOf?: string): Promise<WithdrawalEligibility> {
+  const query = asOf ? `?as_of=${encodeURIComponent(asOf)}` : ""
+  return request<unknown>(`${POLICY_WITHDRAWALS_API_PREFIX}/${encodeURIComponent(policyId)}/withdrawals/eligibility/${query}`).then((payload) => normalizeWithdrawalEligibility(isRecord(payload) ? payload : {}))
+}
+
+export function estimateWithdrawal(policyId: string, amount: string | number): Promise<WithdrawalEstimate> {
+  return request<unknown>(`${WITHDRAWALS_API_PREFIX}/estimate/`, { method: "POST", body: JSON.stringify({ policy_id: policyId, amount }) }).then((payload) => normalizeWithdrawalEstimate(isRecord(payload) ? payload : {}))
+}
+
 export function getWithdrawalBreakdown(id: string): Promise<WithdrawalBreakdown> {
   return request<unknown>(`${WITHDRAWALS_API_PREFIX}/${encodeURIComponent(id)}/breakdown/`).then((payload) => normalizeBreakdown(isRecord(payload) ? payload : {}))
 }
@@ -425,6 +461,37 @@ export function printWithdrawalStatement(id: string, payload: Record<string, unk
     method: "POST",
     body: JSON.stringify(payload),
   })
+}
+
+function normalizeWithdrawalEligibility(row: Record<string, unknown>): WithdrawalEligibility {
+  return {
+    policyId: stringValue(row, "policyId", "policy_id"),
+    policyNumber: stringValue(row, "policyNumber", "policy_number"),
+    policyholderDisplay: stringValue(row, "policyholderDisplay", "policyholder_display", "policyholderName", "policyholder_name"),
+    currency: stringValue(row, "currency") || "TZS",
+    policyStatus: stringValue(row, "policyStatus", "policy_status", "status"),
+    eligible: Boolean(pick(row, "eligible") ?? false),
+    cashValue: amountValue(row, "cashValue", "cash_value"),
+    loanBalance: amountValue(row, "loanBalance", "loan_balance"),
+    availableLimit: amountValue(row, "availableLimit", "available_limit"),
+    feeRate: stringValue(row, "feeRate", "fee_rate") || "5.0000",
+    feeBasis: stringValue(row, "feeBasis", "fee_basis") || "5% fixed",
+    errorCode: nullableString(row, "errorCode", "error_code") ?? undefined,
+    message: nullableString(row, "message") ?? undefined,
+    resolutionSteps: Array.isArray(pick(row, "resolutionSteps", "resolution_steps")) ? (pick(row, "resolutionSteps", "resolution_steps") as unknown[]).map(String) : undefined,
+  }
+}
+
+function normalizeWithdrawalEstimate(row: Record<string, unknown>): WithdrawalEstimate {
+  return {
+    policyId: stringValue(row, "policyId", "policy_id"),
+    currency: stringValue(row, "currency") || "TZS",
+    requestedAmount: amountValue(row, "requestedAmount", "requested_amount", "amount"),
+    estimatedFee: amountValue(row, "estimatedFee", "estimated_fee", "feeAmount", "fee_amount"),
+    estimatedNetPayout: amountValue(row, "estimatedNetPayout", "estimated_net_payout", "netPayout", "net_payout"),
+    feeRate: stringValue(row, "feeRate", "fee_rate") || "5.0000",
+    feeBasis: stringValue(row, "feeBasis", "fee_basis") || "5% fixed",
+  }
 }
 
 function normalizeActionResult(payload: unknown): WithdrawalActionResult {
