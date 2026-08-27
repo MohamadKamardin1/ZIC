@@ -10,6 +10,7 @@ CLAIM_MEDICAL_RESULT_RECORDED = "ClaimMedicalResultRecorded"
 CLAIM_LOAN_OFFSET_APPLIED = "ClaimLoanOffsetApplied"
 CLAIM_REQUISITIONED = "ClaimRequisitioned"
 CLAIM_APPROVED = "ClaimApproved"
+CLAIM_REJECTED = "ClaimRejected"
 CLAIM_SETTLED = "ClaimSettled"
 CLAIM_CANCELLED = "ClaimCancelled"
 
@@ -22,6 +23,7 @@ CLAIM_DOMAIN_EVENTS = (
     CLAIM_LOAN_OFFSET_APPLIED,
     CLAIM_REQUISITIONED,
     CLAIM_APPROVED,
+    CLAIM_REJECTED,
     CLAIM_SETTLED,
     CLAIM_CANCELLED,
 )
@@ -97,6 +99,11 @@ def emit_claim_requisitioned(claim, **kwargs):
 def emit_claim_approved(claim, **kwargs):
     kwargs.setdefault("to_status", claim.status)
     return emit_claim_event(CLAIM_APPROVED, claim, **kwargs)
+
+
+def emit_claim_rejected(claim, **kwargs):
+    kwargs.setdefault("to_status", claim.status)
+    return emit_claim_event(CLAIM_REJECTED, claim, **kwargs)
 
 
 def emit_claim_settled(claim, **kwargs):

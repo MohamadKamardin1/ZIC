@@ -5,6 +5,7 @@ from django.utils import timezone
 
 from apps.governance.models import ApprovalRequest, APPROVAL_STATUS_CHOICES
 from apps.governance.services.audit_service import AuditService
+from apps.governance.signals import approval_status_changed
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,7 @@ class ApprovalService:
             after_state={"status": "APPROVED"},
             description=f"Approval {approval.pk} approved by {reviewed_by.email}",
         )
+        approval_status_changed.send(sender=ApprovalRequest, approval_request=approval)
         logger.info("Approval %s approved by %s", approval.pk, reviewed_by.email)
         return approval
 
@@ -93,6 +95,7 @@ class ApprovalService:
             after_state={"status": "REJECTED"},
             description=f"Approval {approval.pk} rejected by {reviewed_by.email}: {comments}",
         )
+        approval_status_changed.send(sender=ApprovalRequest, approval_request=approval)
         logger.info("Approval %s rejected by %s", approval.pk, reviewed_by.email)
         return approval
 

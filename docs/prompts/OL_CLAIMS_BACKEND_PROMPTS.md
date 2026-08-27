@@ -269,7 +269,7 @@ GIT:
 
 FINAL OUTPUT: offset logic, financial summary, tests, commit hash, pushed branch.
 
-## [ ] Prompt 8 — Requisition & Payment Link
+## [x] Prompt 8 — Requisition & Payment Link
 You are a senior Django finance engineer. Continue the ZIC OL Claims backend. Execute ONLY Prompt 8.
 
 MANDATORY RULES:

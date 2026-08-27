@@ -237,6 +237,46 @@ CLAIM_ERROR_REGISTRY = {
             "Contact Claims Administration if the claim was recently migrated or archived.",
         ],
     },
+    "CLAIM_REQUISITION_REQUIRED": {
+        "message": "The claim must be assessed before a payment requisition can be raised.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Complete mandatory documents and medical review in the claim file.",
+            "Assess the covered benefit and approve the payable claim amount, then retry.",
+        ],
+    },
+    "CLAIM_REQUISITION_NET_ZERO": {
+        "message": "A payment requisition cannot be raised because the claim net payout is zero.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Review the approved claim amount and any policy loan offset in Financial Summary.",
+            "Raise a requisition only when a positive amount remains payable.",
+        ],
+    },
+    "CLAIM_REQUISITION_BANK_DETAILS_REQUIRED": {
+        "message": "Payment bank details are required before the claim requisition can be submitted.",
+        "status_code": 400,
+        "resolution_steps": [
+            "Provide the approved claimant or partner bank details in the payment form.",
+            "Confirm the account holder and account number before submitting the requisition.",
+        ],
+    },
+    "CLAIM_REQUISITION_ALREADY_EXISTS": {
+        "message": "A payment requisition already exists for this claim.",
+        "status_code": 409,
+        "resolution_steps": [
+            "Open the existing requisition to review its status and payment link.",
+            "Do not create a second requisition for the same claim.",
+        ],
+    },
+    "CLAIM_APPROVAL_OUTCOME_INVALID": {
+        "message": "The claim payment approval outcome cannot be applied from its current state.",
+        "status_code": 409,
+        "resolution_steps": [
+            "Refresh the claim and confirm that its payment approval is still pending.",
+            "Apply an approval or rejection only to the linked pending approval request.",
+        ],
+    },
     "CLAIM_INVALID_STATUS": {
         "message": "This claim action is not allowed in its current status.",
         "status_code": 422,

@@ -121,6 +121,8 @@ class OLClaimFileNoteSerializer(serializers.ModelSerializer):
 
 class OLClaimRequisitionSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
+    payment_requisition_number = serializers.CharField(source="payment_requisition.requisition_number", read_only=True)
+    approval_request_status = serializers.CharField(source="approval_request.status", read_only=True, default=None)
 
     class Meta:
         model = OLClaimRequisition
@@ -129,6 +131,10 @@ class OLClaimRequisitionSerializer(serializers.ModelSerializer):
             "requisition_number",
             "amount",
             "bank_details_json",
+            "payment_requisition_number",
+            "approval_request_status",
+            "approval_required",
+            "narration",
             "status",
             "status_display",
             "created_at",

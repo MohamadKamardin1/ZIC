@@ -271,6 +271,22 @@ class OLClaimRequisition(UUIDModel, AuditedModel):
     requisition_number = models.CharField(max_length=55, unique=True, db_index=True, blank=True)
     amount = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     bank_details_json = models.JSONField(default=dict, blank=True)
+    payment_requisition = models.ForeignKey(
+        "front_office.FORequisition",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ol_claim_requisitions",
+    )
+    approval_request = models.ForeignKey(
+        "governance.ApprovalRequest",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ol_claim_requisitions",
+    )
+    approval_required = models.BooleanField(default=False)
+    narration = models.TextField(blank=True, default="")
     status = models.CharField(
         max_length=25,
         choices=ClaimRequisitionStatus.choices,

@@ -10,7 +10,7 @@ from django.core.management import call_command
 from rest_framework.test import APITestCase
 
 from apps.common.models import DomainEvent
-from apps.governance.models import AuditLog
+from apps.governance.models import ApprovalRequest, AuditLog
 from apps.ol_claims.admin import (
     OLClaimAdmin,
     OLClaimDocumentAdmin,
@@ -36,11 +36,13 @@ from apps.ol_claims.permissions import ACTIONS, OLClaimPermission, has_ol_claim_
 from apps.ol_claims.services.document_service import can_proceed_to_assessment, get_required_documents
 from apps.ol_claims.services.assessment import add_file_note, assess_claim
 from apps.ol_claims.services.loan_offset import apply_loan_offset, calculate_net_payout
+from apps.ol_claims.services.requisition import raise_requisition
 from apps.ol_claims.services.medical import evaluate_medical_requirements, record_medical_result, require_medical_review
 from apps.ol_claims.services.validation import calculate_max_claimable, validate_eligibility
 from apps.ol_proposals.models import OLProposal
 from apps.ol_quotations.models import OLQuotation
 from apps.ol_policies.models import LoanStatus, Policy, PolicyBenefit, PolicyLoan, PolicyMember
+from apps.governance.services.approval_service import ApprovalService
 from apps.partners.models import Partner
 from apps.ol_parameters.models import OLClaimReason, OLClaimType, OLMedicalCode, OLMedicalLimit
 from apps.users.models import UserPermission
@@ -898,3 +900,94 @@ class OLClaimFoundationTestCase(APITestCase):
         self.assertEqual(loan.outstanding_principal, Decimal("0.00"))
         self.assertEqual(loan.outstanding_interest, Decimal("0.00"))
         self.assertEqual(loan.status, LoanStatus.REPAID)
+
+    def _assessed_claim_without_requisition(self):
+        claim = self.make_claim()
+        claim.requisition.delete()
+        claim.refresh_from_db()
+        claim_type = self._assessment_claim_type()
+        claim.claim_type = claim_type.code
+        claim.save(update_fields=["claim_type", "updated_at"])
+        assess_claim(claim.pk, assessed_amount=Decimal("20000000.00"), assessment_notes="Benefit confirmed.", actor=self.user)
+        return claim
+
+    def test_raise_requisition_links_front_office_payment_seam(self):
+        claim = self._assessed_claim_without_requisition()
+        response = self.client.post(
+            f"/api/v1/ol/claims/{claim.pk}/raise-requisition/",
+            {
+                "bank_details": {
+                    "recipient_name": "Asha Mwinyi",
+                    "account_name": "Asha Mwinyi",
+                    "account_number": "0123456789",
+                    "bank_name": "Zanzibar Bank",
+                },
+                "narration": "Approved death benefit payment.",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        requisition = OLClaimRequisition.objects.get(claim=claim)
+        claim.refresh_from_db()
+        self.assertEqual(claim.status, ClaimStatus.REQUISITIONED)
+        self.assertEqual(requisition.status, "REQUISITIONED")
+        self.assertEqual(requisition.amount, Decimal("20000000.00"))
+        self.assertTrue(requisition.payment_requisition.requisition_number.startswith("FO-CLM-"))
+        self.assertEqual(requisition.payment_requisition.department, "CLAIMS")
+        self.assertEqual(requisition.payment_requisition.status, "PENDING")
+        self.assertTrue(requisition.approval_required)
+        self.assertTrue(ApprovalRequest.objects.filter(entity_id=requisition.pk, module="OL_CLAIMS", status="PENDING").exists())
+        self.assertTrue(DomainEvent.objects.filter(event_type="ClaimRequisitioned", aggregate_id=str(claim.pk)).exists())
+        self.assertTrue(AuditLog.objects.filter(action_type="CLAIM_REQUISITIONED", object_id=str(claim.pk)).exists())
+        self.assertEqual(response.data["data"]["payment_requisition_number"], requisition.payment_requisition.requisition_number)
+
+    def test_requisition_requires_assessed_positive_net_payout(self):
+        claim = self.make_claim()
+        claim.requisition.delete()
+        claim.refresh_from_db()
+        response = self.client.post(
+            f"/api/v1/ol/claims/{claim.pk}/raise-requisition/",
+            {"bank_details": {"account_number": "0123456789", "account_name": "Asha Mwinyi"}, "narration": "Payment."},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 422, response.data)
+        self.assertEqual(response.data["error_code"], "CLAIM_REQUISITION_REQUIRED")
+
+    def test_approval_event_updates_claim_and_requisition(self):
+        claim = self._assessed_claim_without_requisition()
+        requisition = raise_requisition(
+            claim.pk,
+            bank_details={"account_number": "0123456789", "account_name": "Asha Mwinyi"},
+            narration="Approved death benefit payment.",
+            actor=self.user,
+            source_channel="WEB",
+        )
+        approval = ApprovalRequest.objects.get(pk=requisition.approval_request_id)
+        ApprovalService.approve(approval.pk, reviewed_by=self.user, comments="Payment approved.")
+        claim.refresh_from_db()
+        requisition.refresh_from_db()
+        requisition.payment_requisition.refresh_from_db()
+        self.assertEqual(claim.status, ClaimStatus.APPROVED)
+        self.assertEqual(requisition.status, "APPROVED")
+        self.assertEqual(requisition.payment_requisition.status, "APPROVED")
+        self.assertTrue(DomainEvent.objects.filter(event_type="ClaimApproved", aggregate_id=str(claim.pk)).exists())
+        self.assertTrue(AuditLog.objects.filter(action_type="CLAIM_PAYMENT_APPROVED", object_id=str(claim.pk)).exists())
+
+    def test_rejection_event_updates_claim_and_requisition(self):
+        claim = self._assessed_claim_without_requisition()
+        requisition = raise_requisition(
+            claim.pk,
+            bank_details={"account_number": "0123456789", "account_name": "Asha Mwinyi"},
+            narration="Death benefit payment review.",
+            actor=self.user,
+        )
+        approval = ApprovalRequest.objects.get(pk=requisition.approval_request_id)
+        ApprovalService.reject(approval.pk, reviewed_by=self.user, comments="Bank verification failed.")
+        claim.refresh_from_db()
+        requisition.refresh_from_db()
+        requisition.payment_requisition.refresh_from_db()
+        self.assertEqual(claim.status, ClaimStatus.REJECTED)
+        self.assertEqual(requisition.status, "REJECTED")
+        self.assertEqual(requisition.payment_requisition.status, "REJECTED")
+        self.assertTrue(DomainEvent.objects.filter(event_type="ClaimRejected", aggregate_id=str(claim.pk)).exists())
+        self.assertTrue(AuditLog.objects.filter(action_type="CLAIM_PAYMENT_REJECTED", object_id=str(claim.pk)).exists())
