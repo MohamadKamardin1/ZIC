@@ -185,7 +185,7 @@ FINAL OUTPUT: tabs behavior, tests, commit hash, pushed branch.
 
 ---
 
-## [ ] Prompt 6/10 — Loan Request Modal (Creation Flow)
+## [x] Prompt 6/10 — Loan Request Modal (Creation Flow)
 
 ```text
 You are a senior frontend engineer. Continue the ZIC Loans UI. Execute ONLY Prompt 6.
