@@ -50,12 +50,12 @@ const PARTNER_TYPES = [
 
 function statusVariant(status: ApplicationStatus): { bg: string; text: string; dot: string } {
   if (["APPROVED", "CONVERTED", "ACTIVE"].includes(status)) {
-    return { bg: "bg-[#f1f5f4]", text: "text-[#1c3b34]", dot: "bg-[#1c3b34]" }
+    return { bg: "bg-[var(--color-bg-success-soft)]", text: "text-[var(--color-text-success-soft)]", dot: "bg-[var(--color-text-success-soft)]" }
   }
   if (["REJECTED", "SUSPENDED"].includes(status)) {
-    return { bg: "bg-[#f4f4f4]", text: "text-[#242424]", dot: "bg-[#242424]" }
+    return { bg: "bg-[var(--color-bg-destructive-soft)]", text: "text-[var(--color-text-destructive-soft)]", dot: "bg-[var(--color-text-destructive-soft)]" }
   }
-  return { bg: "bg-[#f6f6f6]", text: "text-[#585858]", dot: "bg-[#8a8a8a]" }
+  return { bg: "bg-muted", text: "text-secondary-foreground", dot: "bg-muted-foreground" }
 }
 
 function getPageNumbers(current: number, total: number): (number | "...")[] {
@@ -187,30 +187,30 @@ export default function OnboardingList() {
   }
 
   return (
-    <div className="min-w-0 space-y-5 text-[#1b1b1b]">
-      <div className="flex flex-col gap-4 border-b border-[#e7e7e7] pb-5 lg:flex-row lg:items-end lg:justify-between">
+    <div className="min-w-0 space-y-5 text-foreground">
+      <div className="flex flex-col gap-4 border-b border-border pb-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <div className="mb-2 flex items-center gap-2 text-xs font-medium text-[#777]">
-            <button onClick={() => navigate("/")} className="transition hover:text-[#111]">Home</button>
+          <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
+            <button onClick={() => navigate("/")} className="transition hover:text-foreground">Home</button>
             <span>/</span>
-            <span className="text-[#222]">Partner onboarding</span>
+            <span className="text-foreground">Partner onboarding</span>
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#dedede] bg-white">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-card">
               <UsersMark />
             </div>
             <div>
-              <h1 className="text-2xl font-semibold tracking-[-0.03em] text-[#111]">Partner onboarding</h1>
-              <p className="mt-1 text-sm text-[#737373]">Manage applications, conversion status, and partner records in one register.</p>
+              <h1 className="text-2xl font-semibold tracking-[-0.03em] text-foreground">Partner onboarding</h1>
+              <p className="mt-1 text-sm text-muted-foreground">Manage applications, conversion status, and partner records in one register.</p>
             </div>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button onClick={() => setShowBulkUpload(true)} className="inline-flex items-center gap-2 rounded-lg border border-[#d8d8d8] bg-white px-3.5 py-2.5 text-sm font-semibold text-[#303030] transition hover:border-[#111] hover:bg-[#fafafa]">
+          <button onClick={() => setShowBulkUpload(true)} className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3.5 py-2.5 text-sm font-semibold text-secondary-foreground transition hover:border-foreground hover:bg-muted">
             <Upload className="h-4 w-4" />
             Bulk upload
           </button>
-          <button onClick={() => navigate("/onboarding/new")} className="inline-flex items-center gap-2 rounded-lg bg-[#111] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#2b2b2b] active:scale-[0.99]">
+          <button onClick={() => navigate("/onboarding/new")} className="inline-flex items-center gap-2 rounded-lg bg-foreground px-4 py-2.5 text-sm font-semibold text-background transition hover:opacity-90 active:scale-[0.99]">
             <Plus className="h-4 w-4" />
             Add partner
           </button>
@@ -224,71 +224,71 @@ export default function OnboardingList() {
         <onboarding-stats-card ref={convertedStatsRef} />
       </div>
 
-      {error && <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-[#d5d5d5] bg-[#f7f7f7] px-4 py-3 text-sm text-[#222]"><span>{error}</span><button onClick={load} className="inline-flex items-center gap-1.5 font-semibold underline underline-offset-4"><RefreshCw className="h-3.5 w-3.5" /> Retry</button></div>}
+      {error && <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted px-4 py-3 text-sm text-foreground"><span>{error}</span><button onClick={load} className="inline-flex items-center gap-1.5 font-semibold underline underline-offset-4"><RefreshCw className="h-3.5 w-3.5" /> Retry</button></div>}
 
-      <section className="overflow-hidden rounded-xl border border-[#dedede] bg-white shadow-[0_8px_30px_rgba(0,0,0,0.035)]">
-        <div className="flex flex-col gap-3 border-b border-[#e5e5e5] p-4 xl:flex-row xl:items-center xl:justify-between">
+      <section className="overflow-hidden rounded-xl border border-border bg-card shadow-[0_8px_30px_rgba(0,0,0,0.035)]">
+        <div className="flex flex-col gap-3 border-b border-border p-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex flex-wrap items-center gap-2">
-            <label className="flex items-center gap-2 text-sm text-[#666]">
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
               <span>Show</span>
-              <select aria-label="Rows per page" value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1) }} className="rounded-md border border-[#d9d9d9] bg-white px-2.5 py-2 text-sm font-semibold text-[#222] outline-none focus:border-[#111] focus:ring-2 focus:ring-[#111]/10">
+              <select aria-label="Rows per page" value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1) }} className="rounded-md border border-border bg-card px-2.5 py-2 text-sm font-semibold text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/10">
                 {[10, 25, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}
               </select>
               <span>entries</span>
             </label>
-            <button onClick={() => setShowFilters((value) => !value)} className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition ${showFilters || hasActiveFilters ? "border-[#111] bg-[#111] text-white" : "border-[#d9d9d9] bg-white text-[#444] hover:border-[#111]"}`}>
+            <button onClick={() => setShowFilters((value) => !value)} className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition ${showFilters || hasActiveFilters ? "border-foreground bg-foreground text-background" : "border-border bg-card text-secondary-foreground hover:border-foreground"}`}>
               <SlidersHorizontal className="h-3.5 w-3.5" /> Filters
-              {hasActiveFilters && <span className="rounded-full bg-white px-1.5 text-[10px] text-[#111]">{[statusFilter, kycFilter, typeFilter, search].filter(Boolean).length}</span>}
+              {hasActiveFilters && <span className="rounded-full bg-card px-1.5 text-[10px] text-foreground">{[statusFilter, kycFilter, typeFilter, search].filter(Boolean).length}</span>}
             </button>
-            <button onClick={load} className="inline-flex items-center gap-2 rounded-md border border-[#d9d9d9] bg-white px-3 py-2 text-sm font-semibold text-[#444] transition hover:border-[#111]" title="Refresh register"><RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh</button>
+            <button onClick={load} className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm font-semibold text-secondary-foreground transition hover:border-foreground" title="Refresh register"><RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh</button>
           </div>
           <div className="relative w-full xl:w-[300px]">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8a8a8a]" />
-            <input aria-label="Search partner onboarding" value={searchValue} onChange={(e) => setSearchValue(e.target.value)} onKeyDown={handleSearchKeyDown} placeholder="Search name, reference, email..." className="w-full rounded-md border border-[#d9d9d9] bg-white py-2.5 pl-9 pr-20 text-sm text-[#1c1c1c] outline-none transition placeholder:text-[#999] focus:border-[#111] focus:ring-2 focus:ring-[#111]/10" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input aria-label="Search partner onboarding" value={searchValue} onChange={(e) => setSearchValue(e.target.value)} onKeyDown={handleSearchKeyDown} placeholder="Search name, reference, email..." className="w-full rounded-md border border-border bg-card py-2.5 pl-9 pr-20 text-sm text-foreground outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/10" />
             <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
-              {searchValue && <button onClick={() => { setSearchValue(""); setSearch(""); setPage(1) }} className="rounded p-1 text-[#777] hover:bg-[#f2f2f2]" aria-label="Clear search"><X className="h-3.5 w-3.5" /></button>}
-              <button onClick={applySearch} className="rounded bg-[#111] px-2 py-1 text-[11px] font-bold text-white">Search</button>
+              {searchValue && <button onClick={() => { setSearchValue(""); setSearch(""); setPage(1) }} className="rounded p-1 text-muted-foreground hover:bg-muted" aria-label="Clear search"><X className="h-3.5 w-3.5" /></button>}
+              <button onClick={applySearch} className="rounded bg-foreground px-2 py-1 text-[11px] font-bold text-background">Search</button>
             </div>
           </div>
         </div>
 
-        {showFilters && <div className="grid gap-3 border-b border-[#e5e5e5] bg-[#fafafa] p-4 sm:grid-cols-3 lg:grid-cols-4">
+        {showFilters && <div className="grid gap-3 border-b border-border bg-muted p-4 sm:grid-cols-3 lg:grid-cols-4">
           <FilterSelect label="Application status" value={statusFilter} onChange={(value) => { setStatusFilter(value as ApplicationStatus | ""); setPage(1) }} options={STATUSES} />
           <FilterSelect label="KYC status" value={kycFilter} onChange={(value) => { setKycFilter(value as KycStatus | ""); setPage(1) }} options={[{ value: "", label: "All KYC statuses" }, ...(kycOptions ?? [])]} />
           <FilterSelect label="Partner type" value={typeFilter} onChange={(value) => { setTypeFilter(value); setPage(1) }} options={PARTNER_TYPES} />
-          <div className="flex items-end"><button onClick={clearAllFilters} disabled={!hasActiveFilters} className="inline-flex h-10 items-center gap-2 rounded-md border border-[#d9d9d9] bg-white px-3 text-sm font-semibold text-[#555] transition hover:border-[#111] disabled:cursor-not-allowed disabled:opacity-40"><X className="h-3.5 w-3.5" /> Clear filters</button></div>
+          <div className="flex items-end"><button onClick={clearAllFilters} disabled={!hasActiveFilters} className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-card px-3 text-sm font-semibold text-secondary-foreground transition hover:border-foreground disabled:cursor-not-allowed disabled:opacity-40"><X className="h-3.5 w-3.5" /> Clear filters</button></div>
         </div>}
 
         {loading ? <div className="p-4"><SkeletonTable rows={7} cols={11} /></div> : items.length === 0 ? <EmptyState filtered={hasActiveFilters} onAdd={() => navigate("/onboarding/new")} onClear={clearAllFilters} /> : <>
           <div className="overflow-x-auto">
             <table className="min-w-[1180px] w-full text-left text-sm">
-              <thead className="bg-[#fafafa] text-[11px] uppercase tracking-[0.08em] text-[#777]">
-                <tr className="border-b border-[#e5e5e5]">
-                  {['No.', 'Reference', 'Partner', 'Record', 'Client type', 'Contact', 'Telephone', 'Status', 'Created', 'Updated', ''].map((heading, index) => <th key={heading || index} className="whitespace-nowrap px-4 py-3.5 font-bold">{heading || <span className="sr-only">Actions</span>}{index > 0 && index < 10 && heading && <ArrowUpDown className="ml-1 inline h-3 w-3 text-[#b0b0b0]" />}</th>)}
+              <thead className="bg-muted text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
+                <tr className="border-b border-border">
+                  {['No.', 'Reference', 'Partner', 'Record', 'Client type', 'Contact', 'Telephone', 'Status', 'Created', 'Updated', ''].map((heading, index) => <th key={heading || index} className="whitespace-nowrap px-4 py-3.5 font-bold">{heading || <span className="sr-only">Actions</span>}{index > 0 && index < 10 && heading && <ArrowUpDown className="ml-1 inline h-3 w-3 text-muted-foreground" />}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {items.map((record, index) => {
                   const status = record.applicationStatus ? statusVariant(record.applicationStatus) : null
                   const canDelete = record.recordType === "APPLICATION" && record.applicationStatus && ["DRAFT", "ACTIVE"].includes(record.applicationStatus)
-                  return <tr key={record.id} tabIndex={0} onClick={() => navigateTo(record)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigateTo(record) } }} className="group cursor-pointer border-b border-[#eeeeee] outline-none transition last:border-0 hover:bg-[#fafafa] focus:bg-[#fafafa] focus:ring-2 focus:ring-inset focus:ring-[#111]">
-                    <td className="px-4 py-4 text-[#888]">{index + 1 + (page - 1) * pageSize}</td>
-                    <td className="whitespace-nowrap px-4 py-4 font-semibold text-[#222]">{record.referenceNumber}</td>
-                    <td className="max-w-[235px] px-4 py-4"><div className="truncate font-semibold text-[#202020]">{record.displayName}</div><div className="mt-1 truncate text-xs text-[#888]">{record.email || "No email recorded"}</div></td>
-                    <td className="whitespace-nowrap px-4 py-4"><span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#666]"><RecordTypeMark type={record.recordType} /> {record.recordType === "APPLICATION" ? "Application" : "Partner"}</span></td>
-                    <td className="whitespace-nowrap px-4 py-4 text-[#555]">{record.partnerType === "INDIVIDUAL" ? "Individual" : "Corporate"}</td>
-                    <td className="whitespace-nowrap px-4 py-4 text-[#555]">{record.email || "—"}</td>
-                    <td className="whitespace-nowrap px-4 py-4 text-[#555]">{record.mobileNumber || "—"}</td>
-                    <td className="whitespace-nowrap px-4 py-4">{status ? <span className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs font-bold ${status.bg} ${status.text}`}><span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />{statusLabels[record.applicationStatus!] || record.applicationStatus}</span> : <span className="text-[#999]">—</span>}</td>
-                    <td className="whitespace-nowrap px-4 py-4 text-[#555]">{formatDate(record.createdAt)}</td>
-                    <td className="whitespace-nowrap px-4 py-4 text-[#777]">{formatDate(record.createdAt)}</td>
+                  return <tr key={record.id} tabIndex={0} onClick={() => navigateTo(record)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigateTo(record) } }} className="group cursor-pointer border-b border-border outline-none transition last:border-0 hover:bg-muted focus:bg-muted focus:ring-2 focus:ring-inset focus:ring-primary">
+                    <td className="px-4 py-4 text-muted-foreground">{index + 1 + (page - 1) * pageSize}</td>
+                    <td className="whitespace-nowrap px-4 py-4 font-semibold text-foreground">{record.referenceNumber}</td>
+                    <td className="max-w-[235px] px-4 py-4"><div className="truncate font-semibold text-foreground">{record.displayName}</div><div className="mt-1 truncate text-xs text-muted-foreground">{record.email || "No email recorded"}</div></td>
+                    <td className="whitespace-nowrap px-4 py-4"><span className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground"><RecordTypeMark type={record.recordType} /> {record.recordType === "APPLICATION" ? "Application" : "Partner"}</span></td>
+                    <td className="whitespace-nowrap px-4 py-4 text-secondary-foreground">{record.partnerType === "INDIVIDUAL" ? "Individual" : "Corporate"}</td>
+                    <td className="whitespace-nowrap px-4 py-4 text-secondary-foreground">{record.email || "—"}</td>
+                    <td className="whitespace-nowrap px-4 py-4 text-secondary-foreground">{record.mobileNumber || "—"}</td>
+                    <td className="whitespace-nowrap px-4 py-4">{status ? <span className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs font-bold ${status.bg} ${status.text}`}><span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />{statusLabels[record.applicationStatus!] || record.applicationStatus}</span> : <span className="text-muted-foreground">—</span>}</td>
+                    <td className="whitespace-nowrap px-4 py-4 text-secondary-foreground">{formatDate(record.createdAt)}</td>
+                    <td className="whitespace-nowrap px-4 py-4 text-muted-foreground">{formatDate(record.createdAt)}</td>
                     <td className="px-4 py-4"><div className="flex justify-end gap-1 opacity-70 transition group-hover:opacity-100"><IconButton label="Edit" onClick={(e) => { e.stopPropagation(); navigateEdit(record) }}><Pencil className="h-4 w-4" /></IconButton><IconButton label="View" onClick={(e) => { e.stopPropagation(); navigateTo(record) }}><Eye className="h-4 w-4" /></IconButton>{canDelete && <IconButton label="Delete draft" onClick={(e) => handleDeleteClick(record.applicationId!, e)} disabled={deleting === record.applicationId}>{deleting === record.applicationId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}</IconButton>}</div></td>
                   </tr>
                 })}
               </tbody>
             </table>
           </div>
-          <div className="flex flex-col gap-3 border-t border-[#e5e5e5] px-4 py-4 text-sm text-[#777] sm:flex-row sm:items-center sm:justify-between"><span>Showing <strong className="text-[#222]">{count === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, count)}</strong> of <strong className="text-[#222]">{count}</strong> records</span><div className="flex items-center gap-1"><button aria-label="Previous page" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="inline-flex h-8 items-center gap-1 rounded-md border border-[#d9d9d9] px-2.5 font-semibold text-[#555] transition hover:border-[#111] disabled:cursor-not-allowed disabled:opacity-35"><ChevronLeft className="h-3.5 w-3.5" /> Previous</button>{pageNumbers.map((pageNumber, index) => pageNumber === "..." ? <span key={`ellipsis-${index}`} className="px-2">…</span> : <button key={pageNumber} aria-label={`Page ${pageNumber}`} onClick={() => setPage(pageNumber)} className={`h-8 min-w-8 rounded-md border px-2 font-semibold transition ${pageNumber === page ? "border-[#111] bg-[#111] text-white" : "border-[#d9d9d9] bg-white text-[#555] hover:border-[#111]"}`}>{pageNumber}</button>)}<button aria-label="Next page" disabled={page >= totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))} className="inline-flex h-8 items-center gap-1 rounded-md border border-[#d9d9d9] px-2.5 font-semibold text-[#555] transition hover:border-[#111] disabled:cursor-not-allowed disabled:opacity-35">Next <ChevronRight className="h-3.5 w-3.5" /></button></div></div>
+          <div className="flex flex-col gap-3 border-t border-border px-4 py-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between"><span>Showing <strong className="text-foreground">{count === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, count)}</strong> of <strong className="text-foreground">{count}</strong> records</span><div className="flex items-center gap-1"><button aria-label="Previous page" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="inline-flex h-8 items-center gap-1 rounded-md border border-border px-2.5 font-semibold text-secondary-foreground transition hover:border-foreground disabled:cursor-not-allowed disabled:opacity-35"><ChevronLeft className="h-3.5 w-3.5" /> Previous</button>{pageNumbers.map((pageNumber, index) => pageNumber === "..." ? <span key={`ellipsis-${index}`} className="px-2">…</span> : <button key={pageNumber} aria-label={`Page ${pageNumber}`} onClick={() => setPage(pageNumber)} className={`h-8 min-w-8 rounded-md border px-2 font-semibold transition ${pageNumber === page ? "border-foreground bg-foreground text-background" : "border-border bg-card text-secondary-foreground hover:border-foreground"}`}>{pageNumber}</button>)}<button aria-label="Next page" disabled={page >= totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))} className="inline-flex h-8 items-center gap-1 rounded-md border border-border px-2.5 font-semibold text-secondary-foreground transition hover:border-foreground disabled:cursor-not-allowed disabled:opacity-35">Next <ChevronRight className="h-3.5 w-3.5" /></button></div></div>
         </>}
       </section>
 
@@ -300,8 +300,8 @@ export default function OnboardingList() {
 
 function UsersMark() { return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg> }
 
-function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[] }) { return <label className="text-xs font-bold uppercase tracking-[0.06em] text-[#777]"><span className="mb-1.5 block">{label}</span><select value={value} onChange={(e) => onChange(e.target.value)} className="h-10 w-full rounded-md border border-[#d9d9d9] bg-white px-3 text-sm font-medium normal-case tracking-normal text-[#222] outline-none focus:border-[#111] focus:ring-2 focus:ring-[#111]/10">{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label> }
+function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[] }) { return <label className="text-xs font-bold uppercase tracking-[0.06em] text-muted-foreground"><span className="mb-1.5 block">{label}</span><select value={value} onChange={(e) => onChange(e.target.value)} className="h-10 w-full rounded-md border border-border bg-card px-3 text-sm font-medium normal-case tracking-normal text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/10">{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label> }
 
-function IconButton({ label, onClick, disabled, children }: { label: string; onClick: (event: MouseEvent<HTMLButtonElement>) => void; disabled?: boolean; children: ReactNode }) { return <button aria-label={label} title={label} onClick={onClick} disabled={disabled} className="rounded-md p-2 text-[#777] transition hover:bg-[#eeeeee] hover:text-[#111] disabled:cursor-wait disabled:opacity-40">{children}</button> }
+function IconButton({ label, onClick, disabled, children }: { label: string; onClick: (event: MouseEvent<HTMLButtonElement>) => void; disabled?: boolean; children: ReactNode }) { return <button aria-label={label} title={label} onClick={onClick} disabled={disabled} className="rounded-md p-2 text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:cursor-wait disabled:opacity-40">{children}</button> }
 
-function EmptyState({ filtered, onAdd, onClear }: { filtered: boolean; onAdd: () => void; onClear: () => void }) { return <div className="flex flex-col items-center justify-center px-6 py-16 text-center"><div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-[#dedede] bg-[#fafafa] text-[#555]"><UsersMark /></div><h3 className="text-lg font-semibold text-[#111]">No partner records found</h3><p className="mt-1 max-w-sm text-sm text-[#777]">{filtered ? "No records match the current search and filters." : "Create your first partner application to begin the onboarding register."}</p><div className="mt-5 flex gap-2">{filtered && <button onClick={onClear} className="rounded-md border border-[#d7d7d7] px-4 py-2 text-sm font-semibold text-[#444] hover:border-[#111]">Clear filters</button>}<button onClick={onAdd} className="inline-flex items-center gap-2 rounded-md bg-[#111] px-4 py-2 text-sm font-semibold text-white hover:bg-[#303030]"><Plus className="h-4 w-4" /> Add partner</button></div></div> }
+function EmptyState({ filtered, onAdd, onClear }: { filtered: boolean; onAdd: () => void; onClear: () => void }) { return <div className="flex flex-col items-center justify-center px-6 py-16 text-center"><div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-border bg-muted text-secondary-foreground"><UsersMark /></div><h3 className="text-lg font-semibold text-foreground">No partner records found</h3><p className="mt-1 max-w-sm text-sm text-muted-foreground">{filtered ? "No records match the current search and filters." : "Create your first partner application to begin the onboarding register."}</p><div className="mt-5 flex gap-2">{filtered && <button onClick={onClear} className="rounded-md border border-border px-4 py-2 text-sm font-semibold text-secondary-foreground hover:border-foreground">Clear filters</button>}<button onClick={onAdd} className="inline-flex items-center gap-2 rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-background hover:opacity-90"><Plus className="h-4 w-4" /> Add partner</button></div></div> }

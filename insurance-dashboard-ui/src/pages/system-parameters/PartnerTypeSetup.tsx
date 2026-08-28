@@ -259,7 +259,7 @@ function DocumentsTab({ partnerTypeId, applicationId }: { partnerTypeId: string;
 
   return (
     <div>
-      {documentError && <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900" role="alert"><strong>{documentError.requiresLogin ? "Session expired — sign in again" : "Document action needs attention"}:</strong> {documentError.message}{documentError.requiresLogin ? <a className="ml-2 font-semibold underline" href={documentError.loginUrl}>Sign in again</a> : null}</div>}
+      {documentError && <div className="mb-4 rounded-md border border-[var(--color-bg-destructive-soft)] bg-[var(--color-bg-destructive-soft)] p-3 text-sm text-[var(--color-text-destructive-soft)]" role="alert"><strong>{documentError.requiresLogin ? "Session expired — sign in again" : "Document action needs attention"}:</strong> {documentError.message}{documentError.requiresLogin ? <a className="ml-2 font-semibold underline" href={documentError.loginUrl}>Sign in again</a> : null}</div>}
       <input
         ref={fileInputRef}
         type="file"

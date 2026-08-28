@@ -33,6 +33,7 @@ backend/staticfiles/
 *.log.*
 
 # Node/frontend
+node_modules/
 insurance-dashboard-ui/node_modules/
 insurance-dashboard-ui/dist/
 insurance-dashboard-ui/.vite/

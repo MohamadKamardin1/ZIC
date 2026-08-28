@@ -168,15 +168,15 @@ export default function PartnerDetail() {
   }
 
   if (loading) {
-    return <div className="flex min-h-[420px] items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-[#777]" /></div>
+    return <div className="flex min-h-[420px] items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-muted-foreground" /></div>
   }
 
   if (error) {
     return (
       <div className="space-y-4">
-        <button onClick={() => navigate(fromOnboarding ? "/onboarding" : "/partners")} className="inline-flex items-center gap-2 text-sm text-[#666] hover:text-[#111]"><ArrowLeft className="h-4 w-4" />Back</button>
-        <div className="rounded-xl border border-[#d9d9d9] bg-white p-5 text-sm text-[#333]">{error}</div>
-        <button onClick={load} className="rounded-lg bg-[#111] px-4 py-2 text-sm font-semibold text-white">Retry</button>
+        <button onClick={() => navigate(fromOnboarding ? "/onboarding" : "/partners")} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="h-4 w-4" />Back</button>
+        <div className="rounded-xl border border-border bg-card p-5 text-sm text-secondary-foreground">{error}</div>
+        <button onClick={load} className="rounded-lg bg-foreground px-4 py-2 text-sm font-semibold text-background">Retry</button>
       </div>
     )
   }
@@ -195,29 +195,29 @@ export default function PartnerDetail() {
   const activeAssignments = assignments.filter((assignment) => assignment.status === "ACTIVE").length
 
   return (
-    <div className="space-y-5 pb-8 text-[#222]">
+    <div className="space-y-5 pb-8 text-foreground">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-sm text-[#777]">
-          <button onClick={() => navigate(fromOnboarding ? "/onboarding" : "/partners")} className="hover:text-[#111]">{fromOnboarding ? "Onboarding" : "Partners"}</button>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <button onClick={() => navigate(fromOnboarding ? "/onboarding" : "/partners")} className="hover:text-foreground">{fromOnboarding ? "Onboarding" : "Partners"}</button>
           <span>/</span>
-          <span className="text-[#222]">View Partner</span>
+          <span className="text-foreground">View Partner</span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button onClick={() => navigate(`/partners/${id}/edit`)} className="inline-flex items-center gap-2 rounded-lg border border-[#d6d6d6] bg-white px-3.5 py-2 text-sm font-semibold text-[#333] hover:bg-[#f5f5f5]"><Pencil className="h-4 w-4" />Edit Partner</button>
+          <button onClick={() => navigate(`/partners/${id}/edit`)} className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3.5 py-2 text-sm font-semibold text-secondary-foreground hover:bg-muted"><Pencil className="h-4 w-4" />Edit Partner</button>
           <partner-lifecycle-actions status={partner.status} entityId={partner.id} busy={actionBusy}></partner-lifecycle-actions>
         </div>
       </div>
 
-      <section className="overflow-hidden rounded-xl border border-[#dedede] bg-white shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e8e8e8] px-5 py-4">
+      <section className="overflow-hidden rounded-xl border border-border bg-card shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#111] text-white"><User className="h-5 w-5" /></div>
-            <div><h1 className="text-xl font-bold tracking-tight text-[#111]">{partner.displayName}</h1><p className="mt-0.5 text-xs text-[#777]">{partner.partnerNumber} · {partner.partnerCategory || partner.partnerType}</p></div>
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-foreground text-background"><User className="h-5 w-5" /></div>
+            <div><h1 className="text-xl font-bold tracking-tight text-foreground">{partner.displayName}</h1><p className="mt-0.5 text-xs text-muted-foreground">{partner.partnerNumber} · {partner.partnerCategory || partner.partnerType}</p></div>
           </div>
-          <div className="flex items-center gap-3 text-right"><div><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#999]">Status</p><p className="mt-1 text-sm font-semibold text-[#222]">{partner.status}</p></div><span className="h-8 w-px bg-[#e4e4e4]" /><div><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#999]">Active Types</p><p className="mt-1 text-sm font-semibold text-[#222]">{activeAssignments}</p></div></div>
+          <div className="flex items-center gap-3 text-right"><div><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Status</p><p className="mt-1 text-sm font-semibold text-foreground">{partner.status}</p></div><span className="h-8 w-px bg-border" /><div><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Active Types</p><p className="mt-1 text-sm font-semibold text-foreground">{activeAssignments}</p></div></div>
         </div>
-        <div className="flex items-center justify-between border-t border-[#e8e8e8] bg-[#fafafa] px-5 py-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#777]">Partner Information</p><p className="mt-0.5 text-xs text-[#999]">Core identity, contact, risk, and lifecycle information</p></div><span className="rounded-full border border-[#d7d7d7] bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-[#666]">Read only</span></div>
-        <div className="grid grid-cols-1 divide-y divide-[#dedede] border-t border-[#dedede] md:grid-cols-3 md:divide-x md:divide-y-0">
+        <div className="flex items-center justify-between border-t border-border bg-muted px-5 py-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">Partner Information</p><p className="mt-0.5 text-xs text-muted-foreground">Core identity, contact, risk, and lifecycle information</p></div><span className="rounded-full border border-border bg-card px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Read only</span></div>
+        <div className="grid grid-cols-1 divide-y divide-border border-t border-border md:grid-cols-3 md:divide-x md:divide-y-0">
           <InfoColumn rows={[
             ["Partner Number", partner.partnerNumber],
             ["Client Type", partner.partnerCategory || partner.partnerType],
@@ -245,44 +245,44 @@ export default function PartnerDetail() {
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-xl border border-[#dedede] bg-white shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e6e6e6] px-5 pt-4">
+      <section className="overflow-hidden rounded-xl border border-border bg-card shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 pt-4">
           <div className="flex items-center gap-1 overflow-x-auto">
             {(["types", "contacts", "banks"] as const).map((tab) => (
-              <button key={tab} onClick={() => setDetailTab(tab)} className={`border-b-2 px-4 pb-3 text-sm font-semibold capitalize transition-colors ${detailTab === tab ? "border-[#111] text-[#111]" : "border-transparent text-[#999] hover:text-[#333]"}`}>{tab === "types" ? "Partner Types" : tab === "contacts" ? "Partner Contacts" : "Partner Banks"}</button>
+              <button key={tab} onClick={() => setDetailTab(tab)} className={`border-b-2 px-4 pb-3 text-sm font-semibold capitalize transition-colors ${detailTab === tab ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-secondary-foreground"}`}>{tab === "types" ? "Partner Types" : tab === "contacts" ? "Partner Contacts" : "Partner Banks"}</button>
             ))}
           </div>
-          {detailTab === "types" && <button onClick={() => openTypeModal()} className="mb-2 inline-flex items-center gap-2 rounded-lg bg-[#111] px-3.5 py-2 text-sm font-semibold text-white hover:bg-[#2c2c2c]"><Plus className="h-4 w-4" />Add Partner Type</button>}
+          {detailTab === "types" && <button onClick={() => openTypeModal()} className="mb-2 inline-flex items-center gap-2 rounded-lg bg-foreground px-3.5 py-2 text-sm font-semibold text-background hover:opacity-90"><Plus className="h-4 w-4" />Add Partner Type</button>}
         </div>
 
         {detailTab === "types" && (
           <>
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#efefef] px-5 py-4">
-              <div className="flex items-center gap-2 text-sm text-[#777]"><span>Showing</span><span className="font-semibold text-[#222]">{visibleAssignments.length}</span><span>of {assignments.length}</span></div>
-              <label className="relative block w-full sm:w-64"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#aaa]" /><input value={assignmentSearch} onChange={(event) => setAssignmentSearch(event.target.value)} placeholder="Search partner types..." className="w-full rounded-lg border border-[#d7d7d7] bg-white py-2 pl-9 pr-3 text-sm text-[#222] outline-none focus:border-[#111] focus:ring-2 focus:ring-[#111]/10" /></label>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground"><span>Showing</span><span className="font-semibold text-foreground">{visibleAssignments.length}</span><span>of {assignments.length}</span></div>
+              <label className="relative block w-full sm:w-64"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={assignmentSearch} onChange={(event) => setAssignmentSearch(event.target.value)} placeholder="Search partner types..." className="w-full rounded-lg border border-border bg-card py-2 pl-9 pr-3 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" /></label>
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-[980px] w-full text-left text-sm">
-                <thead className="bg-[#fafafa] text-[11px] font-bold uppercase tracking-[0.08em] text-[#777]"><tr><th className="px-5 py-3">No.</th><th className="px-4 py-3">Partner Type</th><th className="px-4 py-3">Location</th><th className="px-4 py-3">Active</th><th className="px-4 py-3">KYC Compliance</th><th className="px-4 py-3">Created</th><th className="px-4 py-3">Updated</th><th className="px-5 py-3 text-right">Actions</th></tr></thead>
-                <tbody className="divide-y divide-[#efefef]">
+                <thead className="bg-muted text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground"><tr><th className="px-5 py-3">No.</th><th className="px-4 py-3">Partner Type</th><th className="px-4 py-3">Location</th><th className="px-4 py-3">Active</th><th className="px-4 py-3">KYC Compliance</th><th className="px-4 py-3">Created</th><th className="px-4 py-3">Updated</th><th className="px-5 py-3 text-right">Actions</th></tr></thead>
+                <tbody className="divide-y divide-border">
                   {visibleAssignments.map((assignment, index) => {
                     const summary = summaries[assignment.id]
                     const kycReady = summary?.kyc.status === "APPROVED" || summary?.kyc.status === "COMPLIANT"
-                    return <tr key={assignment.id} id={`assignment-${assignment.id}`} className="hover:bg-[#fcfcfc]">
-                      <td className="px-5 py-4 text-[#999]">{index + 1}</td>
-                      <td className="px-4 py-4"><div className="font-semibold text-[#222]">{assignment.partnerTypeName}</div><div className="mt-0.5 text-xs text-[#999]">{assignment.partnerTypeCode}</div></td>
-                      <td className="px-4 py-4"><div className="flex items-center gap-1.5 text-[#555]"><MapPin className="h-3.5 w-3.5 text-[#999]" />{assignment.locationName || assignment.branchName || "Not set"}</div></td>
-                      <td className="px-4 py-4"><span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${assignment.status === "ACTIVE" ? "bg-[#f0f0f0] text-[#222]" : "bg-[#fafafa] text-[#999]"}`}><span className={`h-1.5 w-1.5 rounded-full ${assignment.status === "ACTIVE" ? "bg-[#111]" : "bg-[#aaa]"}`} />{assignment.status === "ACTIVE" ? "Active" : "Inactive"}</span></td>
-                      <td className="px-4 py-4"><span className={`font-semibold ${kycReady ? "text-[#222]" : "text-[#999]"}`}>{summary ? (kycReady ? "Compliant" : summary.kyc.status || "Not Set") : "Not Set"}</span></td>
-                      <td className="px-4 py-4 text-[#666]">{formatDate(assignment.createdAt)}</td>
-                      <td className="px-4 py-4 text-[#666]">{formatDate(assignment.updatedAt)}</td>
-                      <td className="px-5 py-4"><div className="flex items-center justify-end gap-1.5"><button title="View setup" onClick={() => openAssignmentSetup(assignment.id)} className="inline-flex items-center gap-1 rounded-md border border-[#d7d7d7] px-2.5 py-1.5 text-xs font-semibold text-[#333] hover:bg-[#f4f4f4]"><Eye className="h-3.5 w-3.5" />View</button><button title="Edit assignment" onClick={() => openTypeModal(assignment)} className="inline-flex items-center gap-1 rounded-md border border-[#d7d7d7] px-2.5 py-1.5 text-xs font-semibold text-[#333] hover:bg-[#f4f4f4]"><Pencil className="h-3.5 w-3.5" />Edit</button><button title={assignment.status === "ACTIVE" ? "Deactivate assignment" : "Activate assignment"} disabled={actionBusy} onClick={() => handleAssignmentLifecycle(assignment)} className="rounded-md border border-[#d7d7d7] px-2.5 py-1.5 text-xs font-semibold text-[#333] hover:bg-[#f4f4f4] disabled:opacity-50">{assignment.status === "ACTIVE" ? "Deactivate" : "Activate"}</button></div></td>
+                    return <tr key={assignment.id} id={`assignment-${assignment.id}`} className="hover:bg-muted">
+                      <td className="px-5 py-4 text-muted-foreground">{index + 1}</td>
+                      <td className="px-4 py-4"><div className="font-semibold text-foreground">{assignment.partnerTypeName}</div><div className="mt-0.5 text-xs text-muted-foreground">{assignment.partnerTypeCode}</div></td>
+                      <td className="px-4 py-4"><div className="flex items-center gap-1.5 text-secondary-foreground"><MapPin className="h-3.5 w-3.5 text-muted-foreground" />{assignment.locationName || assignment.branchName || "Not set"}</div></td>
+                      <td className="px-4 py-4"><span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${assignment.status === "ACTIVE" ? "bg-muted text-foreground" : "bg-muted text-muted-foreground"}`}><span className={`h-1.5 w-1.5 rounded-full ${assignment.status === "ACTIVE" ? "bg-foreground" : "bg-muted-foreground"}`} />{assignment.status === "ACTIVE" ? "Active" : "Inactive"}</span></td>
+                      <td className="px-4 py-4"><span className={`font-semibold ${kycReady ? "text-foreground" : "text-muted-foreground"}`}>{summary ? (kycReady ? "Compliant" : summary.kyc.status || "Not Set") : "Not Set"}</span></td>
+                      <td className="px-4 py-4 text-muted-foreground">{formatDate(assignment.createdAt)}</td>
+                      <td className="px-4 py-4 text-muted-foreground">{formatDate(assignment.updatedAt)}</td>
+                      <td className="px-5 py-4"><div className="flex items-center justify-end gap-1.5"><button title="View setup" onClick={() => openAssignmentSetup(assignment.id)} className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs font-semibold text-secondary-foreground hover:bg-muted"><Eye className="h-3.5 w-3.5" />View</button><button title="Edit assignment" onClick={() => openTypeModal(assignment)} className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs font-semibold text-secondary-foreground hover:bg-muted"><Pencil className="h-3.5 w-3.5" />Edit</button><button title={assignment.status === "ACTIVE" ? "Deactivate assignment" : "Activate assignment"} disabled={actionBusy} onClick={() => handleAssignmentLifecycle(assignment)} className="rounded-md border border-border px-2.5 py-1.5 text-xs font-semibold text-secondary-foreground hover:bg-muted disabled:opacity-50">{assignment.status === "ACTIVE" ? "Deactivate" : "Activate"}</button></div></td>
                     </tr>
                   })}
                 </tbody>
               </table>
             </div>
-            {visibleAssignments.length === 0 && <div className="px-5 py-14 text-center"><Shield className="mx-auto h-8 w-8 text-[#bbb]" /><p className="mt-3 text-sm font-semibold text-[#444]">No partner types found</p><p className="mt-1 text-sm text-[#999]">Assign a partner type or change the search term.</p></div>}
+            {visibleAssignments.length === 0 && <div className="px-5 py-14 text-center"><Shield className="mx-auto h-8 w-8 text-muted-foreground" /><p className="mt-3 text-sm font-semibold text-secondary-foreground">No partner types found</p><p className="mt-1 text-sm text-muted-foreground">Assign a partner type or change the search term.</p></div>}
             {setupAssignment && <AssignmentSetupModal assignment={setupAssignment} summary={summaries[setupAssignment.id]} history={histories[setupAssignment.id] ?? []} onClose={() => setSetupAssignmentId(null)} onRefresh={load} />}
           </>
         )}
@@ -322,24 +322,24 @@ function AssignmentSetupModal({ assignment, summary, history, onClose, onRefresh
   ] as const
 
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="assignment-setup-title">
-    <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-[#d7d7d7] bg-white shadow-[0_24px_80px_rgba(0,0,0,0.22)]">
-      <div className="flex items-start justify-between gap-4 border-b border-[#e6e6e6] px-5 py-4 sm:px-7">
+    <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-[0_24px_80px_rgba(0,0,0,0.22)]">
+      <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4 sm:px-7">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#999]">Assigned partner type</p>
-          <h2 id="assignment-setup-title" className="mt-1 text-xl font-bold tracking-tight text-[#111]">{assignment.partnerTypeName}</h2>
-          <p className="mt-1 text-sm text-[#777]">{assignment.partnerTypeCode} · {assignment.locationName || assignment.branchName || "Location not set"}</p>
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Assigned partner type</p>
+          <h2 id="assignment-setup-title" className="mt-1 text-xl font-bold tracking-tight text-foreground">{assignment.partnerTypeName}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{assignment.partnerTypeCode} · {assignment.locationName || assignment.branchName || "Location not set"}</p>
         </div>
-        <button onClick={onClose} aria-label="Close assignment workspace" className="rounded-lg border border-[#d7d7d7] p-2 text-[#555] hover:bg-[#f4f4f4] hover:text-[#111]"><X className="h-4 w-4" /></button>
+        <button onClick={onClose} aria-label="Close assignment workspace" className="rounded-lg border border-border p-2 text-secondary-foreground hover:bg-muted hover:text-foreground"><X className="h-4 w-4" /></button>
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e6e6e6] px-5 pt-3 sm:px-7">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 pt-3 sm:px-7">
         <div className="flex min-w-0 gap-1 overflow-x-auto">
-          {tabs.map(([value, label]) => <button key={value} onClick={() => setActiveTab(value)} className={`whitespace-nowrap border-b-2 px-3 pb-3 text-xs font-bold ${activeTab === value ? "border-[#111] text-[#111]" : "border-transparent text-[#888] hover:text-[#333]"}`}>{label}</button>)}
+          {tabs.map(([value, label]) => <button key={value} onClick={() => setActiveTab(value)} className={`whitespace-nowrap border-b-2 px-3 pb-3 text-xs font-bold ${activeTab === value ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-secondary-foreground"}`}>{label}</button>)}
         </div>
-        <button onClick={refresh} disabled={busy} className="mb-2 inline-flex items-center gap-2 rounded-lg border border-[#d7d7d7] px-3 py-2 text-xs font-bold text-[#333] hover:bg-[#f4f4f4] disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${busy ? "animate-spin" : ""}`} />Sync now</button>
+        <button onClick={refresh} disabled={busy} className="mb-2 inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs font-bold text-secondary-foreground hover:bg-muted disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${busy ? "animate-spin" : ""}`} />Sync now</button>
       </div>
-      {message && <div className="border-b border-[#e6e6e6] bg-[#fafafa] px-5 py-2.5 text-xs font-semibold text-[#555] sm:px-7">{message}</div>}
-      <div className="min-h-0 flex-1 overflow-y-auto bg-[#fafafa] p-4 sm:p-6">
-        {activeTab === "overview" && <div className="grid gap-4 md:grid-cols-3"><div className="rounded-xl border border-[#dedede] bg-white p-4"><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#999]">Assignment status</p><p className="mt-2 text-lg font-bold text-[#111]">{assignment.status}</p><p className="mt-1 text-xs text-[#777]">Created {formatDate(assignment.createdAt)}</p></div><div className="rounded-xl border border-[#dedede] bg-white p-4"><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#999]">Documents</p><p className="mt-2 text-lg font-bold text-[#111]">{summary?.documents?.submitted ?? 0} / {summary?.documents?.total ?? 0}</p><p className="mt-1 text-xs text-[#777]">Submitted requirements</p></div><div className="rounded-xl border border-[#dedede] bg-white p-4"><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#999]">KYC</p><p className="mt-2 text-lg font-bold text-[#111]">{summary?.kyc?.status || "NOT SET"}</p><p className="mt-1 text-xs text-[#777]">Use the update workspace below to maintain evidence.</p></div></div>}
+      {message && <div className="border-b border-border bg-muted px-5 py-2.5 text-xs font-semibold text-secondary-foreground sm:px-7">{message}</div>}
+      <div className="min-h-0 flex-1 overflow-y-auto bg-muted p-4 sm:p-6">
+        {activeTab === "overview" && <div className="grid gap-4 md:grid-cols-3"><div className="rounded-xl border border-border bg-card p-4"><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Assignment status</p><p className="mt-2 text-lg font-bold text-foreground">{assignment.status}</p><p className="mt-1 text-xs text-muted-foreground">Created {formatDate(assignment.createdAt)}</p></div><div className="rounded-xl border border-border bg-card p-4"><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Documents</p><p className="mt-2 text-lg font-bold text-foreground">{summary?.documents?.submitted ?? 0} / {summary?.documents?.total ?? 0}</p><p className="mt-1 text-xs text-muted-foreground">Submitted requirements</p></div><div className="rounded-xl border border-border bg-card p-4"><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">KYC</p><p className="mt-2 text-lg font-bold text-foreground">{summary?.kyc?.status || "NOT SET"}</p><p className="mt-1 text-xs text-muted-foreground">Use the update workspace below to maintain evidence.</p></div></div>}
         {activeTab === "documents" && <SetupManager assignment={assignment} summary={summary} initialTab="documents" onRefresh={onRefresh} />}
         {activeTab === "contacts" && <SetupManager assignment={assignment} summary={summary} initialTab="contacts" onRefresh={onRefresh} />}
         {activeTab === "banks" && <SetupManager assignment={assignment} summary={summary} initialTab="banks" onRefresh={onRefresh} />}
@@ -350,12 +350,12 @@ function AssignmentSetupModal({ assignment, summary, history, onClose, onRefresh
 }
 
 function InfoColumn({ rows }: { rows: [string, string | null | undefined][] }) {
-  return <div className="px-5 py-2">{rows.map(([label, value]) => <div key={label} className="grid grid-cols-[minmax(130px,0.9fr)_minmax(0,1.1fr)] gap-3 border-b border-[#ededed] py-3 last:border-b-0"><span className="text-[11px] font-bold uppercase tracking-wide text-[#555]">{label}</span><span className="truncate text-sm text-[#333]" title={value || "—"}>{value || "—"}</span></div>)}</div>
+  return <div className="px-5 py-2">{rows.map(([label, value]) => <div key={label} className="grid grid-cols-[minmax(130px,0.9fr)_minmax(0,1.1fr)] gap-3 border-b border-border py-3 last:border-b-0"><span className="text-[11px] font-bold uppercase tracking-wide text-secondary-foreground">{label}</span><span className="truncate text-sm text-secondary-foreground" title={value || "—"}>{value || "—"}</span></div>)}</div>
 }
 
 function RelatedAssignmentTab({ tab, assignments, summaries, onManage }: { tab: "contacts" | "banks"; assignments: PartnerTypeAssignment[]; summaries: Record<string, SetupSummary>; onManage: (id: string) => void }) {
   const label = tab === "contacts" ? "contacts" : "bank accounts"
-  return <div className="p-5"><div className="mb-4 flex items-center justify-between"><div><h2 className="text-base font-bold text-[#222]">Partner {tab === "contacts" ? "Contacts" : "Banks"}</h2><p className="mt-1 text-sm text-[#777]">Manage assignment-specific {label} from the setup workspace.</p></div><span className="rounded-full bg-[#f3f3f3] px-3 py-1 text-xs font-semibold text-[#555]">{assignments.length} assignment{assignments.length === 1 ? "" : "s"}</span></div><div className="overflow-x-auto rounded-lg border border-[#e3e3e3]"><table className="min-w-[720px] w-full text-left text-sm"><thead className="bg-[#fafafa] text-[11px] font-bold uppercase tracking-[0.08em] text-[#777]"><tr><th className="px-4 py-3">Partner Type</th><th className="px-4 py-3">Location</th><th className="px-4 py-3">Required</th><th className="px-4 py-3">Submitted</th><th className="px-4 py-3 text-right">Action</th></tr></thead><tbody className="divide-y divide-[#efefef]">{assignments.map((assignment) => { const summary = summaries[assignment.id]; const metrics = tab === "contacts" ? summary?.contacts : summary?.banks; return <tr key={assignment.id}><td className="px-4 py-3 font-semibold text-[#222]">{assignment.partnerTypeName}</td><td className="px-4 py-3 text-[#666]">{assignment.locationName || assignment.branchName || "Not set"}</td><td className="px-4 py-3 text-[#666]">{metrics?.total ?? "—"}</td><td className="px-4 py-3 text-[#666]">{metrics?.submitted ?? "—"}</td><td className="px-4 py-3 text-right"><button onClick={() => onManage(assignment.id)} className="inline-flex items-center gap-1.5 rounded-md border border-[#d7d7d7] px-2.5 py-1.5 text-xs font-semibold text-[#333] hover:bg-[#f4f4f4]"><Eye className="h-3.5 w-3.5" />Manage</button></td></tr> })}</tbody></table>{assignments.length === 0 && <div className="p-12 text-center text-sm text-[#999]">No partner type assignments are available yet.</div>}</div></div>
+  return <div className="p-5"><div className="mb-4 flex items-center justify-between"><div><h2 className="text-base font-bold text-foreground">Partner {tab === "contacts" ? "Contacts" : "Banks"}</h2><p className="mt-1 text-sm text-muted-foreground">Manage assignment-specific {label} from the setup workspace.</p></div><span className="rounded-full bg-muted px-3 py-1 text-xs font-semibold text-secondary-foreground">{assignments.length} assignment{assignments.length === 1 ? "" : "s"}</span></div><div className="overflow-x-auto rounded-lg border border-border"><table className="min-w-[720px] w-full text-left text-sm"><thead className="bg-muted text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground"><tr><th className="px-4 py-3">Partner Type</th><th className="px-4 py-3">Location</th><th className="px-4 py-3">Required</th><th className="px-4 py-3">Submitted</th><th className="px-4 py-3 text-right">Action</th></tr></thead><tbody className="divide-y divide-border">{assignments.map((assignment) => { const summary = summaries[assignment.id]; const metrics = tab === "contacts" ? summary?.contacts : summary?.banks; return <tr key={assignment.id}><td className="px-4 py-3 font-semibold text-foreground">{assignment.partnerTypeName}</td><td className="px-4 py-3 text-muted-foreground">{assignment.locationName || assignment.branchName || "Not set"}</td><td className="px-4 py-3 text-muted-foreground">{metrics?.total ?? "—"}</td><td className="px-4 py-3 text-muted-foreground">{metrics?.submitted ?? "—"}</td><td className="px-4 py-3 text-right"><button onClick={() => onManage(assignment.id)} className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-semibold text-secondary-foreground hover:bg-muted"><Eye className="h-3.5 w-3.5" />Manage</button></td></tr> })}</tbody></table>{assignments.length === 0 && <div className="p-12 text-center text-sm text-muted-foreground">No partner type assignments are available yet.</div>}</div></div>
 }
 
 function PartnerTypeModal({ open, partnerId, assignment, onClose, onSaved }: { open: boolean; partnerId: string; assignment: PartnerTypeAssignment | null; onClose: () => void; onSaved: () => Promise<void> }) {
@@ -403,11 +403,11 @@ function PartnerTypeModal({ open, partnerId, assignment, onClose, onSaved }: { o
     } finally { setSaving(false) }
   }
 
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="dialog" aria-modal="true" aria-labelledby="partner-type-modal-title"><div className="w-full max-w-2xl overflow-hidden rounded-xl border border-[#d7d7d7] bg-white shadow-2xl"><div className="flex items-center justify-between border-b border-[#e7e7e7] px-5 py-4"><div><h2 id="partner-type-modal-title" className="text-lg font-bold text-[#222]">{assignment ? "Edit Partner Type" : "Add Partner Type"}</h2><p className="mt-1 text-xs text-[#777]">Configure type, branch, location, and data-sharing rules.</p></div><button onClick={onClose} className="rounded-md p-2 text-[#777] hover:bg-[#f2f2f2] hover:text-[#111]" aria-label="Close"><X className="h-5 w-5" /></button></div>{loading ? <div className="flex h-56 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-[#777]" /></div> : <><div className="grid gap-5 px-5 py-5 md:grid-cols-2"><SelectField label="Partner Type" value={selectedType} onChange={setSelectedType} options={partnerTypes.map((type) => ({ value: type.id, label: `${type.name} · ${type.code}` }))} placeholder="Select partner type" /><SelectField label="Branch" value={selectedBranch} onChange={(value) => { setSelectedBranch(value); if (!value) setSelectedLocation("") }} options={branches.map((branch) => ({ value: branch.id, label: `${branch.name} · ${branch.code}` }))} placeholder="Select branch" /><SelectField label="Location" value={selectedLocation} onChange={setSelectedLocation} options={locations.filter((location) => !selectedBranch || location.branchId === selectedBranch).map((location) => ({ value: location.id, label: `${location.name} · ${location.code}` }))} placeholder={selectedBranch ? "Select location" : "Select branch first"} disabled={!selectedBranch} /><label className="block"><span className="mb-1.5 block text-xs font-bold text-[#333]">Effective Date</span><div className="relative"><CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#999]" /><input type="date" value={effectiveDate} onChange={(event) => setEffectiveDate(event.target.value)} className="w-full rounded-lg border border-[#d7d7d7] bg-white py-2.5 pl-9 pr-3 text-sm text-[#222] outline-none focus:border-[#111] focus:ring-2 focus:ring-[#111]/10" /></div></label><label className="flex items-center gap-3 rounded-lg border border-[#e1e1e1] bg-[#fafafa] px-3 py-3 md:col-span-2"><input type="checkbox" checked={shareData} onChange={(event) => setShareData(event.target.checked)} className="h-4 w-4 accent-[#111]" /><span><span className="block text-sm font-semibold text-[#333]">Share data externally</span><span className="mt-0.5 block text-xs text-[#777]">Allow this partner type to share approved information with configured external systems.</span></span></label></div>{error && <div className="mx-5 mb-4 rounded-lg border border-[#d7d7d7] bg-[#f7f7f7] px-3 py-2 text-sm text-[#333]">{error}</div>}<div className="flex items-center justify-end gap-2 border-t border-[#e7e7e7] px-5 py-4"><button onClick={onClose} className="rounded-lg border border-[#d7d7d7] px-4 py-2 text-sm font-semibold text-[#555] hover:bg-[#f4f4f4]">Cancel</button><button onClick={submit} disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-[#111] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2c2c2c] disabled:opacity-50">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{saving ? "Saving..." : "Save"}</button></div></>}</div></div>
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="dialog" aria-modal="true" aria-labelledby="partner-type-modal-title"><div className="w-full max-w-2xl overflow-hidden rounded-xl border border-border bg-card shadow-2xl"><div className="flex items-center justify-between border-b border-border px-5 py-4"><div><h2 id="partner-type-modal-title" className="text-lg font-bold text-foreground">{assignment ? "Edit Partner Type" : "Add Partner Type"}</h2><p className="mt-1 text-xs text-muted-foreground">Configure type, branch, location, and data-sharing rules.</p></div><button onClick={onClose} className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Close"><X className="h-5 w-5" /></button></div>{loading ? <div className="flex h-56 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div> : <><div className="grid gap-5 px-5 py-5 md:grid-cols-2"><SelectField label="Partner Type" value={selectedType} onChange={setSelectedType} options={partnerTypes.map((type) => ({ value: type.id, label: `${type.name} · ${type.code}` }))} placeholder="Select partner type" /><SelectField label="Branch" value={selectedBranch} onChange={(value) => { setSelectedBranch(value); if (!value) setSelectedLocation("") }} options={branches.map((branch) => ({ value: branch.id, label: `${branch.name} · ${branch.code}` }))} placeholder="Select branch" /><SelectField label="Location" value={selectedLocation} onChange={setSelectedLocation} options={locations.filter((location) => !selectedBranch || location.branchId === selectedBranch).map((location) => ({ value: location.id, label: `${location.name} · ${location.code}` }))} placeholder={selectedBranch ? "Select location" : "Select branch first"} disabled={!selectedBranch} /><label className="block"><span className="mb-1.5 block text-xs font-bold text-secondary-foreground">Effective Date</span><div className="relative"><CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input type="date" value={effectiveDate} onChange={(event) => setEffectiveDate(event.target.value)} className="w-full rounded-lg border border-border bg-card py-2.5 pl-9 pr-3 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/10" /></div></label><label className="flex items-center gap-3 rounded-lg border border-border bg-muted px-3 py-3 md:col-span-2"><input type="checkbox" checked={shareData} onChange={(event) => setShareData(event.target.checked)} className="h-4 w-4 accent-[var(--primary)]" /><span><span className="block text-sm font-semibold text-secondary-foreground">Share data externally</span><span className="mt-0.5 block text-xs text-muted-foreground">Allow this partner type to share approved information with configured external systems.</span></span></label></div>{error && <div className="mx-5 mb-4 rounded-lg border border-border bg-muted px-3 py-2 text-sm text-secondary-foreground">{error}</div>}<div className="flex items-center justify-end gap-2 border-t border-border px-5 py-4"><button onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-secondary-foreground hover:bg-muted">Cancel</button><button onClick={submit} disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-semibold text-background hover:opacity-90 disabled:opacity-50">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{saving ? "Saving..." : "Save"}</button></div></>}</div></div>
 }
 
 function SelectField({ label, value, onChange, options, placeholder, disabled = false }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[]; placeholder: string; disabled?: boolean }) {
-  return <label className="block"><span className="mb-1.5 block text-xs font-bold text-[#333]">{label}</span><div className="relative"><select value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled} className="w-full appearance-none rounded-lg border border-[#d7d7d7] bg-white px-3 py-2.5 pr-9 text-sm text-[#222] outline-none focus:border-[#111] focus:ring-2 focus:ring-[#111]/10 disabled:bg-[#f7f7f7] disabled:text-[#aaa]"><option value="">{placeholder}</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#999]" /></div></label>
+  return <label className="block"><span className="mb-1.5 block text-xs font-bold text-secondary-foreground">{label}</span><div className="relative"><select value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled} className="w-full appearance-none rounded-lg border border-border bg-card px-3 py-2.5 pr-9 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 disabled:bg-muted disabled:text-muted-foreground"><option value="">{placeholder}</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /></div></label>
 }
 
 function SetupManager({
@@ -565,7 +565,7 @@ function DocumentsTab({ assignmentId, partnerTypeId, onRefresh }: { assignmentId
   return (
     <div className="space-y-3">
       {(loadError || actionError) && (
-        <div className="rounded-lg border border-[#d7d7d7] bg-[#f7f7f7] px-3 py-2 text-xs font-semibold text-[#444]">
+        <div className="rounded-lg border border-border bg-muted px-3 py-2 text-xs font-semibold text-secondary-foreground">
           {loadError || actionError}
         </div>
       )}
@@ -584,19 +584,19 @@ function DocumentsTab({ assignmentId, partnerTypeId, onRefresh }: { assignmentId
                 <div className="flex items-center gap-3 flex-none ml-4">
                   {doc ? (
                     <>
-                                                <span className="inline-flex items-center rounded-full border border-[#d7d7d7] bg-[#fafafa] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#444]">{doc.status}</span>
+                                                <span className="inline-flex items-center rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-secondary-foreground">{doc.status}</span>
 
                       {doc.status === "UPLOADED" || doc.status === "NOT_SUBMITTED" ? (
                         <>
-                          <button onClick={() => handleVerify(doc.id)} className="rounded-md border border-[#d7d7d7] p-1.5 text-[#333] hover:bg-[#f1f1f1]" title="Approve"><CheckCircle className="h-4 w-4" /></button>
-                          <button onClick={() => handleReject(doc.id)} className="rounded-md border border-[#d7d7d7] p-1.5 text-[#333] hover:bg-[#f1f1f1]" title="Reject"><XCircle className="h-4 w-4" /></button>
+                          <button onClick={() => handleVerify(doc.id)} className="rounded-md border border-border p-1.5 text-secondary-foreground hover:bg-muted" title="Approve"><CheckCircle className="h-4 w-4" /></button>
+                          <button onClick={() => handleReject(doc.id)} className="rounded-md border border-border p-1.5 text-secondary-foreground hover:bg-muted" title="Reject"><XCircle className="h-4 w-4" /></button>
                         </>
                       ) : null}
                     </>
                   ) : (
                     <>
                       <input type="file" ref={(el) => { fileRefs.current[req.id] = el }} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFilePick(req.id, f) }} className="hidden" accept=".pdf,.jpg,.jpeg,.png" />
-                      <button onClick={() => fileRefs.current[req.id]?.click()} disabled={uploading === req.id} className="flex items-center gap-1.5 rounded-lg bg-[#111] px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-[#2b2b2b] disabled:opacity-50">
+                      <button onClick={() => fileRefs.current[req.id]?.click()} disabled={uploading === req.id} className="flex items-center gap-1.5 rounded-lg bg-foreground px-3 py-1.5 text-xs font-bold text-background transition-colors hover:opacity-90 disabled:opacity-50">
                         {uploading === req.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
                         Upload
                       </button>
@@ -633,7 +633,7 @@ function DocumentsTab({ assignmentId, partnerTypeId, onRefresh }: { assignmentId
             {docs.map((doc) => (
               <div key={doc.id} className="flex items-center justify-between rounded border border-border px-3 py-2 text-xs">
                 <span className="text-foreground truncate">{doc.documentRequirementName || doc.documentRequirementCode || doc.id}</span>
-                <div className="ml-2 flex flex-none items-center gap-2"><span className="rounded-full border border-[#d7d7d7] bg-[#fafafa] px-1.5 py-0.5 text-[10px] font-bold uppercase text-[#444]">{doc.status}</span><button onClick={() => handleDelete(doc.id)} disabled={uploading === `delete-${doc.id}`} className="rounded-md border border-[#d7d7d7] p-1 text-[#666] hover:bg-[#f1f1f1] hover:text-[#111] disabled:opacity-50" title="Remove document"><Trash2 className="h-3.5 w-3.5" /></button></div>
+                <div className="ml-2 flex flex-none items-center gap-2"><span className="rounded-full border border-border bg-muted px-1.5 py-0.5 text-[10px] font-bold uppercase text-secondary-foreground">{doc.status}</span><button onClick={() => handleDelete(doc.id)} disabled={uploading === `delete-${doc.id}`} className="rounded-md border border-border p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50" title="Remove document"><Trash2 className="h-3.5 w-3.5" /></button></div>
               </div>
             ))}
           </div>

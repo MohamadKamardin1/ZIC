@@ -14,6 +14,25 @@ const BASE = "/api/v1/ol-proposals"
 const CREATE_BASE = "/api/v1/ol/proposals"
 const QUOTATIONS_BASE = "/api/v1/ol/quotations/quotations"
 
+// The API renders camelCase payloads while the normalizers below read snake_case
+// keys, so every fetcher routes responses through this boundary transform.
+function toSnake(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(toSnake)
+  if (value && typeof value === "object") {
+    const result: Record<string, unknown> = {}
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      result[key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)] = toSnake(item)
+    }
+    return result
+  }
+  return value
+}
+
+async function requestSnake<T>(path: string, options?: Parameters<typeof request>[1]): Promise<T> {
+  const payload = options === undefined ? await request<T>(path) : await request<T>(path, options)
+  return toSnake(payload) as T
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -414,7 +433,7 @@ export function normalizeProposalListItem(raw: unknown): ProposalListItem {
     statusName: str(badge, "name", "label"),
     partnerName: str(record, "policyholder", "partner_name", "partnerName") ?? str(record, "partner_display") ?? "—",
     agentName: str(record, "agent_name_snapshot", "agent_name", "agent"),
-    employerName: str(record, "employer_name_snapshot", "employer_name"),
+    employerName: str(record, "employer_name_snapshot", "employer_name", "employer"),
     productName: str(record, "product_name", "productName", "product"),
     planName: str(record, "plan_name", "planName", "plan"),
     quotationNumber: str(record, "quotation_number", "quotationNumber"),
@@ -703,7 +722,7 @@ export function normalizeKPIs(payload: unknown): RegisterKPIs {
 // ---------------------------------------------------------------------------
 
 export async function listProposals(params: ProposalListParams = {}) {
-  return request<unknown>(
+  return requestSnake<unknown>(
     `${BASE}/proposals/${buildTableQuery({
       page: params.page,
       pageSize: params.pageSize,
@@ -751,11 +770,11 @@ export async function exportProposalsCsv(params: ProposalListParams = {}): Promi
 }
 
 export async function getProposalKPIs() {
-  return request<unknown>(`${BASE}/proposals/kpis/`)
+  return requestSnake<unknown>(`${BASE}/proposals/kpis/`)
 }
 
 export async function getProposal(id: string) {
-  return request<unknown>(`${BASE}/proposals/${id}/`)
+  return requestSnake<unknown>(`${BASE}/proposals/${id}/`)
 }
 
 // ---------------------------------------------------------------------------
@@ -791,7 +810,7 @@ export function normalizeProposalHistoryEvent(raw: unknown): ProposalHistoryEven
 }
 
 export async function getProposalHistory(id: string): Promise<ProposalHistoryEvent[]> {
-  const payload = await request<unknown>(`${BASE}/proposals/${id}/history/`)
+  const payload = await requestSnake<unknown>(`${BASE}/proposals/${id}/history/`)
   const rows = Array.isArray(payload) ? payload : rowsOf(asRecord(payload), "events")
   return rows.map(normalizeProposalHistoryEvent)
 }
@@ -807,7 +826,7 @@ export interface QuotationVersionSnapshot {
 }
 
 export async function getQuotationVersionSnapshot(quotationId: string, versionNumber: number): Promise<QuotationVersionSnapshot> {
-  const payload = await request<unknown>(`${QUOTATIONS_BASE}/${quotationId}/as-of-version/${versionNumber}/`)
+  const payload = await requestSnake<unknown>(`${QUOTATIONS_BASE}/${quotationId}/as-of-version/${versionNumber}/`)
   const record = asRecord(payload)
   return {
     quotationId: str(record, "quotation_id") ?? quotationId,
@@ -822,7 +841,7 @@ export async function getQuotationVersionSnapshot(quotationId: string, versionNu
 
 export async function createProposalFromQuotation(quotationId: string, version?: number) {
   const query = version != null ? `?version=${version}` : ""
-  return request<unknown>(`${CREATE_BASE}/from-quotation/${quotationId}/${query}`, { method: "POST" })
+  return requestSnake<unknown>(`${CREATE_BASE}/from-quotation/${quotationId}/${query}`, { method: "POST" })
 }
 
 // ---------------------------------------------------------------------------
@@ -860,7 +879,7 @@ export function normalizeQuotationOption(raw: unknown): QuotationOption {
 }
 
 export async function listFinalizedQuotations(search = ""): Promise<QuotationOption[]> {
-  const payload = await request<unknown>(
+  const payload = await requestSnake<unknown>(
     `${QUOTATIONS_BASE}/${buildTableQuery({ pageSize: 50, search: search || undefined, filters: { status: "FINALIZED" } })}`,
   )
   return normalizePaginated(payload, normalizeQuotationOption).results
@@ -878,7 +897,7 @@ export interface QuotationVersionsResult {
 }
 
 export async function listQuotationVersions(quotationId: string): Promise<QuotationVersionsResult> {
-  const payload = await request<unknown>(`${QUOTATIONS_BASE}/${quotationId}/versions/`)
+  const payload = await requestSnake<unknown>(`${QUOTATIONS_BASE}/${quotationId}/versions/`)
   const record = asRecord(payload)
   const rows = Array.isArray(record.versions) ? record.versions : []
   return {
@@ -896,7 +915,7 @@ export async function listQuotationVersions(quotationId: string): Promise<Quotat
 
 /** PATCH /enrich/ expects { section_name: {fields} } with one or more sections. */
 export async function enrichProposalSections(id: string, sections: Record<string, Record<string, unknown>>) {
-  return request<unknown>(`${BASE}/proposals/${id}/enrich/`, {
+  return requestSnake<unknown>(`${BASE}/proposals/${id}/enrich/`, {
     method: "PATCH",
     body: JSON.stringify(sections),
   })
@@ -907,40 +926,40 @@ export async function enrichProposalSection(id: string, section: string, data: R
 }
 
 export async function addBeneficiary(id: string, data: Record<string, unknown>) {
-  return request<unknown>(`${BASE}/proposals/${id}/beneficiaries/`, {
+  return requestSnake<unknown>(`${BASE}/proposals/${id}/beneficiaries/`, {
     method: "POST",
     body: JSON.stringify(data),
   })
 }
 
 export async function updateBeneficiary(id: string, beneficiaryId: string, data: Record<string, unknown>) {
-  return request<unknown>(`${BASE}/proposals/${id}/beneficiaries/${beneficiaryId}/`, {
+  return requestSnake<unknown>(`${BASE}/proposals/${id}/beneficiaries/${beneficiaryId}/`, {
     method: "PATCH",
     body: JSON.stringify(data),
   })
 }
 
 export async function deleteBeneficiary(id: string, beneficiaryId: string) {
-  return request<unknown>(`${BASE}/proposals/${id}/beneficiaries/${beneficiaryId}/`, { method: "DELETE" })
+  return requestSnake<unknown>(`${BASE}/proposals/${id}/beneficiaries/${beneficiaryId}/`, { method: "DELETE" })
 }
 
 export async function listProposalDocuments(id: string) {
-  return request<unknown>(`${BASE}/proposals/${id}/documents/`)
+  return requestSnake<unknown>(`${BASE}/proposals/${id}/documents/`)
 }
 
 export async function uploadProposalDocument(id: string, data: Record<string, unknown>) {
-  return request<unknown>(`${BASE}/proposals/${id}/documents/`, {
+  return requestSnake<unknown>(`${BASE}/proposals/${id}/documents/`, {
     method: "POST",
     body: JSON.stringify(data),
   })
 }
 
 export async function getHealthQuestions(id: string) {
-  return request<unknown>(`${BASE}/proposals/${id}/health-questions/`)
+  return requestSnake<unknown>(`${BASE}/proposals/${id}/health-questions/`)
 }
 
 export async function submitHealthAnswers(id: string, answers: Array<Record<string, unknown>>) {
-  return request<unknown>(`${BASE}/proposals/${id}/health-answers/`, {
+  return requestSnake<unknown>(`${BASE}/proposals/${id}/health-answers/`, {
     method: "POST",
     body: JSON.stringify({ answers }),
   })
@@ -950,37 +969,37 @@ export async function submitUnderwritingDecision(
   id: string,
   data: { decision: string; reason?: string },
 ) {
-  return request<unknown>(`${BASE}/proposals/${id}/underwriting-decision/`, {
+  return requestSnake<unknown>(`${BASE}/proposals/${id}/underwriting-decision/`, {
     method: "POST",
     body: JSON.stringify(data),
   })
 }
 
 export async function getPaymentReadiness(id: string) {
-  return request<unknown>(`${BASE}/proposals/${id}/payment-readiness/`)
+  return requestSnake<unknown>(`${BASE}/proposals/${id}/payment-readiness/`)
 }
 
 export async function markPaymentReady(id: string) {
-  return request<unknown>(`${BASE}/proposals/${id}/mark-payment-ready/`, { method: "POST" })
+  return requestSnake<unknown>(`${BASE}/proposals/${id}/mark-payment-ready/`, { method: "POST" })
 }
 
 export async function getFirstPremiumStatus(id: string) {
-  return request<unknown>(`${BASE}/proposals/${id}/first-premium/`)
+  return requestSnake<unknown>(`${BASE}/proposals/${id}/first-premium/`)
 }
 
 export async function convertToPolicy(id: string) {
-  return request<unknown>(`${BASE}/proposals/${id}/convert/`, { method: "POST" })
+  return requestSnake<unknown>(`${BASE}/proposals/${id}/convert/`, { method: "POST" })
 }
 
 export async function cancelProposal(id: string, reason: string) {
-  return request<unknown>(`${BASE}/proposals/${id}/cancel/`, {
+  return requestSnake<unknown>(`${BASE}/proposals/${id}/cancel/`, {
     method: "POST",
     body: JSON.stringify({ reason }),
   })
 }
 
 export async function reactivateProposal(id: string) {
-  return request<unknown>(`${BASE}/proposals/${id}/reactivate/`, { method: "POST" })
+  return requestSnake<unknown>(`${BASE}/proposals/${id}/reactivate/`, { method: "POST" })
 }
 
 export interface PrintResult {
@@ -1032,7 +1051,7 @@ export function normalizeGeneratedDocument(raw: unknown): GeneratedDocumentRecor
 }
 
 export async function generateProposalPrint(id: string): Promise<GeneratedDocumentRecord> {
-  const payload = await request<unknown>(`/api/v1/documents/render/PROPOSAL_SUMMARY/${encodeURIComponent(id)}/`, { method: "POST" })
+  const payload = await requestSnake<unknown>(`/api/v1/documents/render/PROPOSAL_SUMMARY/${encodeURIComponent(id)}/`, { method: "POST" })
   return normalizeGeneratedDocument(payload)
 }
 
@@ -1052,7 +1071,7 @@ export async function printProposal(id: string): Promise<PrintResult> {
 }
 
 export async function listGeneratedDocuments(id: string): Promise<GeneratedDocumentRecord[]> {
-  const payload = await request<unknown>(`/api/v1/documents/instances/?source_type=ol_proposals.olproposal&object_id=${encodeURIComponent(id)}&page_size=50`)
+  const payload = await requestSnake<unknown>(`/api/v1/documents/instances/?source_type=ol_proposals.olproposal&object_id=${encodeURIComponent(id)}&page_size=50`)
   const record = asRecord(payload)
   const rows = Array.isArray(record.results) ? record.results : []
   return rows.map(normalizeGeneratedDocument)
@@ -1061,8 +1080,8 @@ export async function listGeneratedDocuments(id: string): Promise<GeneratedDocum
 const CANONICAL_PROPOSAL_OPTION_ENTITIES = new Set(["banks", "intermediaries", "employers"])
 
 export async function getProposalOptions(kind: string) {
-  if (!CANONICAL_PROPOSAL_OPTION_ENTITIES.has(kind)) return request<unknown>(`${BASE}/proposals/options/${encodeURIComponent(kind)}/`)
-  const payload = await request<unknown>(`/api/v1/ol/options/${encodeURIComponent(kind)}/`)
+  if (!CANONICAL_PROPOSAL_OPTION_ENTITIES.has(kind)) return requestSnake<unknown>(`${BASE}/proposals/options/${encodeURIComponent(kind)}/`)
+  const payload = await requestSnake<unknown>(`/api/v1/ol/options/${encodeURIComponent(kind)}/`)
   const record = asRecord(payload)
   const rows = Array.isArray(record.results) ? record.results : Array.isArray(record.items) ? record.items : []
   return {
@@ -1191,7 +1210,7 @@ export interface PortalPage<T> {
 }
 
 export async function listPortalProposals(): Promise<PortalPage<PortalProposalRecord>> {
-  const payload = await request<unknown>(`${BASE}/proposals/portal/`)
+  const payload = await requestSnake<unknown>(`${BASE}/proposals/portal/`)
   const record = asRecord(payload)
   const results = Array.isArray(record.results) ? record.results : []
   const count = typeof record.count === "number" ? record.count : results.length
@@ -1199,7 +1218,7 @@ export async function listPortalProposals(): Promise<PortalPage<PortalProposalRe
 }
 
 export async function getPortalProposal(id: string): Promise<PortalProposalDetail> {
-  const payload = await request<unknown>(`${BASE}/proposals/portal/${id}/`)
+  const payload = await requestSnake<unknown>(`${BASE}/proposals/portal/${id}/`)
   return normalizePortalProposalDetail(payload)
 }
 
@@ -1225,7 +1244,7 @@ export function normalizeProposalDashboardKpis(raw: unknown): ProposalDashboardK
 }
 
 export async function getProposalDashboardKpis(): Promise<ProposalDashboardKpis> {
-  const payload = await request<unknown>(`${BASE}/proposals/dashboard-kpis/`)
+  const payload = await requestSnake<unknown>(`${BASE}/proposals/dashboard-kpis/`)
   return normalizeProposalDashboardKpis(payload)
 }
 
@@ -1262,7 +1281,7 @@ export function normalizeProposalNotification(raw: unknown): ProposalNotificatio
 }
 
 export async function listProposalNotifications(): Promise<ProposalNotificationItem[]> {
-  const payload = await request<unknown>(`${BASE}/proposals/notifications/`)
+  const payload = await requestSnake<unknown>(`${BASE}/proposals/notifications/`)
   const record = asRecord(payload)
   const results = Array.isArray(record.results) ? record.results : []
   return results.map(normalizeProposalNotification)

@@ -11,6 +11,22 @@ import {
 import { ErrorCoach } from "../ErrorCoach"
 import { Modal } from "../ui/Overlays"
 
+function toSnake(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(toSnake)
+  if (value && typeof value === "object") {
+    const result: Record<string, unknown> = {}
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      result[key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)] = toSnake(item)
+    }
+    return result
+  }
+  return value
+}
+
+async function requestSnake<T>(path: string, options?: Parameters<typeof request>[1]): Promise<T> {
+  return toSnake(await request<T>(path, options)) as T
+}
+
 export interface DocumentInstanceRecord {
   id: string
   document_type: string
@@ -157,12 +173,12 @@ export function DocumentInstancesPanel({
     setError(null)
     try {
       const query = new URLSearchParams({ source_type: sourceType, object_id: objectId, page_size: "50" })
-      const payload = await request<DocumentInstancesPayload>(`/api/v1/documents/instances/?${query.toString()}`)
+      const payload = await requestSnake<DocumentInstancesPayload>(`/api/v1/documents/instances/?${query.toString()}`)
       let rows = normalizeDocumentRows(payload)
       const needsFallback = !rows.length || rows.some((row) => !row.signed_download_url)
       if (needsFallback && fallbackDocumentEndpoint) {
         try {
-          const fallbackRows = normalizeDocumentRows(await request<unknown>(fallbackDocumentEndpoint))
+          const fallbackRows = normalizeDocumentRows(await requestSnake<unknown>(fallbackDocumentEndpoint))
           if (fallbackRows.length) rows = fallbackRows
         } catch {
           // The unified endpoint remains authoritative; a legacy fallback is best effort.

@@ -144,7 +144,7 @@ describe("OL quotation detail lifecycle", () => {
     expect((await screen.findAllByText("Asha Family Protection")).length).toBeGreaterThanOrEqual(2)
     expect(screen.getByText("NIN-001")).toBeInTheDocument()
     expect(screen.getByText("Dar es Salaam")).toBeInTheDocument()
-    expect(screen.getByText("TZS 12,000.00")).toBeInTheDocument()
+    expect(screen.getAllByText("TZS 12,000.00").length).toBeGreaterThanOrEqual(1)
 
     fireEvent.click(screen.getByRole("button", { name: "Plans & Sub-Products" }))
     expect(screen.getByText("Twenty Year Term")).toBeInTheDocument()
@@ -256,5 +256,127 @@ describe("OL quotation detail lifecycle", () => {
     expect(await screen.findByRole("heading", { name: "Quotation documents" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Generate quotation PDF" })).toBeInTheDocument()
     expect(fetchDocumentMock).not.toHaveBeenCalled()
+  })
+
+  it("populates the Sum Assured KPI from plan configuration when no financial data exists", async () => {
+    const bareDraft = {
+      ...quotation,
+      status: "DRAFT",
+      total_premium: null,
+      total_sum_assured: null,
+      financial_summary: null,
+      plan_configurations: [{ ...(quotation.plan_configurations[0] ?? {}), base_sum_assured: "100000.00", premium_amount: null }],
+    }
+    requestMock.mockImplementation(async (path: string, options?: RequestInit) => {
+      if (path === "/api/v1/ol-quotations/quotations/quote-1/" && options?.method === undefined) return bareDraft
+      if (path.endsWith("/financial-details/")) return { quotation_id: "quote-1", recalculation_required: true, summary: null }
+      if (path.endsWith("/plan-details/")) return { configurations: bareDraft.plan_configurations, selected_plan_count: 1 }
+      if (path.endsWith("/versions/")) return versions
+      if (path.startsWith("/api/v1/documents/instances/?")) return unifiedDocuments
+      return {}
+    })
+    render(<OLQuotationDetail />)
+    expect((await screen.findAllByText("Q-0001")).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText("TZS 100,000.00").length).toBeGreaterThanOrEqual(1)
+  })
+
+  it("renders a camelCase backend payload in the summary card instead of empty fields and a raw plan UUID", async () => {
+    const camelCasePayload = {
+      id: "quote-1",
+      quoteNumber: "OLQ-2026-000002",
+      quoteName: "ZIC Complete OL Quotation Seed",
+      quoteDate: "2026-08-27",
+      status: "FINALIZED",
+      currency: "TZS",
+      gender: "MALE",
+      location: "Jambiani, Unguja South, Zanzibar",
+      address: "Mizingani Road, Stone Town, Zanzibar",
+      identityType: "NIN",
+      identityNumber: "NIN-1985-0615-001",
+      dateOfBirth: "1995-06-15",
+      ageAtQuote: 31,
+      smokerStatus: "NON_SMOKER",
+      currentVersionNumber: 3,
+      expiryDate: "2026-09-26",
+      totalPremium: "8501.50",
+      totalSumAssured: "5000000.00",
+      wizardStepCompletion: { "1PersonalDetails": true, "2PlanAndSubProducts": true, "3MemberCoverage": true, "4Installments": true, "5InvestmentFunds": true, "6RidersAndBenefits": true, "7FinancialDetails": true },
+      planConfigurations: [{
+        id: "config-1",
+        plan: "0dc4b733-406f-4805-8279-579e3b6d4362",
+        planDisplay: "OL_EDU_GROWTH — Elimu Bora Growth Plan",
+        subProductCode: "BASE",
+        baseSumAssured: "5000000.00",
+        termYears: 20,
+        paymentPeriodYears: 5,
+        premiumFrequency: "MONTHLY",
+        premiumAmount: "6001.50",
+      }],
+      members: [{ id: "member-1", memberType: "LIFE_ASSURED", firstName: "Asha", lastName: "Applicant", relationship: "POLICY_HOLDER", ageAtQuote: 36, gender: "MALE" }],
+      beneficiaries: [
+        { id: "b1", firstName: "CoderX", lastName: "Sultan", percentage: "60" },
+        { id: "b2", firstName: "Furaha", lastName: "Joseph", percentage: "40" },
+      ],
+    }
+    requestMock.mockImplementation(async (path: string, options?: RequestInit) => {
+      if (path === "/api/v1/ol-quotations/quotations/quote-1/" && options?.method === undefined) return camelCasePayload
+      if (path.endsWith("/financial-details/")) return { quotationId: "quote-1", recalculationRequired: false, summary: { totalPremium: "8501.50", totalSumAssured: "5000000.00", basePremium: "6001.50", estimatedMaturityValue: "5000000.00" } }
+      if (path.endsWith("/plan-details/")) return { configurations: camelCasePayload.planConfigurations, selectedPlanCount: 1 }
+      if (path.endsWith("/versions/")) return { versions: [{ id: "v-1", versionNumber: 3, status: "CURRENT", changeReason: "Initial quotation", createdAt: "2026-08-27T10:00:00Z" }] }
+      return {}
+    })
+    render(<OLQuotationDetail />)
+
+    expect((await screen.findAllByText("ZIC Complete OL Quotation Seed")).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText("OLQ-2026-000002")).toBeInTheDocument()
+    expect(screen.getByText("NIN-1985-0615-001")).toBeInTheDocument()
+    expect(screen.getByText("OL_EDU_GROWTH — Elimu Bora Growth Plan")).toBeInTheDocument()
+    expect(screen.queryByText("0dc4b733-406f-4805-8279-579e3b6d4362")).not.toBeInTheDocument()
+    expect(screen.getByText("20 years")).toBeInTheDocument()
+    expect(screen.getByText("MONTHLY")).toBeInTheDocument()
+  })
+
+  it("shows KPI cards from each quotation's own financial details, not a shared default", async () => {
+    const draftPayload = {
+      id: "quote-1",
+      quote_number: "OLQ-2026-000001",
+      quote_name: "my new quote",
+      status: "DRAFT",
+      currency: "TZS",
+      financial_summary: { total_sum_assured: "5000000.00", base_premium: "6000.00", total_rider_premium: "1000.00", total_premium: "7001.50" },
+      plan_configurations: [{ id: "config-1", plan_name: "Elimu Bora Growth Plan", base_sum_assured: "5000000.00", premium_amount: "6001.50", term_years: 20 }],
+      members: [{ id: "member-1", full_name: "Asha Applicant", is_principal: true }],
+    }
+    requestMock.mockImplementation(async (path: string, options?: RequestInit) => {
+      if (path === "/api/v1/ol-quotations/quotations/quote-1/" && options?.method === undefined) return draftPayload
+      if (path.endsWith("/financial-details/")) return { quotation_id: "quote-1", recalculation_required: true, total_sum_assured: "5000000.00", base_premium: "6000.00", total_rider_premium: "1000.00", total_premium: "7001.50" }
+      if (path.endsWith("/plan-details/")) return { configurations: draftPayload.plan_configurations, selected_plan_count: 1 }
+      if (path.endsWith("/versions/")) return versions
+      if (path.startsWith("/api/v1/documents/instances/?")) return unifiedDocuments
+      return {}
+    })
+    render(<OLQuotationDetail />)
+    expect(await screen.findByText("OLQ-2026-000001")).toBeInTheDocument()
+    expect(screen.getAllByText("TZS 7,001.50").length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText("TZS 1,000.00")).toBeInTheDocument()
+    expect(screen.queryByText("TZS 8,501.50")).not.toBeInTheDocument()
+  })
+
+  it("shows a short summary card and reveals the full summary in a modal", async () => {
+    render(<OLQuotationDetail />)
+    await screen.findByText("Q-0001")
+
+    expect(screen.getByText("Twenty Year Term")).toBeInTheDocument()
+    expect(screen.getByText("20 years")).toBeInTheDocument()
+    expect(screen.getByText("1 (0 life assured)")).toBeInTheDocument()
+    expect(screen.queryByText("Kinondoni")).not.toBeInTheDocument()
+    expect(screen.queryByText("Fund Allocations")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: /Show full summary/ }))
+
+    expect(screen.getByRole("heading", { name: "Full quotation summary" })).toBeInTheDocument()
+    expect(screen.getByText("Kinondoni")).toBeInTheDocument()
+    expect(screen.getByText("Fund Allocations")).toBeInTheDocument()
+    expect(screen.getByText("1 allocation: 100%")).toBeInTheDocument()
   })
 })

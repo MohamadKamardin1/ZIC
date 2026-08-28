@@ -604,12 +604,12 @@ export async function listProposalNotifications(): Promise<DashboardNotification
       title: String(item.title ?? "Proposal update"),
       message: String(item.message ?? ""),
       status: "UNREAD",
-      route: typeof item.deep_link === "string" ? item.deep_link : "/ordinary-life/proposals",
+      route: typeof item.deep_link === "string" ? item.deep_link : typeof item.deepLink === "string" ? item.deepLink : "/ordinary-life/proposals",
       entityType: "OLProposal",
       entityId: String(item.id ?? ""),
       isRead: false,
       createdAt: String(item.created_at ?? item.createdAt ?? ""),
-      deepLink: typeof item.deep_link === "string" ? item.deep_link : "/ordinary-life/proposals",
+      deepLink: typeof item.deep_link === "string" ? item.deep_link : typeof item.deepLink === "string" ? item.deepLink : "/ordinary-life/proposals",
     }
   })
 }

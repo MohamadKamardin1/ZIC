@@ -21,7 +21,7 @@ export default function DashboardLayout() {
   }, [])
 
   return (
-    <div className="h-screen overflow-hidden bg-background">
+    <div className="h-dvh overflow-hidden bg-background">
       <Sidebar open={sidebarOpen} />
 
       {sidebarOpen && (
@@ -36,7 +36,7 @@ export default function DashboardLayout() {
           <Topbar onToggleSidebar={() => setSidebarOpen((o) => !o)} />
         </div>
 
-          <main className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-5 md:px-6">
+          <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-5 md:px-6">
             <AccessGate>
               <Outlet />
             </AccessGate>

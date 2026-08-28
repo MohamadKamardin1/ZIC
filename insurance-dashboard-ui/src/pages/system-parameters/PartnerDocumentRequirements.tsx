@@ -294,7 +294,7 @@ export default function PartnerDocumentRequirements() {
                           <td className="px-4 py-2 text-xs text-muted-foreground">—</td>
                           <td className="px-4 py-2">
                             <div className="flex gap-1">
-                              <button onClick={() => handleSave(item.id)} disabled={saving || !form.code.trim()} className="rounded p-1 text-green-600 hover:bg-green-50 disabled:opacity-50" title="Save">
+                              <button onClick={() => handleSave(item.id)} disabled={saving || !form.code.trim()} className="rounded p-1 text-[var(--color-text-success-soft)] hover:bg-[var(--color-bg-success-soft)] disabled:opacity-50" title="Save">
                                 <Check className="h-4 w-4" />
                               </button>
                               <button onClick={resetForm} disabled={saving} className="rounded p-1 text-muted-foreground hover:bg-accent" title="Cancel">
@@ -308,18 +308,18 @@ export default function PartnerDocumentRequirements() {
                           <td className="px-4 py-3 font-medium">{item.code}</td>
                           <td className="px-4 py-3 text-muted-foreground">{item.description || "—"}</td>
                           <td className="px-4 py-3">
-                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${item.isRequired ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${item.isRequired ? "bg-[var(--color-bg-success-soft)] text-[var(--color-text-success-soft)]" : "bg-muted text-muted-foreground"}`}>
                               {item.isRequired ? "Yes" : "No"}
                             </span>
                           </td>
                           <td className="px-4 py-3">
-                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${item.isMandatory ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-500"}`}>
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${item.isMandatory ? "bg-[var(--color-bg-warning-soft)] text-[var(--color-text-warning-soft)]" : "bg-muted text-muted-foreground"}`}>
                               {item.isMandatory ? "Yes" : "No"}
                             </span>
                           </td>
                           <td className="px-4 py-3 text-muted-foreground">{item.sortOrder}</td>
                           <td className="px-4 py-3">
-                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${item.isActive ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${item.isActive ? "bg-[var(--color-bg-success-soft)] text-[var(--color-text-success-soft)]" : "bg-[var(--color-bg-destructive-soft)] text-[var(--color-text-destructive-soft)]"}`}>
                               {item.isActive ? "Active" : "Inactive"}
                             </span>
                           </td>
@@ -331,7 +331,7 @@ export default function PartnerDocumentRequirements() {
                               <button onClick={() => startEdit(item)} className="rounded p-1 text-primary hover:bg-accent" title="Edit">
                                 <Pencil className="h-4 w-4" />
                               </button>
-                              <button onClick={() => handleDelete(item.id, item.partnerType)} className="rounded p-1 text-red-500 hover:bg-red-50" title="Delete">
+                              <button onClick={() => handleDelete(item.id, item.partnerType)} className="rounded p-1 text-[var(--color-text-destructive-soft)] hover:bg-[var(--color-bg-destructive-soft)]" title="Delete">
                                 <Trash2 className="h-4 w-4" />
                               </button>
                             </div>

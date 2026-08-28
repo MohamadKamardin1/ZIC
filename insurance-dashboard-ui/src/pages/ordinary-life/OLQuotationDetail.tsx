@@ -18,6 +18,8 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import { ApiClientError, request } from "../../lib/apiClient"
+import { getPartner, listPartners } from "../../lib/api"
+import type { PartnerListItem } from "../../lib/types"
 import { useAccess } from "../../lib/access"
 import { DateInput, FormGrid, SelectInput, TextInput, TextareaInput } from "../../components/ui/FormControls"
 import { ConfirmModal, Drawer, InfoBanner, Modal } from "../../components/ui/Overlays"
@@ -129,6 +131,22 @@ const tabs: Array<{ id: DetailTab; label: string }> = [
   { id: "versions", label: "Versions" },
   { id: "documents", label: "Documents" },
 ]
+
+function toSnake(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(toSnake)
+  if (value && typeof value === "object") {
+    const result: Record<string, unknown> = {}
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      result[key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)] = toSnake(item)
+    }
+    return result
+  }
+  return value
+}
+
+async function requestSnake<T>(path: string, options?: Parameters<typeof request>[1]): Promise<T> {
+  return toSnake(await request<T>(path, options)) as T
+}
 
 function asRecord(value: unknown): RecordValue {
   return value && typeof value === "object" && !Array.isArray(value) ? value as RecordValue : {}
@@ -320,6 +338,10 @@ function StepChecklist({ completion, onJump }: { completion?: Record<string, boo
   return <div className="surface-card p-4"><div className="mb-3 flex items-center gap-2"><FileCheck2 size={18} className="text-[var(--primary)]" aria-hidden="true" /><h2 className="font-bold">Completion checklist</h2></div><div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">{rows.map(([id, label]) => { const complete = Boolean(resolvedCompletion[id]); return <button key={id} type="button" onClick={() => onJump(id)} className="flex items-center justify-between rounded-[10px] border px-3 py-2 text-left text-sm hover:bg-[var(--secondary)]"><span>{label}</span>{complete ? <Check size={17} className="text-[var(--success)]" aria-label={`${label} complete`} /> : <CircleAlert size={17} className="text-[var(--warning)]" aria-label={`${label} incomplete`} />}</button> })}</div></div>
 }
 
+function SummaryGrid({ rows, className = "sm:grid-cols-2" }: { rows: Array<[string, unknown]>; className?: string }) {
+  return <dl className={`grid gap-3 ${className}`}>{rows.map(([label, value]) => <div key={String(label)}><dt className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--muted-foreground)]">{label}</dt><dd className="mt-1 text-sm font-semibold">{stringValue(value)}</dd></div>)}</dl>
+}
+
 export default function OLQuotationDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -337,11 +359,16 @@ export default function OLQuotationDetail() {
   const [selectedVersion, setSelectedVersion] = useState<RecordValue | null>(null)
   const [partnerOpen, setPartnerOpen] = useState(false)
   const [partnerForm, setPartnerForm] = useState<PartnerForm>({ first_name: "", surname: "", other_name: "", email: "", mobile_number: "", gender: "", date_of_birth: "", identification_type: "", identification_number: "", nationality: "", occupation: "" })
+  const [partnerSearch, setPartnerSearch] = useState("")
+  const [partnerResults, setPartnerResults] = useState<PartnerListItem[]>([])
+  const [partnerSearching, setPartnerSearching] = useState(false)
+  const [selectedPartner, setSelectedPartner] = useState<PartnerListItem | null>(null)
   const [partnerErrors, setPartnerErrors] = useState<string[]>([])
   const [convertOpen, setConvertOpen] = useState(false)
   const [convertErrors, setConvertErrors] = useState<string[]>([])
   const [finalizeOpen, setFinalizeOpen] = useState(false)
   const [finalizeErrors, setFinalizeErrors] = useState<string[]>([])
+  const [summaryOpen, setSummaryOpen] = useState(false)
 
   const isAllowed = useCallback((permission: string) => isSuperAdmin || canAccess(permission), [canAccess, isSuperAdmin])
 
@@ -349,7 +376,7 @@ export default function OLQuotationDetail() {
     if (!id) return null
     setLoading(true)
     try {
-      const payload = await request<QuotationDetail>(`${API_PREFIX}${id}/`)
+      const payload = await requestSnake<QuotationDetail>(`${API_PREFIX}${id}/`)
       setQuotation(payload)
       setFinancial(payload.financial_summary ? { ...payload.financial_summary, recalculation_required: false } : null)
       return payload
@@ -362,15 +389,15 @@ export default function OLQuotationDetail() {
   const loadLifecycleData = useCallback(async (baseOverride?: QuotationDetail | null) => {
     if (!id) return
     const [summaryResult, versionsResult, partnerResult, plansResult, financialResult, membersResult, installmentsResult, fundsResult, ridersResult] = await Promise.allSettled([
-      request<RecordValue>(`${API_PREFIX}${id}/wizard-summary/`),
-      request<RecordValue>(`${API_PREFIX}${id}/versions/`),
-      request<PartnerVerification>(`${API_PREFIX}${id}/partner-verification/`),
-      request<RecordValue>(`${API_PREFIX}${id}/plan-details/`),
-      request<FinancialDetails>(`${API_PREFIX}${id}/financial-details/`),
-      request<RecordValue>(`${API_PREFIX}${id}/members/`),
-      request<RecordValue>(`${API_PREFIX}${id}/installments/`),
-      request<RecordValue>(`${API_PREFIX}${id}/investment-funds/`),
-      request<RecordValue>(`${API_PREFIX}${id}/riders/`),
+      requestSnake<RecordValue>(`${API_PREFIX}${id}/wizard-summary/`),
+      requestSnake<RecordValue>(`${API_PREFIX}${id}/versions/`),
+      requestSnake<PartnerVerification>(`${API_PREFIX}${id}/partner-verification/`),
+      requestSnake<RecordValue>(`${API_PREFIX}${id}/plan-details/`),
+      requestSnake<FinancialDetails>(`${API_PREFIX}${id}/financial-details/`),
+      requestSnake<RecordValue>(`${API_PREFIX}${id}/members/`),
+      requestSnake<RecordValue>(`${API_PREFIX}${id}/installments/`),
+      requestSnake<RecordValue>(`${API_PREFIX}${id}/investment-funds/`),
+      requestSnake<RecordValue>(`${API_PREFIX}${id}/riders/`),
     ])
     const failedStages = [
       stageFailure("wizard summary", summaryResult),
@@ -414,7 +441,7 @@ export default function OLQuotationDetail() {
     if (!id) return
     setBusy(true)
     try {
-      const response = await request<QuotationDetail>(`${API_PREFIX}${id}/revise/`, { method: "POST" })
+      const response = await requestSnake<QuotationDetail>(`${API_PREFIX}${id}/revise/`, { method: "POST" })
       setQuotation(response)
       toast({ tone: "success", title: "Quotation revision created" })
       setActiveTab("overview")
@@ -426,29 +453,74 @@ export default function OLQuotationDetail() {
     if (!quotation) return
     setPartnerForm({ first_name: "", surname: "", other_name: "", email: "", mobile_number: "", gender: String(quotation.gender ?? ""), date_of_birth: String(quotation.date_of_birth ?? "").slice(0, 10), identification_type: String(quotation.identity_type ?? ""), identification_number: String(quotation.identity_number ?? ""), nationality: "", occupation: "" })
     setPartnerErrors([])
+    setSelectedPartner(null)
+    setPartnerSearch("")
+    setPartnerResults([])
     setPartnerOpen(true)
   }, [quotation])
+
+  const searchPartners = useCallback(async (term: string) => {
+    if (!term.trim()) { setPartnerResults([]); return }
+    setPartnerSearching(true)
+    try {
+      const result = await listPartners({ search: term.trim(), per_page: 10 })
+      setPartnerResults(result.results ?? [])
+    } catch {
+      setPartnerResults([])
+    } finally {
+      setPartnerSearching(false)
+    }
+  }, [])
+
+  const selectPartner = useCallback(async (row: PartnerListItem) => {
+    setPartnerSearching(true)
+    try {
+      const detail = await getPartner(row.id)
+      setPartnerForm({
+        first_name: detail.firstName ?? "",
+        surname: detail.surname ?? "",
+        other_name: detail.otherName ?? "",
+        email: detail.email ?? "",
+        mobile_number: detail.mobileNumber ?? "",
+        gender: detail.gender ?? "",
+        date_of_birth: detail.dateOfBirth ? String(detail.dateOfBirth).slice(0, 10) : "",
+        identification_type: detail.identificationType ?? "",
+        identification_number: detail.identificationNumber ?? "",
+        nationality: detail.nationality ?? "",
+        occupation: detail.occupation ?? "",
+      })
+      setSelectedPartner(row)
+      setPartnerSearch("")
+      setPartnerResults([])
+    } catch {
+      setSelectedPartner(null)
+    } finally {
+      setPartnerSearching(false)
+    }
+  }, [])
 
   const completePartner = useCallback(async () => {
     if (!id) return
     setBusy(true)
     setPartnerErrors([])
     try {
-      const response = await request<PartnerVerification & { partner_verified?: boolean }>(`${API_PREFIX}${id}/partner-completion/`, { method: "POST", body: JSON.stringify(partnerForm) })
+      const body = selectedPartner ? { ...partnerForm, partner_id: selectedPartner.id } : partnerForm
+      const response = await requestSnake<PartnerVerification & { partner_verified?: boolean }>(`${API_PREFIX}${id}/partner-completion/`, { method: "POST", body: JSON.stringify(body) })
       setPartner((current) => ({ ...current, partner_exists: true, compliant: response.compliant ?? true, partner_verified: response.partner_verified, partner_number: response.partner_number, partner_display_name: response.partner_display_name, missing_fields: response.missing_fields ?? [] }))
       setPartnerOpen(false)
-      toast({ tone: "success", title: "Partner completed and linked" })
+      setSelectedPartner(null)
+      toast({ tone: "success", title: selectedPartner ? "Partner linked and verified" : "Partner completed and linked" })
       await loadDetail()
       await loadLifecycleData()
     } catch (error) { setPartnerErrors(errorMessages(error)) } finally { setBusy(false) }
-  }, [id, loadDetail, loadLifecycleData, partnerForm, toast])
+  }, [id, loadDetail, loadLifecycleData, partnerForm, selectedPartner, toast])
 
   const finalize = useCallback(async () => {
     if (!id) return
     setBusy(true)
     setFinalizeErrors([])
     try {
-      const response = await request<QuotationDetail>(`${API_PREFIX}${id}/finalize/`, { method: "POST" })
+      const response = await requestSnake<QuotationDetail>(`${API_PREFIX}${id}/finalize/`, { method: "POST" })
       setQuotation(response)
       setFinalizeOpen(false)
       toast({ tone: "success", title: "Quotation finalized" })
@@ -472,7 +544,7 @@ export default function OLQuotationDetail() {
     setBusy(true)
     setConvertErrors([])
     try {
-      await request(`${API_PREFIX}${id}/convert-to-proposal/`, { method: "POST", body: JSON.stringify({}) })
+      await requestSnake(`${API_PREFIX}${id}/convert-to-proposal/`, { method: "POST", body: JSON.stringify({}) })
       toast({ tone: "success", title: "Quotation converted to proposal" })
       setConvertOpen(false)
       navigate(`/ordinary-life/proposals?quotation=${id}`)
@@ -482,7 +554,7 @@ export default function OLQuotationDetail() {
   const loadVersion = useCallback(async (versionNumber: number) => {
     if (!id) return
     try {
-      const response = await request<RecordValue>(`${API_PREFIX}${id}/as-of-version/${versionNumber}/`)
+      const response = await requestSnake<RecordValue>(`${API_PREFIX}${id}/as-of-version/${versionNumber}/`)
       setSelectedVersion(response)
     } catch (error) { toast({ tone: "danger", title: "Unable to load version", message: error instanceof Error ? error.message : "The version snapshot could not be loaded." }) }
   }, [id, toast])
@@ -516,10 +588,64 @@ export default function OLQuotationDetail() {
   const prospectName = stringValue(quotation.quote_name ?? quotation.prospect_name ?? quotation.partner_display, "Quotation")
   const linkedPartnerName = stringValue(partner?.partner_display_name ?? quotation.linked_partner_display ?? quotation.partner_display, "")
   const displayQuoteNumber = quotation.quote_number ? (quotation.quote_number.includes("-v") ? quotation.quote_number : `${quotation.quote_number}-v${quotation.current_version_number ?? 1}`) : "—"
-  const basicPremium = summary?.base_premium ?? quotation.base_premium ?? quotation.total_premium
-  const riderPremium = summary?.total_rider_premium ?? summary?.rider_premium ?? summary?.rider_premiums
-  const totalPremium = summary?.total_premium ?? quotation.total_premium
-  const sumAssured = summary?.total_sum_assured ?? quotation.total_sum_assured
+  const firstPlan = quotation.plan_configurations?.[0] ?? {}
+  const planTerm = scalarValue(firstPlan.policy_term_years) ?? scalarValue(firstPlan.term_years)
+  const planPaymentPeriod = scalarValue(firstPlan.payment_period_years)
+  const planSumAssured = scalarValue(firstPlan.base_sum_assured) ?? scalarValue(firstPlan.sum_assured)
+  const planFrequency = scalarValue(firstPlan.premium_frequency)
+  const paymentDetail = asRecord(quotation.payment_detail)
+  const underwriting = asRecord(quotation.underwriting_detail)
+  const beneficiaryRows = listValue(quotation.beneficiaries)
+  const memberRows = listValue(quotation.members)
+  const fundRows = listValue(quotation.fund_allocations)
+  const riderRows = listValue(quotation.rider_selections)
+  const lifeAssuredCount = memberRows.filter((member) => String(member.member_type).toUpperCase() === "LIFE_ASSURED").length
+  const riderPremiumTotal = riderRows.reduce((total, rider) => total + (numberValue(rider.premium_amount) ?? numberValue(rider.premium) ?? 0), 0)
+  const sumAssured = scalarValue(summary?.total_sum_assured) ?? scalarValue(quotation.total_sum_assured) ?? planSumAssured ?? null
+  const basicPremium = scalarValue(summary?.base_premium) ?? scalarValue(quotation.base_premium) ?? scalarValue(quotation.total_premium) ?? scalarValue(firstPlan.premium_amount) ?? scalarValue(firstPlan.premium) ?? null
+  const riderPremium = scalarValue(summary?.total_rider_premium) ?? scalarValue(summary?.rider_premium) ?? scalarValue(summary?.rider_premiums) ?? (riderPremiumTotal > 0 ? riderPremiumTotal : null)
+  const basicPremiumNumber = numberValue(basicPremium)
+  const riderPremiumNumber = numberValue(riderPremium)
+  const totalPremium = scalarValue(summary?.total_premium) ?? scalarValue(quotation.total_premium) ?? (basicPremiumNumber !== null && riderPremiumNumber !== null ? basicPremiumNumber + riderPremiumNumber : basicPremium ?? null)
+  const summaryRows: Array<[string, unknown]> = [
+    ["Quote name", quotation.quote_name],
+    ["Quote date", dateLabel(quotation.quote_date)],
+    ["Currency", renderFk(quotation.currency, quotation.currency_display)],
+    ["Identity type", renderFk(quotation.identity_type, quotation.identity_type_display)],
+    ["Identity number", quotation.identity_number],
+    ["Date of birth", dateLabel(quotation.date_of_birth)],
+    ["Age at quote", quotation.age_at_quote],
+    ["Gender", renderFk(quotation.gender, quotation.gender_display)],
+    ["Smoker status", renderFk(quotation.smoker_status, quotation.smoker_status_display)],
+    ["Location", renderFk(quotation.location, quotation.location_display)],
+    ["Agent", renderFk(quotation.agent_partner, quotation.agent_display)],
+    ["Partner", linkedPartnerName],
+    ["Address", quotation.address],
+    ["Status", quotation.status],
+    ["Version", stringValue(quotation.current_version_number)],
+    ["Expiry date", dateLabel(quotation.expiry_date)],
+    ["Plan", stringValue(firstPlan.plan_name ?? firstPlan.plan_display ?? firstPlan.plan_code ?? firstPlan.plan, "—")],
+    ["Sub-Product", stringValue(firstPlan.sub_product_name ?? firstPlan.sub_product_display ?? firstPlan.sub_product_code ?? firstPlan.sub_product, "—")],
+    ["Policy Term", planTerm ? `${stringValue(planTerm)} years` : "—"],
+    ["Payment Period", planPaymentPeriod ? `${stringValue(planPaymentPeriod)} years` : "—"],
+    ["Sum Assured", moneyLabel(planSumAssured, currency)],
+    ["Premium Frequency", stringValue(planFrequency, "—")],
+    ["Base Premium", moneyLabel(basicPremium, currency)],
+    ["Rider Premium", moneyLabel(riderPremium, currency)],
+    ["Total Premium", moneyLabel(totalPremium, currency)],
+    ["Total Loadings", moneyLabel(summary?.total_loading ?? summary?.total_loadings, currency)],
+    ["Total Taxes", moneyLabel(summary?.total_tax ?? summary?.total_taxes, currency)],
+    ["Estimated Maturity Value", moneyLabel(summary?.estimated_maturity_value, currency)],
+    ["Payment Method", stringValue(paymentDetail.payment_method, "—")],
+    ["Account Reference", stringValue(paymentDetail.account_reference, "—")],
+    ["Risk Class", stringValue(underwriting.risk_class, "—")],
+    ["Medical Underwriting", underwriting.medical_required ? "Required" : "Not required"],
+    ["Members", memberRows.length ? `${stringValue(memberRows.length)} (${stringValue(lifeAssuredCount)} life assured)` : "—"],
+    ["Fund Allocations", fundRows.length ? `${stringValue(fundRows.length)} allocation${fundRows.length === 1 ? "" : "s"}: ${fundRows.map((fund) => `${stringValue(fund.allocation_percentage ?? fund.allocation_percent)}%`).join(" + ")}` : "—"],
+    ["Riders", riderRows.length ? `${stringValue(riderRows.length)} selected` : "—"],
+    ["Beneficiaries", beneficiaryRows.length ? `${stringValue(beneficiaryRows.length)}: ${beneficiaryRows.map((b) => `${stringValue(b.name ?? b.relationship)} ${stringValue(b.percentage)}%`).join(" + ")}` : "—"],
+  ]
+  const compactSummaryRows = summaryRows.filter(([label]) => ["Quote name", "Quote date", "Currency", "Identity number", "Location", "Plan", "Policy Term", "Premium Frequency", "Total Premium", "Members"].includes(String(label)))
   const visibleTabs: Array<{ id: DetailTab; label: string }> = [
     { id: "overview", label: "Overview" },
     { id: "plans", label: "Plans & Sub-Products" },
@@ -545,27 +671,39 @@ export default function OLQuotationDetail() {
     <section className="space-y-4">{quotation.approval_required && <div className="flex items-start gap-3 rounded-[10px] border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="alert"><CircleAlert className="mt-0.5 shrink-0" size={18} aria-hidden="true" /><div><p className="font-bold">Approval required</p><p className="mt-1">{stringValue(quotation.approval_reason, "This quotation requires approval before downstream conversion.")}</p></div></div>}      {partner && partner.compliant && quotation.partner_verified === true && <div className="flex flex-wrap items-center gap-3 rounded-[10px] border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-950" role="status"><ShieldCheck className="shrink-0" size={18} aria-hidden="true" /><div><p className="font-bold">Partner verified</p><p className="mt-1">{linkedPartnerName || "The compliant partner is linked to this quotation."}{partner.partner_number ? ` · ${partner.partner_number}` : ""}</p></div></div>}{partner && (!partner.compliant || quotation.partner_verified !== true) && <InfoBanner title="Partner verification pending"><div className="flex flex-wrap items-center justify-between gap-3"><span>{partner.partner_exists ? "A matching partner exists but is not compliant." : "No compliant partner is linked to this quotation."}{partner.missing_fields?.length ? ` Missing: ${partner.missing_fields.join(", ")}.` : " Complete the required KYC fields, save the partner, then verify again before conversion."}</span><button type="button" className="button-primary" onClick={openPartner}><UserRound size={16} aria-hidden="true" />Complete partner</button></div></InfoBanner>}
 
       {stageErrors.length > 0 && <div className="rounded-[10px] border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="alert"><p className="font-bold">Some quotation detail data needs attention</p><p className="mt-1">The quotation header loaded, but one or more supporting sections could not be retrieved.</p><ul className="mt-2 list-disc space-y-1 pl-5">{stageErrors.map((error) => <li key={error}>{error}</li>)}</ul><button type="button" className="button-secondary mt-3" onClick={() => void loadLifecycleData()}>Retry detail data</button></div>}
-      {activeTab === "overview" && <div className="space-y-4"><StepChecklist completion={completion} onJump={jumpTo} /><div className="grid gap-4 lg:grid-cols-2"><section className="surface-card p-4"><h2 className="mb-3 font-bold">Quotation summary</h2><dl className="grid gap-3 sm:grid-cols-2">{[["Quote name", quotation.quote_name], ["Quote date", dateLabel(quotation.quote_date)], ["Currency", renderFk(quotation.currency, quotation.currency_display)], ["Identity type", renderFk(quotation.identity_type, quotation.identity_type_display)], ["Identity number", quotation.identity_number], ["Date of birth", dateLabel(quotation.date_of_birth)], ["Age at quote", quotation.age_at_quote], ["Gender", renderFk(quotation.gender, quotation.gender_display)], ["Smoker status", renderFk(quotation.smoker_status, quotation.smoker_status_display)], ["Location", renderFk(quotation.location, quotation.location_display)], ["Agent", renderFk(quotation.agent_partner, quotation.agent_display)], ["Partner", linkedPartnerName], ["Address", quotation.address]].map(([label, value]) => <div key={String(label)}><dt className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--muted-foreground)]">{label}</dt><dd className="mt-1 text-sm font-semibold">{stringValue(value)}</dd></div>)}</dl></section><section className="surface-card p-4"><h2 className="mb-3 font-bold">Review actions</h2><div className="space-y-3">{canFinalize && <button type="button" className="button-primary w-full justify-center" onClick={() => { setFinalizeErrors([]); setFinalizeOpen(true) }}><Check size={16} aria-hidden="true" />Finalize quotation</button>}{canConvert && <button type="button" className="button-secondary w-full justify-center" onClick={() => { setConvertErrors([]); setConvertOpen(true) }}><ChevronRight size={16} aria-hidden="true" />Convert to proposal</button>}<button type="button" className="button-secondary w-full justify-center" onClick={() => setVersionsOpen(true)}><History size={16} aria-hidden="true" />View versions</button></div></section></div></div>}
+      {activeTab === "overview" && <div className="space-y-4"><StepChecklist completion={completion} onJump={jumpTo} /><div className="grid gap-4 lg:grid-cols-2"><section className="surface-card p-4"><h2 className="mb-3 font-bold">Quotation summary</h2><SummaryGrid rows={compactSummaryRows} /><button type="button" className="button-secondary mt-4 w-full justify-center" onClick={() => setSummaryOpen(true)}><Eye size={15} aria-hidden="true" />Show full summary</button></section><section className="surface-card p-4"><h2 className="mb-3 font-bold">Review actions</h2><div className="space-y-3">{canFinalize && <button type="button" className="button-primary w-full justify-center" onClick={() => { setFinalizeErrors([]); setFinalizeOpen(true) }}><Check size={16} aria-hidden="true" />Finalize quotation</button>}{canConvert && <button type="button" className="button-secondary w-full justify-center" onClick={() => { setConvertErrors([]); setConvertOpen(true) }}><ChevronRight size={16} aria-hidden="true" />Convert to proposal</button>}<button type="button" className="button-secondary w-full justify-center" onClick={() => setVersionsOpen(true)}><History size={16} aria-hidden="true" />View versions</button></div></section></div></div>}
       {activeTab === "plans" && <PlansTab rows={listValue(quotation.plan_configurations)} currency={currency} />}
       {activeTab === "members" && <MembersTab rows={listValue(quotation.members)} />}
       {activeTab === "installments" && <InstallmentPayoutsTab rows={listValue(quotation.installment_configurations)} payouts={payouts} summary={summary} currency={currency} />}
       {activeTab === "funds" && <FundsTab rows={listValue(quotation.fund_allocations)} currency={currency} />}
       {activeTab === "riders" && <RidersTab rows={listValue(quotation.rider_selections)} benefits={listValue(quotation.benefits)} currency={currency} />}
-      {activeTab === "financials" && <ProjectionsTab financial={financial} summary={summary} projections={projections} currency={currency} recalculationRequired={Boolean(financial?.recalculation_required)} onCalculate={async () => { if (!id) return; setBusy(true); try { const response = await request<FinancialDetails>(`${API_PREFIX}${id}/calculate/`, { method: "POST", body: JSON.stringify({}) }); setFinancial(response); toast({ tone: "success", title: "Financial details recalculated" }); await loadDetail() } catch (error) { toast({ tone: "danger", title: "Calculation failed", message: error instanceof Error ? error.message : "The rating engine rejected the calculation." }) } finally { setBusy(false) } }} busy={busy} />}
+      {activeTab === "financials" && <ProjectionsTab financial={financial} summary={summary} projections={projections} currency={currency} recalculationRequired={Boolean(financial?.recalculation_required)} onCalculate={async () => { if (!id) return; setBusy(true); try { const response = await requestSnake<FinancialDetails>(`${API_PREFIX}${id}/calculate/`, { method: "POST", body: JSON.stringify({}) }); setFinancial(response); toast({ tone: "success", title: "Financial details recalculated" }); await loadDetail() } catch (error) { toast({ tone: "danger", title: "Calculation failed", message: error instanceof Error ? error.message : "The rating engine rejected the calculation." }) } finally { setBusy(false) } }} busy={busy} />}
       {activeTab === "versions" && <VersionsTab versions={versions} currency={currency} onOpenDrawer={() => setVersionsOpen(true)} onView={(version) => void loadVersion(version)} />}
       {activeTab === "documents" && id && <DocumentInstancesPanel sourceType="ol_quotations.olquotation" objectId={id} documentType="OL_QUOTATION" title="Quotation documents" renderLabel="Generate quotation PDF" fallbackDocumentEndpoint={`${API_PREFIX}${id}/documents/`} />}
     </section>
 
     <Drawer open={versionsOpen} title="Quotation versions" description="Review historical snapshots or revise from the current finalized version." onClose={() => setVersionsOpen(false)} width="max-w-2xl"><div className="space-y-3">{versions.length === 0 ? <TableEmpty message="No versions are available." /> : versions.map((version) => <article key={String(version.id ?? version.version_number)} className="rounded-[10px] border p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-bold">Version {stringValue(version.version_number)}</p><p className="mt-1 text-xs text-[var(--muted-foreground)]">{dateLabel(version.created_at)} · {renderFk(version.created_by, version.created_by_display, "System")}</p><p className="mt-2 text-sm">{stringValue(version.change_reason, "No change reason recorded.")}</p></div><StatusBadge value={String(version.status ?? "Superseded")} tone={String(version.status).toUpperCase() === "CURRENT" ? "success" : "neutral"} /></div><div className="mt-3 flex gap-2"><button type="button" className="button-secondary" onClick={() => void loadVersion(Number(version.version_number))}><Eye size={15} aria-hidden="true" />Switch view</button>{hasRevision && <button type="button" className="button-secondary" onClick={() => void runRevision()}><Pencil size={15} aria-hidden="true" />Open revise</button>}</div></article>)}</div>{selectedVersion && <div className="mt-5 rounded-[10px] border bg-[var(--muted)]/35 p-4"><div className="mb-2 flex items-center justify-between"><h3 className="font-bold">Version {stringValue(selectedVersion.version_number)} snapshot</h3><button type="button" aria-label="Close version snapshot" className="rounded-md p-1 hover:bg-[var(--secondary)]" onClick={() => setSelectedVersion(null)}><X size={16} aria-hidden="true" /></button></div><pre className="max-h-80 overflow-auto whitespace-pre-wrap text-xs leading-5">{JSON.stringify(sanitizeForDisplay(selectedVersion.snapshot ?? selectedVersion), null, 2)}</pre></div>}</Drawer>
 
-    <Modal open={partnerOpen} title="Complete partner verification" description="Complete the missing compliant-partner fields before conversion." onClose={() => { if (!busy) setPartnerOpen(false) }} footer={<><button type="button" className="button-secondary" onClick={() => setPartnerOpen(false)} disabled={busy}>Cancel</button><button type="button" className="button-primary" onClick={() => void completePartner()} disabled={busy}>{busy ? "Saving…" : "Save and verify"}</button></>}>
+    <Modal open={partnerOpen} title="Complete partner verification" description="Complete the missing compliant-partner fields before conversion." onClose={() => { if (!busy) setPartnerOpen(false) }} footer={<><button type="button" className="button-secondary" onClick={() => setPartnerOpen(false)} disabled={busy}>Cancel</button><button type="button" className="button-primary" onClick={() => void completePartner()} disabled={busy}>{busy ? (selectedPartner ? "Linking…" : "Saving…") : (selectedPartner ? "Link and verify" : "Save and verify")}</button></>}>
       {partnerErrors.length > 0 && <div className="mb-4 space-y-1 rounded-[10px] border border-red-200 bg-red-50 p-3 text-sm text-red-900" role="alert">{partnerErrors.map((error) => <p key={error}>{error}</p>)}</div>}
+      <div className="mb-4 rounded-[10px] border border-[var(--border)] bg-[var(--secondary)] p-3">
+        <p className="mb-2 text-sm font-semibold">Link an existing partner</p>
+        <div className="flex gap-2">
+          <input name="partner-search" aria-label="Search existing partner" placeholder="Search by partner number or name…" value={partnerSearch} onChange={(event) => { setPartnerSearch(event.target.value); if (selectedPartner) setSelectedPartner(null) }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void searchPartners(partnerSearch) } }} className="h-10 w-full rounded-[10px] border bg-[var(--card)] px-3 text-sm text-[var(--foreground)] shadow-sm outline-none transition placeholder:text-[var(--muted-foreground)] focus:border-[var(--ring)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--ring)_18%,transparent)]" />
+          <button type="button" className="button-secondary" onClick={() => void searchPartners(partnerSearch)} disabled={partnerSearching}>{partnerSearching ? "Searching…" : "Search"}</button>
+        </div>
+        {selectedPartner && <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-900"><span className="inline-flex items-center gap-1"><Check size={14} aria-hidden="true" /><strong>{selectedPartner.displayName}</strong> · {selectedPartner.partnerNumber}</span><button type="button" className="text-xs font-semibold underline underline-offset-2" onClick={() => { setSelectedPartner(null); setPartnerResults([]) }}>Change</button></div>}
+        {!selectedPartner && partnerResults.length > 0 && <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto">{partnerResults.map((row) => <li key={row.id}><button type="button" className="flex w-full items-start justify-between gap-3 rounded-lg border bg-[var(--card)] px-3 py-2 text-left transition hover:border-[var(--primary)]" onClick={() => void selectPartner(row)}><span className="min-w-0"><span className="block truncate text-sm font-bold">{row.displayName}</span><span className="block text-xs text-[var(--muted-foreground)]">{row.partnerNumber} · {row.email || "no email"}</span></span><span className="shrink-0 rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-bold text-emerald-700">{row.status}</span></button></li>)}</ul>}
+        {!selectedPartner && partnerSearch.trim() && partnerResults.length === 0 && !partnerSearching && <p className="mt-2 text-xs text-[var(--muted-foreground)]">No existing partner matched "{partnerSearch}". Fill the fields below to create a new partner instead.</p>}
+      </div>
       <FormGrid columns={2}>{(["first_name", "surname", "other_name", "email", "mobile_number", "nationality", "occupation", "identification_number"] as const).map((field) => <TextInput key={field} label={field.replace(/_/g, " ").replace(/\b\w/g, (letter: string) => letter.toUpperCase())} name={field} value={partnerForm[field]} onChange={(event) => setPartnerForm((current) => ({ ...current, [field]: event.target.value }))} required={field === "first_name" || field === "surname" || field === "identification_number"} />)}<SmartSelect entity="identity-types" label="Identification type" name="identification_type" value={partnerForm.identification_type} onChange={(value) => setPartnerForm((current) => ({ ...current, identification_type: value }))} required placeholder="Select identification type" /><SelectInput label="Gender" name="gender" value={partnerForm.gender} onChange={(event) => setPartnerForm((current) => ({ ...current, gender: event.target.value }))}><option value="">Select gender</option><option value="MALE">Male</option><option value="FEMALE">Female</option></SelectInput><DateInput label="Date of birth" name="date_of_birth" value={partnerForm.date_of_birth} onChange={(event) => setPartnerForm((current) => ({ ...current, date_of_birth: event.target.value }))} /></FormGrid>
     </Modal>
 
     <Modal open={convertOpen} title="Convert to Proposal" description="The quotation must satisfy BR-01 before handoff to OL Proposals." onClose={() => setConvertOpen(false)} footer={<><button type="button" className="button-secondary" onClick={() => setConvertOpen(false)} disabled={busy}>Close</button><button type="button" className="button-primary" onClick={() => void convertToProposal()} disabled={busy}>{busy ? "Converting…" : "Convert to Proposal"}</button></>}>
       {eligibilityErrors.length || convertErrors.length ? <div className="space-y-2 rounded-[10px] border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" role="alert"><p className="font-bold">Conversion is blocked</p>{[...eligibilityErrors, ...convertErrors].map((error) => <p key={error}>• {error}</p>)}</div> : <InfoBanner title="Ready for conversion">Partner verification, quotation finalization, expiry, and approval checks have passed.</InfoBanner>}
     </Modal>
+
+    <Modal open={summaryOpen} title="Full quotation summary" description="Complete snapshot of the quotation and its selected plan configuration." onClose={() => setSummaryOpen(false)} size="xl" footer={<button type="button" className="button-secondary" onClick={() => setSummaryOpen(false)}>Close</button>}><SummaryGrid rows={summaryRows} className="sm:grid-cols-2 lg:grid-cols-3" /></Modal>
 
     <ConfirmModal open={finalizeOpen} title="Finalize quotation" description="Finalize this quotation? It will become read-only until revised." confirmLabel="Finalize" onClose={() => setFinalizeOpen(false)} onConfirm={() => void finalize()} tone="primary" />
     {finalizeErrors.length > 0 && <div className="fixed bottom-5 right-5 z-40 max-w-md rounded-[10px] border border-red-200 bg-red-50 p-4 text-sm text-red-900 shadow-xl" role="alert"><div className="flex items-start justify-between gap-3"><p className="font-bold">Finalization blocked</p><button type="button" aria-label="Dismiss finalization errors" onClick={() => setFinalizeErrors([])}><X size={16} aria-hidden="true" /></button></div>{finalizeErrors.map((error) => <button type="button" className="mt-2 block text-left underline" key={error} onClick={() => { setFinalizeErrors([]); jumpTo("financial") }}>{error}</button>)}</div>}

@@ -2879,6 +2879,72 @@ class OLQuotationAPITests(TestCase):
             ).exists()
         )
 
+    def test_partner_completion_links_selected_existing_partner(self):
+        PartnerType.objects.get_or_create(
+            code="CLIENT",
+            defaults={"name": "Individual Client", "is_active": True},
+        )
+        self.partner.gender = "FEMALE"
+        self.partner.save(update_fields=["gender"])
+        draft = self.create_draft()
+        # Give the draft an identity that does NOT match the existing partner,
+        # then link that partner explicitly instead of creating a duplicate.
+        personal = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/personal-details/",
+            self.personal_details_payload(
+                identity_number="DIFFERENT-NUMBER",
+                date_of_birth="1984-05-07",
+            ),
+            format="json",
+        )
+        self.assertEqual(personal.status_code, 200, personal.data)
+        completion = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/partner-completion/",
+            {"partner_id": str(self.partner.pk)},
+            format="json",
+        )
+        self.assertEqual(completion.status_code, 201, completion.data)
+        data = completion.data["data"]
+        quotation = OLQuotation.objects.get(pk=draft["id"])
+        self.assertTrue(data["partner_verified"])
+        self.assertEqual(str(quotation.partner_id), str(self.partner.pk))
+        self.assertIsNone(data["application_id"])
+        # The quotation identity is reconciled to the linked partner so the
+        # identity-based verification stays consistent downstream.
+        quotation.refresh_from_db()
+        self.assertEqual(quotation.identity_number, self.partner.identification_number)
+        self.assertEqual(quotation.date_of_birth, self.partner.date_of_birth)
+        self.assertTrue(
+            DomainEvent.objects.filter(
+                event_type="PartnerLinked",
+                aggregate_id=str(quotation.pk),
+            ).exists()
+        )
+        # A subsequent verification keeps the partner linked and compliant.
+        verification = self.client.get(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/partner-verification/"
+        )
+        self.assertEqual(verification.status_code, 200, verification.data)
+        self.assertTrue(verification.data["data"]["partner_exists"])
+        self.assertTrue(verification.data["data"]["compliant"])
+
+    def test_partner_completion_rejects_missing_or_inactive_partner(self):
+        draft = self.create_draft()
+        missing = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/partner-completion/",
+            {"partner_id": "00000000-0000-0000-0000-000000000000"},
+            format="json",
+        )
+        self.assertEqual(missing.status_code, 400, missing.data)
+        self.assertIn("partner_id", str(missing.data).lower())
+        inactive = self.client.post(
+            f"/api/v1/ol-quotations/quotations/{draft['id']}/partner-completion/",
+            {"partner_id": str(self.inactive_agent.pk)},
+            format="json",
+        )
+        self.assertEqual(inactive.status_code, 400, inactive.data)
+        self.assertIn("not ACTIVE", str(inactive.data))
+
     def test_convert_to_proposal_blocked_when_draft(self):
         draft = self.create_draft()
         response = self.client.post(

@@ -2610,8 +2610,47 @@ class QuotationService:
     @staticmethod
     @transaction.atomic
     def complete_partner(*, quotation, actor, data, request=None):
-        """Create an individual partner through the canonical onboarding conversion service."""
+        """Link a selected existing partner, or create an individual partner."""
         locked = OLQuotation.objects.select_for_update().get(pk=quotation.pk)
+        selected_partner = (data or {}).get("partner")
+        if selected_partner is not None:
+            before = QuotationService.snapshot(locked)
+            # Reconcile the quotation identity to the selected partner so the
+            # identity-based verification stays consistent downstream.
+            locked.identity_type = selected_partner.identification_type
+            locked.identity_number = selected_partner.identification_number
+            locked.date_of_birth = selected_partner.date_of_birth
+            locked.gender = selected_partner.gender
+            locked.partner = selected_partner
+            locked.linked_partner = selected_partner
+            locked.partner_verified = bool(selected_partner.status == "ACTIVE" and selected_partner.is_active)
+            locked.updated_by = QuotationService.actor(actor)
+            locked.wizard_step_completion = QuotationService.wizard_completion(locked)
+            locked.save(update_fields=["identity_type", "identity_number", "date_of_birth", "gender", "partner", "linked_partner", "partner_verified", "wizard_step_completion", "updated_by", "updated_at"])
+            AuditService.log_update(
+                locked,
+                before_state=before,
+                actor=actor,
+                request=request,
+                reason="Existing partner linked to quotation.",
+            )
+            DomainEvent.objects.create(
+                event_type="PartnerLinked",
+                aggregate_type="OLQuotation",
+                aggregate_id=str(locked.pk),
+                payload={
+                    "quotation_id": str(locked.pk),
+                    "quote_number": locked.quote_number,
+                    "partner_id": str(selected_partner.pk),
+                    "partner_number": selected_partner.partner_number,
+                },
+            )
+            return {
+                "partner": selected_partner,
+                "application": None,
+                "quotation": locked,
+                "partner_verified": locked.partner_verified,
+            }
         payload = dict(data or {})
         payload.pop("application_number", None)
         payload["partner_type"] = "INDIVIDUAL"

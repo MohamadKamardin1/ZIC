@@ -107,37 +107,37 @@ export default function PartnerParameters() {
   const requirementCounts = partnerTypes.reduce((total, type) => total + type.documents.length + type.attributes.length + type.contacts.length + type.banks.length, 0)
 
   return (
-    <div className="space-y-6 text-[#1b1b1b]">
+    <div className="space-y-6 text-foreground">
       <PageHeader
         title="Partner Onboarding Parameters"
         description="One governed configuration workspace for every dynamic onboarding field, rule, and requirement."
       />
 
-      <section className="rounded-xl border border-[#dedede] bg-white p-5 shadow-sm">
+      <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#737373]">Configuration control centre</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Configuration control centre</p>
             <h2 className="mt-1 text-xl font-semibold tracking-tight">Everything onboarding reads is managed here</h2>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-[#666]">
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
               Changes are stored by the backend, audited, and reflected in new and existing onboarding forms after the configuration cache refreshes.
             </p>
           </div>
-          <div className="inline-flex items-center gap-2 rounded-lg border border-[#dedede] px-3 py-2 text-xs font-medium text-[#555]">
+          <div className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs font-medium text-secondary-foreground">
             <RefreshCw className="h-3.5 w-3.5" />
             <span>{configuration?.version ?? "partner-onboarding.v1"}</span>
           </div>
         </div>
 
         {loading ? (
-          <div className="mt-6 flex items-center gap-2 border-t border-[#eeeeee] pt-5 text-sm text-[#666]">
+          <div className="mt-6 flex items-center gap-2 border-t border-border pt-5 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> Loading live configuration summary…
           </div>
         ) : error ? (
-          <div className="mt-6 border-t border-[#eeeeee] pt-5 text-sm text-[#555]">
+          <div className="mt-6 border-t border-border pt-5 text-sm text-secondary-foreground">
             The configuration summary could not be loaded. The domain editors remain available and use their protected CRUD endpoints.
           </div>
         ) : (
-          <div className="mt-6 grid gap-3 border-t border-[#eeeeee] pt-5 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-6 grid gap-3 border-t border-border pt-5 sm:grid-cols-2 xl:grid-cols-4">
             {([
               { label: "Partner types", value: partnerTypes.length, Icon: Building2 },
               { label: "Choice catalogues", value: choiceLists.length, Icon: ListFilter },
@@ -145,10 +145,10 @@ export default function PartnerParameters() {
               { label: "Scalar parameters", value: scalarParameterCount, Icon: Settings2 },
             ] as Array<{ label: string; value: number; Icon: LucideIcon }>).map(({ label, value, Icon: SummaryIcon }) => {
               return (
-                <div key={String(label)} className="rounded-lg border border-[#e5e5e5] bg-[#fafafa] px-4 py-3">
+                <div key={String(label)} className="rounded-lg border border-border bg-muted px-4 py-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium uppercase tracking-[0.12em] text-[#777]">{label}</span>
-                    <SummaryIcon className="h-4 w-4 text-[#555]" />
+                    <span className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{label}</span>
+                    <SummaryIcon className="h-4 w-4 text-secondary-foreground" />
                   </div>
                   <p className="mt-2 text-2xl font-semibold tabular-nums">{String(value)}</p>
                 </div>
@@ -171,20 +171,20 @@ export default function PartnerParameters() {
             <Link
               key={section.path}
               to={section.path}
-              className="group rounded-xl border border-[#dedede] bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[#999] hover:shadow-md"
+              className="group rounded-xl border border-border bg-card p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-muted-foreground hover:shadow-md"
             >
               <div className="flex items-start justify-between gap-4">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-[#dedede] bg-[#fafafa] text-[#333]">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-muted text-secondary-foreground">
                   <Icon className="h-5 w-5" />
                 </div>
-                <ArrowRight className="h-4 w-4 text-[#999] transition group-hover:translate-x-1 group-hover:text-[#222]" />
+                <ArrowRight className="h-4 w-4 text-muted-foreground transition group-hover:translate-x-1 group-hover:text-foreground" />
               </div>
               <div className="mt-5 flex items-end justify-between gap-4">
                 <div>
                   <h2 className="text-base font-semibold">{section.label}</h2>
-                  <p className="mt-1 text-sm leading-5 text-[#666]">{section.description}</p>
+                  <p className="mt-1 text-sm leading-5 text-muted-foreground">{section.description}</p>
                 </div>
-                {count !== null && <span className="text-2xl font-semibold tabular-nums text-[#333]">{count}</span>}
+                {count !== null && <span className="text-2xl font-semibold tabular-nums text-secondary-foreground">{count}</span>}
               </div>
             </Link>
           )

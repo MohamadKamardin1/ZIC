@@ -977,7 +977,7 @@ class OLQuotationViewSet(QuotationScopedViewSet):
                 "partner_verified": result["partner_verified"],
                 "compliant": result["partner_verified"],
                 "missing_fields": [],
-                "application_id": str(result["application"].pk),
+                "application_id": str(result["application"].pk) if result["application"] else None,
             },
             "Partner completed and linked to quotation.",
             status.HTTP_201_CREATED,

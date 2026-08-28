@@ -42,6 +42,7 @@ class OLQuotationPartnerVerificationSerializer(serializers.Serializer):
 
 
 class OLQuotationPartnerCompletionSerializer(serializers.Serializer):
+    partner_id = serializers.UUIDField(required=False, allow_null=True)
     first_name = serializers.CharField(required=False, allow_blank=True, max_length=100)
     surname = serializers.CharField(required=False, allow_blank=True, max_length=100)
     other_name = serializers.CharField(required=False, allow_blank=True, max_length=100)
@@ -70,6 +71,14 @@ class OLQuotationPartnerCompletionSerializer(serializers.Serializer):
                         attrs[field] = value
         if attrs.get("date_of_birth") and attrs["date_of_birth"] > timezone.localdate():
             raise serializers.ValidationError({"date_of_birth": "Date of birth cannot be in the future."})
+        partner_id = attrs.get("partner_id")
+        if partner_id:
+            partner = Partner.objects.filter(pk=partner_id).first()
+            if partner is None:
+                raise serializers.ValidationError({"partner_id": "The selected partner could not be found."})
+            if not (partner.status == "ACTIVE" and partner.is_active):
+                raise serializers.ValidationError({"partner_id": "The selected partner is not ACTIVE and cannot be linked to this quotation."})
+            attrs["partner"] = partner
         return attrs
 
 

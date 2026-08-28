@@ -79,6 +79,35 @@ describe("DocumentInstancesPanel", () => {
     await waitFor(() => expect(fetchAuthenticatedDocument).toHaveBeenCalledWith("/api/v1/ol-quotations/documents/legacy-1/download/?ticket=legacy-ticket", "pdf"))
   })
 
+  it("renders a camelCase unified payload and previews the signed URL", async () => {
+    const camelUnified = {
+      count: 1,
+      page: 1,
+      pageSize: 50,
+      results: [{
+        id: "instance-camel-1",
+        documentType: "OL_QUOTATION",
+        sourceType: "ol_quotations.olquotation",
+        sourceObjectId: "quote-1",
+        templateName: "Ordinary Life Quotation",
+        templateCode: "OL_QUOTATION_PRINT",
+        templateVersion: 1,
+        generatedByDisplay: "mohamad sultan",
+        generatedAt: "2026-08-27T10:12:32.155743+02:00",
+        pageCount: 2,
+        mimeType: "application/pdf",
+        status: "GENERATED",
+        signedDownloadUrl: "/api/v1/documents/instances/instance-camel-1/download/?ticket=camel-ticket",
+      }],
+    }
+    vi.mocked(request).mockResolvedValue(camelUnified)
+    render(<DocumentInstancesPanel sourceType="ol_quotations.olquotation" objectId="quote-1" documentType="OL_QUOTATION" />)
+    expect(await screen.findByText("Ordinary Life Quotation")).toBeInTheDocument()
+    expect(screen.getByText("mohamad sultan")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }))
+    await waitFor(() => expect(fetchAuthenticatedDocument).toHaveBeenCalledWith("/api/v1/documents/instances/instance-camel-1/download/?ticket=camel-ticket", "pdf"))
+  })
+
   it("shows an ErrorCoach branding deep link for pending templates", async () => {
     const pending = new ApiClientError({ status: 409, code: "TEMPLATE_PENDING", message: "The Receipt template is not configured. Configure document branding in System Parameters.", fieldErrors: {} })
     vi.mocked(request).mockRejectedValueOnce(pending)

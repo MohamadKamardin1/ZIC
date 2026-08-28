@@ -13,8 +13,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   ArrowLeft,
   BadgeCheck,
+  Check,
   CheckCircle2,
   CircleSlash,
+  Clipboard,
   Clock3,
   FileText,
   Landmark,
@@ -187,6 +189,7 @@ export default function OLProposalDetail() {
   const [convertOpen, setConvertOpen] = useState(false)
   const [cancelOpen, setCancelOpen] = useState(false)
   const [printOpen, setPrintOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
   const [readinessConflict, setReadinessConflict] = useState<ChecklistItem[] | null>(null)
 
   const changeTab = useCallback(
@@ -317,41 +320,69 @@ export default function OLProposalDetail() {
 
   return (
     <div className="space-y-5 p-4 md:p-6">
-      <nav aria-label="Breadcrumb" className="text-sm">
-        <Link to="/ordinary-life/proposals" className="inline-flex items-center gap-1.5 font-semibold text-[var(--muted-foreground)] transition hover:text-[var(--foreground)]">
-          <ArrowLeft size={15} aria-hidden="true" />
-          Proposals register
-        </Link>
-      </nav>
-
       {/* Header */}
-      <header className="section-header flex flex-wrap items-start justify-between gap-4" data-testid="proposal-detail-header">
-        <div className="min-w-0 space-y-2">
-          <h1 className="truncate text-xl font-extrabold tracking-tight">{detail.proposalNumber}</h1>
-          <p className="text-sm font-semibold text-white/85">{detail.partnerName}</p>
-          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-white/70">
-            {[detail.productName, detail.planName].filter(Boolean).join(" · ") || "—"}
-            {detail.quotationNumber ? ` · from ${detail.quotationNumber}` : ""}
-          </p>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pt-1 text-white">
-            <ProposalStatusBadge status={detail.status} />
-            <span className="rounded-full border border-white/30 px-2 py-0.5 text-xs font-bold">{detail.currency || "TZS"}</span>
-            <ExpiryWarning expiryDate={detail.expiryDate} />
-            <span className="flex items-center gap-1 text-xs font-bold" data-testid="header-payment-ready">
-              Payment ready <Tick on={detail.paymentReady} testId="tick-payment-ready" />
-            </span>
-            <span className="flex items-center gap-1 text-xs font-bold" data-testid="header-first-premium">
-              First premium <Tick on={detail.firstPremium?.posted} testId="tick-first-premium" />
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-semibold text-white/75">
-            <span>Agent: {detail.agentName || "—"}</span>
-            {detail.employerName && detail.employerName !== "-" && <span>Employer: {detail.employerName}</span>}
-          </div>
-        </div>
+      <header className="section-header p-5" data-testid="proposal-detail-header">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-[0.12em] text-white/70">
+              <Link
+                to="/ordinary-life/proposals"
+                className="inline-flex items-center gap-1.5 rounded-lg px-1.5 py-0.5 transition hover:bg-white/10 hover:text-white"
+              >
+                <ArrowLeft size={14} aria-hidden="true" />
+                Proposals register
+              </Link>
+              <span aria-hidden="true">/</span>
+              <span>Proposal detail</span>
+            </div>
 
-        {/* Action bar */}
-        <div role="toolbar" aria-label="Proposal actions" className="flex flex-wrap items-center justify-end gap-2" data-testid="proposal-action-bar">
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <h1 className="break-all text-2xl font-extrabold tracking-tight sm:text-3xl">{detail.proposalNumber}</h1>
+              <button
+                type="button"
+                className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-white/30 bg-white/10 px-3 text-xs font-bold text-white transition hover:bg-white/20"
+                onClick={() => {
+                  void navigator.clipboard
+                    ?.writeText(detail.proposalNumber)
+                    .then(() => setCopied(true))
+                    .catch(() => undefined)
+                  window.setTimeout(() => setCopied(false), 1600)
+                }}
+                aria-label={copied ? "Proposal number copied" : "Copy proposal number"}
+              >
+                {copied ? <Check size={14} aria-hidden="true" /> : <Clipboard size={14} aria-hidden="true" />}
+                {copied ? "Copied" : "Copy"}
+              </button>
+              <ProposalStatusBadge status={detail.status} />
+            </div>
+
+            <p className="mt-3 text-sm font-bold text-white/90">{detail.partnerName}</p>
+            <p className="mt-1 text-xs font-semibold uppercase tracking-[0.08em] text-white/70">
+              {[detail.productName, detail.planName].filter(Boolean).join(" · ") || "—"}
+              {detail.quotationNumber ? ` · from ${detail.quotationNumber}` : ""}
+            </p>
+
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-white">
+              <span className="inline-flex items-center gap-2 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-bold">
+                {detail.currency || "TZS"}
+              </span>
+              <ExpiryWarning expiryDate={detail.expiryDate} />
+              <span className="inline-flex items-center gap-1.5 text-xs font-bold" data-testid="header-payment-ready">
+                Payment ready <Tick on={detail.paymentReady} testId="tick-payment-ready" />
+              </span>
+              <span className="inline-flex items-center gap-1.5 text-xs font-bold" data-testid="header-first-premium">
+                First premium <Tick on={detail.firstPremium?.posted} testId="tick-first-premium" />
+              </span>
+            </div>
+
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs font-semibold text-white/75">
+              <span>Agent: {detail.agentName || "—"}</span>
+              {detail.employerName && detail.employerName !== "-" && <span>Employer: {detail.employerName}</span>}
+            </div>
+          </div>
+
+          {/* Action bar */}
+          <div role="toolbar" aria-label="Proposal actions" className="flex flex-wrap items-center gap-2 xl:max-w-[42%] xl:justify-end" data-testid="proposal-action-bar">
           {canAct("enrich") && (
             <button type="button" className="button-secondary" onClick={() => setEnrichOpen(true)} data-testid="open-enrichment">
               Enrich
@@ -383,6 +414,7 @@ export default function OLProposalDetail() {
               Print
             </button>
           )}
+          </div>
         </div>
       </header>
 
