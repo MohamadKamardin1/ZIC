@@ -1,6 +1,6 @@
 # OL CLAIMS UI — FULL SERIES (10 Prompts)
 
-## [ ] Prompt 1 — Save Series File + Foundation + Contract-First API Layer
+## [x] Prompt 1 — Save Series File + Foundation + Contract-First API Layer
 
 You are a senior frontend engineer for the ZIC Life Insurance Platform. The OL Claims backend is complete. Build the Claims UI. The user pasted the FULL 10-prompt series at once.
 
