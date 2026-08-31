@@ -1,152 +1,122 @@
-# OL MATURITY INSTALLMENTS — DESIGN
+# OL Maturity Installments — Design
 
-Domain design for the ZIC Ordinary Life Maturity Installments bounded context.
-Prompt 1 of the OL Maturity Installments backend series.
+Bounded context for converting a matured Ordinary Life policy benefit into a
+lump sum or an installment (annuity) schedule. The module guarantees the total
+payouts match the Maturity Value and integrates with the Front Office for
+disbursement.
 
-## 1. Business context
+## Bounded context
 
-When a policy reaches its maturity date, the policyholder may elect to receive the
-maturity benefit either as a single lump-sum payment or spread over a series of
-installments (a form of annuity). This module owns the **Installment Plan** — the
-approved schedule — and the individual **Installment Items** — the individual
-payments that make it up.
+- App: `apps.ol_maturity_installments`
+- API prefix: `/api/v1/ol/maturity-installments/`
+- Series: `docs/prompts/OL_MATURITY_INSTALLMENTS_BACKEND_PROMPTS.md`
 
-The module guarantees a core financial invariant: **the total of all installment
-payouts equals the Maturity Value made payable by the policy** (net of any agreed
-loan deduction). Any divergence raises a structured `PLAN_CALCULATION_MISMATCH`
-and blocks the plan from being activated.
+## Lifecycles
 
-## 2. Lifecycles
+Installment Plan: `CREATED -> ACTIVE -> COMPLETED | TERMINATED`
 
-### 2.1 Installment Plan
+Installment Item: `SCHEDULED -> PAYMENT_PENDING -> PAID | MISSED | WAIVED`
 
+## Integration map
+
+| System | Role |
+| --- | --- |
+| OL Policies (`Policy`) | Trigger: a matured policy is the subject of the plan |
+| Maturity Claims (`MaturityClaim`) | Source of value: `maturity_value` feeds the schedule |
+| Front Office (`FORequisition`) | Disbursement channel for each paid installment |
+| Notifications | Domain events via the durable `DomainEvent` outbox |
+
+## Parameterization
+
+Every calculation is driven by OL Policy Setup / Product Rating parameters:
+
+- Installment Rates — `OLAnticipatedEndowmentInstallmentRate` (effective-dated
+  rows keyed by product, optional plan, frequency, term, age and policy year).
+- Paid-Up Rates — `OLPaidUpRate` (reserved for future conversion calculations).
+- Charges — `OLInstallmentChargeRate` (reserved for future charge application).
+
+The plan's `parameter_snapshot` and the one-to-one `OLMaturityInstallmentConfig`
+preserve the exact basis used so later changes to rating parameters cannot
+silently alter an issued schedule.
+
+## Calculation engine (Prompt 2)
+
+Public contract in `apps/ol_maturity_installments/services/calculation.py`:
+
+```python
+generate_schedule(policy, maturity_value, frequency, term_years) -> [{date, amount}, ...]
 ```
-CREATED -> ACTIVE -> COMPLETED
-                \-> TERMINATED
-```
 
-| State       | Meaning |
-|-------------|---------|
-| `CREATED`   | The plan and its items have been generated from the maturity value. Not yet payable. |
-| `ACTIVE`    | The schedule is live; items become payable on their due dates. |
-| `COMPLETED` | Every installment has been settled; the plan is finished. |
-| `TERMINATED`| The plan was stopped before completion (e.g. commuted to lump sum, policy correction, or repayment default) with the balance handled by the terminating action. |
+`calculate_schedule(...)` returns the richer result dict (totals, dates, exact
+rate row, audit) and is the audit-writing entry point; `generate_schedule` is
+the thin Prompt-2 contract wrapper.
 
-### 2.2 Installment Item
+### Resolution order
 
-```
-SCHEDULED -> PAYMENT_PENDING -> PAID
-                            \-> MISSED
-                            \-> WAIVED
-```
+1. **Maturity validation** — `policy.maturity_date <= today`, else
+   `PLAN_POLICY_NOT_MATURED`.
+2. **Frequency validation** — must be a valid maturity option
+   (`SINGLE | MONTHLY | QUARTERLY | HALF_YEARLY | ANNUAL`); aliases such as
+   `ANNUALLY` are normalised. Else `INSTALLMENT_INVALID_FREQUENCY`.
+3. **Term validation** — positive whole years (cap 60). Else
+   `INSTALLMENT_INVALID_TERM`.
+4. **Rate resolution** — the policy's product/plan is resolved by
+   `product_plan_ref` (with `contract_snapshot` fallback codes) against the
+   `OLProduct`/`OLPlan` catalogues, then the most specific active, effective
+   `OLAnticipatedEndowmentInstallmentRate` row is chosen:
+   - exact product + plan + term coverage scores highest;
+   - a product-only row with term coverage is the default fallback;
+   - an unconstrained (no term bounds) product row is the least-preferred
+     fallback.
+   If the product cannot be resolved, or no active row covers the
+   product/frequency/term on the calculation date, the run fails with the
+   teachable `PLAN_PARAMETER_MISSING`.
+5. **Amount** — `Amount = Maturity Value * (Rate / 100)` per installment, where
+   the rate is the table's `rate_factor` expressed as a percentage.
+6. **Rounding** — each amount is quantised to the penny and the residual is
+   distributed by largest remainder so `sum(items) == maturity_value`. If the
+   table rate cannot reconcile (residual larger than one penny per item) the
+   run fails with `PLAN_CALCULATION_MISMATCH`.
+7. **Audit** — every run writes an `AuditService` record
+   (`action=CALCULATE`, actor, before/after, reason, source channel) so
+   calculation runs are fully traceable for compliance.
 
-| State              | Meaning |
-|--------------------|---------|
-| `SCHEDULED`        | Item is on the calendar; not yet due. |
-| `PAYMENT_PENDING`  | Item has reached its due date (or a grace period has lapsed) and awaits disbursement via Front Office. |
-| `PAID`             | Front Office confirmed the disbursement for this item. Terminal. |
-| `MISSED`           | The disbursement could not be completed at the expected window; it remains payable and is flagged for follow-up. |
-| `WAIVED`           | The item was forgiven under an approved policy/product rule. Terminal. |
+### Schedule geometry
 
-## 3. Integration map
+- Installment count = `1` for `SINGLE`; otherwise `term_years * 12 / months`
+  per frequency (monthly=1, quarterly=3, half-yearly=6, annual=12).
+- Due dates start on `start_date` (defaults to the calculation date, never
+  before `maturity_date`) and advance by the frequency's month step, clamping
+  to month end for short months (e.g. 31 Jan -> 28 Feb).
 
-| System                 | Role                                                          | Direction / seam |
-|------------------------|---------------------------------------------------------------|------------------|
-| **OL Policies**        | Trigger: a policy reaching `MATURED` (or `MATURED_PENDING_PAYMENT`) is eligible to carry an installment plan. Policy provides partner, currency, product/plan reference, and maturity date. | Read; the plan references `ol_policies.Policy` via `policy_ref`. |
-| **Maturity Claims**    | Source of value: the approved maturity claim supplies `maturity_value`, `loan_deduction`, and `net_payout`. | Read; optional `maturity_claim_ref` to `ol_policies.MaturityClaim`. |
-| **Front Office**       | Disbursement: each payable item raises/links a `FORequisition`; Front Office confirmation transitions the item to `PAID`. | Write seam via `payment_requisition_ref` to `front_office.FORequisition`. |
-| **Notifications**      | Consumers listen for domain events (`InstallmentPlanCreated`, `InstallmentPaymentDue`, `InstallmentPaymentMissed`, `InstallmentPlanCompleted`) to drive SMS/e-mail and dashboard alerts. | Events published to the shared `DomainEvent` outbox. |
-| **OL Parameters (Policy Setup / Product Rating)** | Calculation basis: installment schedule and charges are parameterized from Product Rating rate tables. | Read-only parameter consumption (see §4). |
+## Options endpoints
 
-## 4. Parameterization
+- `GET /api/v1/ol/maturity-installments/options/frequencies/` — the five
+  maturity payout frequencies with `months_between` and `payout_per_year`.
+- `GET /api/v1/ol/maturity-installments/options/terms/` — term years found in
+  the active installment rate table (falls back to 1–30 when no table is
+  seeded), optionally scoped with `?product=<code>`. Search via `?q=...`,
+  pagination via `page`/`page_size`.
 
-All installment behavior is parameterized through the existing OL Policy Setup and
-Product Rating parameter catalog in `apps.ol_parameters`:
+## Assumptions (senior finance decisions, documented)
 
-| Parameter model             | Use in this module |
-|-----------------------------|--------------------|
-| `OLAnticipatedEndowmentInstallmentRate` | Supplies the **Installment Rate** (`rate_factor`) by product/plan/frequency/age/term/policy-year/currency used to derive the annuity schedule. |
-| `OLPaidUpRate`              | Supplies the **Paid-Up Rate** (`rate_factor`) by table/version/product/plan/gender/smoker/age/term/policy-year used when a paid-up policy's maturity value is converted to installments. |
-| `OLInstallmentChargeRate`   | Supplies per-frequency installment charges (`FIXED` / `PERCENTAGE` / `FACTOR`) applied on the chosen `apply_on` dimension. |
+- A matured policyholder may choose any maturity payout frequency; the premium
+  payment frequency is advisory, and the schedule reports
+  `frequency_matches_policy` for visibility rather than restricting choice.
+- The rate table is the single source of truth; no hard-coded percentages exist
+  in the engine. A missing table is an operator error surfaced as
+  `PLAN_PARAMETER_MISSING`, never silently zero.
+- Rounding follows largest-remainder (the last item absorbs any residual penny)
+  so the item total equals the maturity value to the cent.
 
-The calculation basis used at plan-creation time is snapshotted onto
-`OLMaturityInstallmentConfig` so later reconciliation is possible even if the
-rate tables are superseded. When a required rate row is missing for the policy's
-product/plan scope, plan creation raises `PLAN_PARAMETER_MISSING` with a deep
-link into the parameter catalog.
-
-### 4.1 Documented senior-assumption notes
-
-- **Currency**: an installment plan is denominated in the policy's currency.
-  No cross-currency conversion is performed in this module; Front Office owns any
-  exchange behaviour at disbursement time.
-- **Frequency mapping**: plan `frequency` maps onto `OLInstallmentFrequency`
-  (`SINGLE`, `MONTHLY`, `QUARTERLY`, `HALF_YEARLY`, `ANNUAL`). A single-frequency
-  plan has exactly one item.
-- **Rounding**: each item `amount` is rounded to the policy currency's smallest
-  unit (2 dp). The last item absorbs the rounding remainder so the item total
-  exactly equals `total_maturity_value`.
-- **Eligibility**: a plan may only be created against a policy whose status is
-  `MATURED` or `MATURED_PENDING_PAYMENT`. Anything else raises
-  `PLAN_POLICY_NOT_MATURED`.
-- **Audit**: every financial state transition is written to the central audit
-  log with actor, before/after state, reason, and source channel, and mirrored to
-  a durable `DomainEvent` in the shared outbox.
-
-## 5. Core models
-
-### OLMaturityInstallmentPlan
-
-| Field                | Notes |
-|----------------------|-------|
-| `plan_number`        | Unique, auto-generated (`MIP-YYYYMMDD-<hex>`). |
-| `policy_ref`         | FK → `ol_policies.Policy` (PROTECT). |
-| `maturity_claim_ref` | FK → `ol_policies.MaturityClaim` (SET_NULL, optional). |
-| `partner`            | FK → `partners.Partner` (PROTECT). |
-| `currency`           | Default `TZS`. |
-| `total_maturity_value` | Maturity value payable by the policy. |
-| `total_payable_amount` | Sum of item amounts; must reconcile to `total_maturity_value`. |
-| `installment_count`  | Positive integer. |
-| `frequency`          | `OLInstallmentFrequency`-aligned choices. |
-| `start_date` / `end_date` | Schedule window. |
-| `status`             | Plan lifecycle state. |
-| audit fields         | `created_by` / `updated_by` + timestamps, plus lifecycle actor/datetime fields. |
-
-### OLInstallmentItem
-
-| Field                  | Notes |
-|------------------------|-------|
-| `plan_ref`             | FK → plan (CASCADE). |
-| `installment_number`   | 1-based sequence; unique per plan. |
-| `due_date`             | Scheduled payment date. |
-| `amount`               | Item payout, currency-denominated. |
-| `status`               | Item lifecycle state. |
-| `payment_requisition_ref` | FK → `front_office.FORequisition` (SET_NULL, optional). |
-| `paid_date`            | Set when confirmed `PAID`. |
-| `narration`            | Free-text note. |
-| audit fields           | `created_by` / `updated_by` + timestamps. |
-
-### OLMaturityInstallmentConfig
-
-One-to-one snapshot of the calculation basis used for a plan: the resolved
-installment-rate row, paid-up-rate row, installment-charge row, the
-`calculation_basis` label, and the documented assumptions that were applied.
-
-## 6. Permissions
-
-`ol_maturity_installments.view`, `.create`, `.process_payment`, `.cancel`,
-`.print`, `.configure`. Seeded idempotently into the IAM `UserPermission`
-catalog with supporting role groups.
-
-## 7. Domain events
-
-`InstallmentPlanCreated`, `InstallmentPaymentDue`, `InstallmentPaymentMissed`,
-`InstallmentPlanCompleted` — published to the shared `DomainEvent` outbox keyed to
-the `OLMaturityInstallmentPlan` aggregate.
-
-## 8. Structured error registry
+## Error codes
 
 `PLAN_POLICY_NOT_MATURED`, `PLAN_CALCULATION_MISMATCH`,
 `INSTALLMENT_ALREADY_PAID`, `INSTALLMENT_PAYOUT_FAILED`,
-`PLAN_PARAMETER_MISSING` — all rendered in the global Error Coach shape with
-`message`, `status_code`, `resolution_steps`, `field_errors`, and `doc_ref`.
+`PLAN_PARAMETER_MISSING` (Prompt 1), plus supporting codes
+`INSTALLMENT_PLAN_NOT_FOUND`, `INSTALLMENT_ITEM_NOT_FOUND`,
+`INSTALLMENT_PLAN_INVALID_STATUS`, `INSTALLMENT_ITEM_INVALID_STATUS`,
+`INSTALLMENT_INVALID_FILTER`, `INSTALLMENT_INVALID_FREQUENCY`,
+`INSTALLMENT_INVALID_TERM`, `INSTALLMENT_INVALID_AMOUNT`. All render through
+the global structured Error Coach handler with resolution steps and `doc_ref`
+pointing here.

@@ -84,6 +84,30 @@ INSTALLMENT_ERROR_REGISTRY = {
             "Retry the search using the documented format and supported range.",
         ],
     },
+    "INSTALLMENT_INVALID_FREQUENCY": {
+        "message": "The requested installment payout frequency is not supported.",
+        "status_code": 400,
+        "resolution_steps": [
+            "Choose a frequency from the maturity installments options endpoint.",
+            "Confirm the frequency is a valid maturity payout option (single, monthly, quarterly, half yearly, or annual).",
+        ],
+    },
+    "INSTALLMENT_INVALID_TERM": {
+        "message": "The requested installment payout term is not valid.",
+        "status_code": 400,
+        "resolution_steps": [
+            "Choose a term in whole years from the maturity installments options endpoint.",
+            "Confirm the term is covered by the installment rate table for the product and plan.",
+        ],
+    },
+    "INSTALLMENT_INVALID_AMOUNT": {
+        "message": "The maturity value provided for the installment schedule is not a valid amount.",
+        "status_code": 400,
+        "resolution_steps": [
+            "Provide the maturity value as a non-negative numeric amount.",
+            "Confirm the amount against the approved maturity claim, then retry.",
+        ],
+    },
 }
 
 
