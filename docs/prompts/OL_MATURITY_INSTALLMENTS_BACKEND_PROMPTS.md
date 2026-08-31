@@ -1,6 +1,7 @@
 # OL MATURITY INSTALLMENTS BACKEND — PROMPT SERIES (12 prompts)
 
 - [x] Prompt 1 — Save Prompt Series + OL Maturity Installments Domain Foundation
+- [ ] Prompt 2 — Implement Parameter Validation & Calculation Engine
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–12 will be appended `EXACTLY as provided` when the user
@@ -59,4 +60,48 @@ GIT:
 - push; if blocked create feature/ol-maturity-installments-foundation and push; tick checkbox
 
 FINAL OUTPUT: design summary, models, permissions, events, error codes, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 2/12 — Implement Parameter Validation & Calculation Engine
+
+```text
+You are a senior Django finance configuration engineer. Continue the ZIC OL Maturity Installments backend. Execute ONLY Prompt 2 from the saved series file.
+
+MANDATORY RULES:
+- Calculation must be driven by OL Parameters (Installment Rate Tables).
+- Commit and push; tick checkbox.
+
+OBJECTIVE:
+Implement parameter consumption and the calculation engine for installment schedules.
+
+SCOPE:
+1. Implement Installment Calculation Service:
+   - generate_schedule(policy, maturity_value, frequency, term_years):
+     - Validates policy maturity (Maturity Date <= Today).
+     - Fetches relevant Installment Rate Table from OL Product Rating parameters based on Product/Plan/Frequency/Term.
+     - If no table found, falls back to default parameters or returns PLAN_PARAMETER_MISSING.
+     - Calculates each installment amount: Amount = Maturity Value * (Rate / 100).
+     - Handles rounding differences (distribute penny rounding across installments to ensure Total Payable = Maturity Value).
+     - Returns list of dicts (date, amount).
+2. Implement Options Endpoints:
+   - GET /api/v1/ol/maturity-installments/options/frequencies/
+   - GET /api/v1/ol/maturity-installments/options/terms/
+3. Seed validation rules:
+   - Total calculated installments must equal maturity value.
+   - Frequency must match policy payment frequency or be a valid maturity option.
+4. Audit all calculation runs for compliance.
+
+TESTS:
+- calculation service returns correct schedule
+- rounding error handling (total matches)
+- missing parameter returns teachable error
+- options endpoints return labeled data
+
+GIT:
+- commit: "feat(ol-maturity-installments): implement parameter validation and calculation engine"
+- push; tick checkbox
+
+FINAL OUTPUT: calculation logic, options endpoints, tests, commit hash, pushed branch.
 ```
