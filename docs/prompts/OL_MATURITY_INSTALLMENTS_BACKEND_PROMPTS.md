@@ -3,6 +3,7 @@
 - [x] Prompt 1 — Save Prompt Series + OL Maturity Installments Domain Foundation
 - [x] Prompt 2 — Implement Parameter Validation & Calculation Engine
 - [x] Prompt 3 — Implement Plan Generation and Creation
+- [ ] Prompt 4 — Implement Payment Processing and Integration
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–12 will be appended `EXACTLY as provided` when the user
@@ -150,4 +151,48 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: endpoint, validation logic, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 4/12 — Implement Payment Processing and Integration
+
+```text
+You are a senior Django finance transaction engineer. Continue the ZIC OL Maturity Installments backend. Execute ONLY Prompt 4.
+
+MANDATORY RULES:
+- Payment must integrate with Front Office seam for disbursement.
+- Status transitions must be audited.
+- Commit and push; tick checkbox.
+
+OBJECTIVE:
+Implement installment payment processing and status updates.
+
+SCOPE:
+1. POST /api/v1/ol/maturity-installments/items/{id}/process-payment/
+   - Permission: ol_maturity_installments.process_payment
+   - Validation: Item status is SCHEDULED or PAYMENT_PENDING. Due date check.
+   - Action:
+     - Create Payment Requisition via Front Office seam (partner bank details).
+     - Status -> PAYMENT_PENDING.
+     - Emit InstallmentPaymentDue event.
+   - Idempotent: repeated call returns existing requisition.
+2. Callback/Confirmation Endpoint:
+   - POST /api/v1/ol/maturity-installments/items/{id}/confirm-payment/
+   - Updates status -> PAID, sets paid_date.
+   - Checks if Plan is completed (all items paid). If so, Plan status -> COMPLETED.
+   - Emits InstallmentPlanCompleted if applicable.
+3. Audit payment processing with actor, requisition ref, paid date.
+
+TESTS:
+- process payment creates requisition and updates status
+- confirmation completes item and potentially plan
+- idempotent processing safe
+- audit row complete
+
+GIT:
+- commit: "feat(ol-maturity-installments): implement payment processing and integration"
+- push; tick checkbox
+
+FINAL OUTPUT: processing endpoints, integration seam, tests, commit hash, pushed branch.
 ```
