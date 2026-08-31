@@ -1,6 +1,6 @@
 # OL MATURITY INSTALLMENTS BACKEND — PROMPT SERIES (12 prompts)
 
-- [ ] Prompt 1 — Save Prompt Series + OL Maturity Installments Domain Foundation
+- [x] Prompt 1 — Save Prompt Series + OL Maturity Installments Domain Foundation
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–12 will be appended `EXACTLY as provided` when the user
