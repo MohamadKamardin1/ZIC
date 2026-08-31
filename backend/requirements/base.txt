@@ -52,3 +52,6 @@ phonenumbers
 Pillow
 pyotp
 qrcode
+
+# PDF document generation (apps/documents engine)
+weasyprint

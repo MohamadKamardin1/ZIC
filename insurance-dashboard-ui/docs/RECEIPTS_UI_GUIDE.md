@@ -1,6 +1,6 @@
 # Front Office Receipts UI Guide
 
-The Receipts UI is a contract-first Front Office workspace for registering incoming payments, posting drafts, allocating money to commitments, reversing or cancelling transactions, importing CSV batches, and exposing a partner-scoped read-only portal. It follows the ZIC AIMS patterns: server-driven options, permission plus backend `allowed_actions` gating, structured ErrorCoach resolution, accessible focus states, and authenticated document handling.
+The Receipts UI is a contract-first Front Office workspace for registering incoming payments, posting drafts, allocating money to commitments, reversing or cancelling transactions, importing CSV batches, and exposing a partner-scoped read-only portal. It follows the ZIC patterns: server-driven options, permission plus backend `allowed_actions` gating, structured ErrorCoach resolution, accessible focus states, and authenticated document handling.
 
 ## Screen map
 

@@ -151,7 +151,7 @@ export default function Login() {
         {/* Form panel */}
         <div className="flex w-full md:w-1/2 flex-col items-center justify-center px-8 py-12 sm:px-12">
           <ZicLogo size={42} />
-          <h1 className="mt-6 text-2xl font-bold text-foreground">AIMS Life Login</h1>
+          <h1 className="mt-6 text-2xl font-bold text-foreground">ZIC Login</h1>
           <p className="mt-1 text-sm text-muted-foreground">Sign In to your account</p>
 
           <form onSubmit={handleSubmit(onCredentialsSubmit)} className="mt-8 w-full max-w-sm" noValidate>
