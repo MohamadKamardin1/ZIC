@@ -1,7 +1,7 @@
 # OL MATURITY INSTALLMENTS BACKEND — PROMPT SERIES (12 prompts)
 
 - [x] Prompt 1 — Save Prompt Series + OL Maturity Installments Domain Foundation
-- [ ] Prompt 2 — Implement Parameter Validation & Calculation Engine
+- [x] Prompt 2 — Implement Parameter Validation & Calculation Engine
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–12 will be appended `EXACTLY as provided` when the user
