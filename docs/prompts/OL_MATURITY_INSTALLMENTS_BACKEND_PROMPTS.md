@@ -2,6 +2,7 @@
 
 - [x] Prompt 1 — Save Prompt Series + OL Maturity Installments Domain Foundation
 - [x] Prompt 2 — Implement Parameter Validation & Calculation Engine
+- [ ] Prompt 3 — Implement Plan Generation and Creation
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–12 will be appended `EXACTLY as provided` when the user
@@ -104,4 +105,49 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: calculation logic, options endpoints, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 3/12 — Implement Plan Generation and Creation
+
+```text
+You are a senior Django insurance engineer. Continue the ZIC OL Maturity Installments backend. Execute ONLY Prompt 3.
+
+MANDATORY RULES:
+- Generation must be idempotent.
+- Must integrate with Policy Maturity status and Maturity Claims.
+- Commit and push; tick checkbox.
+
+OBJECTIVE:
+Implement the creation of Installment Plans triggered by Policy Maturity or Maturity Claim Settlement.
+
+SCOPE:
+1. POST /api/v1/ol/maturity-installments/create/
+   - Payload: policy_id, maturity_claim_id (optional), frequency, term_years.
+   - Idempotency Key: X-Idempotency-Key.
+2. Processing Steps:
+   - Validate Policy is Matured or Maturity Claim is Settled.
+   - Run Calculation Service to get schedule.
+   - Create OLMaturityInstallmentPlan in status CREATED.
+   - Create OLInstallmentItem records for each schedule row with status SCHEDULED.
+   - Emit InstallmentPlanCreated event.
+   - Audit creation with actor, inputs, totals.
+3. Return structured error on failure (e.g., policy not matured).
+4. Integration Seam:
+   - If triggered by Maturity Claim, link the claim to the plan.
+   - If standalone maturity, link only policy.
+
+TESTS:
+- successful creation generates plan and items
+- policy not matured blocked with error
+- idempotent duplicate returns same plan
+- claim linkage works
+- audit row created
+
+GIT:
+- commit: "feat(ol-maturity-installments): implement plan generation and creation"
+- push; tick checkbox
+
+FINAL OUTPUT: endpoint, validation logic, tests, commit hash, pushed branch.
 ```
