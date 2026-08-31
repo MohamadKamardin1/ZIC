@@ -2,6 +2,7 @@ import uuid
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.serializers.json import DjangoJSONEncoder
 from django.db import models
 from django.utils import timezone
 
@@ -107,7 +108,9 @@ class OLMaturityInstallmentPlan(UUIDModel, AuditedModel):
         blank=True,
         related_name="ol_maturity_installment_plans_terminated",
     )
-    parameter_snapshot = models.JSONField(default=dict, blank=True)
+    parameter_snapshot = models.JSONField(encoder=DjangoJSONEncoder, default=dict, blank=True)
+    idempotency_key = models.CharField(max_length=64, unique=True, null=True, blank=True, db_index=True)
+    idempotency_fingerprint = models.JSONField(encoder=DjangoJSONEncoder, default=dict, blank=True)
     source_channel = models.CharField(
         max_length=20,
         choices=InstallmentSourceChannel.choices,
@@ -226,11 +229,11 @@ class OLMaturityInstallmentConfig(UUIDModel, AuditedModel):
         related_name="config",
     )
     calculation_basis = models.CharField(max_length=60, blank=True, default="")
-    installment_rate_snapshot = models.JSONField(default=dict, blank=True)
-    paid_up_rate_snapshot = models.JSONField(default=dict, blank=True)
-    installment_charge_snapshot = models.JSONField(default=dict, blank=True)
-    parameters_used = models.JSONField(default=list, blank=True)
-    assumptions = models.JSONField(default=dict, blank=True)
+    installment_rate_snapshot = models.JSONField(encoder=DjangoJSONEncoder, default=dict, blank=True)
+    paid_up_rate_snapshot = models.JSONField(encoder=DjangoJSONEncoder, default=dict, blank=True)
+    installment_charge_snapshot = models.JSONField(encoder=DjangoJSONEncoder, default=dict, blank=True)
+    parameters_used = models.JSONField(encoder=DjangoJSONEncoder, default=list, blank=True)
+    assumptions = models.JSONField(encoder=DjangoJSONEncoder, default=dict, blank=True)
     configured_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

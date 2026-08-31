@@ -1,11 +1,17 @@
 from django.urls import path
 
+from .creation_views import InstallmentPlanCreateView
 from .options import InstallmentFrequencyOptionsView, InstallmentTermOptionsView
 from .views import InstallmentPlanDetailView, InstallmentPlanListView
 
 app_name = "ol_maturity_installments"
 
 urlpatterns = [
+    path(
+        "maturity-installments/create/",
+        InstallmentPlanCreateView.as_view(),
+        name="installment-plan-create",
+    ),
     path(
         "maturity-installments/options/frequencies/",
         InstallmentFrequencyOptionsView.as_view(),

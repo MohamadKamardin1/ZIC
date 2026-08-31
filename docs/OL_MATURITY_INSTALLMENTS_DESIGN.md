@@ -89,6 +89,45 @@ the thin Prompt-2 contract wrapper.
   before `maturity_date`) and advance by the frequency's month step, clamping
   to month end for short months (e.g. 31 Jan -> 28 Feb).
 
+## Plan generation and creation (Prompt 3)
+
+`POST /api/v1/ol/maturity-installments/create/` generates a schedule and
+persists a plan.
+
+Payload: `policy_id` (UUID), `maturity_claim_id` (optional UUID), `frequency`,
+`term_years`. Idempotency is enforced via the `X-Idempotency-Key` header.
+
+Processing:
+
+1. **Idempotency** — the key is required (`INSTALLMENT_IDEMPOTENCY_REQUIRED`);
+   a replay of the identical request returns the original plan (200) instead of
+   creating a duplicate, and reusing the key with a different payload raises
+   `INSTALLMENT_IDEMPOTENCY_CONFLICT`. The fingerprint is the SHA-256 of the
+   normalised payload (`policy_id`, `maturity_claim_id`, `frequency`,
+   `term_years`).
+2. **Policy and claim validation** — the policy must exist
+   (`INSTALLMENT_POLICY_NOT_FOUND`); when a claim is supplied it must belong to
+   the policy (`INSTALLMENT_CLAIM_MISMATCH`) and be settled — `APPROVED` or
+   `PAID` (`INSTALLMENT_CLAIM_NOT_SETTLED`). A standalone plan (no claim) is
+   allowed only for a `MATURED` or `MATURED_PENDING_PAYMENT` policy
+   (`PLAN_POLICY_NOT_MATURED`).
+3. **Value source** — the maturity value is the claim `net_payout` when a claim
+   is linked, otherwise the policy `sum_assured`. This is the senior decision:
+   a settled claim's approved net payout governs the schedule; a standalone
+   maturity uses the sum assured as the default maturity benefit.
+4. **Calculation** — the Prompt 2 engine produces the schedule and audits the
+   run.
+5. **Persistence** — `OLMaturityInstallmentPlan` is created in `CREATED`, the
+   schedule rows become `OLInstallmentItem` records in `SCHEDULED`, and a
+   one-to-one `OLMaturityInstallmentConfig` snapshots the calculation basis
+   (`calculation_basis`, rate row, parameters, assumptions).
+6. **Event** — `InstallmentPlanCreated` is emitted to the durable event outbox.
+7. **Audit** — the creation is audited with actor, inputs, and totals via
+   `AuditService`.
+
+Integration seam: a request triggered by a Maturity Claim links the claim to
+the plan (`maturity_claim_ref`); a standalone maturity links only the policy.
+
 ## Options endpoints
 
 - `GET /api/v1/ol/maturity-installments/options/frequencies/` — the five
@@ -108,6 +147,12 @@ the thin Prompt-2 contract wrapper.
   `PLAN_PARAMETER_MISSING`, never silently zero.
 - Rounding follows largest-remainder (the last item absorbs any residual penny)
   so the item total equals the maturity value to the cent.
+- The maturity value for a plan is the linked claim's `net_payout` when a
+  settled claim is provided, otherwise the policy `sum_assured`. A standalone
+  plan is restricted to matured policies so a benefit is never scheduled before
+  it is due.
+- Generation is idempotent: callers must send `X-Idempotency-Key`, and a replay
+  returns the original plan untouched rather than creating a second schedule.
 
 ## Error codes
 
@@ -117,6 +162,10 @@ the thin Prompt-2 contract wrapper.
 `INSTALLMENT_PLAN_NOT_FOUND`, `INSTALLMENT_ITEM_NOT_FOUND`,
 `INSTALLMENT_PLAN_INVALID_STATUS`, `INSTALLMENT_ITEM_INVALID_STATUS`,
 `INSTALLMENT_INVALID_FILTER`, `INSTALLMENT_INVALID_FREQUENCY`,
-`INSTALLMENT_INVALID_TERM`, `INSTALLMENT_INVALID_AMOUNT`. All render through
+`INSTALLMENT_INVALID_TERM`, `INSTALLMENT_INVALID_AMOUNT`, plus Prompt 3 codes
+`INSTALLMENT_IDEMPOTENCY_REQUIRED`, `INSTALLMENT_IDEMPOTENCY_CONFLICT`,
+`INSTALLMENT_POLICY_NOT_FOUND`, `INSTALLMENT_CLAIM_NOT_FOUND`,
+`INSTALLMENT_CLAIM_MISMATCH`, `INSTALLMENT_CLAIM_NOT_SETTLED`,
+`INSTALLMENT_INVALID_CREATION`. All render through
 the global structured Error Coach handler with resolution steps and `doc_ref`
 pointing here.

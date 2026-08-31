@@ -108,6 +108,62 @@ INSTALLMENT_ERROR_REGISTRY = {
             "Confirm the amount against the approved maturity claim, then retry.",
         ],
     },
+    "INSTALLMENT_IDEMPOTENCY_REQUIRED": {
+        "message": "An idempotency key is required to create a maturity installment plan.",
+        "status_code": 400,
+        "resolution_steps": [
+            "Send a unique X-Idempotency-Key header with the creation request.",
+            "Reuse that same key only for the same unchanged submission.",
+        ],
+    },
+    "INSTALLMENT_IDEMPOTENCY_CONFLICT": {
+        "message": "The idempotency key was already used for a different maturity installment plan.",
+        "status_code": 409,
+        "resolution_steps": [
+            "Use a new X-Idempotency-Key for this different submission.",
+            "Retrieve the existing plan when you intended to resubmit the original request.",
+        ],
+    },
+    "INSTALLMENT_POLICY_NOT_FOUND": {
+        "message": "The selected policy could not be found.",
+        "status_code": 404,
+        "resolution_steps": [
+            "Confirm the policy id and retry plan creation.",
+            "Contact Policy Administration if the policy was recently migrated or archived.",
+        ],
+    },
+    "INSTALLMENT_CLAIM_NOT_FOUND": {
+        "message": "The selected maturity claim could not be found.",
+        "status_code": 404,
+        "resolution_steps": [
+            "Confirm the maturity claim id and retry plan creation.",
+            "Open the policy to review the maturity claims register.",
+        ],
+    },
+    "INSTALLMENT_CLAIM_MISMATCH": {
+        "message": "The selected maturity claim does not belong to the selected policy.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Choose a maturity claim that belongs to the selected policy.",
+            "Retry plan creation with a matching policy and claim pair.",
+        ],
+    },
+    "INSTALLMENT_CLAIM_NOT_SETTLED": {
+        "message": "The selected maturity claim has not been settled yet.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Approve or settle the maturity claim before creating an installment plan.",
+            "Ask Policy Administration to complete the claim settlement, then retry.",
+        ],
+    },
+    "INSTALLMENT_INVALID_CREATION": {
+        "message": "The maturity installment plan creation request needs correction.",
+        "status_code": 400,
+        "resolution_steps": [
+            "Correct each highlighted plan field.",
+            "Select a matured policy and a supported frequency and term before retrying.",
+        ],
+    },
 }
 
 
