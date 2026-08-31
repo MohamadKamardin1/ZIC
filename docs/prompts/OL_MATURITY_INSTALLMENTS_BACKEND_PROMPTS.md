@@ -3,7 +3,7 @@
 - [x] Prompt 1 — Save Prompt Series + OL Maturity Installments Domain Foundation
 - [x] Prompt 2 — Implement Parameter Validation & Calculation Engine
 - [x] Prompt 3 — Implement Plan Generation and Creation
-- [ ] Prompt 4 — Implement Payment Processing and Integration
+- [x] Prompt 4 — Implement Payment Processing and Integration
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–12 will be appended `EXACTLY as provided` when the user
