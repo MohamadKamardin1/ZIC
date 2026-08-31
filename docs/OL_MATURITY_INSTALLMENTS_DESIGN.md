@@ -128,6 +128,44 @@ Processing:
 Integration seam: a request triggered by a Maturity Claim links the claim to
 the plan (`maturity_claim_ref`); a standalone maturity links only the policy.
 
+## Payment processing and integration (Prompt 4)
+
+`POST /api/v1/ol/maturity-installments/items/{id}/process-payment/` raises a
+Front Office disbursement requisition; the callback
+`POST /api/v1/ol/maturity-installments/items/{id}/confirm-payment/` records the
+payment. Both require the `process_payment` entitlement.
+
+Processing:
+
+1. **Validation** — the item must exist (`INSTALLMENT_ITEM_NOT_FOUND`), be
+   `SCHEDULED` or `PAYMENT_PENDING`, and be due (its `due_date` is not in the
+   future; `INSTALLMENT_PAYMENT_NOT_DUE` otherwise).
+2. **Bank details** — the policyholder's primary verified bank account
+   (`PartnerBankAccount`, falling back to primary → verified → first on file)
+   is resolved; a policyholder with no bank account is blocked with
+   `INSTALLMENT_BANK_DETAILS_MISSING`. The account snapshot is stored on the
+   item in `payment_bank_details` (the legacy `FORequisition` has no bank
+   field, so the domain record carries the disbursement instructions, matching
+   the OL Claims pattern).
+3. **Requisition** — a `FORequisition` (`department=MATURITY_INSTALLMENTS`,
+   `status=PENDING`) is created and linked on the item. Processing is
+   idempotent: replaying returns the existing requisition (200) instead of
+   duplicating it.
+4. **Status** — the item moves `SCHEDULED -> PAYMENT_PENDING`, the
+   `InstallmentPaymentDue` event is emitted, and the transition is audited with
+   actor, before/after, requisition ref, and source channel.
+
+Confirmation:
+
+1. **Paid** — the item moves `PAYMENT_PENDING -> PAID` with `paid_date` set
+   (the callback date by default) and its requisition is marked `COMPLETED`.
+   Reconfirmation of an already-paid item is a safe no-op.
+2. **Plan completion** — when the last remaining item is paid, the plan moves
+   to `COMPLETED` (`completed_at`/`completed_by` set) and the
+   `InstallmentPlanCompleted` event is emitted.
+3. **Audit** — confirmation is audited with actor, requisition ref, paid date,
+   and before/after state.
+
 ## Options endpoints
 
 - `GET /api/v1/ol/maturity-installments/options/frequencies/` — the five
@@ -153,6 +191,13 @@ the plan (`maturity_claim_ref`); a standalone maturity links only the policy.
   it is due.
 - Generation is idempotent: callers must send `X-Idempotency-Key`, and a replay
   returns the original plan untouched rather than creating a second schedule.
+- Payment processing is idempotent at the item level: replaying
+  `process-payment` returns the already-raised requisition instead of creating a
+  second one, and reconfirming a paid installment is a safe no-op.
+- An installment cannot be processed before its due date; the Front Office
+  requisition is the single source of truth for the disbursement, and the
+  policyholder's primary verified bank account on file drives the payment
+  instructions.
 
 ## Error codes
 
@@ -166,6 +211,7 @@ the plan (`maturity_claim_ref`); a standalone maturity links only the policy.
 `INSTALLMENT_IDEMPOTENCY_REQUIRED`, `INSTALLMENT_IDEMPOTENCY_CONFLICT`,
 `INSTALLMENT_POLICY_NOT_FOUND`, `INSTALLMENT_CLAIM_NOT_FOUND`,
 `INSTALLMENT_CLAIM_MISMATCH`, `INSTALLMENT_CLAIM_NOT_SETTLED`,
-`INSTALLMENT_INVALID_CREATION`. All render through
+`INSTALLMENT_INVALID_CREATION`, plus Prompt 4 codes
+`INSTALLMENT_PAYMENT_NOT_DUE`, `INSTALLMENT_BANK_DETAILS_MISSING`. All render through
 the global structured Error Coach handler with resolution steps and `doc_ref`
 pointing here.

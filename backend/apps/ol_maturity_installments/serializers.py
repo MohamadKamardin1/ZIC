@@ -66,6 +66,7 @@ class OLInstallmentItemSerializer(serializers.ModelSerializer):
             "status_display",
             "payment_requisition_number",
             "payment_reference",
+            "payment_bank_details",
             "paid_date",
             "paid_by_display",
             "narration",

@@ -181,6 +181,7 @@ class OLInstallmentItem(UUIDModel, AuditedModel):
         related_name="ol_maturity_installment_items",
     )
     payment_reference = models.CharField(max_length=160, blank=True, default="")
+    payment_bank_details = models.JSONField(encoder=DjangoJSONEncoder, default=dict, blank=True)
     paid_date = models.DateField(null=True, blank=True)
     missed_date = models.DateField(null=True, blank=True)
     waived_date = models.DateField(null=True, blank=True)

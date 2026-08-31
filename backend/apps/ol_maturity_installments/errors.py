@@ -164,6 +164,22 @@ INSTALLMENT_ERROR_REGISTRY = {
             "Select a matured policy and a supported frequency and term before retrying.",
         ],
     },
+    "INSTALLMENT_PAYMENT_NOT_DUE": {
+        "message": "This installment cannot be paid before its due date.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Wait until the installment due date before raising the disbursement.",
+            "Review the plan schedule to confirm the correct installment is being paid.",
+        ],
+    },
+    "INSTALLMENT_BANK_DETAILS_MISSING": {
+        "message": "No valid bank account is on record for the policyholder's disbursement.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Add or verify a primary bank account for the policyholder before processing the payment.",
+            "Ask the policyholder to provide correct bank details, then retry the disbursement.",
+        ],
+    },
 }
 
 
