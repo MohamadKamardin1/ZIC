@@ -1,0 +1,133 @@
+from apps.core.exceptions import ZICAPIException
+
+DOC_REF = "docs/OL_MATURITY_INSTALLMENTS_DESIGN.md"
+
+
+INSTALLMENT_ERROR_REGISTRY = {
+    "PLAN_POLICY_NOT_MATURED": {
+        "message": "An installment plan can only be created against a matured policy.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Confirm the policy status is Matured or Matured pending payment before creating an installment plan.",
+            "Ask Policy Administration to process the maturity event if the policy has not been matured yet.",
+        ],
+    },
+    "PLAN_CALCULATION_MISMATCH": {
+        "message": "The installment schedule does not reconcile to the maturity value.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Verify that the sum of all installment amounts equals the total payable amount and the maturity value.",
+            "Review the calculation basis snapshot and the installment rate parameters, then regenerate the schedule.",
+        ],
+    },
+    "INSTALLMENT_ALREADY_PAID": {
+        "message": "This installment has already been paid and cannot be processed again.",
+        "status_code": 409,
+        "resolution_steps": [
+            "Open the paid installment record to review its payment reference and Front Office requisition.",
+            "Raise a new disbursement only for an installment that is still payable.",
+        ],
+    },
+    "INSTALLMENT_PAYOUT_FAILED": {
+        "message": "The Front Office disbursement for this installment could not be completed.",
+        "status_code": 502,
+        "resolution_steps": [
+            "Check the linked Front Office requisition status and correct the bank or payment details.",
+            "Retry the disbursement once the Front Office requisition is ready, or contact Finance Operations.",
+        ],
+    },
+    "PLAN_PARAMETER_MISSING": {
+        "message": "A required installment or paid-up rate parameter is missing for this policy.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Open OL Policy Setup > Product Rating and add the installment rate or paid-up rate for the product and plan.",
+            "Confirm the effective date covers the plan start date, then retry plan creation.",
+        ],
+    },
+    "INSTALLMENT_PLAN_NOT_FOUND": {
+        "message": "The requested maturity installment plan could not be found.",
+        "status_code": 404,
+        "resolution_steps": [
+            "Return to the installment plans register and search by plan number.",
+            "Contact Policy Administration if the plan was recently migrated or archived.",
+        ],
+    },
+    "INSTALLMENT_ITEM_NOT_FOUND": {
+        "message": "The requested installment item could not be found.",
+        "status_code": 404,
+        "resolution_steps": [
+            "Open the parent installment plan and select a valid installment item.",
+            "Refresh the plan to confirm the current list of installments before retrying.",
+        ],
+    },
+    "INSTALLMENT_PLAN_INVALID_STATUS": {
+        "message": "This installment plan action is not allowed in its current status.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Refresh the plan and review its current lifecycle status.",
+            "Complete the required preceding workflow step before retrying.",
+        ],
+    },
+    "INSTALLMENT_ITEM_INVALID_STATUS": {
+        "message": "This installment item action is not allowed in its current status.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Refresh the installment item and review its current status.",
+            "Process the item only when it is scheduled, payment pending, or missed.",
+        ],
+    },
+    "INSTALLMENT_INVALID_FILTER": {
+        "message": "The installment plan list filter is invalid.",
+        "status_code": 400,
+        "resolution_steps": [
+            "Correct the highlighted date, page, or page-size filter.",
+            "Retry the search using the documented format and supported range.",
+        ],
+    },
+}
+
+
+class MaturityInstallmentError(ZICAPIException):
+    """Structured exception for the OL Maturity Installments bounded context."""
+
+    def __init__(
+        self,
+        message=None,
+        *,
+        error_code="INSTALLMENT_ERROR",
+        status_code=400,
+        resolution_steps=None,
+        field_errors=None,
+        details=None,
+    ):
+        definition = INSTALLMENT_ERROR_REGISTRY.get(error_code, {})
+        super().__init__(
+            message=message or definition.get("message", "The installment request could not be completed."),
+            code=error_code,
+            status_code=status_code if status_code != 400 or not definition else definition["status_code"],
+            details=details,
+            error_code=error_code,
+            resolution_steps=resolution_steps
+            if resolution_steps is not None
+            else definition.get("resolution_steps", []),
+            field_errors=field_errors,
+            doc_ref=DOC_REF,
+        )
+
+
+def registry_error(error_code, *, message=None, details=None, resolution_steps=None, field_errors=None):
+    definition = INSTALLMENT_ERROR_REGISTRY.get(error_code)
+    if not definition:
+        raise ValueError(f"Unknown maturity installment error code: {error_code}")
+    return MaturityInstallmentError(
+        message=message,
+        error_code=error_code,
+        status_code=definition["status_code"],
+        resolution_steps=resolution_steps,
+        field_errors=field_errors,
+        details=details,
+    )
+
+
+def not_found():
+    return registry_error("INSTALLMENT_PLAN_NOT_FOUND")

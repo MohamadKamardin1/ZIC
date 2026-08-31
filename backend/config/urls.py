@@ -45,6 +45,7 @@ api_v1_patterns = [
     path('ol/', include('apps.ol_loans.urls')),
     path('ol/', include('apps.ol_policies.urls')),
     path('ol/', include('apps.ol_claims.urls')),
+    path('ol/', include('apps.ol_maturity_installments.urls')),
     path('ol/quotations/', include('apps.ol_quotations.urls')),
     path('ol-quotations/', include('apps.ol_quotations.urls')),
     path('group-credit/', include('apps.group_credit.urls')),

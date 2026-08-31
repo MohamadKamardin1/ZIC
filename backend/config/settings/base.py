@@ -80,6 +80,7 @@ INSTALLED_APPS = [
     'apps.ol_policies.apps.OLPoliciesConfig',
     'apps.ol_claims.apps.OLClaimsConfig',
     'apps.ol_loans.apps.OLLoansConfig',
+    'apps.ol_maturity_installments.apps.OLMaturityInstallmentsConfig',
     'apps.group_credit',
     'apps.front_office.apps.FrontOfficeConfig',
 ]
