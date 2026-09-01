@@ -56,6 +56,7 @@ export interface MIPlanListFilters {
 }
 
 export interface MIPlanRecord {
+  [key: string]: unknown
   id: string
   planNumber: string
   policyId?: string
@@ -144,7 +145,9 @@ export interface MIPlanDetail extends MIPlanRecord {
 
 export interface MIPlanKpis {
   totalPlansActive: number
+  totalActivePlansValue?: string | null
   totalUpcomingPayouts: number
+  upcomingNext30Days?: number | null
   missedPaymentsCount: number
   completedPlansCount: number
   filtersApplied?: Record<string, unknown>
@@ -369,9 +372,14 @@ export function normalizeMIPlanDetail(payload: unknown): MIPlanDetail {
 
 export function normalizeMIPlanKpis(payload: unknown): MIPlanKpis {
   const record = isRecord(payload) ? payload : {}
+  const rawValue = pick<unknown>(record, "totalActivePlansValue", "total_active_plans_value")
+  const rawUpcoming30 = pick<unknown>(record, "upcomingNext30Days", "upcoming_next_30_days")
+  const upcoming30 = Number(rawUpcoming30)
   return {
     totalPlansActive: numberValue(record, "totalPlansActive", "total_plans_active"),
+    totalActivePlansValue: rawValue === undefined || rawValue === null || rawValue === "" ? null : String(rawValue),
     totalUpcomingPayouts: numberValue(record, "totalUpcomingPayouts", "total_upcoming_payouts"),
+    upcomingNext30Days: rawUpcoming30 === undefined || rawUpcoming30 === null ? null : Number.isFinite(upcoming30) ? upcoming30 : 0,
     missedPaymentsCount: numberValue(record, "missedPaymentsCount", "missed_payments_count"),
     completedPlansCount: numberValue(record, "completedPlansCount", "completed_plans_count"),
     filtersApplied: isRecord(record.filtersApplied ?? record.filters_applied) ? (record.filtersApplied ?? record.filters_applied) as Record<string, unknown> : undefined,

@@ -30,20 +30,26 @@ describe("OL Maturity Installments MSW contract", () => {
     expect(body.data.results[0].id).not.toContain("uuid")
   })
 
-  it("returns live KPIs with filter-aware lifecycle aggregates", async () => {
+  it("returns live KPIs with filter-aware lifecycle and value aggregates", async () => {
     const all = await fetch(`${BASE}/kpis/`)
     expect(all.status).toBe(200)
     const allBody = await all.json()
     expect(allBody.data).toMatchObject({
       total_plans_active: 4,
+      total_active_plans_value: "122750000.00",
       missed_payments_count: 5,
       completed_plans_count: 1,
     })
     expect(typeof allBody.data.total_upcoming_payouts).toBe("number")
+    expect(typeof allBody.data.upcoming_next_30_days).toBe("number")
 
     const filtered = await fetch(`${BASE}/kpis/?status=ACTIVE`)
     const filteredBody = await filtered.json()
-    expect(filteredBody.data).toMatchObject({ total_plans_active: 4, completed_plans_count: 0 })
+    expect(filteredBody.data).toMatchObject({ total_plans_active: 4, total_active_plans_value: "122750000.00", completed_plans_count: 0 })
+
+    const dateFiltered = await fetch(`${BASE}/kpis/?date_from=2026-03-01&date_to=2026-03-31`)
+    const dateFilteredBody = await dateFiltered.json()
+    expect(dateFilteredBody.data).toMatchObject({ total_plans_active: 2, total_active_plans_value: "62750000.00", completed_plans_count: 0 })
   })
 
   it("returns searchable frequency and term option catalogs", async () => {

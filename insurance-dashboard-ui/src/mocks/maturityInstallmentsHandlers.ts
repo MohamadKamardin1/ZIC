@@ -272,6 +272,12 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10)
 }
 
+function plusDays(isoToday: string, days: number): string {
+  const [year, month, day] = isoToday.split("-").map(Number)
+  const result = new Date(Date.UTC(year, month - 1, day + days))
+  return result.toISOString().slice(0, 10)
+}
+
 function recomputePlanTotals(row: MIPlanMockRow) {
   const paid = row.items.filter((it) => it.status === "PAID").reduce((sum, it) => sum + Number(it.amount), 0).toFixed(2)
   row.paid_amount = paid
@@ -362,6 +368,8 @@ function filteredPlans(url: URL) {
   const product = url.searchParams.get("product")
   const branch = url.searchParams.get("branch")
   const missedOnly = url.searchParams.get("missed_only") === "true"
+  const dateFrom = url.searchParams.get("date_from")
+  const dateTo = url.searchParams.get("date_to")
   return plans.filter((row) => {
     if (q && !`${row.plan_number} ${row.policy_number} ${row.policyholder_display} ${row.claim_number ?? ""}`.toLowerCase().includes(q)) return false
     if (status && row.status !== status) return false
@@ -370,6 +378,8 @@ function filteredPlans(url: URL) {
     if (product && !row.parameter_snapshot.product_code?.toString().toLowerCase().includes(product.toLowerCase())) return false
     if (branch && !row.policyholder_display.toLowerCase().includes(branch.toLowerCase())) return false
     if (missedOnly && !row.items.some((it) => it.status === "MISSED")) return false
+    if (dateFrom && row.start_date && row.start_date < dateFrom) return false
+    if (dateTo && row.start_date && row.start_date > dateTo) return false
     return true
   })
 }
@@ -427,10 +437,15 @@ export const maturityInstallmentsHandlers = [
     const completed = rows.filter((row) => row.status === "COMPLETED")
     const missed = rows.flatMap((row) => row.items.filter((it) => it.status === "MISSED"))
     const today = todayIso()
+    const horizon = plusDays(today, 30)
     const upcoming = rows.flatMap((row) => row.items.filter((it) => (it.status === "SCHEDULED" || it.status === "PAYMENT_PENDING") && Boolean(it.due_date) && it.due_date! >= today))
+    const upcomingNext30Days = rows.flatMap((row) => row.items.filter((it) => (it.status === "SCHEDULED" || it.status === "PAYMENT_PENDING") && Boolean(it.due_date) && it.due_date! >= today && it.due_date! <= horizon))
+    const totalActivePlansValue = active.reduce((sum, row) => sum + Number(row.total_amount), 0).toFixed(2)
     return data({
       total_plans_active: active.length,
+      total_active_plans_value: totalActivePlansValue,
       total_upcoming_payouts: upcoming.length,
+      upcoming_next_30_days: upcomingNext30Days.length,
       missed_payments_count: missed.length,
       completed_plans_count: completed.length,
       filters_applied: { q: url.searchParams.get("q") ?? undefined, status: url.searchParams.get("status") ?? undefined },
