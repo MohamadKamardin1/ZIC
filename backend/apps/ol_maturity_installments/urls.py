@@ -4,6 +4,7 @@ from .creation_views import InstallmentPlanCreateView
 from .lifecycle_views import InstallmentItemReversePaymentView, InstallmentPlanCancelView
 from .options import InstallmentFrequencyOptionsView, InstallmentTermOptionsView
 from .payment_views import InstallmentItemConfirmPaymentView, InstallmentItemProcessPaymentView
+from .reconciliation_views import InstallmentPlanReconciliationView
 from .views import InstallmentPlanDetailView, InstallmentPlanListView
 
 app_name = "ol_maturity_installments"
@@ -41,6 +42,11 @@ urlpatterns = [
         "maturity-installments/plans/<uuid:plan_id>/cancel/",
         InstallmentPlanCancelView.as_view(),
         name="installment-plan-cancel",
+    ),
+    path(
+        "maturity-installments/<uuid:plan_id>/reconciliation/",
+        InstallmentPlanReconciliationView.as_view(),
+        name="installment-plan-reconciliation",
     ),
     path("installment-plans/", InstallmentPlanListView.as_view(), name="installment-plan-list"),
     path("installment-plans/<uuid:plan_id>/", InstallmentPlanDetailView.as_view(), name="installment-plan-detail"),

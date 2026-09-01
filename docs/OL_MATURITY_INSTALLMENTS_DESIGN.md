@@ -218,6 +218,46 @@ permission (superusers short-circuit) — and a `reason`.
 4. **Audit** — the cancellation is audited with actor, reason, the waived
    installment numbers, and before/after state.
 
+## Reconciliation and financial audit (Prompt 6)
+
+### Reconciliation service
+
+`validate_plan_reconciliation(plan_id, tolerance=0.01)` in
+`services/reconciliation.py` verifies that the paid installments on a plan
+reconcile to its maturity value. It sums every `PAID` item amount and compares
+the result with the plan's `total_payable_amount` (which the schedule
+guarantees equals the maturity value), then reports a pass/fail
+`ReconciliationReport`:
+
+- `PLAN_TOTAL_MISMATCH` — `total_payable_amount` differs from
+  `total_maturity_value` beyond tolerance.
+- `MISSING_PAYMENTS` — paid installments fall short, listing the unpaid
+  installment numbers.
+- `OVER_PAYMENT` — paid installments exceed the plan total.
+- The report carries `status` (`PASS`/`FAIL`), totals, paid/missing amounts,
+  paid vs total item counts, and every discrepancy.
+- Each run is itself audited (`INSTALLMENT_RECONCILIATION_RUN`) so the check is
+  traceable end-to-end. The tolerance can be overridden per call
+  (`?tolerance=...`) and defaults to 0.01 currency units.
+
+Endpoint: `GET /api/v1/ol/maturity-installments/{id}/reconciliation/`
+(`InstallmentPlanReconciliationView`, `view` entitlement) returns the report.
+
+### Audit consistency utility
+
+`validate_audit_consistency(plan_id=None)` verifies the audit trail is
+end-to-end verifiable. For each plan it requires at least one audit row
+(`PLAN_MISSING_AUDIT`) and that a non-`CREATED` current status is reflected in
+some row's `after_state.status` (`PLAN_STATUS_NOT_AUDITED`); for each item it
+requires that any non-initial status (beyond `SCHEDULED`) is backed by an
+item-level audit row (`ITEM_STATUS_NOT_AUDITED`). Orphan items — an item with a
+missing or dangling `plan_ref` — are flagged (`ORPHAN_ITEM`). The report is
+pass/fail with per-finding detail.
+
+To keep this check honest, plan cancellation now audits each waived installment
+individually (`INSTALLMENT_ITEM_WAIVED`); previously only the plan-level
+cancellation was audited, so a `WAIVED` item had no matching audit row.
+
 ## Options endpoints
 
 - `GET /api/v1/ol/maturity-installments/options/frequencies/` — the five
@@ -246,6 +286,15 @@ permission (superusers short-circuit) — and a `reason`.
 - Irrevocability is an operator-controlled System Parameter
   (`INSTALLMENT_PAYMENT_IRREVOCABLE`, default false): when enabled, a plan with
   any paid installment cannot be cancelled through the API.
+- Reconciliation compares the sum of PAID installments with the plan's total
+  payable amount (the schedule's guarantee that items sum to the maturity
+  value) within a 0.01 currency-unit tolerance; the plan-level
+  `total_payable_amount` vs `total_maturity_value` check catches schedule-data
+  drift. A shortfall is reported, not silently zeroed.
+- Audit consistency treats `SCHEDULED` items and `CREATED` plans as initial
+  states requiring no transition audit; any later status must have a matching
+  audit row. Waiving an installment during cancellation is audited per item so
+  the trail remains complete end-to-end.
 
 - A matured policyholder may choose any maturity payout frequency; the premium
   payment frequency is advisory, and the schedule reports

@@ -98,6 +98,20 @@ def _reversal_snapshot(item, requisition=None):
     }
 
 
+def _waive_snapshot(item, requisition=None):
+    return {
+        "installment_number": item.installment_number,
+        "status": item.status,
+        "due_date": str(item.due_date),
+        "amount": str(item.amount),
+        "requisition_number": getattr(requisition, "requisition_number", "") if requisition else "",
+        "requisition_status": getattr(requisition, "status", "") if requisition else "",
+        "paid_date": str(item.paid_date) if item.paid_date else "",
+        "missed_date": str(item.missed_date) if item.missed_date else "",
+        "waived_date": str(item.waived_date) if item.waived_date else "",
+    }
+
+
 def _plan_snapshot(plan):
     return {
         "plan_number": plan.plan_number,
@@ -398,10 +412,23 @@ def cancel_installment_plan(
         if requisition and requisition.status == "PENDING":
             requisition.status = "CANCELLED"
             requisition.save(update_fields=["status", "updated_at"])
+        item_before = _waive_snapshot(item, requisition)
         item.status = InstallmentItemStatus.WAIVED
         item.waived_date = today
         item.updated_by = actor
         item.save(update_fields=["status", "waived_date", "updated_by", "updated_at"])
+        item_after = _waive_snapshot(item, requisition)
+        AuditService.log_action(
+            "INSTALLMENT_ITEM_WAIVED",
+            item,
+            actor=actor,
+            request=request,
+            before_state=item_before,
+            after_state=item_after,
+            changed_fields=["status", "waived_date"],
+            reason=f"Plan {plan.plan_number} cancelled: {reason}",
+            source_channel=source_channel,
+        )
         waived.append(item.installment_number)
 
     after = _plan_snapshot(plan)
