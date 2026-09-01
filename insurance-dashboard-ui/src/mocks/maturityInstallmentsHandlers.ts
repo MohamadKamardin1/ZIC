@@ -38,6 +38,11 @@ export type MIPlanMockRow = {
   installment_count: number
   start_date: string | null
   end_date: string | null
+  product_code: string
+  product_display: string
+  completed_at: string | null
+  termination_reason: string | null
+  terminated_at: string | null
   allowed_actions: string[]
   idempotency_key: string | null
   idempotency_fingerprint: string | null
@@ -45,8 +50,21 @@ export type MIPlanMockRow = {
   source_channel_display: string
   parameter_snapshot: Record<string, unknown>
   items: MIPlanMockItem[]
+  documents: MIPlanMockDocument[]
   created_at: string
   updated_at: string
+}
+
+export type MIPlanMockDocument = {
+  id: string
+  document_type: string
+  template_name: string
+  template_version: number
+  page_count: number
+  generated_by_display: string
+  generated_at: string
+  preview_url: string | null
+  signed_download_url: string | null
 }
 
 const PLAN_STATUS_LABELS: Record<string, string> = {
@@ -111,6 +129,8 @@ function plan(
   const paid = items.filter((i) => i.status === "PAID").reduce((sum, i) => sum + Number(i.amount), 0).toFixed(2)
   const balance = (Number(total) - Number(paid)).toFixed(2)
   const firstDue = items.map((i) => i.due_date).filter(Boolean).sort()[0] ?? null
+  const createdAt = "2026-09-01T08:00:00Z"
+  const generatedAt = createdAt
   return {
     id: partial.id,
     plan_number: partial.plan_number,
@@ -131,6 +151,11 @@ function plan(
     installment_count: items.length,
     start_date: firstDue,
     end_date: items[items.length - 1]?.due_date ?? null,
+    product_code: "OL_ENDOWMENT_STANDARD",
+    product_display: "OL Endowment Standard",
+    completed_at: null,
+    termination_reason: null,
+    terminated_at: null,
     allowed_actions: planAllowedActions(partial.status),
     idempotency_key: null,
     idempotency_fingerprint: null,
@@ -141,10 +166,24 @@ function plan(
       term_years: 1,
       rate_factor: 10.0,
       rate_key: "R-PROBE3",
+      product_code: "OL_ENDOWMENT_STANDARD",
     },
     items,
-    created_at: "2026-09-01T08:00:00Z",
-    updated_at: "2026-09-01T08:00:00Z",
+    documents: [
+      {
+        id: `doc-${partial.id}-schedule`,
+        document_type: "OL_MATURITY_SCHEDULE",
+        template_name: "OL Maturity Schedule",
+        template_version: 1,
+        page_count: 2,
+        generated_by_display: "Sultan Admin",
+        generated_at: generatedAt,
+        preview_url: `/api/v1/documents/instances/doc-${partial.id}-schedule/preview/`,
+        signed_download_url: `/api/v1/documents/instances/doc-${partial.id}-schedule/download/?ticket=mock-schedule-${partial.id}`,
+      },
+    ],
+    created_at: createdAt,
+    updated_at: createdAt,
     ...extra,
   }
 }
@@ -173,7 +212,16 @@ const initialPlans: MIPlanMockRow[] = [
         payment_reference: `FO-PAY-2026-0002${String(number).padStart(2, "0")}`,
       }
     }),
-    { claim_number: null },
+    { claim_number: null, completed_at: "2026-08-15T09:30:00Z" },
+  ),
+  plan(
+    { id: "plan-terminated-1", plan_number: "MIP-20260710-77C0F1A4B2", policy_id: "policy-mariam-1", policy_number: "ZIC-OL-2023-000009", policyholder_name: "Mariam Rashid", policyholder_display: "P-000009 — Mariam Rashid", currency: "TZS", frequency: "QUARTERLY", status: "TERMINATED", maturity_value: "15000000.00" },
+    Array.from({ length: 4 }, (_, index) => item("plan-terminated-1", index + 1, `20${24 + Math.floor(index / 4)}-0${(index % 4) + 1}-10`, "3750000.00", "WAIVED")),
+    {
+      claim_number: null,
+      termination_reason: "Policy terminated by the policyholder’s surrender on 2026-07-10; the remaining maturity schedule was waived.",
+      terminated_at: "2026-07-10T11:00:00Z",
+    },
   ),
   plan(
     { id: "plan-created-1", plan_number: "MIP-20260901-EE02332018", policy_id: "policy-juma-1", policy_number: "ZIC-OL-2026-000003", policyholder_name: "Juma Hassan", policyholder_display: "P-000003 — Juma Hassan", currency: "TZS", frequency: "ANNUAL", status: "CREATED", maturity_value: "100000000.00" },
@@ -234,6 +282,7 @@ function clonePlans(rows: MIPlanMockRow[]): MIPlanMockRow[] {
     allowed_actions: [...row.allowed_actions],
     parameter_snapshot: { ...row.parameter_snapshot },
     items: row.items.map((itemRow) => ({ ...itemRow })),
+    documents: row.documents.map((documentRow) => ({ ...documentRow })),
   }))
 }
 
@@ -310,20 +359,68 @@ function planListRow(row: MIPlanMockRow) {
     installment_count: row.installment_count,
     start_date: row.start_date,
     end_date: row.end_date,
+    product_code: row.product_code,
+    product_display: row.product_display,
+    completed_at: row.completed_at,
+    termination_reason: row.termination_reason,
+    terminated_at: row.terminated_at,
     allowed_actions: row.allowed_actions,
     created_at: row.created_at,
     updated_at: row.updated_at,
   }
 }
 
+function statusHistoryFor(row: MIPlanMockRow) {
+  const history: Array<{ status: string; status_display: string; timestamp: string; note: string }> = [
+    { status: "CREATED", status_display: planStatusLabel("CREATED"), timestamp: row.created_at, note: "Plan created against the policy maturity value." },
+  ]
+  if (row.status === "COMPLETED") {
+    history.push({ status: "ACTIVE", status_display: planStatusLabel("ACTIVE"), timestamp: row.updated_at, note: "Activated on the first confirmed payment." })
+    history.push({ status: "COMPLETED", status_display: planStatusLabel("COMPLETED"), timestamp: row.completed_at ?? row.updated_at, note: "All installments paid and reconciled." })
+  } else if (row.status === "CANCELLED") {
+    history.push({ status: "CANCELLED", status_display: planStatusLabel("CANCELLED"), timestamp: row.updated_at, note: "Plan cancelled; remaining installments waived." })
+  } else if (row.status === "TERMINATED") {
+    history.push({ status: "TERMINATED", status_display: planStatusLabel("TERMINATED"), timestamp: row.terminated_at ?? row.updated_at, note: row.termination_reason ?? "Plan terminated." })
+  } else if (row.status === "ACTIVE") {
+    history.push({ status: "ACTIVE", status_display: planStatusLabel("ACTIVE"), timestamp: row.updated_at, note: "Activated on the first confirmed payment." })
+  }
+  return history
+}
+
+function auditHistoryFor(row: MIPlanMockRow) {
+  const entries: Array<{ id: string; action: string; action_display: string; actor_display: string; timestamp: string; channel: string; details: string }> = [
+    { id: `${row.id}-audit-created`, action: "INSTALLMENT_PLAN_CREATED", action_display: "Plan created", actor_display: "Sultan Admin", timestamp: row.created_at, channel: row.source_channel, details: `Plan ${row.plan_number} created for policy ${row.policy_number}.` },
+  ]
+  row.items.forEach((it, index) => {
+    if (it.status === "PAID" && it.paid_date) {
+      entries.push({ id: `${row.id}-audit-pay-${index}`, action: "INSTALLMENT_PAYMENT_CONFIRMED", action_display: "Payment confirmed", actor_display: it.paid_by_display ?? "Finance Officer", timestamp: it.paid_date, channel: "FRONT_OFFICE", details: `Installment ${it.installment_number} of ${row.currency} ${it.amount} confirmed (${it.payment_reference ?? "no reference"}).` })
+    }
+  })
+  if (row.status === "COMPLETED") {
+    entries.push({ id: `${row.id}-audit-completed`, action: "INSTALLMENT_PLAN_COMPLETED", action_display: "Plan completed", actor_display: "System", timestamp: row.completed_at ?? row.updated_at, channel: "SYSTEM", details: "All installments reconciled as paid." })
+  } else if (row.status === "CANCELLED") {
+    entries.push({ id: `${row.id}-audit-cancelled`, action: "INSTALLMENT_PLAN_CANCELLED", action_display: "Plan cancelled", actor_display: "Sultan Admin", timestamp: row.updated_at, channel: "API", details: "Plan cancelled; remaining installments waived." })
+  } else if (row.status === "TERMINATED") {
+    entries.push({ id: `${row.id}-audit-terminated`, action: "INSTALLMENT_PLAN_TERMINATED", action_display: "Plan terminated", actor_display: "Sultan Admin", timestamp: row.terminated_at ?? row.updated_at, channel: "API", details: row.termination_reason ?? "Plan terminated." })
+  }
+  return entries
+}
+
 function planDetailFor(row: MIPlanMockRow) {
   return {
     ...planListRow(row),
+    product_code: row.product_code,
+    product_display: row.product_display,
+    completed_at: row.completed_at,
+    termination_reason: row.termination_reason,
+    terminated_at: row.terminated_at,
     maturity_claim_id: row.claim_number ? "claim-" + row.claim_number.toLowerCase().replace(/-/g, "") : null,
     total_payable_amount: row.total_payable_amount,
     total_paid_amount: row.paid_amount,
     source_channel: row.source_channel,
     source_channel_display: row.source_channel_display,
+    calculation_source: row.claim_number ? "CLAIM" : "RATE_TABLE",
+    calculation_source_display: row.claim_number ? "Maturity Claim" : "Rate Table",
     parameter_snapshot: row.parameter_snapshot,
     items: row.items.map((it) => ({ ...it })),
     payment_history: row.items.filter((it) => it.status === "PAID").map((it) => ({
@@ -337,6 +434,9 @@ function planDetailFor(row: MIPlanMockRow) {
       payer_display: it.payer_display,
     })),
     reconciliation: reconciliationFor(row),
+    status_history: statusHistoryFor(row),
+    audit_history: auditHistoryFor(row),
+    documents: row.documents,
   }
 }
 
@@ -622,12 +722,18 @@ export const maturityInstallmentsHandlers = [
   http.post(`*${BASE}/:planId/print-schedule/`, ({ params }) => {
     const row = findPlan(String(params.planId))
     if (!row) return error(404, "INSTALLMENT_PLAN_NOT_FOUND", "The requested installment plan could not be found.", ["Return to the plan register and choose an available plan."])
-    return data({ instance: { id: `doc-${row.id}-schedule`, document_type: "OL_MATURITY_SCHEDULE", template_name: "OL Maturity Schedule", template_version: 1, page_count: 2, generated_by_display: "Sultan Admin", generated_at: new Date().toISOString() }, signed_download_url: `/api/v1/documents/instances/doc-${row.id}-schedule/download/?ticket=mock-schedule-${row.id}`, preview_url: `/api/v1/documents/instances/doc-${row.id}-schedule/preview/` }, 201)
+    const instance = { id: `doc-${row.id}-schedule`, document_type: "OL_MATURITY_SCHEDULE", template_name: "OL Maturity Schedule", template_version: 1, page_count: 2, generated_by_display: "Sultan Admin", generated_at: new Date().toISOString() }
+    const document: MIPlanMockDocument = { ...instance, preview_url: `/api/v1/documents/instances/doc-${row.id}-schedule/preview/`, signed_download_url: `/api/v1/documents/instances/doc-${row.id}-schedule/download/?ticket=mock-schedule-${row.id}` }
+    if (!row.documents.some((existing) => existing.id === document.id)) row.documents.push(document)
+    return data({ instance, signed_download_url: document.signed_download_url, preview_url: document.preview_url }, 201)
   }),
   http.post(`*${BASE}/:planId/print-advice/`, ({ params }) => {
     const row = findPlan(String(params.planId))
     if (!row) return error(404, "INSTALLMENT_PLAN_NOT_FOUND", "The requested installment plan could not be found.", ["Return to the plan register and choose an available plan."])
-    return data({ instance: { id: `doc-${row.id}-advice`, document_type: "OL_MATURITY_PAYMENT_ADVICE", template_name: "OL Maturity Payment Advice", template_version: 1, page_count: 1, generated_by_display: "Sultan Admin", generated_at: new Date().toISOString() }, signed_download_url: `/api/v1/documents/instances/doc-${row.id}-advice/download/?ticket=mock-advice-${row.id}`, preview_url: `/api/v1/documents/instances/doc-${row.id}-advice/preview/` }, 201)
+    const instance = { id: `doc-${row.id}-advice`, document_type: "OL_MATURITY_PAYMENT_ADVICE", template_name: "OL Maturity Payment Advice", template_version: 1, page_count: 1, generated_by_display: "Sultan Admin", generated_at: new Date().toISOString() }
+    const document: MIPlanMockDocument = { ...instance, preview_url: `/api/v1/documents/instances/doc-${row.id}-advice/preview/`, signed_download_url: `/api/v1/documents/instances/doc-${row.id}-advice/download/?ticket=mock-advice-${row.id}` }
+    if (!row.documents.some((existing) => existing.id === document.id)) row.documents.push(document)
+    return data({ instance, signed_download_url: document.signed_download_url, preview_url: document.preview_url }, 201)
   }),
   http.get(`*${BASE}/:planId/`, ({ params }) => {
     const row = findPlan(String(params.planId))

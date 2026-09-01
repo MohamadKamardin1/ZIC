@@ -239,7 +239,7 @@ describe("OL Maturity Installments MSW contract", () => {
     const listResponse = await fetch(`${BASE}/portal/`)
     expect(listResponse.status).toBe(200)
     const listBody = await listResponse.json()
-    expect(listBody.data.results).toHaveLength(7)
+    expect(listBody.data.results).toHaveLength(8)
     expect(listBody.data.results[0]).toMatchObject({ plan_number: "MIP-20260901-9DD41C66AF", status_display: "Active" })
 
     const detailResponse = await fetch(`${BASE}/portal/plan-active-1/`)

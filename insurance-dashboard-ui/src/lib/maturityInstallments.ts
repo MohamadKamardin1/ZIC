@@ -75,6 +75,11 @@ export interface MIPlanRecord {
   installmentCount: number
   startDate: string | null
   endDate: string | null
+  productCode?: string | null
+  productDisplay?: string | null
+  completedAt?: string | null
+  terminationReason?: string | null
+  terminatedAt?: string | null
   allowedActions: MIPlanAction[]
   createdAt: string | null
   updatedAt: string | null
@@ -131,6 +136,36 @@ export interface MIReconciliationReport {
   discrepancies: MIReconciliationDiscrepancy[]
 }
 
+export interface MIPlanDocument {
+  id: string
+  documentType: string
+  templateName: string
+  templateVersion: string | number
+  pageCount: string | number
+  generatedByDisplay: string
+  generatedAt: string
+  previewUrl?: string | null
+  signedDownloadUrl?: string | null
+  downloadUrl?: string | null
+}
+
+export interface MIPlanAuditEntry {
+  id: string
+  action: string
+  actionDisplay: string
+  actorDisplay: string
+  timestamp: string
+  channel: string
+  details?: string
+}
+
+export interface MIPlanStatusHistoryEntry {
+  status: string
+  statusDisplay: string
+  timestamp: string
+  note?: string
+}
+
 export interface MIPlanDetail extends MIPlanRecord {
   maturityClaimId?: string | null
   totalPayableAmount: string
@@ -141,6 +176,11 @@ export interface MIPlanDetail extends MIPlanRecord {
   items: MIPlanItem[]
   paymentHistory: MIPaymentHistoryEntry[]
   reconciliation?: MIReconciliationReport | null
+  calculationSource?: string | null
+  calculationSourceDisplay?: string | null
+  documents: MIPlanDocument[]
+  auditHistory: MIPlanAuditEntry[]
+  statusHistory: MIPlanStatusHistoryEntry[]
 }
 
 export interface MIPlanKpis {
@@ -330,6 +370,11 @@ export function normalizeMIPlanRow(row: Record<string, unknown>): MIPlanRecord {
     installmentCount: numberValue(row, "installmentCount", "installment_count"),
     startDate: nullableString(row, "startDate", "start_date"),
     endDate: nullableString(row, "endDate", "end_date"),
+    productCode: nullableString(row, "productCode", "product_code"),
+    productDisplay: nullableString(row, "productDisplay", "product_display", "product_code"),
+    completedAt: nullableString(row, "completedAt", "completed_at"),
+    terminationReason: nullableString(row, "terminationReason", "termination_reason"),
+    terminatedAt: nullableString(row, "terminatedAt", "terminated_at"),
     allowedActions: arrayValue(row, "allowedActions", "allowed_actions").map(String) as MIPlanAction[],
     createdAt: nullableString(row, "createdAt", "created_at"),
     updatedAt: nullableString(row, "updatedAt", "updated_at"),
@@ -352,6 +397,46 @@ function normalizeReconciliation(row: Record<string, unknown>): MIReconciliation
   }
 }
 
+function scalarValue(value: unknown, fallback: string | number): string | number {
+  return typeof value === "string" || typeof value === "number" ? value : fallback
+}
+
+function normalizeMIPlanDocument(row: Record<string, unknown>): MIPlanDocument {
+  return {
+    id: stringValue(row, "id", "uuid"),
+    documentType: stringValue(row, "documentType", "document_type"),
+    templateName: stringValue(row, "templateName", "template_name") || "Maturity Installment document",
+    templateVersion: scalarValue(row.templateVersion ?? row.template_version, "—"),
+    pageCount: scalarValue(row.pageCount ?? row.page_count, "—"),
+    generatedByDisplay: stringValue(row, "generatedByDisplay", "generated_by_display", "generatedBy", "generated_by") || "System",
+    generatedAt: stringValue(row, "generatedAt", "generated_at"),
+    previewUrl: nullableString(row, "previewUrl", "preview_url"),
+    signedDownloadUrl: nullableString(row, "signedDownloadUrl", "signed_download_url"),
+    downloadUrl: nullableString(row, "downloadUrl", "download_url"),
+  }
+}
+
+function normalizeMIPlanAuditEntry(row: Record<string, unknown>): MIPlanAuditEntry {
+  return {
+    id: stringValue(row, "id", "uuid"),
+    action: stringValue(row, "action").toUpperCase(),
+    actionDisplay: stringValue(row, "actionDisplay", "action_display", "action"),
+    actorDisplay: stringValue(row, "actorDisplay", "actor_display", "actor") || "System",
+    timestamp: stringValue(row, "timestamp", "created_at", "createdAt"),
+    channel: stringValue(row, "channel", "sourceChannel", "source_channel"),
+    details: nullableString(row, "details", "narration") ?? undefined,
+  }
+}
+
+function normalizeMIPlanStatusHistoryEntry(row: Record<string, unknown>): MIPlanStatusHistoryEntry {
+  return {
+    status: stringValue(row, "status").toUpperCase(),
+    statusDisplay: stringValue(row, "statusDisplay", "status_display", "status"),
+    timestamp: stringValue(row, "timestamp"),
+    note: nullableString(row, "note") ?? undefined,
+  }
+}
+
 export function normalizeMIPlanDetail(payload: unknown): MIPlanDetail {
   const record = isRecord(payload) ? payload : {}
   const plan = normalizeMIPlanRow(record)
@@ -367,6 +452,11 @@ export function normalizeMIPlanDetail(payload: unknown): MIPlanDetail {
     items: arrayValue(record, "items", "installments").filter(isRecord).map(normalizeMIPlanItem),
     paymentHistory: arrayValue(record, "paymentHistory", "payment_history").filter(isRecord).map(normalizePaymentHistoryEntry),
     reconciliation: isRecord(rawReconciliation) ? normalizeReconciliation(rawReconciliation) : null,
+    calculationSource: nullableString(record, "calculationSource", "calculation_source"),
+    calculationSourceDisplay: nullableString(record, "calculationSourceDisplay", "calculation_source_display", "calculation_source"),
+    documents: arrayValue(record, "documents").filter(isRecord).map(normalizeMIPlanDocument),
+    auditHistory: arrayValue(record, "auditHistory", "audit_history").filter(isRecord).map(normalizeMIPlanAuditEntry),
+    statusHistory: arrayValue(record, "statusHistory", "status_history").filter(isRecord).map(normalizeMIPlanStatusHistoryEntry),
   }
 }
 
