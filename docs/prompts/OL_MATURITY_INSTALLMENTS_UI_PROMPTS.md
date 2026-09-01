@@ -3,7 +3,7 @@
 - [x] Prompt 1 — Save Prompt Series + Maturity Installments UI Foundation and Contract-First API Layer
 - [x] Prompt 2 — Maturity Installments List Page and Dashboard KPIs
 - [x] Prompt 3 — Maturity Installments Detail Header and Overview
-- [ ] Prompt 4 — Maturity Installments Schedule Tab
+- [x] Prompt 4 — Maturity Installments Schedule Tab
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–10 will be appended `EXACTLY as provided` when the user
