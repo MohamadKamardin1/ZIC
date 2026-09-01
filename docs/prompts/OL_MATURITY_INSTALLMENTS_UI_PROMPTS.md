@@ -8,7 +8,7 @@
 - [x] Prompt 6 — Maturity Installments Reversal and Lifecycle Management
 - [x] Prompt 7 — Maturity Installments Plan Generation Wizard
 - [x] Prompt 8 — Maturity Installments Documents and Print Integration
-- [ ] Prompt 9 — Maturity Installments Partner Portal View
+- [x] Prompt 9 — Maturity Installments Partner Portal View
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–10 will be appended `EXACTLY as provided` when the user
