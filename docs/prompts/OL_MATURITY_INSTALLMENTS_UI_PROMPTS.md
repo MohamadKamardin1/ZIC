@@ -4,6 +4,7 @@
 - [x] Prompt 2 — Maturity Installments List Page and Dashboard KPIs
 - [x] Prompt 3 — Maturity Installments Detail Header and Overview
 - [x] Prompt 4 — Maturity Installments Schedule Tab
+- [ ] Prompt 5 — Maturity Installments Payment Processing Modal
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–10 will be appended `EXACTLY as provided` when the user
@@ -168,4 +169,44 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: table behavior, tests, commit hash, pushed branch.
+```
+
+## Prompt 5/10 — Maturity Installments Payment Processing Modal
+
+```text
+You are a senior frontend engineer. Continue the Z maturity Installments UI. Execute ONLY Prompt 5.
+
+MANDATORY RULES:
+- This action triggers a financial transaction; strict validation required.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. "Process Payment" Modal (Single & Bulk):
+   - Triggered from Schedule Tab row action.
+   - Step 1: Confirmation.
+     - Displays Item #, Due Date, Amount.
+     - Select Payment Method (Cash, Bank Transfer, Cheque) via SmartSelect.
+     - Input Reference Number (if applicable).
+     - Bank Account selection (Partner's bank).
+   - Step 2: Review.
+     - Summary of payment details.
+     - Warning: "This will create a payment requisition in the Front Office."
+   - Step 3: Submit.
+     - API call to `process_payment`.
+     - Loading state.
+2. Success/Error:
+   - Success: Toast "Payment Requisition Created". Status changes to PAYMENT_PENDING.
+   - Error: ErrorCoach (e.g., "Insufficient funds in partner bank").
+
+TESTS:
+- modal flow completion
+- bank account selection validation
+- success state updates row status
+- error coach display
+
+GIT:
+- commit: "feat(web): maturity-installments payment processing modal"
+- push; tick checkbox
+
+FINAL OUTPUT: modal behavior, tests, commit hash, pushed branch.
 ```
