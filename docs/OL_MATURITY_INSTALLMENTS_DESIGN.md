@@ -292,6 +292,49 @@ The register, dashboard, and export are served at the canonical prefix:
 
 The legacy `installment-plans/` routes remain wired for backward compatibility.
 
+## Documents and print engine (Prompt 8)
+
+Maturity installment documents are generated through the shared print engine
+(`apps/documents/`), so every render reuses the authenticated print pipeline,
+signed download ticket, and immutable `DocumentInstance` storage with the
+source/template version retained. Two document types are registered:
+
+- `OL_MATURITY_SCHEDULE` — the plan schedule. Template variables: `plan`
+  (number, status, frequency, dates, installment count), `policyholder`,
+  `policy`, `financial` (maturity value, total payable, paid, balance),
+  `schedule` (a table of installments: number, due date, amount, status, paid
+  date, payment reference), `schedule_summary`, and `signatures` (policyholder,
+  agent, company representative).
+- `OL_MATURITY_PAYMENT_ADVICE` — advises on the individual installment payments
+  of a plan, reusing the same header and schedule blocks and adding
+  advice-specific notes.
+
+Print endpoints (both require the module `print` entitlement):
+
+- `POST /api/v1/ol/maturity-installments/{id}/print-schedule/`
+- `POST /api/v1/ol/maturity-installments/{id}/print-advice/`
+
+Each call renders the active, approved template version, stores a
+`DocumentInstance` with `template_version` and the source/template reference,
+issues a short-lived signed download ticket, and returns the standard document
+payload (`id`, `template_version`, `signed_download_url`, `preview_url`,
+`page_count`, `checksum`, ...). A status watermark is applied when the plan is
+`CANCELLED` (`CANCELLED`) or when any installment is `MISSED`
+(`MISSED PAYMENT`), so an altered or lapsed plan is visibly flagged.
+
+Generation (`DOCUMENT_GENERATED`), ticket issue (`DOCUMENT_TICKET_ISSUED`), and
+download (`DOCUMENT_TICKET_DOWNLOADED`) are all audited with actor,
+before/after state, reason, and source channel through the shared engine.
+
+### Print assumptions (senior document decisions)
+
+- A `CANCELLED` plan and a plan carrying a `MISSED` installment are both
+  watermarked; `CANCELLED` takes precedence over `MISSED PAYMENT`.
+- The Maturity Schedule lists every installment with its live status and
+  payment reference; the Payment Advice reuses the same schedule block and adds
+  advice-specific notes. Both carry signature blocks and never render a UUID —
+  plan, policy, and policyholder reference numbers are human-readable labels.
+
 ## Options endpoints
 
 - `GET /api/v1/ol/maturity-installments/options/frequencies/` — the five

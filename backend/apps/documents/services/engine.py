@@ -29,6 +29,7 @@ from apps.governance.services.audit_service import AuditService
 from apps.system_parameters.services.config_service import ConfigurationService
 
 from ..models import DocumentInstance, DocumentTemplate
+from .maturity_documents import maturity_payment_advice_context, maturity_schedule_context
 from .policy_documents import policy_contract_context, policy_schedule_context
 from .withdrawal_documents import withdrawal_statement_context
 
@@ -1023,6 +1024,56 @@ DocumentTypeRegistry.register(
             "parties": "object",
             "financial": "object",
             "signatures": "array",
+            "branding": "object",
+        },
+    )
+)
+
+DocumentTypeRegistry.register(
+    DocumentTypeDefinition(
+        document_type="OL_MATURITY_SCHEDULE",
+        source_app_label="ol_maturity_installments",
+        source_model="olmaturityinstallmentplan",
+        template_code="OL_MATURITY_SCHEDULE_UNIFIED",
+        layout_template_path="documents/ol_maturity_schedule.html",
+        permission="ol_maturity_installments.print",
+        context_builder=maturity_schedule_context,
+        title="Maturity Schedule",
+        variables_schema={
+            "plan": "object",
+            "policy": "object",
+            "policyholder": "object",
+            "financial": "object",
+            "schedule": "array",
+            "schedule_summary": "object",
+            "signatures": "array",
+            "quote": "object",
+            "meta": "object",
+            "branding": "object",
+        },
+    )
+)
+
+DocumentTypeRegistry.register(
+    DocumentTypeDefinition(
+        document_type="OL_MATURITY_PAYMENT_ADVICE",
+        source_app_label="ol_maturity_installments",
+        source_model="olmaturityinstallmentplan",
+        template_code="OL_MATURITY_PAYMENT_ADVICE_UNIFIED",
+        layout_template_path="documents/ol_maturity_payment_advice.html",
+        permission="ol_maturity_installments.print",
+        context_builder=maturity_payment_advice_context,
+        title="Maturity Payment Advice",
+        variables_schema={
+            "plan": "object",
+            "policy": "object",
+            "policyholder": "object",
+            "financial": "object",
+            "schedule": "array",
+            "schedule_summary": "object",
+            "signatures": "array",
+            "quote": "object",
+            "meta": "object",
             "branding": "object",
         },
     )

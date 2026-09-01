@@ -1,0 +1,55 @@
+{% extends "documents/base_print.html" %}
+
+{% block document_content %}
+  <section class="meta-grid">
+    <div class="meta-cell"><span class="meta-label">Plan number</span><span class="meta-value nowrap">{{ plan.number }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Policy number</span><span class="meta-value nowrap">{{ policy.number }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Policyholder</span><span class="meta-value">{{ policyholder.name }}</span></div>
+    <div class="meta-cell"><span class="meta-label">Plan status</span><span class="meta-value">{{ plan.status_display }}</span></div>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title">Schedule summary</h2>
+    <div class="two-column">
+      <div class="column"><dl class="kv">
+        <div class="kv-row"><dt>Maturity value</dt><dd>{{ financial.total_maturity_value }}</dd></div>
+        <div class="kv-row"><dt>Total payable</dt><dd>{{ financial.total_payable_amount }}</dd></div>
+        <div class="kv-row"><dt>Frequency</dt><dd>{{ plan.frequency_display }}</dd></div>
+      </dl></div>
+      <div class="column"><dl class="kv">
+        <div class="kv-row"><dt>Installments</dt><dd>{{ schedule_summary.installment_count }}</dd></div>
+        <div class="kv-row"><dt>Paid amount</dt><dd>{{ financial.paid_amount }}</dd></div>
+        <div class="kv-row"><dt>Balance</dt><dd>{{ financial.balance }}</dd></div>
+      </dl></div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title">Installments</h2>
+    {% if schedule %}
+      <table class="data">
+        <thead><tr><th>#</th><th>Due date</th><th class="numeric">Amount</th><th>Status</th><th>Paid date</th><th>Payment reference</th></tr></thead>
+        <tbody>
+          {% for item in schedule %}
+            <tr><td>{{ item.installment_number }}</td><td>{{ item.due_date|date:'Y-m-d' }}</td><td class="numeric">{{ item.amount }}</td><td>{{ item.status }}</td><td>{{ item.paid_date|date:'Y-m-d'|default:'-' }}</td><td>{{ item.payment_reference }}</td></tr>
+          {% endfor %}
+        </tbody>
+        <tfoot><tr class="total"><td colspan="2">Total</td><td class="numeric">{{ schedule_summary.total_amount }}</td><td colspan="3">{{ schedule_summary.installment_count }} installments</td></tr></tfoot>
+      </table>
+    {% else %}
+      <p class="muted">No installments have been generated for this plan.</p>
+    {% endif %}
+  </section>
+
+  <section class="terms">
+    <h2 class="section-title">Schedule notes</h2>
+    <p>Installment dates, amounts, and statuses are calculated from the ZIC OL Maturity Installments ledger using the approved installment rate parameters. The total payable equals the policy maturity value.</p>
+    <p class="muted small">This schedule is an operational statement, not a receipt or policy contract. Any discrepancy should be referred to ZIC Finance and reconciled against the official ledger.</p>
+  </section>
+{% endblock %}
+
+{% block signature_block %}
+  <footer class="signature-block">
+    {% for signature in signatures %}<div class="signature-party"><strong>{{ signature.label }}</strong><div class="signature-line"></div><div>{{ signature.name }}</div><div class="small muted">Signature &amp; Date</div></div>{% endfor %}
+  </footer>
+{% endblock %}
