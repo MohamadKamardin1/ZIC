@@ -1,6 +1,7 @@
 # OL MATURITY INSTALLMENTS UI — PROMPT SERIES (10 prompts)
 
 - [x] Prompt 1 — Save Prompt Series + Maturity Installments UI Foundation and Contract-First API Layer
+- [ ] Prompt 2 — Maturity Installments List Page and Dashboard KPIs
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–10 will be appended `EXACTLY as provided` when the user
@@ -46,4 +47,42 @@ GIT:
 - push; if blocked create feature/web-maturity-installments-foundation and push; tick checkbox
 
 FINAL OUTPUT: hooks, primitives, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 2/10 — Maturity Installments List Page and Dashboard KPIs
+
+```text
+You are a senior frontend engineer. Continue the Z maturity Installments UI. Execute ONLY Prompt 2 from the saved series file.
+
+MANDATORY RULES:
+- Table-first; actions gated by allowed actions + permissions.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. Dashboard KPIs:
+   - Total Active Plans.
+   - Total Value of Active Plans.
+   - Upcoming Payments (Next 30 Days).
+   - Missed Payments Count.
+2. Installment Plans DataTable:
+   - Columns: Plan Number, Policy Number (clickable), Policyholder Name, Total Maturity Value, Total Paid, Remaining Balance, Frequency, Status Badge, Start Date, Allowed Actions.
+   - Filters: Status, Product, Branch, Frequency, Date Range.
+   - Search: Plan Number, Policy Number, Policyholder Name.
+3. Row Actions: View, Process Payment (bulk), Print Schedule, Cancel.
+4. Buttons: "Generate Plan" (if manual trigger allowed), Export CSV.
+5. States: Skeleton, Empty, ErrorCoach.
+
+TESTS:
+- KPI display and math
+- action visibility (e.g., no "Process Payment" button for COMPLETED plan)
+- filters and search work
+- no UUID leaks in table
+
+GIT:
+- commit: "feat(web): maturity-installments list page and dashboard KPIs"
+- push; tick checkbox
+
+FINAL OUTPUT: page behavior, tests, commit hash, pushed branch.
 ```
