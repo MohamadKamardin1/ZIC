@@ -16,20 +16,63 @@ All tables use the 'gc_' prefix to isolate them within the module namespace.
 import uuid
 from decimal import Decimal
 
-from django.db import models
 from django.conf import settings
-from django.core.validators import MinValueValidator, MaxValueValidator
+from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator
+from django.db import models
+
+
+class GCParameterAuditMixin(models.Model):
+    """Audit trail fields shared by GC parameter entities.
+
+    Every GC parameter is created and updated by an identified actor so that
+    material changes can be audited with before/after state and a reason.
+    """
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+
+    class Meta:
+        abstract = True
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
 
 
 # =============================================================================
 # LAYER 1 — SETUP & PARAMETERS
 # =============================================================================
 
-class GCSchemeType(models.Model):
+class GCSchemeType(GCParameterAuditMixin, models.Model):
+    PARTNER_TYPE_RESTRICTION_CHOICES = [
+        ("BANK", "Bank only"),
+        ("CORPORATE", "Corporate only"),
+        ("BANK_AND_CORPORATE", "Bank and corporate"),
+        ("ANY", "Any partner type"),
+    ]
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
+    partner_type_restriction = models.CharField(
+        max_length=40,
+        choices=PARTNER_TYPE_RESTRICTION_CHOICES,
+        default="ANY",
+        help_text="Restrict the scheme type to a partner category (e.g. BANK only).",
+    )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -42,13 +85,32 @@ class GCSchemeType(models.Model):
     def __str__(self):
         return f"{self.code} - {self.name}"
 
+    def clean(self):
+        super().clean()
+        self.code = (self.code or "").strip()
+        self.name = (self.name or "").strip()
+        if not self.code:
+            raise ValidationError({"code": "A scheme type code is required."})
+        if not self.name:
+            raise ValidationError({"name": "A scheme type name is required."})
+        allowed = {choice[0] for choice in self.PARTNER_TYPE_RESTRICTION_CHOICES}
+        if self.partner_type_restriction and self.partner_type_restriction not in allowed:
+            raise ValidationError(
+                {
+                    "partner_type_restriction": (
+                        f"{self.partner_type_restriction} is not a valid partner type restriction."
+                    )
+                }
+            )
 
-class GCSchemeStatus(models.Model):
+
+class GCSchemeStatus(GCParameterAuditMixin, models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
-    sort_order = models.IntegerField(default=0)
+    display_order = models.IntegerField(default=0)
+    sort_order = models.IntegerField(default=0, help_text="Legacy ordering field retained for compatibility.")
     is_terminal = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -56,47 +118,78 @@ class GCSchemeStatus(models.Model):
 
     class Meta:
         db_table = "gc_scheme_status"
-        ordering = ["sort_order", "name"]
+        ordering = ["display_order", "name"]
         verbose_name_plural = "GC Scheme Statuses"
 
     def __str__(self):
         return self.name
 
+    def clean(self):
+        super().clean()
+        self.code = (self.code or "").strip()
+        self.name = (self.name or "").strip()
+        if not self.code:
+            raise ValidationError({"code": "A scheme status code is required."})
+        if not self.name:
+            raise ValidationError({"name": "A scheme status name is required."})
 
-class GCSchemeMemberStatus(models.Model):
+
+class GCSchemeMemberStatus(GCParameterAuditMixin, models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
+    display_order = models.IntegerField(default=0)
+    is_terminal = models.BooleanField(default=False)
+    allows_claims = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "gc_scheme_member_status"
-        ordering = ["name"]
+        ordering = ["display_order", "name"]
         verbose_name_plural = "GC Scheme Member Statuses"
 
     def __str__(self):
         return self.name
 
+    def clean(self):
+        super().clean()
+        self.code = (self.code or "").strip()
+        self.name = (self.name or "").strip()
+        if not self.code:
+            raise ValidationError({"code": "A member status code is required."})
+        if not self.name:
+            raise ValidationError({"name": "A member status name is required."})
 
-class GCSchemeRenewalStatus(models.Model):
+
+class GCSchemeRenewalStatus(GCParameterAuditMixin, models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
+    display_order = models.IntegerField(default=0)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "gc_scheme_renewal_status"
-        ordering = ["name"]
+        ordering = ["display_order", "name"]
         verbose_name_plural = "GC Scheme Renewal Statuses"
 
     def __str__(self):
         return self.name
+
+    def clean(self):
+        super().clean()
+        self.code = (self.code or "").strip()
+        self.name = (self.name or "").strip()
+        if not self.code:
+            raise ValidationError({"code": "A renewal status code is required."})
+        if not self.name:
+            raise ValidationError({"name": "A renewal status name is required."})
 
 
 class GCLookupValue(models.Model):
@@ -123,8 +216,10 @@ class GCLookupValue(models.Model):
     def __str__(self):
         return f"{self.category}: {self.value} — {self.label}"
 
-class GCSchemePremiumRate(models.Model):
+class GCSchemePremiumRate(GCParameterAuditMixin, models.Model):
     RATE_TYPE_CHOICES = [
+        ("UNIT", "Unit Rate (per mille of sum assured)"),
+        ("FLAT", "Flat Rate (fixed premium)"),
         ("BASE", "Base Rate"),
         ("LOADING", "Loading"),
         ("DISCOUNT", "Discount"),
@@ -136,15 +231,34 @@ class GCSchemePremiumRate(models.Model):
     ]
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200)
-    rate_type = models.CharField(max_length=20, default="BASE")
+    scheme_type = models.ForeignKey(
+        GCSchemeType,
+        on_delete=models.PROTECT,
+        related_name="premium_rates",
+        null=True,
+        blank=True,
+    )
+    product_ref = models.ForeignKey(
+        "GCProduct",
+        on_delete=models.PROTECT,
+        related_name="premium_rates",
+        null=True,
+        blank=True,
+        help_text="Optional product the rate is scoped to.",
+    )
+    rate_type = models.CharField(max_length=20, default="UNIT")
+    rate_value = models.DecimalField(max_digits=14, decimal_places=6, default=Decimal('0.000000'))
+    currency = models.CharField(max_length=3, default="TZS")
     age_band_start = models.IntegerField(validators=[MinValueValidator(0)])
     age_band_end = models.IntegerField(validators=[MaxValueValidator(120)])
     gender = models.CharField(max_length=10, default="U")
     occupation_class = models.CharField(max_length=50, blank=True, null=True)
     rate_per_mille = models.DecimalField(max_digits=10, decimal_places=4, default=Decimal('0.0000'))
     flat_rate = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0.00'))
-    effective_date = models.DateField()
-    expiry_date = models.DateField(blank=True, null=True)
+    effective_date = models.DateField(help_text="Legacy effective date retained for compatibility.")
+    expiry_date = models.DateField(blank=True, null=True, help_text="Legacy expiry date retained for compatibility.")
+    effective_from = models.DateField(null=True, blank=True)
+    effective_to = models.DateField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -153,16 +267,36 @@ class GCSchemePremiumRate(models.Model):
         db_table = "gc_scheme_premium_rate"
         ordering = ["rate_type", "age_band_start"]
         verbose_name_plural = "GC Scheme Premium Rates"
+        indexes = [
+            models.Index(fields=["scheme_type", "rate_type", "is_active"], name="gc_premium_rate_scheme_idx"),
+        ]
 
     def __str__(self):
         return f"{self.name} ({self.age_band_start}-{self.age_band_end})"
 
+    def clean(self):
+        super().clean()
+        self.name = (self.name or "").strip()
+        if not self.name:
+            raise ValidationError({"name": "A premium rate name is required."})
+        if Decimal(self.rate_value or 0) < 0:
+            raise ValidationError({"rate_value": "A premium rate cannot be negative."})
+        if self.effective_from and self.effective_to and self.effective_to < self.effective_from:
+            raise ValidationError({"effective_to": "Effective-to cannot be before effective-from."})
+        if self.expiry_date and self.effective_date and self.expiry_date < self.effective_date:
+            raise ValidationError({"expiry_date": "Expiry date cannot be before effective date."})
 
-class GCHealthQuestion(models.Model):
+
+class GCHealthQuestion(GCParameterAuditMixin, models.Model):
     QUESTION_TYPE_CHOICES = [
         ("YES_NO", "Yes / No"),
         ("TEXT", "Text Input"),
         ("CHOICE", "Multiple Choice"),
+    ]
+    ANSWER_TYPE_CHOICES = [
+        ("BOOLEAN", "Boolean"),
+        ("TEXT", "Text"),
+        ("CHOICE", "Choice"),
     ]
     CATEGORY_CHOICES = [
         ("GENERAL", "General Health"),
@@ -174,6 +308,8 @@ class GCHealthQuestion(models.Model):
     code = models.CharField(max_length=50, unique=True)
     question_text = models.TextField()
     question_type = models.CharField(max_length=20, default="YES_NO")
+    answer_type = models.CharField(max_length=20, choices=ANSWER_TYPE_CHOICES, default="BOOLEAN")
+    required = models.BooleanField(default=True)
     category = models.CharField(max_length=50, default="GENERAL")
     options = models.JSONField(blank=True, null=True, help_text="JSON list for CHOICE type")
     sort_order = models.IntegerField(default=0)
@@ -189,15 +325,33 @@ class GCHealthQuestion(models.Model):
     def __str__(self):
         return self.code
 
+    def clean(self):
+        super().clean()
+        self.code = (self.code or "").strip()
+        self.question_text = (self.question_text or "").strip()
+        if not self.code:
+            raise ValidationError({"code": "A health question code is required."})
+        if not self.question_text:
+            raise ValidationError({"question_text": "Question text is required."})
 
-class GCHealthQuestionnaire(models.Model):
+
+class GCHealthQuestionnaire(GCParameterAuditMixin, models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     version = models.CharField(max_length=20, default="1.0")
+    scheme_type_ref = models.ForeignKey(
+        GCSchemeType,
+        on_delete=models.PROTECT,
+        related_name="questionnaires",
+        null=True,
+        blank=True,
+    )
     questions = models.ManyToManyField(GCHealthQuestion, related_name="questionnaires")
-    effective_date = models.DateField()
+    threshold_trigger_amount = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True)
+    effective_date = models.DateField(help_text="Legacy effective date retained for compatibility.")
+    effective_from = models.DateField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -208,6 +362,18 @@ class GCHealthQuestionnaire(models.Model):
 
     def __str__(self):
         return f"{self.name} v{self.version}"
+
+    def clean(self):
+        super().clean()
+        self.code = (self.code or "").strip()
+        self.name = (self.name or "").strip()
+        self.version = (self.version or "").strip()
+        if not self.code:
+            raise ValidationError({"code": "A questionnaire code is required."})
+        if not self.name:
+            raise ValidationError({"name": "A questionnaire name is required."})
+        if not self.version:
+            raise ValidationError({"version": "A questionnaire version is required."})
 
 
 # =============================================================================
