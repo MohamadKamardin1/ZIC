@@ -2,6 +2,7 @@
 
 - [x] Prompt 1 — Save Prompt Series + Maturity Installments UI Foundation and Contract-First API Layer
 - [x] Prompt 2 — Maturity Installments List Page and Dashboard KPIs
+- [ ] Prompt 3 — Maturity Installments Detail Header and Overview
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–10 will be appended `EXACTLY as provided` when the user
@@ -85,4 +86,45 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: page behavior, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 3/10 — Maturity Installments Detail Header and Overview
+
+```text
+You are a senior frontend engineer. Continue the Z maturity Installments UI. Execute ONLY Prompt 3.
+
+MANDATORY RULES:
+- Master-Detail pattern; clear visibility of the financial schedule.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. Header:
+   - Plan Number (Copyable), Status Badge.
+   - Policy Link (Policy Number + Product).
+   - Policyholder Name.
+   - Financial Cards: Total Maturity Value, Amount Paid, Balance Remaining.
+   - Dates: Start Date, End Date.
+   - Action Bar: Process Payment, Print, Cancel (gated by status).
+2. Tabs: Overview, Schedule, Payments, Audit, Documents.
+3. Overview Tab:
+   - Plan Context: Frequency (e.g., Monthly), Number of Installments, Calculation Source (Rate Table/Claim).
+   - Policy Details Snippet.
+   - Status Timeline.
+4. Visual Indicators:
+   - If "TERMINATED": Red banner with reason.
+   - If "COMPLETED": Green success banner.
+
+TESTS:
+- header renders all key financial fields
+- action buttons visibility based on status
+- policy link navigates correctly
+- no UUIDs
+
+GIT:
+- commit: "feat(web): maturity-installments detail header and overview"
+- push; tick checkbox
+
+FINAL OUTPUT: page structure, tests, commit hash, pushed branch.
 ```
