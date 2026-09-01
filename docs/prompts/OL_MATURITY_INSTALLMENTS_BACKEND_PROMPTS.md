@@ -7,7 +7,7 @@
 - [x] Prompt 5 — Implement Missed Detection and Reversal Lifecycle
 - [x] Prompt 6 — Implement Reconciliation and Financial Audit
 - [x] Prompt 7 — Implement List, Detail, KPI and Export APIs
-- [ ] Prompt 8 — Implement Documents and Print Engine
+- [x] Prompt 8 — Implement Documents and Print Engine
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–12 will be appended `EXACTLY as provided` when the user
