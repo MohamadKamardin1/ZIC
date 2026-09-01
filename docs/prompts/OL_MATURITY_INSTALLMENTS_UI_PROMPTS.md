@@ -5,7 +5,7 @@
 - [x] Prompt 3 — Maturity Installments Detail Header and Overview
 - [x] Prompt 4 — Maturity Installments Schedule Tab
 - [x] Prompt 5 — Maturity Installments Payment Processing Modal
-- [ ] Prompt 6 — Maturity Installments Reversal and Lifecycle Management
+- [x] Prompt 6 — Maturity Installments Reversal and Lifecycle Management
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–10 will be appended `EXACTLY as provided` when the user
