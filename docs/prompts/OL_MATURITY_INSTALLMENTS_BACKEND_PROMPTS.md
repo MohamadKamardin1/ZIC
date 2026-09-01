@@ -4,6 +4,7 @@
 - [x] Prompt 2 — Implement Parameter Validation & Calculation Engine
 - [x] Prompt 3 — Implement Plan Generation and Creation
 - [x] Prompt 4 — Implement Payment Processing and Integration
+- [ ] Prompt 5 — Implement Missed Detection and Reversal Lifecycle
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–12 will be appended `EXACTLY as provided` when the user
@@ -195,4 +196,53 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: processing endpoints, integration seam, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 5/12 — Implement Missed Detection and Reversal Lifecycle
+
+```text
+You are a senior Django insurance lifecycle engineer. Continue the ZIC OL Maturity Installments backend. Execute ONLY Prompt 5.
+
+MANDATORY RULES:
+- Missed payments must be detected and flagged.
+- Reversal must be atomic.
+- Commit and push; tick checkbox.
+
+OBJECTIVE:
+Implement lifecycle management for missed payments and reversals.
+
+SCOPE:
+1. Management Command: detect_missed_installments
+   - Runs daily.
+   - Checks items where due_date < today and status is SCHEDULED/PAYMENT_PENDING.
+   - Updates status -> MISSED.
+   - Emits InstallmentPaymentMissed.
+   - Idempotent.
+2. Reversal Endpoint:
+   - POST /api/v1/ol/maturity-installments/items/{id}/reverse-payment/
+   - Allowed only for PAID items within configured window.
+   - Action:
+     - Reverse payment requisition via Front Office seam.
+     - Status -> SCHEDULED (or MISSED if due date passed).
+     - Audit reversal with actor, reason.
+3. Cancellation:
+   - Cancel entire plan (if not fully paid). Requires Admin permission.
+   - Status -> CANCELLED.
+4. Validation:
+   - Cannot reverse if already reversed.
+   - Cannot cancel if payments are irrevocable per parameters.
+
+TESTS:
+- missed detection command updates status
+- reversal restores status and reverses payment
+- cancellation works for active plans
+- audit records created
+
+GIT:
+- commit: "feat(ol-maturity-installments): implement missed detection and reversal lifecycle"
+- push; tick checkbox
+
+FINAL OUTPUT: missed command, reversal endpoint, tests, commit hash, pushed branch.
 ```
