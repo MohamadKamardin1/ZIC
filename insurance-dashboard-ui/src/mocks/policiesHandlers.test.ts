@@ -68,3 +68,35 @@ describe("OL Policies MSW contract", () => {
     expect(unknownBody).toMatchObject({ errorCode: "OPTIONS_ENTITY_NOT_FOUND", error: { code: "OPTIONS_ENTITY_NOT_FOUND" } })
   })
 })
+
+describe("OL Policies MSW contract — matured-policy search for the plan wizard", () => {
+  it("returns only matured policies with a maturity value when filtered by status", async () => {
+    const response = await fetch("http://localhost/api/v1/ol/policies/?page=1&page_size=10&status=MATURED")
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.data.results.length).toBeGreaterThan(0)
+    for (const row of body.data.results) {
+      expect(row.status).toBe("MATURED")
+      expect(row.status_display).toBe("Matured")
+      expect(row.maturity_value).toBeTruthy()
+    }
+    expect(body.data.results).toEqual(expect.arrayContaining([
+      expect.objectContaining({ policy_number: "ZIC-OL-2025-000101", maturity_value: "60000000.00" }),
+    ]))
+  })
+
+  it("excludes immature policies from the matured search by policy number", async () => {
+    const response = await fetch("http://localhost/api/v1/ol/policies/?page=1&page_size=10&status=MATURED&search=ZIC-OL-2026-000001")
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.data.count).toBe(0)
+    expect(body.data.results).toEqual([])
+  })
+
+  it("still returns the immature policy when the status filter is absent", async () => {
+    const response = await fetch("http://localhost/api/v1/ol/policies/?page=1&page_size=10&search=ZIC-OL-2026-000001")
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.data.results[0]).toMatchObject({ policy_number: "ZIC-OL-2026-000001", status: "ACTIVE" })
+  })
+})

@@ -25,6 +25,7 @@ export interface PolicyListItem {
   agentName?: string | null
   currency: string
   sumAssured: string | number | null
+  maturityValue?: string | number | null
   premiumAmount: string | number | null
   premiumFrequency?: string | null
   termYears?: number | null
@@ -197,6 +198,7 @@ export function normalizePolicyListItem(raw: unknown): PolicyListItem {
     agentName: optionalString(record, "agent_name", "agentName", "agent_display", "agentDisplay"),
     currency: stringValue(record, "currency") || "TZS",
     sumAssured: record.sum_assured as string | number | null ?? record.sumAssured as string | number | null ?? null,
+    maturityValue: record.maturity_value as string | number | null ?? record.maturityValue as string | number | null ?? null,
     premiumAmount: record.premium_amount as string | number | null ?? record.premiumAmount as string | number | null ?? null,
     premiumFrequency: optionalString(record, "premium_frequency", "premiumFrequency"),
     termYears: nullableNumber(record, "term_years", "termYears"),

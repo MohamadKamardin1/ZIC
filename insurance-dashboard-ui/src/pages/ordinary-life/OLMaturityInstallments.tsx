@@ -102,6 +102,14 @@ function tableFilters(query: { page?: number; pageSize?: number; search?: string
   }
 }
 
+const PAYOUTS_PER_YEAR: Record<string, number> = { SINGLE: 1, MONTHLY: 12, QUARTERLY: 4, HALF_YEARLY: 2, ANNUAL: 1 }
+
+function moneyNumber(value: string | number | null | undefined): number {
+  if (value === null || value === undefined || value === "") return Number.NaN
+  const number = Number(value)
+  return Number.isFinite(number) ? number : Number.NaN
+}
+
 function GeneratePlanModal({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (planId: string) => void }) {
   const [step, setStep] = useState(1)
   const [search, setSearch] = useState("")
@@ -110,15 +118,14 @@ function GeneratePlanModal({ open, onClose, onCreated }: { open: boolean; onClos
   const [termYears, setTermYears] = useState("")
   const [error, setError] = useState<StructuredError | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const queryClient = useQueryClient()
   const policyQuery = useQuery({
     queryKey: ["ol-maturity-installments", "create-policy-search", search],
-    queryFn: () => listPolicies({ search, page: 1, pageSize: 10 }),
+    queryFn: () => listPolicies({ search, status: "MATURED", page: 1, pageSize: 10 }),
     enabled: open && step === 1,
     staleTime: 30_000,
   })
   const frequencyQuery = useMIFrequencyOptions({}, open)
-  const termQuery = useMITermOptions({}, open && step === 2)
+  const termQuery = useMITermOptions({}, open && step >= 2)
   const policies = policyQuery.data?.results ?? []
   const frequencyOptions = frequencyQuery.data?.results ?? []
   const termOptions = termQuery.data?.results ?? []
@@ -132,7 +139,23 @@ function GeneratePlanModal({ open, onClose, onCreated }: { open: boolean; onClos
     if (!frequency && frequencyOptions.length > 0) setFrequency(frequencyOptions[0].value)
   }, [frequencyOptions, frequency])
 
+  const maturityValue = moneyNumber(policy?.maturityValue)
+  const maturityValueValid = Boolean(policy) && Number.isFinite(maturityValue) && maturityValue > 0
+  const selectedFrequency = frequencyOptions.find((option) => option.value === frequency)
+  const payoutPerYear = selectedFrequency?.meta?.payoutPerYear ?? (frequency ? PAYOUTS_PER_YEAR[frequency] ?? 0 : 0)
+  const termNumber = Number(termYears)
+  const installments = Number.isFinite(termNumber) && termNumber > 0 && payoutPerYear > 0 ? termNumber * payoutPerYear : 0
+  const amountPerInstallment = maturityValueValid && installments > 0 ? maturityValue / installments : 0
+  const canConfigure = maturityValueValid && Boolean(frequency) && Boolean(termYears)
+  const installmentsLabel = installments > 0 ? new Intl.NumberFormat("en-US").format(installments) : "—"
+  const amountLabel = amountPerInstallment > 0 ? <MoneyCell value={amountPerInstallment.toFixed(2)} currency={policy?.currency ?? "TZS"} /> : "—"
+
   const selectPolicy = (selected: PolicyListItem) => {
+    if (selected.status !== "MATURED") {
+      setPolicy(null)
+      setError({ code: "POLICY_NOT_MATURED", message: `${selected.policyNumber} is ${selected.statusDisplay.toLowerCase()} and cannot be used to generate an installment plan. Only matured policies are eligible.`, resolutionSteps: ["Search for a policy with Matured status.", "Raise the maturity for this policy in the policy register first, then search again."], fieldErrors: {}, retryable: false, status: 422, raw: null })
+      return
+    }
     setPolicy(selected)
     setError(null)
     setStep(2)
@@ -142,6 +165,10 @@ function GeneratePlanModal({ open, onClose, onCreated }: { open: boolean; onClos
     if (!policy) return
     if (!frequency || !termYears) {
       setError({ code: "REQUIRED_FIELDS", message: "Choose a payout frequency and term before generating the plan.", resolutionSteps: ["Select the frequency and term from the options catalogs.", "Submit again once both fields are completed."], fieldErrors: {}, retryable: false, status: 400, raw: null })
+      return
+    }
+    if (!maturityValueValid) {
+      setError({ code: "INVALID_MATURITY_VALUE", message: "The policy maturity value must be positive before an installment plan can be generated.", resolutionSteps: ["Confirm the maturity valuation was posted for the selected policy.", "Choose a matured policy with a positive effective maturity value."], fieldErrors: {}, retryable: false, status: 422, raw: null })
       return
     }
     setSubmitting(true); setError(null)
@@ -160,30 +187,67 @@ function GeneratePlanModal({ open, onClose, onCreated }: { open: boolean; onClos
   return <Modal open={open} title="Generate installment plan" description="Create a maturity installment schedule against a matured policy. The backend revalidates policy maturity and the configured rate table before creating the plan." onClose={onClose} size="lg">
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-2" aria-label="Generate plan steps">
-        {["Select Policy", "Frequency & Term"].map((label, index) => <div key={label} className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold ${step === index + 1 ? "bg-[var(--primary)] text-[var(--primary-foreground)]" : step > index + 1 ? "bg-[var(--success)]/12 text-[var(--success)]" : "bg-[var(--muted)] text-[var(--muted-foreground)]"}`}><span>{index + 1}</span>{label}</div>)}
+        {["Select Policy", "Configure Terms", "Generate"].map((label, index) => <div key={label} className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold ${step === index + 1 ? "bg-[var(--primary)] text-[var(--primary-foreground)]" : step > index + 1 ? "bg-[var(--success)]/12 text-[var(--success)]" : "bg-[var(--muted)] text-[var(--muted-foreground)]"}`}><span>{index + 1}</span>{label}</div>)}
       </div>
-      {error && <ErrorCoach title={error.code === "INSTALLMENT_POLICY_NOT_MATURED" ? "Policy not matured" : "Installment plan needs attention"} message={error.message} resolutionSteps={error.resolutionSteps} />}
+      {error && <ErrorCoach title={error.code === "INSTALLMENT_POLICY_NOT_MATURED" || error.code === "POLICY_NOT_MATURED" ? "Policy not matured" : error.code === "INVALID_MATURITY_VALUE" ? "Maturity value must be positive" : "Installment plan needs attention"} message={error.message} resolutionSteps={error.resolutionSteps} />}
       {step === 1 && <div className="space-y-4">
-        <div><h3 className="text-base font-bold">Select policy</h3><p className="mt-1 text-sm leading-6 text-[var(--muted-foreground)]">Search a matured policy to build the installment schedule from the effective maturity value.</p></div>
+        <div><h3 className="text-base font-bold">Select policy</h3><p className="mt-1 text-sm leading-6 text-[var(--muted-foreground)]">Search for a matured policy. Selecting it auto-fills the effective maturity value the schedule is built from.</p></div>
         <label className="block space-y-1.5"><span className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--muted-foreground)]">Search policies</span><span className="relative block"><Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" aria-hidden="true" /><input autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Policy number, policyholder, or product" className="h-10 w-full rounded-[10px] border border-[var(--border)] bg-[var(--card)] pl-9 pr-3 text-sm outline-none focus:border-[var(--ring)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--ring)_18%,transparent)]" /></span></label>
         {policyQuery.error && <ErrorCoach title="Policies could not be loaded" message={policyQuery.error.message} resolutionSteps={["Confirm that the policy service is available.", "Search again or ask servicing support to verify policy access."]} />}
         <div className="max-h-72 space-y-2 overflow-y-auto" aria-live="polite">
           {policyQuery.isLoading && <div className="rounded-lg border border-dashed border-[var(--border)] px-4 py-8 text-center text-sm text-[var(--muted-foreground)]">Loading policies…</div>}
           {!policyQuery.isLoading && !policyQuery.error && policies.length === 0 && <div className="rounded-lg border border-dashed border-[var(--border)] px-4 py-8 text-center text-sm text-[var(--muted-foreground)]">No policies match this search.</div>}
-          {policies.map((item) => <button key={item.id} type="button" onClick={() => selectPolicy(item)} className="flex w-full items-start justify-between gap-3 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-3 text-left transition hover:border-[var(--primary)] hover:bg-[var(--secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"><span className="min-w-0"><span className="block truncate text-sm font-bold">{item.policyNumber}</span><span className="mt-1 block truncate text-xs text-[var(--muted-foreground)]">{item.policyholderDisplay || item.policyholderName}</span><span className="mt-1 block truncate text-xs text-[var(--muted-foreground)]">{item.productPlanDisplay}</span></span><span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-bold ${item.status === "ACTIVE" || item.status === "PAID_UP" ? "bg-[var(--success)]/10 text-[var(--success)]" : "bg-[var(--warning)]/12 text-[var(--warning-foreground)]"}`}>{item.statusDisplay || item.status}</span></button>)}
+          {policies.map((item) => <button key={item.id} type="button" onClick={() => selectPolicy(item)} className="flex w-full items-start justify-between gap-3 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-3 text-left transition hover:border-[var(--primary)] hover:bg-[var(--secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"><span className="min-w-0"><span className="block truncate text-sm font-bold">{item.policyNumber}</span><span className="mt-1 block truncate text-xs text-[var(--muted-foreground)]">{item.policyholderDisplay || item.policyholderName}</span><span className="mt-1 block truncate text-xs text-[var(--muted-foreground)]">{item.productPlanDisplay}</span></span><span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-bold ${item.status === "MATURED" ? "bg-[var(--success)]/10 text-[var(--success)]" : "bg-[var(--warning)]/12 text-[var(--warning-foreground)]"}`}>{item.statusDisplay || item.status}</span></button>)}
         </div>
       </div>}
       {step === 2 && policy && <div className="space-y-4">
-        <div><h3 className="text-base font-bold">Frequency and term</h3><p className="mt-1 text-sm leading-6 text-[var(--muted-foreground)]">{policy.policyNumber} · {policy.policyholderDisplay || policy.policyholderName}</p></div>
+        <div><h3 className="text-base font-bold">Configure terms</h3><p className="mt-1 text-sm leading-6 text-[var(--muted-foreground)]">Choose the payout frequency and term. The installment count and amount are calculated from the policy maturity value.</p></div>
+        <div className="rounded-lg border border-[var(--border)] bg-[var(--muted)]/35 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--muted-foreground)]">Selected policy</p>
+              <p className="mt-1 text-sm font-bold">{policy.policyNumber}</p>
+              <p className="mt-1 text-xs text-[var(--muted-foreground)]">{policy.policyholderDisplay || policy.policyholderName} · {policy.productPlanDisplay}</p>
+            </div>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--muted-foreground)]">Maturity value</p>
+              <p className="mt-1 text-sm font-bold"><MoneyCell value={policy.maturityValue} currency={policy.currency} /></p>
+            </div>
+          </div>
+        </div>
+        {!maturityValueValid && <ErrorCoach title="Maturity value must be positive" message={`${policy.policyNumber} does not carry a positive effective maturity value. An installment plan can only be generated against a positive maturity value.`} resolutionSteps={["Confirm the maturity valuation was posted for the selected policy.", "Choose a matured policy with a positive effective maturity value."]} />}
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block space-y-1.5"><span className="text-xs font-bold">Payout frequency</span><select value={frequency} onChange={(event) => setFrequency(event.target.value)} className="h-10 w-full rounded-[10px] border border-[var(--border)] bg-[var(--card)] px-3 text-sm outline-none focus:border-[var(--ring)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--ring)_18%,transparent)]"><option value="">Select frequency</option>{frequencyOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
           <label className="block space-y-1.5"><span className="text-xs font-bold">Term (years)</span><select value={termYears} onChange={(event) => setTermYears(event.target.value)} className="h-10 w-full rounded-[10px] border border-[var(--border)] bg-[var(--card)] px-3 text-sm outline-none focus:border-[var(--ring)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--ring)_18%,transparent)]"><option value="">Select term</option>{termOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
         </div>
-        <div className="rounded-lg border border-[var(--info)]/25 bg-[var(--info)]/8 px-4 py-3 text-sm"><p className="font-bold">After generation</p><p className="mt-1 text-xs leading-5 text-[var(--muted-foreground)]">The plan is created in CREATED status with every installment scheduled. The backend reconciles the total payable against the policy maturity value before activation.</p></div>
+        <div className="rounded-lg border border-[var(--success)]/25 bg-[var(--success)]/8 px-4 py-3" data-testid="installment-preview">
+          <p className="text-sm font-bold">Preview</p>
+          <dl className="mt-2 grid gap-2 text-sm sm:grid-cols-2">
+            <div><dt className="text-xs text-[var(--muted-foreground)]">Number of installments</dt><dd className="mt-1 font-bold" data-testid="preview-installments">{installmentsLabel}</dd></div>
+            <div><dt className="text-xs text-[var(--muted-foreground)]">Amount per installment</dt><dd className="mt-1 font-bold" data-testid="preview-amount">{amountLabel}</dd></div>
+          </dl>
+          <p className="mt-2 text-xs leading-5 text-[var(--muted-foreground)]">Calculated as maturity value ÷ ({installments > 0 ? `${termNumber} year${termNumber === 1 ? "" : "s"} × ${payoutPerYear} payments per year` : "the configured term"}). The backend reconciles against the rate table before activation.</p>
+        </div>
+      </div>}
+      {step === 3 && policy && <div className="space-y-4">
+        <div><h3 className="text-base font-bold">Confirm and generate</h3><p className="mt-1 text-sm leading-6 text-[var(--muted-foreground)]">Review the plan configuration before creation. The plan is created in CREATED status with every installment scheduled.</p></div>
+        <dl className="rounded-lg border border-[var(--border)] bg-[var(--muted)]/35 p-4 text-sm">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div><dt className="text-xs text-[var(--muted-foreground)]">Policy</dt><dd className="mt-1 font-bold">{policy.policyNumber}</dd></div>
+            <div><dt className="text-xs text-[var(--muted-foreground)]">Policyholder</dt><dd className="mt-1">{policy.policyholderDisplay || policy.policyholderName}</dd></div>
+            <div><dt className="text-xs text-[var(--muted-foreground)]">Maturity value</dt><dd className="mt-1 font-bold"><MoneyCell value={policy.maturityValue} currency={policy.currency} /></dd></div>
+            <div><dt className="text-xs text-[var(--muted-foreground)]">Payout frequency</dt><dd className="mt-1 font-bold">{frequencyLabel(frequency)}</dd></div>
+            <div><dt className="text-xs text-[var(--muted-foreground)]">Term</dt><dd className="mt-1 font-bold">{termYears} year{Number(termYears) === 1 ? "" : "s"}</dd></div>
+            <div><dt className="text-xs text-[var(--muted-foreground)]">Installments</dt><dd className="mt-1 font-bold" data-testid="preview-installments">{installmentsLabel}</dd></div>
+            <div><dt className="text-xs text-[var(--muted-foreground)]">Amount per installment</dt><dd className="mt-1 font-bold" data-testid="preview-amount">{amountLabel}</dd></div>
+          </div>
+        </dl>
       </div>}
       <div className="flex flex-wrap justify-between gap-2 border-t border-[var(--border)] pt-4">
-        <button type="button" className="button-secondary" onClick={step === 1 ? onClose : () => setStep(1)} disabled={submitting}>{step === 1 ? "Cancel" : "Back"}</button>
-        {step < 2 ? <button type="button" className="button-primary" onClick={() => setStep(2)} disabled={!policy}>Next</button> : <button type="button" className="button-primary" onClick={() => void submit()} disabled={submitting}>{submitting ? "Generating…" : "Generate plan"}</button>}
+        <button type="button" className="button-secondary" onClick={step === 1 ? onClose : () => setStep((current) => Math.max(1, current - 1))} disabled={submitting}>{step === 1 ? "Cancel" : "Back"}</button>
+        {step < 2 && <button type="button" className="button-primary" onClick={() => setStep(2)} disabled={!policy}>Next</button>}
+        {step === 2 && <button type="button" className="button-primary" onClick={() => setStep(3)} disabled={!canConfigure}>Review & Generate</button>}
+        {step === 3 && <button type="button" className="button-primary" onClick={() => void submit()} disabled={submitting}>{submitting ? "Generating…" : "Generate plan"}</button>}
       </div>
     </div>
   </Modal>
