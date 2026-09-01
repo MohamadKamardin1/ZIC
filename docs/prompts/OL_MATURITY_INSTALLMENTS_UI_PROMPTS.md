@@ -6,6 +6,7 @@
 - [x] Prompt 4 — Maturity Installments Schedule Tab
 - [x] Prompt 5 — Maturity Installments Payment Processing Modal
 - [x] Prompt 6 — Maturity Installments Reversal and Lifecycle Management
+- [ ] Prompt 7 — Maturity Installments Plan Generation Wizard
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–10 will be appended `EXACTLY as provided` when the user
@@ -247,4 +248,45 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: modal behaviors, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 7/10 — Maturity Installments Plan Generation Wizard
+
+```text
+You are a senior frontend engineer. Continue the Z maturity Installments UI. Execute ONLY Prompt 7.
+
+MANDATORY RULES:
+- Even if automated, provide a manual "Generate" capability for testing and edge cases.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. "Generate Plan" Modal/Wizard:
+   - Triggered from List page or Policy Detail (if allowed).
+   - Step 1: Select Policy.
+     - Search for Matured Policies.
+     - Select Policy -> Auto-fill Maturity Value.
+   - Step 2: Configure Terms.
+     - Frequency (Monthly, Quarterly, Annually).
+     - Term (Years).
+     - Preview: Number of installments, Amount per installment (Calculated).
+   - Step 3: Generate.
+     - Confirm creation.
+     - Navigate to new Plan Detail.
+2. Validation:
+   - Policy must be Matured.
+   - Maturity Value must be positive.
+
+TESTS:
+- policy search filters matured policies
+- calculation preview updates on term change
+- wizard flow completion
+- validation blocks on immature policies
+
+GIT:
+- commit: "feat(web): maturity-installments plan generation wizard"
+- push; tick checkbox
+
+FINAL OUTPUT: wizard behavior, tests, commit hash, pushed branch.
 ```
