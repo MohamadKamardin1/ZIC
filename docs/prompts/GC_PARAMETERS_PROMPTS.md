@@ -2,7 +2,7 @@
 
 - [x] Prompt 1 — Save Series File + GC Parameters Foundation & Scheme Models
 - [x] Prompt 2 — GC Product Setup & Rider Setup Models
-- [ ] Prompt 3 — GC Medical U/W & Claim Setup Models
+- [x] Prompt 3 — GC Medical U/W & Claim Setup Models
 - [ ] Prompt 4 — APIs, Options Endpoints & Validation Services
 - [ ] Prompt 5 — Full Seed Data & Documentation
 - [ ] Prompt 6 — Backend Integration & Release Verification
