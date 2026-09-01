@@ -4,7 +4,7 @@
 - [x] Prompt 2 — Maturity Installments List Page and Dashboard KPIs
 - [x] Prompt 3 — Maturity Installments Detail Header and Overview
 - [x] Prompt 4 — Maturity Installments Schedule Tab
-- [ ] Prompt 5 — Maturity Installments Payment Processing Modal
+- [x] Prompt 5 — Maturity Installments Payment Processing Modal
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–10 will be appended `EXACTLY as provided` when the user
