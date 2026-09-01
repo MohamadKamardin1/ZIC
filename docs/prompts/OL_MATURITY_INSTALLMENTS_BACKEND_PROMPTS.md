@@ -6,6 +6,7 @@
 - [x] Prompt 4 — Implement Payment Processing and Integration
 - [x] Prompt 5 — Implement Missed Detection and Reversal Lifecycle
 - [x] Prompt 6 — Implement Reconciliation and Financial Audit
+- [ ] Prompt 7 — Implement List, Detail, KPI and Export APIs
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–12 will be appended `EXACTLY as provided` when the user
@@ -289,4 +290,47 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: reconciliation service, audit utility, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 7/12 — Implement List, Detail, KPI and Export APIs
+
+```text
+You are a senior Django API engineer. Continue the ZIC OL Maturity Installments backend. Execute ONLY Prompt 7.
+
+MANDATORY RULES:
+- Table-first; names never UUIDs.
+- KPIs must be real-time and filterable.
+- Commit and push; tick checkbox.
+
+OBJECTIVE:
+Implement complete installment list, detail, dashboard, and export APIs.
+
+SCOPE:
+1. GET /api/v1/ol/maturity-installments/ list:
+   - Columns: plan_number, policy_number, policyholder_name, total_amount, paid_amount, balance, status, start_date, allowed_actions.
+   - Filters: status, product, branch, date range, missed_only.
+   - Search: plan_number, policy_number, policyholder_name.
+   - Pagination, sorting.
+2. GET /api/v1/ol/maturity-installments/{id}/ detail:
+   - Header, items list (nested or separate call), payment history, audit timeline.
+   - Allowed actions based on status/permission.
+3. GET /api/v1/ol/maturity-installments/kpis/ dashboard:
+   - total_plans_active, total_upcoming_payouts, missed_payments_count, completed_plans_count.
+4. CSV export respecting filters.
+5. Admin tables mirror key columns.
+
+TESTS:
+- list columns and display names
+- filters/search work
+- KPI math correct
+- detail includes children and allowed actions
+- export respects filters
+
+GIT:
+- commit: "feat(ol-maturity-installments): implement list detail KPI and export APIs"
+- push; tick checkbox
+
+FINAL OUTPUT: endpoint contract, KPI rules, tests, commit hash, pushed branch.
 ```
