@@ -8,6 +8,7 @@
 - [x] Prompt 6 — Maturity Installments Reversal and Lifecycle Management
 - [x] Prompt 7 — Maturity Installments Plan Generation Wizard
 - [x] Prompt 8 — Maturity Installments Documents and Print Integration
+- [ ] Prompt 9 — Maturity Installments Partner Portal View
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–10 will be appended `EXACTLY as provided` when the user
@@ -327,4 +328,40 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: documents UI, print integration, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 9/10 — Maturity Installments Partner Portal View
+
+```text
+You are a senior frontend engineer. Continue the Z maturity Installments UI. Execute ONLY Prompt 9.
+
+MANDATORY RULES:
+- Partner view is strictly read-only.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. Partner Route `/portal/maturity-installments`:
+   - Read-only list of installments associated with the partner's policies.
+   - Read-only Detail view (Schedule visible, Actions hidden).
+   - Info Banner: "Payout schedule. Payments are processed by ZIC Finance."
+2. UX Adjustments:
+   - "View" button instead of "Manage".
+   - No "Process Payment" or "Reverse" actions.
+3. Scoping:
+   - Ensure only linked policies' plans are fetched.
+   - Sanitize sensitive financial data if required (though payout amounts should be visible to partner).
+
+TESTS:
+- partner sees only own plans
+- restricted actions hidden
+- data sanitization (no internal audit data)
+- read-only behavior
+
+GIT:
+- commit: "feat(web): maturity-installments partner portal view"
+- push; tick checkbox
+
+FINAL OUTPUT: portal behavior, tests, commit hash, pushed branch.
 ```
