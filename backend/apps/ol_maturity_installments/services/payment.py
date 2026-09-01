@@ -296,6 +296,21 @@ def confirm_item_payment(
                 "total_payable_amount": str(plan.total_payable_amount),
             },
         )
+        AuditService.log_action(
+            "INSTALLMENT_PLAN_COMPLETED",
+            plan,
+            actor=actor,
+            request=request,
+            before_state=plan_before,
+            after_state={
+                "status": plan.status,
+                "completed_at": str(plan.completed_at) if plan.completed_at else "",
+                "completed_item": item.installment_number,
+            },
+            changed_fields=["status", "completed_at", "completed_by"],
+            reason="Every installment has been paid; the plan is now complete.",
+            source_channel=source_channel,
+        )
 
     AuditService.log(
         action_type="INSTALLMENT_PAYMENT_CONFIRMED",

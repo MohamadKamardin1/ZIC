@@ -361,6 +361,16 @@ class AuditMatrixTestCase(_MatrixBase):
         self.assertEqual(full.paid_amount, _money(plan.total_payable_amount))
         self.assertEqual(full.missing_amount, "0.00")
         self.assertEqual(full.paid_item_count, plan.installment_count)
+        # A completed plan must be backed by a plan-level COMPLETED audit row.
+        self.assertTrue(
+            AuditLog.objects.filter(
+                app_label="ol_maturity_installments",
+                object_id=str(plan.pk),
+                action="INSTALLMENT_PLAN_COMPLETED",
+            ).exists()
+        )
+        completed_audit = validate_audit_consistency(plan_id=plan.pk)
+        self.assertEqual(completed_audit.status, "PASS", msg=completed_audit.to_dict())
 
 
 class IdempotencyMatrixTestCase(_MatrixBase):

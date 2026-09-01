@@ -511,3 +511,60 @@ codes `INSTALLMENT_REVERSAL_REASON_REQUIRED`,
 `INSTALLMENT_CANCELLATION_REASON_REQUIRED`, `INSTALLMENT_PLAN_CANNOT_CANCEL`,
 `INSTALLMENT_PLAN_IRREVOCABLE`. All render through the global structured Error
 Coach handler with resolution steps and `doc_ref` pointing here.
+
+## Seed scenarios, documentation and release (Prompt 11)
+
+`seed_ol_maturity_installment_scenarios` populates realistic data covering every
+plan state through the real services, plus captured failure proofs. It is
+idempotent (stable policy numbers, claim numbers, bank accounts, and fixed
+idempotency keys; existing plans are returned untouched). It uses the existing
+product `OL_ENDOWMENT_STANDARD`, reuses any active ANNUAL installment rate for
+that product (e.g. `R-PROBE3`) and adds only the missing `QUARTERLY` and
+`HALF_YEARLY` seed rates to avoid violating the rate-table overlap constraint.
+
+The eight seeded plans (keys `mip-seed-scenario-1` … `-8`):
+
+1. **Standard active plan with mixed statuses** — QUARTERLY term 1; installment 1
+   paid, installment 2 missed by the detection batch, installments 3–4 scheduled;
+   plan `ACTIVE`.
+2. **Fully completed plan** — ANNUAL term 10; all ten installments confirmed
+   paid; plan `COMPLETED`, reconciliation `PASS`.
+3. **All payments missed** — QUARTERLY term 1; all four installments flagged
+   missed; plan `CREATED`.
+4. **Cancelled by admin** — QUARTERLY term 1; cancelled before any disbursement;
+   plan `CANCELLED`, all installments `WAIVED`.
+5. **Reversed payment** — HALF_YEARLY term 1; installment 1 paid and then
+   reversed within the window; plan `ACTIVE`, item restored to `SCHEDULED`.
+6. **Multi-currency plan** — USD policy, QUARTERLY term 1; installment 1 paid;
+   plan `ACTIVE` in `USD`.
+7. **Plan linked to a Maturity Claim** — claim-backed ANNUAL/QUARTERLY plan;
+   first payment activates the plan and moves the claim to
+   `PAID_VIA_INSTALLMENTS`.
+8. **Plan created from policy maturity only (no claim)** — ANNUAL term 10,
+   freshly `CREATED` with all installments scheduled.
+
+Failure proofs (attempted → expected code):
+
+- Create plan for an immature policy → `PLAN_POLICY_NOT_MATURED`.
+- Process payment for an already paid item → `INSTALLMENT_ITEM_INVALID_STATUS`.
+- Reverse a payment outside the window → `INSTALLMENT_REVERSAL_WINDOW_EXPIRED`.
+- Duplicate idempotent creation → idempotent replay returns the same plan with
+  zero new rows.
+
+Release documentation added:
+
+- `docs/OL_MATURITY_INSTALLMENTS_USER_GUIDE.md` — policyholder-facing guide.
+- `docs/OL_MATURITY_INSTALLMENTS_ADMIN_GUIDE.md` — operator/administrator guide.
+- `docs/OL_MATURITY_INSTALLMENTS_API.md` — full endpoint and permission reference.
+- `docs/OL_MATURITY_INSTALLMENTS_ERROR_CODES.md` — Error Coach code registry.
+- `docs/OL_MATURITY_INSTALLMENTS_CALCULATION_LOGIC.md` — rate resolution,
+  schedule geometry, rounding, reconciliation, and audit invariants.
+
+### Release fix (Prompt 11 verification)
+
+Seeding the completed plan surfaced a genuine gap: `confirm_item_payment`
+marked the plan `COMPLETED` but wrote no plan-level audit row, so
+`validate_audit_consistency` failed on completed plans. The fix adds a
+plan-level `INSTALLMENT_PLAN_COMPLETED` audit (actor, before/after, reason,
+source channel) mirroring `INSTALLMENT_PLAN_ACTIVATED`, and the QA matrix now
+asserts audit consistency passes for a fully completed plan.
