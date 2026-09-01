@@ -1,7 +1,7 @@
 # OL MATURITY INSTALLMENTS UI — PROMPT SERIES (10 prompts)
 
 - [x] Prompt 1 — Save Prompt Series + Maturity Installments UI Foundation and Contract-First API Layer
-- [ ] Prompt 2 — Maturity Installments List Page and Dashboard KPIs
+- [x] Prompt 2 — Maturity Installments List Page and Dashboard KPIs
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–10 will be appended `EXACTLY as provided` when the user
