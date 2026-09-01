@@ -191,12 +191,12 @@ class GCSubProductViewSet(viewsets.ModelViewSet):
 
 
 class GCProductViewSet(viewsets.ModelViewSet):
-    queryset = GCProduct.objects.select_related("sub_product").all()
+    queryset = GCProduct.objects.select_related("sub_product", "scheme_type_ref").all()
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardPagination
     search_fields = ["code", "name"]
-    filterset_fields = ["sub_product", "is_active", "currency"]
-    ordering = ["sub_product", "name"]
+    filterset_fields = ["scheme_type_ref", "sub_product", "is_active", "currency", "premium_basis", "requires_medical"]
+    ordering = ["scheme_type_ref", "name"]
 
     def get_serializer_class(self):
         if self.action == "list":
@@ -210,16 +210,16 @@ class GCRiderViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardPagination
     search_fields = ["code", "name"]
-    filterset_fields = ["rider_type", "is_mandatory", "is_active"]
+    filterset_fields = ["rider_type", "rider_category", "benefit_type", "requires_underwriting", "is_mandatory", "is_active"]
     ordering = ["rider_type", "name"]
 
 
 class GCRiderRateViewSet(viewsets.ModelViewSet):
-    queryset = GCRiderRate.objects.select_related("rider").all()
+    queryset = GCRiderRate.objects.select_related("rider", "product_ref").all()
     serializer_class = GCRiderRateSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardPagination
-    filterset_fields = ["rider", "gender", "is_active"]
+    filterset_fields = ["rider", "product_ref", "rate_type", "gender", "is_active"]
     ordering = ["rider", "age_band_start"]
 
 

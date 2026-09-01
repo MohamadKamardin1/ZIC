@@ -4,11 +4,15 @@ from .models import (
     GCHealthQuestion,
     GCHealthQuestionnaire,
     GCLookupValue,
+    GCProduct,
+    GCRider,
+    GCRiderRate,
     GCSchemeMemberStatus,
     GCSchemePremiumRate,
     GCSchemeRenewalStatus,
     GCSchemeStatus,
     GCSchemeType,
+    GCSubProduct,
 )
 
 
@@ -132,3 +136,71 @@ class GCLookupValueAdmin(admin.ModelAdmin):
     search_fields = ("category", "value", "label")
     ordering = ("category", "sort_order", "label")
     readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(GCSubProduct)
+class GCSubProductAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "is_active", "updated_at", "updated_by")
+    list_filter = ("is_active",)
+    search_fields = ("code", "name", "description")
+    ordering = ("name", "code")
+    readonly_fields = ("created_at", "updated_at", "created_by", "updated_by")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description")}),
+        ("Status", {"fields": ("is_active",)}),
+        ("Audit", {"fields": ("created_by", "updated_by", "created_at", "updated_at")}),
+    )
+
+
+@admin.register(GCProduct)
+class GCProductAdmin(admin.ModelAdmin):
+    list_display = (
+        "code", "name", "scheme_type_ref", "sub_product", "insurance_class",
+        "premium_basis", "requires_medical", "currency", "is_active", "updated_at",
+    )
+    list_filter = ("scheme_type_ref", "sub_product", "insurance_class", "premium_basis", "requires_medical", "is_active", "currency")
+    search_fields = ("code", "name", "description", "scheme_type_ref__code", "scheme_type_ref__name", "sub_product__code", "sub_product__name")
+    ordering = ("scheme_type_ref", "name")
+    list_select_related = ("scheme_type_ref", "sub_product")
+    readonly_fields = ("created_at", "updated_at", "created_by", "updated_by")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description")}),
+        ("Hierarchy", {"fields": ("scheme_type_ref", "sub_product")}),
+        ("Class", {"fields": ("insurance_class", "currency", "premium_basis", "requires_medical", "is_active")}),
+        ("Members & loan", {"fields": ("min_members", "max_members", "min_loan_amount", "max_loan_amount", "min_loan_term", "max_loan_term")}),
+        ("Eligibility", {"fields": ("min_entry_age", "max_entry_age", "max_cover_age", "free_cover_limit")}),
+        ("Audit", {"fields": ("created_by", "updated_by", "created_at", "updated_at")}),
+    )
+
+
+@admin.register(GCRider)
+class GCRiderAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "rider_category", "benefit_type", "requires_underwriting", "rider_type", "is_mandatory", "is_active", "updated_at")
+    list_filter = ("rider_category", "benefit_type", "requires_underwriting", "is_mandatory", "is_active")
+    search_fields = ("code", "name", "description")
+    ordering = ("rider_category", "name")
+    readonly_fields = ("created_at", "updated_at", "created_by", "updated_by")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description")}),
+        ("Benefit", {"fields": ("rider_category", "benefit_type", "requires_underwriting")}),
+        ("Legacy & status", {"fields": ("rider_type", "is_mandatory", "is_active")}),
+        ("Audit", {"fields": ("created_by", "updated_by", "created_at", "updated_at")}),
+    )
+
+
+@admin.register(GCRiderRate)
+class GCRiderRateAdmin(admin.ModelAdmin):
+    list_display = ("rider", "product_ref", "rate_type", "rate_value", "currency", "age_band_start", "age_band_end", "effective_from", "effective_to", "is_active")
+    list_filter = ("rate_type", "currency", "gender", "is_active", "rider")
+    search_fields = ("rider__code", "rider__name", "product_ref__code", "product_ref__name")
+    ordering = ("rider", "age_band_start")
+    list_select_related = ("rider", "product_ref")
+    readonly_fields = ("created_at", "updated_at", "created_by", "updated_by")
+    fieldsets = (
+        ("Scope", {"fields": ("rider", "product_ref")}),
+        ("Rate", {"fields": ("rate_value", "rate_type", "currency")}),
+        ("Dimensions", {"fields": ("age_band_start", "age_band_end", "gender")}),
+        ("Effective dating", {"fields": ("effective_from", "effective_to", "is_active")}),
+        ("Legacy values", {"fields": ("rate_per_mille", "flat_amount", "effective_date", "expiry_date")}),
+        ("Audit", {"fields": ("created_by", "updated_by", "created_at", "updated_at")}),
+    )

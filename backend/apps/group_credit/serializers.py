@@ -148,12 +148,17 @@ class GCSubProductSerializer(serializers.ModelSerializer):
 
 class GCRiderRateSerializer(serializers.ModelSerializer):
     gender_display = serializers.CharField(source="get_gender_display", read_only=True)
+    rate_type_display = serializers.CharField(source="get_rate_type_display", read_only=True)
+    product_name = serializers.ReadOnlyField(source="product_ref.name", default=None)
 
     class Meta:
         model = GCRiderRate
         fields = [
-            "id", "rider", "age_band_start", "age_band_end",
+            "id", "rider", "product_ref", "product_name",
+            "age_band_start", "age_band_end",
             "gender", "gender_display",
+            "rate_value", "rate_type", "rate_type_display", "currency",
+            "effective_from", "effective_to",
             "rate_per_mille", "flat_amount",
             "effective_date", "expiry_date", "is_active",
             "created_at", "updated_at",
@@ -163,12 +168,17 @@ class GCRiderRateSerializer(serializers.ModelSerializer):
 
 class GCRiderSerializer(serializers.ModelSerializer):
     rider_type_display = serializers.CharField(source="get_rider_type_display", read_only=True)
+    rider_category_display = serializers.CharField(source="get_rider_category_display", read_only=True)
+    benefit_type_display = serializers.CharField(source="get_benefit_type_display", read_only=True)
     rates = GCRiderRateSerializer(many=True, read_only=True)
 
     class Meta:
         model = GCRider
         fields = [
             "id", "code", "name", "description",
+            "rider_category", "rider_category_display",
+            "benefit_type", "benefit_type_display",
+            "requires_underwriting",
             "rider_type", "rider_type_display",
             "is_mandatory", "is_active", "rates",
             "created_at", "updated_at",
@@ -178,15 +188,22 @@ class GCRiderSerializer(serializers.ModelSerializer):
 
 class GCProductListSerializer(serializers.ModelSerializer):
     sub_product_name = serializers.ReadOnlyField(source="sub_product.name")
+    scheme_type_name = serializers.ReadOnlyField(source="scheme_type_ref.name")
+    premium_basis_display = serializers.CharField(source="get_premium_basis_display", read_only=True)
 
     class Meta:
         model = GCProduct
         fields = [
-            "id", "code", "name", "sub_product", "sub_product_name",
+            "id", "code", "name",
+            "scheme_type_ref", "scheme_type_name",
+            "sub_product", "sub_product_name",
+            "insurance_class", "currency", "premium_basis", "premium_basis_display",
+            "requires_medical",
             "min_members", "max_members",
             "min_loan_amount", "max_loan_amount",
+            "min_loan_term", "max_loan_term",
             "free_cover_limit", "min_entry_age", "max_entry_age", "max_cover_age",
-            "currency", "is_active",
+            "is_active",
             "created_at", "updated_at",
         ]
 
@@ -196,16 +213,25 @@ class GCProductDetailSerializer(serializers.ModelSerializer):
     sub_product_id = serializers.PrimaryKeyRelatedField(
         queryset=GCSubProduct.objects.all(), write_only=True, source="sub_product",
     )
+    scheme_type = GCSchemeTypeSerializer(read_only=True, source="scheme_type_ref")
+    scheme_type_id = serializers.PrimaryKeyRelatedField(
+        queryset=GCSchemeType.objects.all(), write_only=True, source="scheme_type_ref",
+    )
+    premium_basis_display = serializers.CharField(source="get_premium_basis_display", read_only=True)
 
     class Meta:
         model = GCProduct
         fields = [
             "id", "code", "name", "sub_product", "sub_product_id", "description",
+            "scheme_type", "scheme_type_id",
+            "insurance_class", "currency", "premium_basis", "premium_basis_display",
+            "requires_medical",
             "min_members", "max_members",
             "min_loan_amount", "max_loan_amount",
+            "min_loan_term", "max_loan_term",
             "min_entry_age", "max_entry_age", "max_cover_age",
             "free_cover_limit",
-            "currency", "is_active",
+            "is_active",
             "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]

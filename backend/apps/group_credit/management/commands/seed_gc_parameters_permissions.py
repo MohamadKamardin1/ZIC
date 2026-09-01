@@ -40,6 +40,10 @@ ENTITY_CODES = [
     "renewal_statuses",
     "health_questions",
     "health_questionnaires",
+    "sub_products",
+    "products",
+    "riders",
+    "rider_rates",
 ]
 
 ENTITY_ACTIONS = ["view", "create", "update", "deactivate"]
@@ -52,6 +56,10 @@ ENTITY_LABELS = {
     "renewal_statuses": "Scheme Renewal Statuses",
     "health_questions": "Health Questions",
     "health_questionnaires": "Health Questionnaires",
+    "sub_products": "Sub Products",
+    "products": "Products",
+    "riders": "Riders",
+    "rider_rates": "Rider Rates",
 }
 
 ENTITY_ACTION_LABELS = {

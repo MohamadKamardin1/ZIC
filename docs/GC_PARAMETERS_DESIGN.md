@@ -59,16 +59,38 @@ every create and update with before/after state and a reason.
 | `GCHealthQuestion` | `code`, `question_text`, `answer_type` (BOOLEAN/TEXT/CHOICE), `required`, `category`, `options`, `sort_order` | `answer_type` is the canonical spec field; legacy `question_type`/`is_required` retained. |
 | `GCHealthQuestionnaire` | `code`, `name`, `version`, `scheme_type_ref`, `questions` (M2M), `threshold_trigger_amount`, `effective_from` | `items` from the prompt is realized by the `questions` M2M. `threshold_trigger_amount` escalates above-cover questionnaires. |
 
-## 4. Permissions
+## 4. Product & Rider models (Prompt 2)
+
+Extends Layer 2 in place. Like Prompt 1, all four models inherit
+`GCParameterAuditMixin` and are added to the audit receivers.
+
+| Model | Key fields | Notes |
+|-------|-----------|-------|
+| `GCSubProduct` | `code`, `name`, `description`, `is_active` | `parent_product_ref` from the prompt is realized by the existing `GCProduct.sub_product` FK (a product belongs to a sub-product family); a second, inverted parent pointer would create a circular hierarchy, so it is intentionally not added. |
+| `GCProduct` | `code`, `name`, `scheme_type_ref`, `sub_product`, `insurance_class` (CREDIT_LIFE/GROUP_LIFE/GROUP_CREDIT/MEDICAL/ASSET/OTHER), `currency`, `premium_basis` (SINGLE/LEVEL), `requires_medical`, `min_entry_age`/`max_entry_age`, `min_loan_term`/`max_loan_term` (months), `min_loan_amount`/`max_loan_amount`, `free_cover_limit`, `is_active` | `scheme_type_ref` is `PROTECT` and nullable at the DB layer but required at the validation layer (matches the `GCSchemePremiumRate.scheme_type` pattern). `clean()` raises `PRODUCT_INVALID_SCHEME` when the scheme type is missing or inactive, and validates the age band and loan-term windows. `GCQuotation.product`, `GCScheme.product`, and `GCMedicalLimit.product` keep FK'ing into `GCProduct`. |
+| `GCRider` | `code`, `name`, `rider_category` (DISABILITY/ACCIDENTAL_DEATH/CRITICAL_ILLNESS/FUNERAL/RETRENCHMENT/OTHER), `benefit_type` (FIXED/PERCENTAGE), `requires_underwriting`, `is_active` | Legacy `rider_type`/`is_mandatory` retained. |
+| `GCRiderRate` | `rider`, `product_ref` (optional), `rate_value`, `rate_type` (PERCENTAGE/FIXED), `currency`, `effective_from`/`effective_to`, `is_active` | `product_ref` is optional so a rate may apply product-wide. `clean()` raises `RATE_MISMATCH` for negative values, a `PERCENTAGE` outside `(0, 100]`, or an invalid effective window. Legacy `rate_per_mille`/`flat_amount`/`effective_date`/`expiry_date` retained. |
+
+**Validation rules** — a product must reference an existing, active scheme type;
+rider rates must be positive, a `PERCENTAGE` rate must be `0 < value <= 100`, and
+the effective window must be valid. The structured error registry in
+`apps/group_credit/errors.py` exposes `SCHEME_NOT_FOUND` (404),
+`PRODUCT_INVALID_SCHEME` (422), `RATE_MISMATCH` (422), plus `PRODUCT_NOT_FOUND`,
+`RIDER_NOT_FOUND`, and `PRODUCT_CODE_CONFLICT`, with `GCParameterError` and
+`registry_error()` helpers for the API/service layer (used from Prompt 4).
+
+## 5. Permissions
 
 Registered idempotently by `manage.py seed_gc_parameters_permissions`:
 
 - Module codes: `gc_parameters.view`, `gc_parameters.manage`,
   `gc_parameters.configure`.
-- Entity codes per Scheme Setup entity (`scheme_types`, `scheme_rates`,
+- Entity codes per parameter entity (`scheme_types`, `scheme_rates`,
   `member_statuses`, `scheme_statuses`, `renewal_statuses`,
-  `health_questions`, `health_questionnaires`): `view`, `create`, `update`,
-  `deactivate` (e.g. `gc_parameters.scheme_types.create`).
+  `health_questions`, `health_questionnaires`, `sub_products`, `products`,
+  `riders`, `rider_rates`): `view`, `create`, `update`,
+  `deactivate` (e.g. `gc_parameters.scheme_types.create`). 47 permission
+  codes in total.
 - `PermissionGroup` `GC_PARAMETERS` plus three roles:
   `GC_PARAMETER_VIEWER`, `GC_PARAMETER_MANAGER`, `GC_PARAMETER_ADMINISTRATOR`.
 - Enforcement helper: `apps/group_credit/permissions.py`
@@ -76,14 +98,14 @@ Registered idempotently by `manage.py seed_gc_parameters_permissions`:
   `permissions.IsAuthenticated`; fine-grained parameter gating is layered in
   the API prompt.
 
-## 5. Audit logging
+## 6. Audit logging
 
 `apps/group_credit/audit_receivers.py` connects `pre_save`/`post_save` for all
 Layer-1 parameter models, writing `AuditLog` records with actor, before/after
 state, changed fields, reason, and source channel via `AuditService`. Seeds run
 under the `SYSTEM` source channel (no request actor).
 
-## 6. Integration map
+## 7. Integration map
 
 ```
 GCSchemeType ──┬── GCSchemePremiumRate (rates per scheme type / product)

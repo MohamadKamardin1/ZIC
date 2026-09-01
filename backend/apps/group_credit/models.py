@@ -380,7 +380,7 @@ class GCHealthQuestionnaire(GCParameterAuditMixin, models.Model):
 # LAYER 2 — PRODUCTS & RIDERS
 # =============================================================================
 
-class GCSubProduct(models.Model):
+class GCSubProduct(GCParameterAuditMixin, models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=200)
@@ -392,26 +392,74 @@ class GCSubProduct(models.Model):
     class Meta:
         db_table = "gc_sub_product"
         ordering = ["name"]
+        verbose_name_plural = "GC Sub Products"
 
     def __str__(self):
         return f"{self.code} - {self.name}"
 
+    def clean(self):
+        super().clean()
+        self.code = (self.code or "").strip()
+        self.name = (self.name or "").strip()
+        if not self.code:
+            raise ValidationError({"code": "A sub-product code is required."})
+        if not self.name:
+            raise ValidationError({"name": "A sub-product name is required."})
 
-class GCProduct(models.Model):
+
+class GCProduct(GCParameterAuditMixin, models.Model):
+    INSURANCE_CLASS_CHOICES = [
+        ("CREDIT_LIFE", "Credit Life"),
+        ("GROUP_LIFE", "Group Life"),
+        ("GROUP_CREDIT", "Group Credit"),
+        ("MEDICAL", "Medical"),
+        ("ASSET", "Asset / Loan Protection"),
+        ("OTHER", "Other"),
+    ]
+    PREMIUM_BASIS_CHOICES = [
+        ("SINGLE", "Single"),
+        ("LEVEL", "Level"),
+    ]
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     sub_product = models.ForeignKey(GCSubProduct, on_delete=models.PROTECT, related_name="products")
+    scheme_type_ref = models.ForeignKey(
+        GCSchemeType,
+        on_delete=models.PROTECT,
+        related_name="products",
+        blank=True,
+        null=True,
+        help_text="The scheme type this product is offered under; required at the validation layer.",
+    )
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
+    insurance_class = models.CharField(
+        max_length=30, choices=INSURANCE_CLASS_CHOICES, default="CREDIT_LIFE"
+    )
+    currency = models.CharField(max_length=10, default="TZS")
     min_members = models.IntegerField(default=1)
     max_members = models.IntegerField(blank=True, null=True)
     min_loan_amount = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0.00'))
     max_loan_amount = models.DecimalField(max_digits=18, decimal_places=2, blank=True, null=True)
+    min_loan_term = models.IntegerField(
+        default=1, help_text="Minimum loan term in months.",
+        validators=[MinValueValidator(0)],
+    )
+    max_loan_term = models.IntegerField(
+        default=360, help_text="Maximum loan term in months.",
+        validators=[MinValueValidator(0)],
+    )
     min_entry_age = models.IntegerField(default=18)
     max_entry_age = models.IntegerField(default=65)
     max_cover_age = models.IntegerField(default=70)
     free_cover_limit = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0.00'))
-    currency = models.CharField(max_length=10, default="TZS")
+    premium_basis = models.CharField(
+        max_length=10, choices=PREMIUM_BASIS_CHOICES, default="SINGLE",
+        help_text="Whether premium is collected as a single amount or as level instalments.",
+    )
+    requires_medical = models.BooleanField(
+        default=False, help_text="Whether medical underwriting is required for this product."
+    )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -423,8 +471,33 @@ class GCProduct(models.Model):
     def __str__(self):
         return f"{self.code} - {self.name}"
 
+    def clean(self):
+        super().clean()
+        self.code = (self.code or "").strip()
+        self.name = (self.name or "").strip()
+        if not self.code:
+            raise ValidationError({"code": "A product code is required."})
+        if not self.name:
+            raise ValidationError({"name": "A product name is required."})
+        if not self.scheme_type_ref_id:
+            raise ValidationError(
+                {"scheme_type_ref": "PRODUCT_INVALID_SCHEME: a product must reference a scheme type."}
+            )
+        if self.scheme_type_ref_id and not self.scheme_type_ref.is_active:
+            raise ValidationError(
+                {"scheme_type_ref": "PRODUCT_INVALID_SCHEME: the referenced scheme type must be active."}
+            )
+        if self.min_entry_age and self.max_entry_age and self.min_entry_age > self.max_entry_age:
+            raise ValidationError(
+                {"min_entry_age": "The minimum entry age cannot exceed the maximum entry age."}
+            )
+        if self.min_loan_term and self.max_loan_term and self.min_loan_term > self.max_loan_term:
+            raise ValidationError(
+                {"min_loan_term": "The minimum loan term cannot exceed the maximum loan term."}
+            )
 
-class GCRider(models.Model):
+
+class GCRider(GCParameterAuditMixin, models.Model):
     RIDER_TYPE_CHOICES = [
         ("PTD", "Permanent Total Disability"),
         ("PPD", "Permanent Partial Disability"),
@@ -433,10 +506,29 @@ class GCRider(models.Model):
         ("RET", "Retrenchment"),
         ("OTHER", "Other"),
     ]
+    RIDER_CATEGORY_CHOICES = [
+        ("DISABILITY", "Disability"),
+        ("ACCIDENTAL_DEATH", "Accidental Death"),
+        ("CRITICAL_ILLNESS", "Critical Illness"),
+        ("FUNERAL", "Funeral Expense"),
+        ("RETRENCHMENT", "Retrenchment"),
+        ("OTHER", "Other"),
+    ]
+    BENEFIT_TYPE_CHOICES = [
+        ("FIXED", "Fixed amount"),
+        ("PERCENTAGE", "Percentage of sum assured"),
+    ]
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
+    rider_category = models.CharField(
+        max_length=30, choices=RIDER_CATEGORY_CHOICES, default="OTHER"
+    )
+    benefit_type = models.CharField(
+        max_length=12, choices=BENEFIT_TYPE_CHOICES, default="FIXED"
+    )
+    requires_underwriting = models.BooleanField(default=True)
     rider_type = models.CharField(max_length=20, default="OTHER")
     is_mandatory = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
@@ -450,18 +542,50 @@ class GCRider(models.Model):
     def __str__(self):
         return f"{self.code} - {self.name}"
 
+    def clean(self):
+        super().clean()
+        self.code = (self.code or "").strip()
+        self.name = (self.name or "").strip()
+        if not self.code:
+            raise ValidationError({"code": "A rider code is required."})
+        if not self.name:
+            raise ValidationError({"name": "A rider name is required."})
 
-class GCRiderRate(models.Model):
+
+class GCRiderRate(GCParameterAuditMixin, models.Model):
     GENDER_CHOICES = [("M", "Male"), ("F", "Female"), ("U", "Unisex")]
+    RATE_TYPE_CHOICES = [
+        ("PERCENTAGE", "Percentage of sum assured"),
+        ("FIXED", "Fixed amount"),
+    ]
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     rider = models.ForeignKey(GCRider, on_delete=models.CASCADE, related_name="rates")
+    product_ref = models.ForeignKey(
+        GCProduct,
+        on_delete=models.PROTECT,
+        related_name="rider_rates",
+        null=True,
+        blank=True,
+        help_text="Optional product scope; blank means the rider rate applies across products.",
+    )
     age_band_start = models.IntegerField(validators=[MinValueValidator(0)])
     age_band_end = models.IntegerField(validators=[MaxValueValidator(120)])
     gender = models.CharField(max_length=10, default="U")
-    rate_per_mille = models.DecimalField(max_digits=10, decimal_places=4, default=Decimal('0.0000'))
-    flat_amount = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0.00'))
-    effective_date = models.DateField()
-    expiry_date = models.DateField(blank=True, null=True)
+    rate_value = models.DecimalField(
+        max_digits=18, decimal_places=6, default=Decimal('0.000000'),
+        help_text="Canonical rate value: a percentage of sum assured, or a fixed amount.",
+    )
+    rate_type = models.CharField(max_length=12, choices=RATE_TYPE_CHOICES, default="FIXED")
+    currency = models.CharField(max_length=10, default="TZS")
+    effective_from = models.DateField(blank=True, null=True)
+    effective_to = models.DateField(blank=True, null=True)
+    rate_per_mille = models.DecimalField(max_digits=10, decimal_places=4, default=Decimal('0.0000'),
+                                         help_text="Legacy per-mille rate retained for compatibility.")
+    flat_amount = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0.00'),
+                                      help_text="Legacy flat amount retained for compatibility.")
+    effective_date = models.DateField(help_text="Legacy effective date retained for compatibility.")
+    expiry_date = models.DateField(blank=True, null=True,
+                                   help_text="Legacy expiry date retained for compatibility.")
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -469,9 +593,28 @@ class GCRiderRate(models.Model):
     class Meta:
         db_table = "gc_rider_rate"
         ordering = ["rider", "age_band_start"]
+        indexes = [
+            models.Index(fields=["rider", "product_ref"], name="gc_rider_rate_scope_idx"),
+        ]
 
     def __str__(self):
         return f"{self.rider.name} ({self.age_band_start}-{self.age_band_end})"
+
+    def clean(self):
+        super().clean()
+        if self.rate_value is not None and self.rate_value < 0:
+            raise ValidationError(
+                {"rate_value": "RATE_MISMATCH: a rider rate cannot be negative."}
+            )
+        if self.rate_type == "PERCENTAGE" and self.rate_value is not None:
+            if self.rate_value <= 0 or self.rate_value > 100:
+                raise ValidationError(
+                    {"rate_value": "RATE_MISMATCH: a percentage rate must be greater than zero and no greater than 100."}
+                )
+        if self.effective_from and self.effective_to and self.effective_from > self.effective_to:
+            raise ValidationError(
+                {"effective_from": "RATE_MISMATCH: the effective-from date cannot be after the effective-to date."}
+            )
 
 
 # =============================================================================

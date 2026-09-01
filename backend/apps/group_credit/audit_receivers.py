@@ -9,11 +9,15 @@ from .models import (
     GCHealthQuestion,
     GCHealthQuestionnaire,
     GCLookupValue,
+    GCProduct,
+    GCRider,
+    GCRiderRate,
     GCSchemeMemberStatus,
     GCSchemePremiumRate,
     GCSchemeRenewalStatus,
     GCSchemeStatus,
     GCSchemeType,
+    GCSubProduct,
 )
 
 AUDITED_MODELS = (
@@ -25,6 +29,10 @@ AUDITED_MODELS = (
     GCHealthQuestion,
     GCHealthQuestionnaire,
     GCLookupValue,
+    GCSubProduct,
+    GCProduct,
+    GCRider,
+    GCRiderRate,
 )
 
 
