@@ -10,6 +10,7 @@
 - [x] Prompt 8 — Implement Documents and Print Engine
 - [x] Prompt 9 — Implement Policy, Claims, Portal and Notification Integrations
 - [x] Prompt 10 — Full Lifecycle Test Matrix and Audit Verification
+- [ ] Prompt 11 — Seed Scenarios, Documentation and Release
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–12 will be appended `EXACTLY as provided` when the user
@@ -453,4 +454,63 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: coverage summary, security findings fixed, audit evidence, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 11/12 — Seed Scenarios, Documentation and Release
+
+```text
+You are a senior Django release engineer. Complete the ZIC OL Maturity Installments backend. Execute ONLY Prompt 11.
+
+MANDATORY RULES:
+- Seed realistic data covering all states.
+- Document everything.
+- Commit and push; tick final checkbox; all 12 checkboxes ticked at the end.
+
+OBJECTIVE:
+Seed scenarios, document, and release the maturity installments backend.
+
+SCOPE:
+1. Seed exactly 8 plans via different paths:
+   1 standard active plan with mixed statuses (paid/missed).
+   2 fully completed plan.
+   3 plan with all payments missed.
+   4 plan cancelled by admin.
+   5 plan with reversed payment.
+   6 multi-currency plan.
+   7 plan linked to Maturity Claim.
+   8 plan created from policy maturity (no claim).
+2. Attempt and catch failure scenarios with proof payloads:
+   - create plan for immature policy
+   - process payment for already paid item
+   - reverse outside window
+   - duplicate idempotent creation
+3. Documentation:
+   - docs/OL_MATURITY_INSTALLMENTS_USER_GUIDE.md
+   - docs/OL_MATURITY_INSTALLMENTS_ADMIN_GUIDE.md
+   - docs/OL_MATURITY_INSTALLMENTS_API.md
+   - docs/OL_MATURITY_INSTALLMENTS_ERROR_CODES.md
+   - docs/OL_MATURITY_INSTALLMENTS_CALCULATION_LOGIC.md
+4. Final verification: backend lint/typecheck/tests green.
+
+GIT:
+- commit: "feat(ol-maturity-installments): seed scenarios docs and release"
+- push; if blocked create feature/ol-maturity-installments-complete and push
+- tag v1.10.0-ol-maturity-installments-backend if tagging convention exists
+
+FINAL OUTPUT:
+Return the FULL maturity installments backend summary:
+- models
+- endpoints
+- calculation logic
+- integration points
+- seed results
+- failure proofs
+- audit consistency
+- docs added
+- all 12 checkboxes ticked
+- commit hash/tag
+- pushed branch
+- next recommended module: OL Maturity Installments UI.
 ```
