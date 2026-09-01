@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter, Route, Routes, useParams } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import type { MIPlanDetail as MIPlanDetailType, MIPlanItem, MIPlanItemPage } from "../../lib/maturityInstallments"
+import type { MIBankAccount, MIPlanDetail as MIPlanDetailType, MIPlanItem, MIPlanItemPage } from "../../lib/maturityInstallments"
 
 const { useMIPlanDetailMock, useMIPlanItemsMock, processMIPaymentMock, reverseMIPaymentMock, cancelMIPlanMock, printMIScheduleMock, printMIAdviceMock, toastMock } = vi.hoisted(() => ({
   useMIPlanDetailMock: vi.fn(),
@@ -101,6 +101,10 @@ const baseDetail = (overrides: Partial<MIPlanDetailType> = {}): MIPlanDetailType
   documents: [
     { id: "doc-plan-active-1-schedule", documentType: "OL_MATURITY_SCHEDULE", templateName: "OL Maturity Schedule", templateVersion: 1, pageCount: 2, generatedByDisplay: "Sultan Admin", generatedAt: "2026-09-01T08:00:00Z", previewUrl: "/api/v1/documents/instances/doc-plan-active-1-schedule/preview/", signedDownloadUrl: "/api/v1/documents/instances/doc-plan-active-1-schedule/download/?ticket=mock-schedule-plan-active-1" },
   ],
+  bankAccounts: [
+    { id: "ba-plan-active-1-1", accountName: "Amani Salum — Maturity", accountNumber: "0151234567891", bankName: "NMB Bank", branch: "Dar es Salaam", isDefault: true, availableBalance: "75000000.00" },
+    { id: "ba-plan-active-1-2", accountName: "Amani Salum", accountNumber: "0169876543210", bankName: "CRDB Bank", branch: "Dar es Salaam", isDefault: false, availableBalance: "0.00" },
+  ],
   ...overrides,
 })
 
@@ -158,6 +162,18 @@ function renderDetail(detail = baseDetail(), withPolicyRoute = false) {
       </MemoryRouter>
     </QueryClientProvider>
   )
+}
+
+async function selectSmartOption(dialog: HTMLElement, fieldName: RegExp, optionName: RegExp) {
+  fireEvent.click(within(dialog).getByRole("button", { name: fieldName }))
+  fireEvent.click(await screen.findByRole("option", { name: optionName }))
+}
+
+async function completeCashFlow(dialog: HTMLElement, submitName: string) {
+  await selectSmartOption(dialog, /Payment method/, /^Cash$/)
+  fireEvent.click(within(dialog).getByRole("button", { name: "Next" }))
+  await screen.findByText(/This will create a payment requisition in the Front Office/)
+  fireEvent.click(within(dialog).getByRole("button", { name: submitName }))
 }
 
 describe("OL Maturity Installments detail (Prompt 3 master-detail)", () => {
@@ -267,7 +283,7 @@ describe("OL Maturity Installments detail (Prompt 3 master-detail)", () => {
     expect(screen.getByRole("button", { name: "Print Advice" })).toBeInTheDocument()
   })
 
-  it("processes the next due installment through the confirm modal", async () => {
+  it("processes the next due installment through the payment modal", async () => {
     processMIPaymentMock.mockResolvedValue({ item: { id: "plan-active-1-item-2" }, created: true })
     useMIPlanDetailMock.mockReturnValue({ data: baseDetail(), isLoading: false, error: null })
     const user = userEvent.setup()
@@ -275,10 +291,11 @@ describe("OL Maturity Installments detail (Prompt 3 master-detail)", () => {
     await screen.findByText("MIP-20260901-9DD41C66AF")
     await user.click(screen.getByRole("button", { name: "Process Payment" }))
     const dialog = await screen.findByRole("dialog")
-    expect(within(dialog).getByText(/Installment 2 of/)).toBeInTheDocument()
-    await user.click(within(dialog).getByRole("button", { name: "Process payment" }))
-    await waitFor(() => expect(processMIPaymentMock).toHaveBeenCalledWith("plan-active-1-item-2"))
-    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ tone: "success", title: "Payment processed" }))
+    expect(within(dialog).getByText(/Installment 2 — due/)).toBeInTheDocument()
+    await completeCashFlow(dialog, "Process payment")
+    await waitFor(() => expect(processMIPaymentMock).toHaveBeenCalledWith("plan-active-1-item-2", expect.objectContaining({ paymentMethod: "CASH" })))
+    expect(within(dialog).getByText("Payment Requisition Created")).toBeInTheDocument()
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ tone: "success", title: "Payment Requisition Created" }))
   })
 
   it("withholds action buttons and document prints the user lacks permission for", async () => {
@@ -353,7 +370,7 @@ describe("OL Maturity Installments detail (Prompt 3 master-detail)", () => {
     expect(screen.getAllByText(/90,000,000\.00/).length).toBeGreaterThan(0)
   })
 
-  it("processes a scheduled installment from its row action", async () => {
+  it("completes the payment modal flow for a scheduled installment with bank transfer details", async () => {
     processMIPaymentMock.mockResolvedValue({ item: { id: "plan-long-term-1-item-4" }, created: true })
     useMIPlanDetailMock.mockReturnValue({ data: longTermDetail, isLoading: false, error: null })
     const user = userEvent.setup()
@@ -362,10 +379,21 @@ describe("OL Maturity Installments detail (Prompt 3 master-detail)", () => {
     await screen.findByText("Installment schedule")
     await user.click(screen.getByRole("button", { name: "Process payment for installment 4" }))
     const dialog = await screen.findByRole("dialog")
-    expect(within(dialog).getByText(/Installment 4 of/)).toBeInTheDocument()
-    await user.click(within(dialog).getByRole("button", { name: "Process payment" }))
-    await waitFor(() => expect(processMIPaymentMock).toHaveBeenCalledWith("plan-long-term-1-item-4"))
-    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ tone: "success", title: "Payment processed" }))
+    expect(within(dialog).getByText(/Installment 4 — due 15 Mar 2029/)).toBeInTheDocument()
+    expect(within(dialog).getAllByText(/5,000,000\.00/).length).toBeGreaterThan(0)
+
+    await selectSmartOption(dialog, /Payment method/, /^Bank Transfer$/)
+    await selectSmartOption(dialog, /Bank account/, /NMB Bank 0151234567891/)
+    fireEvent.change(within(dialog).getByLabelText(/Reference number/), { target: { value: "REF-2026-001" } })
+    fireEvent.click(within(dialog).getByRole("button", { name: "Next" }))
+    await screen.findByText(/This will create a payment requisition in the Front Office/)
+    expect(within(dialog).getAllByText("Bank Transfer").length).toBeGreaterThan(0)
+    expect(within(dialog).getAllByText(/NMB Bank 0151234567891/).length).toBeGreaterThan(0)
+    fireEvent.click(within(dialog).getByRole("button", { name: "Process payment" }))
+
+    await waitFor(() => expect(processMIPaymentMock).toHaveBeenCalledWith("plan-long-term-1-item-4", expect.objectContaining({ paymentMethod: "BANK_TRANSFER", referenceNumber: "REF-2026-001", bankAccountId: "ba-plan-active-1-1" })))
+    expect(within(dialog).getByText("Payment Requisition Created")).toBeInTheDocument()
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ tone: "success", title: "Payment Requisition Created" }))
   })
 
   it("reverses a paid installment from its row action after capturing a reason", async () => {
@@ -383,7 +411,7 @@ describe("OL Maturity Installments detail (Prompt 3 master-detail)", () => {
     expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ tone: "success", title: "Payment reversed" }))
   })
 
-  it("processes selected installments in bulk from the schedule toolbar", async () => {
+  it("processes selected installments in bulk through the payment modal", async () => {
     processMIPaymentMock.mockResolvedValue({ item: { id: "plan-long-term-1-item-4" }, created: true })
     useMIPlanDetailMock.mockReturnValue({ data: longTermDetail, isLoading: false, error: null })
     const user = userEvent.setup()
@@ -393,8 +421,60 @@ describe("OL Maturity Installments detail (Prompt 3 master-detail)", () => {
     await user.click(screen.getByRole("checkbox", { name: "Select installment 4" }))
     await user.click(screen.getByRole("checkbox", { name: "Select installment 5" }))
     await user.click(screen.getByRole("button", { name: /Process Selected/ }))
-    await waitFor(() => expect(processMIPaymentMock).toHaveBeenCalledWith("plan-long-term-1-item-4"))
-    await waitFor(() => expect(processMIPaymentMock).toHaveBeenCalledWith("plan-long-term-1-item-5"))
-    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ tone: "success", title: "Payments processed" }))
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText("Process 2 installment payments")).toBeInTheDocument()
+    expect(within(dialog).getByText(/Installment 4 — due/)).toBeInTheDocument()
+    expect(within(dialog).getByText(/Installment 5 — due/)).toBeInTheDocument()
+    await completeCashFlow(dialog, "Process 2 payments")
+    await waitFor(() => expect(processMIPaymentMock).toHaveBeenCalledWith("plan-long-term-1-item-4", expect.objectContaining({ paymentMethod: "CASH" })))
+    await waitFor(() => expect(processMIPaymentMock).toHaveBeenCalledWith("plan-long-term-1-item-5", expect.objectContaining({ paymentMethod: "CASH" })))
+    expect(within(dialog).getByText("Payment Requisition Created")).toBeInTheDocument()
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ tone: "success", title: "Payment Requisition Created" }))
+  })
+
+  it("requires a partner bank account and reference for bank transfer payments", async () => {
+    useMIPlanDetailMock.mockReturnValue({ data: longTermDetail, isLoading: false, error: null })
+    const user = userEvent.setup()
+    renderDetail()
+    await user.click(screen.getByRole("button", { name: "Schedule" }))
+    await screen.findByText("Installment schedule")
+    await user.click(screen.getByRole("button", { name: "Process payment for installment 4" }))
+    const dialog = await screen.findByRole("dialog")
+    await selectSmartOption(dialog, /Payment method/, /^Bank Transfer$/)
+    fireEvent.click(within(dialog).getByRole("button", { name: "Next" }))
+    expect(within(dialog).getByText("Select the partner bank account that will fund this disbursement.")).toBeInTheDocument()
+    expect(within(dialog).getByText("A bank transfer or cheque reference is required for this payment method.")).toBeInTheDocument()
+    expect(within(dialog).queryByText(/This will create a payment requisition in the Front Office/)).not.toBeInTheDocument()
+    expect(processMIPaymentMock).not.toHaveBeenCalled()
+  })
+
+  it("shows the success state for a processed installment", async () => {
+    processMIPaymentMock.mockResolvedValue({ item: { id: "plan-long-term-1-item-4", status: "PAYMENT_PENDING" }, created: true })
+    useMIPlanDetailMock.mockReturnValue({ data: longTermDetail, isLoading: false, error: null })
+    const user = userEvent.setup()
+    renderDetail()
+    await user.click(screen.getByRole("button", { name: "Schedule" }))
+    await screen.findByText("Installment schedule")
+    await user.click(screen.getByRole("button", { name: "Process payment for installment 4" }))
+    const dialog = await screen.findByRole("dialog")
+    await completeCashFlow(dialog, "Process payment")
+    await waitFor(() => expect(processMIPaymentMock).toHaveBeenCalledWith("plan-long-term-1-item-4", expect.objectContaining({ paymentMethod: "CASH" })))
+    expect(within(dialog).getByText("Payment Requisition Created")).toBeInTheDocument()
+    expect(within(dialog).getByText(/Installment 4 on MIP-20260101-5A1B2C3D4E are now payment pending/)).toBeInTheDocument()
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ tone: "success", title: "Payment Requisition Created" }))
+  })
+
+  it("surfaces an error coach when the partner bank has insufficient funds", async () => {
+    processMIPaymentMock.mockRejectedValue(new Error("Insufficient funds in partner bank for this disbursement."))
+    useMIPlanDetailMock.mockReturnValue({ data: longTermDetail, isLoading: false, error: null })
+    const user = userEvent.setup()
+    renderDetail()
+    await user.click(screen.getByRole("button", { name: "Schedule" }))
+    await screen.findByText("Installment schedule")
+    await user.click(screen.getByRole("button", { name: "Process payment for installment 4" }))
+    const dialog = await screen.findByRole("dialog")
+    await completeCashFlow(dialog, "Process payment")
+    expect(await screen.findByText("Insufficient funds in partner bank for this disbursement.")).toBeInTheDocument()
+    expect(within(dialog).getByText("Payment requisition not created")).toBeInTheDocument()
   })
 })

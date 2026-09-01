@@ -20,6 +20,9 @@ export type MIPlanStatus = (typeof MI_PLAN_STATUSES)[number] | string
 export const MI_ITEM_STATUSES = ["SCHEDULED", "PAYMENT_PENDING", "PAID", "MISSED", "WAIVED"] as const
 export type MIItemStatus = (typeof MI_ITEM_STATUSES)[number] | string
 
+export const MI_PAYMENT_METHODS = ["CASH", "BANK_TRANSFER", "CHEQUE"] as const
+export type MIPaymentMethod = (typeof MI_PAYMENT_METHODS)[number] | string
+
 export const MI_FREQUENCIES = ["SINGLE", "MONTHLY", "QUARTERLY", "HALF_YEARLY", "ANNUAL"] as const
 export type MIFrequency = (typeof MI_FREQUENCIES)[number] | string
 
@@ -111,6 +114,18 @@ export interface MIPlanItem {
   payerDisplay: string | null
   paymentReference: string | null
   narration: string
+  paymentMethod?: string | null
+  bankAccountDisplay?: string | null
+}
+
+export interface MIBankAccount {
+  id: string
+  accountName: string
+  accountNumber: string
+  bankName: string
+  branch?: string | null
+  isDefault: boolean
+  availableBalance?: string | null
 }
 
 export interface MIPaymentHistoryEntry {
@@ -193,6 +208,7 @@ export interface MIPlanDetail extends MIPlanRecord {
   documents: MIPlanDocument[]
   auditHistory: MIPlanAuditEntry[]
   statusHistory: MIPlanStatusHistoryEntry[]
+  bankAccounts: MIBankAccount[]
 }
 
 export interface MIPlanKpis {
@@ -227,6 +243,12 @@ export interface MIPaymentResult {
   confirmed?: boolean
   created?: boolean
   [key: string]: unknown
+}
+
+export interface MIProcessPaymentDetails {
+  paymentMethod?: string
+  referenceNumber?: string
+  bankAccountId?: string
 }
 
 export interface MIReversePayload {
@@ -334,6 +356,20 @@ export function normalizeMIPlanItem(row: Record<string, unknown>): MIPlanItem {
     payerDisplay: nullableString(row, "payerDisplay", "payer_display", "payer"),
     paymentReference: nullableString(row, "paymentReference", "payment_reference"),
     narration: stringValue(row, "narration"),
+    paymentMethod: nullableString(row, "paymentMethod", "payment_method"),
+    bankAccountDisplay: nullableString(row, "bankAccountDisplay", "bank_account_display"),
+  }
+}
+
+function normalizeMIBankAccount(row: Record<string, unknown>): MIBankAccount {
+  return {
+    id: stringValue(row, "id", "uuid"),
+    accountName: stringValue(row, "accountName", "account_name"),
+    accountNumber: stringValue(row, "accountNumber", "account_number"),
+    bankName: stringValue(row, "bankName", "bank_name"),
+    branch: nullableString(row, "branch"),
+    isDefault: booleanValue(row, "isDefault", "is_default"),
+    availableBalance: nullableString(row, "availableBalance", "available_balance"),
   }
 }
 
@@ -488,6 +524,7 @@ export function normalizeMIPlanDetail(payload: unknown): MIPlanDetail {
     documents: arrayValue(record, "documents").filter(isRecord).map(normalizeMIPlanDocument),
     auditHistory: arrayValue(record, "auditHistory", "audit_history").filter(isRecord).map(normalizeMIPlanAuditEntry),
     statusHistory: arrayValue(record, "statusHistory", "status_history").filter(isRecord).map(normalizeMIPlanStatusHistoryEntry),
+    bankAccounts: arrayValue(record, "bankAccounts", "bank_accounts").filter(isRecord).map(normalizeMIBankAccount),
   }
 }
 
@@ -661,9 +698,14 @@ export function createMIPlan(payload: MIPlanCreatePayload, idempotencyKey: strin
   }).then(normalizeMIPlanCreateResult)
 }
 
-export function processMIPayment(itemId: string): Promise<MIPaymentResult> {
+export function processMIPayment(itemId: string, details: MIProcessPaymentDetails = {}): Promise<MIPaymentResult> {
+  const body: Record<string, unknown> = {}
+  if (details.paymentMethod) body.payment_method = details.paymentMethod
+  if (details.referenceNumber) body.reference_number = details.referenceNumber
+  if (details.bankAccountId) body.bank_account_id = details.bankAccountId
   return request<unknown>(`${MATURITY_INSTALLMENTS_API_PREFIX}/items/${encodeURIComponent(itemId)}/process-payment/`, {
     method: "POST",
+    body: JSON.stringify(body),
   }).then((payload) => normalizePaymentResult(isRecord(payload) ? payload : { item: payload }))
 }
 

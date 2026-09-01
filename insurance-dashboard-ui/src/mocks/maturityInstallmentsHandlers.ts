@@ -16,6 +16,18 @@ export type MIPlanMockItem = {
   payer_display: string | null
   payment_reference: string | null
   narration: string
+  payment_method: string | null
+  bank_account_display: string | null
+}
+
+export type MIPlanMockAccount = {
+  id: string
+  account_name: string
+  account_number: string
+  bank_name: string
+  branch: string | null
+  is_default: boolean
+  available_balance: string
 }
 
 export type MIPlanMockRow = {
@@ -50,6 +62,7 @@ export type MIPlanMockRow = {
   source_channel_display: string
   parameter_snapshot: Record<string, unknown>
   items: MIPlanMockItem[]
+  bank_accounts: MIPlanMockAccount[]
   documents: MIPlanMockDocument[]
   created_at: string
   updated_at: string
@@ -117,7 +130,17 @@ function item(planId: string, number: number, dueDate: string, amount: string, s
     payer_display: null,
     payment_reference: null,
     narration: "",
+    payment_method: null,
+    bank_account_display: null,
   }
+}
+
+function bankAccountsFor(planId: string, holder: string): MIPlanMockAccount[] {
+  const name = holder.split(" — ")[0] ?? holder
+  return [
+    { id: `ba-${planId}-1`, account_name: `${name} — Maturity`, account_number: "0151234567891", bank_name: "NMB Bank", branch: "Dar es Salaam", is_default: true, available_balance: "75000000.00" },
+    { id: `ba-${planId}-2`, account_name: name, account_number: "0169876543210", bank_name: "CRDB Bank", branch: "Dar es Salaam", is_default: false, available_balance: "0.00" },
+  ]
 }
 
 function plan(
@@ -169,6 +192,7 @@ function plan(
       product_code: "OL_ENDOWMENT_STANDARD",
     },
     items,
+    bank_accounts: bankAccountsFor(partial.id, partial.policyholder_name),
     documents: [
       {
         id: `doc-${partial.id}-schedule`,
@@ -292,6 +316,7 @@ function clonePlans(rows: MIPlanMockRow[]): MIPlanMockRow[] {
     allowed_actions: [...row.allowed_actions],
     parameter_snapshot: { ...row.parameter_snapshot },
     items: row.items.map((itemRow) => ({ ...itemRow })),
+    bank_accounts: row.bank_accounts.map((accountRow) => ({ ...accountRow })),
     documents: row.documents.map((documentRow) => ({ ...documentRow })),
   }))
 }
@@ -433,6 +458,7 @@ function planDetailFor(row: MIPlanMockRow) {
     calculation_source_display: row.claim_number ? "Maturity Claim" : "Rate Table",
     parameter_snapshot: row.parameter_snapshot,
     items: row.items.map((it) => ({ ...it })),
+    bank_accounts: row.bank_accounts,
     payment_history: row.items.filter((it) => it.status === "PAID").map((it) => ({
       installment_number: it.installment_number,
       due_date: it.due_date,
@@ -639,13 +665,26 @@ export const maturityInstallmentsHandlers = [
     plans.push(created)
     return data({ plan: planDetailFor(created), created: true }, 201)
   }),
-  http.post(`*${BASE}/items/:itemId/process-payment/`, ({ params }) => {
+  http.post(`*${BASE}/items/:itemId/process-payment/`, async ({ params, request }) => {
+    const body = await request.json().catch(() => null) as Record<string, unknown> | null
     const found = findItem(String(params.itemId))
     if (!found) return error(404, "INSTALLMENT_ITEM_NOT_FOUND", "The requested installment item could not be found.", ["Return to the plan schedule and choose an available installment."])
-    const { item: it } = found
+    const { plan: row, item: it } = found
     if (it.status === "PAID") return error(422, "INSTALLMENT_ITEM_INVALID_STATUS", "A disbursement is only possible for an installment that is not already paid.", ["Review the installment status in the plan schedule.", "Open the payment history to confirm the earlier disbursement."], { currentStatus: "PAID" })
     if (it.status === "PAYMENT_PENDING" && it.requisition_number) {
       return data({ item: { ...it }, requisition: { requisition_number: it.requisition_number, status: "PENDING", status_display: "Pending", amount: it.amount, department: "MATURITY_INSTALLMENTS" }, created: false }, 200)
+    }
+    const paymentMethod = String(body?.payment_method ?? "").toUpperCase()
+    const referenceNumber = String(body?.reference_number ?? "").trim()
+    const bankAccountId = String(body?.bank_account_id ?? "").trim()
+    if (!paymentMethod) return error(400, "INSTALLMENT_PAYMENT_METHOD_REQUIRED", "A payment method is required to raise a disbursement requisition.", ["Choose Cash, Bank Transfer, or Cheque in the payment modal.", "Retry the request with a supported payment method."])
+    if (!["CASH", "BANK_TRANSFER", "CHEQUE"].includes(paymentMethod)) return error(400, "INSTALLMENT_INVALID_PAYMENT_METHOD", "The payment method is not supported.", ["Choose Cash, Bank Transfer, or Cheque in the payment modal."], { paymentMethod })
+    if (paymentMethod !== "CASH") {
+      if (!bankAccountId) return error(422, "INSTALLMENT_BANK_ACCOUNT_REQUIRED", "A partner bank account is required for this payment method.", ["Select the partner's bank account that will fund the disbursement.", "Add the bank account if it is not yet on the partner profile."])
+      const account = (row.bank_accounts ?? []).find((bankAccount) => bankAccount.id === bankAccountId)
+      if (!account) return error(422, "INSTALLMENT_BANK_ACCOUNT_NOT_FOUND", "The selected bank account does not exist on the partner profile.", ["Choose a bank account from the partner's registered accounts."], { bankAccountId })
+      if (!referenceNumber) return error(422, "INSTALLMENT_PAYMENT_REFERENCE_REQUIRED", "A payment reference is required for bank transfer or cheque disbursements.", ["Enter the bank transfer or cheque number that identifies the disbursement."])
+      if (Number(it.amount) > Number(account.available_balance ?? "0")) return error(422, "INSTALLMENT_PARTNER_BANK_INSUFFICIENT_FUNDS", "Insufficient funds in partner bank for this disbursement.", ["Select a different partner bank account with sufficient available balance.", "Ask the partner to top up the selected account before disbursing."], { availableBalance: account.available_balance, requiredAmount: it.amount })
     }
     if (it.due_date && it.due_date > todayIso()) {
       return error(422, "INSTALLMENT_PAYMENT_NOT_DUE", "This installment is not due for disbursement yet.", ["Check the installment due date in the plan schedule.", "Process the payment once the due date arrives."], { dueDate: it.due_date, today: todayIso() })
@@ -654,7 +693,11 @@ export const maturityInstallmentsHandlers = [
       it.status = "PAYMENT_PENDING"
       it.status_display = itemStatusLabel("PAYMENT_PENDING")
       it.requisition_number = `FO-MIP-2026-0000${String(400 + found.plan.items.indexOf(it)).padStart(2, "0")}`
-      found.plan.updated_at = new Date().toISOString()
+      it.payment_method = paymentMethod
+      it.payment_reference = referenceNumber || it.payment_reference
+      const account = paymentMethod !== "CASH" ? (row.bank_accounts ?? []).find((bankAccount) => bankAccount.id === bankAccountId) : undefined
+      it.bank_account_display = account ? `${account.bank_name} ${account.account_number}` : null
+      row.updated_at = new Date().toISOString()
       return data({ item: { ...it }, requisition: { requisition_number: it.requisition_number, status: "PENDING", status_display: "Pending", amount: it.amount, department: "MATURITY_INSTALLMENTS" }, created: true }, 201)
     }
     return error(422, "INSTALLMENT_ITEM_INVALID_STATUS", "A disbursement is not possible in the installment's current state.", ["Review the installment status in the plan schedule."], { currentStatus: it.status })

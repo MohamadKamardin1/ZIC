@@ -84,6 +84,8 @@ describe("OL Maturity Installments MSW contract", () => {
     expect(body.data.items[1]).toMatchObject({ installment_number: 2, status: "MISSED" })
     expect(body.data.payment_history).toHaveLength(1)
     expect(body.data.reconciliation).toMatchObject({ status: "FAIL", missing_amount: "46875000.00" })
+    expect(body.data.bank_accounts).toHaveLength(2)
+    expect(body.data.bank_accounts[0]).toMatchObject({ bank_name: "NMB Bank", account_number: "0151234567891", is_default: true })
   })
 
   it("serves installment items with server-side pagination and whole-schedule totals", async () => {
@@ -113,6 +115,37 @@ describe("OL Maturity Installments MSW contract", () => {
 
     const missing = await fetch(`${BASE}/plan-unknown-1/items/`)
     expect(missing.status).toBe(404)
+  })
+
+  it("strictly validates payment processing and stores the disbursement method", async () => {
+    const url = `${BASE}/items/plan-reversed-1-item-1/process-payment/`
+    const json = { "Content-Type": "application/json" }
+
+    const missingMethod = await fetch(url, { method: "POST", headers: json, body: JSON.stringify({}) })
+    expect(missingMethod.status).toBe(400)
+    expect(await missingMethod.json()).toMatchObject({ errorCode: "INSTALLMENT_PAYMENT_METHOD_REQUIRED" })
+
+    const missingBank = await fetch(url, { method: "POST", headers: json, body: JSON.stringify({ payment_method: "BANK_TRANSFER" }) })
+    expect(missingBank.status).toBe(422)
+    expect(await missingBank.json()).toMatchObject({ errorCode: "INSTALLMENT_BANK_ACCOUNT_REQUIRED" })
+
+    const missingReference = await fetch(url, { method: "POST", headers: json, body: JSON.stringify({ payment_method: "BANK_TRANSFER", bank_account_id: "ba-plan-reversed-1-1" }) })
+    expect(missingReference.status).toBe(422)
+    expect(await missingReference.json()).toMatchObject({ errorCode: "INSTALLMENT_PAYMENT_REFERENCE_REQUIRED" })
+
+    const insufficient = await fetch(url, { method: "POST", headers: json, body: JSON.stringify({ payment_method: "BANK_TRANSFER", bank_account_id: "ba-plan-reversed-1-2", reference_number: "REF-2026-090" }) })
+    expect(insufficient.status).toBe(422)
+    expect(await insufficient.json()).toMatchObject({ errorCode: "INSTALLMENT_PARTNER_BANK_INSUFFICIENT_FUNDS" })
+
+    const success = await fetch(url, { method: "POST", headers: json, body: JSON.stringify({ payment_method: "BANK_TRANSFER", bank_account_id: "ba-plan-reversed-1-1", reference_number: "REF-2026-091" }) })
+    expect(success.status).toBe(201)
+    const successBody = await success.json()
+    expect(successBody.data.item).toMatchObject({ status: "PAYMENT_PENDING", payment_method: "BANK_TRANSFER", payment_reference: "REF-2026-091", bank_account_display: "NMB Bank 0151234567891" })
+    expect(successBody.data.requisition).toMatchObject({ status: "PENDING", department: "MATURITY_INSTALLMENTS" })
+
+    const cash = await fetch(`${BASE}/items/plan-reversed-1-item-2/process-payment/`, { method: "POST", headers: json, body: JSON.stringify({ payment_method: "CASH" }) })
+    expect(cash.status).toBe(201)
+    expect((await cash.json()).data.item).toMatchObject({ status: "PAYMENT_PENDING", payment_method: "CASH" })
   })
 
   it("exports the register as a CSV without spreadsheet formula injection", async () => {
@@ -162,11 +195,11 @@ describe("OL Maturity Installments MSW contract", () => {
     const createResponse = await fetch(`${BASE}/create/`, { method: "POST", headers: { "Content-Type": "application/json", "X-Idempotency-Key": "lifecycle-key" }, body: JSON.stringify({ policy_id: "policy-new-1", frequency: "ANNUAL", term_years: 10 }) })
     const planId = (await createResponse.json()).data.plan.id
 
-    const notDueResponse = await fetch(`${BASE}/items/${planId}-item-2/process-payment/`, { method: "POST" })
+    const notDueResponse = await fetch(`${BASE}/items/${planId}-item-2/process-payment/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ payment_method: "CASH" }) })
     expect(notDueResponse.status).toBe(422)
     expect(await notDueResponse.json()).toMatchObject({ errorCode: "INSTALLMENT_PAYMENT_NOT_DUE" })
 
-    const processResponse = await fetch(`${BASE}/items/${planId}-item-1/process-payment/`, { method: "POST" })
+    const processResponse = await fetch(`${BASE}/items/${planId}-item-1/process-payment/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ payment_method: "CASH" }) })
     expect(processResponse.status).toBe(201)
     const processBody = await processResponse.json()
     expect(processBody.data.item).toMatchObject({ status: "PAYMENT_PENDING" })
@@ -214,9 +247,9 @@ describe("OL Maturity Installments MSW contract", () => {
   })
 
   it("confirms the final installment and completes the plan with a passing reconciliation", async () => {
-    expect((await fetch(`${BASE}/items/plan-reversed-1-item-1/process-payment/`, { method: "POST" })).status).toBe(201)
+    expect((await fetch(`${BASE}/items/plan-reversed-1-item-1/process-payment/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ payment_method: "CASH" }) })).status).toBe(201)
     await fetch(`${BASE}/items/plan-reversed-1-item-1/confirm-payment/`, { method: "POST" })
-    expect((await fetch(`${BASE}/items/plan-reversed-1-item-2/process-payment/`, { method: "POST" })).status).toBe(201)
+    expect((await fetch(`${BASE}/items/plan-reversed-1-item-2/process-payment/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ payment_method: "CASH" }) })).status).toBe(201)
     const confirmResponse = await fetch(`${BASE}/items/plan-reversed-1-item-2/confirm-payment/`, { method: "POST" })
     const confirmBody = await confirmResponse.json()
     expect(confirmBody.data.plan_completed).toBe(true)

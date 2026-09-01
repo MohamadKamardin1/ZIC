@@ -1,15 +1,16 @@
-import { useCallback, useMemo, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useParams, useSearchParams } from "react-router-dom"
-import { ArrowLeft, Check, CheckCircle2, Clipboard, ExternalLink, FileText, ShieldCheck, TriangleAlert } from "lucide-react"
+import { ArrowLeft, Check, CheckCircle2, Clipboard, ExternalLink, FileText, Loader2, ShieldCheck, TriangleAlert } from "lucide-react"
 import { ErrorCoach } from "../../components/ErrorCoach"
 import { ItemStatusBadge, MoneyCell, PlanStatusBadge, planStatusLabel, ProgressCell } from "../../components/maturityInstallments/MIPrimitives"
 import { MIPlanDocumentsPanel } from "../../components/maturityInstallments/MIPlanDocumentsPanel"
 import { StatusBadge, type StatusTone } from "../../components/ui/StatusBadge"
-import { ConfirmModal, Modal } from "../../components/ui/Overlays"
+import { Modal } from "../../components/ui/Overlays"
+import { SmartSelect } from "../../components/ui/SmartSelect"
 import { useToast } from "../../components/ui/Toast"
 import { useAccess } from "../../lib/access"
-import { cancelMIPlan, printMISchedule, processMIPayment, reverseMIPayment, type MIPlanDetail, type MIPlanItem } from "../../lib/maturityInstallments"
+import { cancelMIPlan, printMISchedule, processMIPayment, reverseMIPayment, type MIBankAccount, type MIPlanDetail, type MIPlanItem, type MIProcessPaymentDetails } from "../../lib/maturityInstallments"
 import { invalidateMaturityInstallmentQueries, useMIPlanDetail, useMIPlanItems } from "../../lib/maturityInstallmentsHooks"
 import { toStructuredError, type StructuredError } from "../../lib/structuredError"
 
@@ -122,20 +123,155 @@ function rowIsProcessable(status: string): boolean {
   return status === "SCHEDULED" || status === "MISSED" || status === "PAYMENT_PENDING"
 }
 
+const PAYMENT_METHOD_OPTIONS = [
+  { value: "CASH", label: "Cash" },
+  { value: "BANK_TRANSFER", label: "Bank Transfer" },
+  { value: "CHEQUE", label: "Cheque" },
+]
+
+function paymentMethodLabel(value: string): string {
+  return PAYMENT_METHOD_OPTIONS.find((option) => option.value === value)?.label ?? value.toLowerCase().replace(/_/g, " ")
+}
+
+function bankAccountLabel(account?: MIBankAccount): string {
+  return account ? `${account.bankName} ${account.accountNumber}` : "—"
+}
+
+function ProcessPaymentModal({ open, items, currency, planNumber, bankAccounts, onClose, onSubmit }: {
+  open: boolean
+  items: MIPlanItem[]
+  currency: string
+  planNumber: string
+  bankAccounts: MIBankAccount[]
+  onClose: () => void
+  onSubmit: (details: MIProcessPaymentDetails) => Promise<void>
+}) {
+  const [step, setStep] = useState<1 | 2 | 3>(1)
+  const [paymentMethod, setPaymentMethod] = useState("")
+  const [referenceNumber, setReferenceNumber] = useState("")
+  const [bankAccountId, setBankAccountId] = useState("")
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const [busy, setBusy] = useState(false)
+  const [submitError, setSubmitError] = useState<StructuredError | null>(null)
+  const [succeeded, setSucceeded] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    setStep(1)
+    setPaymentMethod("")
+    setReferenceNumber("")
+    setBankAccountId("")
+    setFieldErrors({})
+    setSubmitError(null)
+    setBusy(false)
+    setSucceeded(false)
+  }, [open])
+
+  const needsBankAccount = paymentMethod === "BANK_TRANSFER" || paymentMethod === "CHEQUE"
+  const totalAmount = items.reduce((sum, item) => sum + Number(item.amount), 0).toFixed(2)
+  const selectedAccount = bankAccounts.find((account) => account.id === bankAccountId)
+  const bankAccountOptions = bankAccounts.map((account) => ({
+    value: account.id,
+    label: `${account.bankName} ${account.accountNumber} — ${account.accountName}`,
+  }))
+
+  const validateStep1 = (): boolean => {
+    const errors: Record<string, string> = {}
+    if (!paymentMethod) errors.paymentMethod = "Select a payment method."
+    if (needsBankAccount) {
+      if (!bankAccountId) errors.bankAccount = "Select the partner bank account that will fund this disbursement."
+      if (!referenceNumber.trim()) errors.reference = "A bank transfer or cheque reference is required for this payment method."
+    }
+    setFieldErrors(errors)
+    return Object.keys(errors).length === 0
+  }
+
+  const submit = async () => {
+    setBusy(true); setSubmitError(null); setStep(3)
+    try {
+      await onSubmit({
+        paymentMethod,
+        referenceNumber: referenceNumber.trim() || undefined,
+        bankAccountId: needsBankAccount ? bankAccountId : undefined,
+      })
+      setSucceeded(true)
+    } catch (error) {
+      setSubmitError(toStructuredError(error, "The payment requisition could not be created."))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleClose = () => { if (!busy) onClose() }
+
+  const stepIndicator = (
+    <ol className="flex flex-wrap items-center gap-2 text-xs font-bold" aria-label="Payment steps">
+      {["Confirmation", "Review", "Submit"].map((label, index) => {
+        const stepNumber = index + 1
+        const isActive = step === stepNumber
+        const isDone = stepNumber < step
+        return <li key={label} aria-current={isActive ? "step" : undefined} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 ${isActive ? "bg-[var(--primary)] text-[var(--primary-foreground)]" : isDone ? "bg-[var(--success)]/10 text-[var(--success)]" : "bg-[var(--muted)] text-[var(--muted-foreground)]"}`}><span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-current/40">{isDone ? "✓" : stepNumber}</span>{label}</li>
+      })}
+    </ol>
+  )
+
+  let footer: ReactNode
+  if (step === 1) {
+    footer = <><button type="button" className="button-secondary" onClick={handleClose}>Cancel</button><button type="button" className="button-primary" onClick={() => { if (validateStep1()) setStep(2) }}>Next</button></>
+  } else if (step === 2) {
+    footer = <><button type="button" className="button-secondary" onClick={handleClose}>Cancel</button><button type="button" className="button-secondary" onClick={() => { setSubmitError(null); setStep(1) }}>Back</button><button type="button" className="button-primary" onClick={() => void submit()}>{items.length > 1 ? `Process ${items.length} payments` : "Process payment"}</button></>
+  } else if (succeeded) {
+    footer = <><button type="button" className="button-primary" onClick={handleClose}>Close</button></>
+  } else if (submitError) {
+    footer = <><button type="button" className="button-secondary" onClick={() => { setSubmitError(null); setStep(2) }}>Back to review</button><button type="button" className="button-primary" onClick={() => void submit()}>Try again</button></>
+  } else {
+    footer = <div className="inline-flex items-center gap-2 text-sm text-[var(--muted-foreground)]"><Loader2 size={16} className="animate-spin" aria-hidden="true" />Creating payment requisition…</div>
+  }
+
+  return <Modal open={open} title={items.length > 1 ? `Process ${items.length} installment payments` : `Process installment ${items[0]?.installmentNumber ?? ""} payment`} description={`${planNumber} · ${currency}`} onClose={handleClose} size="lg" footer={footer}>
+    <div className="space-y-5">
+      {stepIndicator}
+
+      {step === 1 && <div className="space-y-4">
+        <div className="rounded-lg border border-[var(--border)] bg-[var(--muted)]/35 p-4">
+          <p className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--muted-foreground)]">{items.length > 1 ? "Installments selected" : "Installment to process"}</p>
+          <ul className="mt-2 space-y-1.5">{items.map((item) => <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 text-sm"><span className="font-semibold">Installment {item.installmentNumber} — due {dateLabel(item.dueDate)}</span><MoneyCell value={item.amount} currency={currency} /></li>)}</ul>
+          {items.length > 1 && <div className="mt-3 flex items-center justify-between gap-3 border-t border-[var(--border)] pt-3 text-sm"><span className="font-bold">Total amount</span><MoneyCell value={totalAmount} currency={currency} /></div>}
+        </div>
+        <SmartSelect entity="payment-method" label="Payment method" name="paymentMethod" required placeholder="Select payment method" options={PAYMENT_METHOD_OPTIONS} value={paymentMethod} onChange={(value) => { setPaymentMethod(value); setFieldErrors((current) => ({ ...current, paymentMethod: "", bankAccount: "", reference: "" })) }} error={fieldErrors.paymentMethod} allowCreate={false} rememberLastUsed={false} />
+        <label className="block space-y-1.5"><span className="text-xs font-bold">Reference number {needsBankAccount && <span className="text-[var(--destructive)]">*</span>}</span><input value={referenceNumber} onChange={(event) => { setReferenceNumber(event.target.value); setFieldErrors((current) => ({ ...current, reference: "" })) }} aria-invalid={Boolean(fieldErrors.reference)} className="h-10 w-full rounded-[10px] border border-[var(--border)] bg-[var(--card)] px-3 text-sm outline-none focus:border-[var(--ring)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--ring)_18%,transparent)]" placeholder={needsBankAccount ? "Bank transfer or cheque reference" : "Optional reference"} />{fieldErrors.reference && <span className="text-xs font-medium text-[var(--destructive)]" role="alert">{fieldErrors.reference}</span>}</label>
+        {needsBankAccount && <SmartSelect entity="bank-account" label="Bank account (partner's bank)" name="bankAccount" required placeholder="Select partner bank account" options={bankAccountOptions} value={bankAccountId} onChange={(value) => { setBankAccountId(value); setFieldErrors((current) => ({ ...current, bankAccount: "" })) }} error={fieldErrors.bankAccount} allowCreate={false} rememberLastUsed={false} />}
+      </div>}
+
+      {step === 2 && <div className="space-y-4">
+        <dl className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-lg bg-[var(--muted)]/45 p-3"><dt className="text-xs text-[var(--muted-foreground)]">Payment method</dt><dd className="mt-1 text-sm font-bold">{paymentMethodLabel(paymentMethod)}</dd></div>
+          <div className="rounded-lg bg-[var(--muted)]/45 p-3"><dt className="text-xs text-[var(--muted-foreground)]">Reference</dt><dd className="mt-1 break-words text-sm font-bold">{referenceNumber.trim() || "—"}</dd></div>
+          <div className="rounded-lg bg-[var(--muted)]/45 p-3"><dt className="text-xs text-[var(--muted-foreground)]">Bank account</dt><dd className="mt-1 break-words text-sm font-bold">{needsBankAccount ? bankAccountLabel(selectedAccount) : "Not required"}</dd></div>
+          <div className="rounded-lg bg-[var(--muted)]/45 p-3"><dt className="text-xs text-[var(--muted-foreground)]">Total amount</dt><dd className="mt-1 text-sm font-bold"><MoneyCell value={totalAmount} currency={currency} /></dd></div>
+        </dl>
+        <div className="flex gap-3 rounded-[10px] border border-[var(--warning)]/40 bg-[var(--warning)]/10 px-4 py-3 text-sm text-[var(--foreground)]" role="note"><TriangleAlert size={18} className="mt-0.5 shrink-0 text-[var(--warning)]" aria-hidden="true" /><p className="leading-6"><span className="font-bold">This will create a payment requisition in the Front Office.</span> The selected installments move to payment pending until the disbursement is confirmed.</p></div>
+      </div>}
+
+      {step === 3 && succeeded && <div className="flex gap-3 rounded-[10px] border border-[var(--success)]/40 bg-[var(--success)]/10 px-4 py-4 text-sm text-[var(--success)]" role="status"><CheckCircle2 size={20} className="mt-0.5 shrink-0" aria-hidden="true" /><div><p className="font-bold">Payment Requisition Created</p><p className="mt-1 leading-6">{items.length > 1 ? `${items.length} installments on ${planNumber}` : `Installment ${items[0]?.installmentNumber ?? ""} on ${planNumber}`} are now payment pending.</p></div></div>}
+
+      {step === 3 && !succeeded && submitError && <ErrorCoach title="Payment requisition not created" message={submitError.message} resolutionSteps={submitError.resolutionSteps} />}
+
+      {step === 3 && !succeeded && !submitError && <div className="flex items-center justify-center gap-3 py-8 text-sm text-[var(--muted-foreground)]" role="status"><Loader2 size={18} className="animate-spin" aria-hidden="true" />Creating payment requisition…</div>}
+    </div>
+  </Modal>
+}
+
 function ScheduleTab({ plan, canProcess, canReverse }: { plan: MIPlanDetail; canProcess: boolean; canReverse: boolean }) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
-  const [processTarget, setProcessTarget] = useState<MIPlanItem | null>(null)
-  const [processBusy, setProcessBusy] = useState(false)
-  const [processError, setProcessError] = useState<StructuredError | null>(null)
+  const [processItems, setProcessItems] = useState<MIPlanItem[] | null>(null)
   const [reverseTarget, setReverseTarget] = useState<MIPlanItem | null>(null)
   const [reverseBusy, setReverseBusy] = useState(false)
   const [reverseError, setReverseError] = useState<StructuredError | null>(null)
   const [reverseReason, setReverseReason] = useState("")
-  const [bulkBusy, setBulkBusy] = useState(false)
-  const [bulkError, setBulkError] = useState<StructuredError | null>(null)
 
   const itemsQuery = useMIPlanItems(plan.id, page, SCHEDULE_PAGE_SIZE)
   const pageData = itemsQuery.data
@@ -161,18 +297,15 @@ function ScheduleTab({ plan, canProcess, canReverse }: { plan: MIPlanDetail; can
     }
   }
 
-  const confirmProcess = async () => {
-    if (!processTarget) return
-    setProcessBusy(true); setProcessError(null)
-    try {
-      await processMIPayment(processTarget.id)
-      invalidateMaturityInstallmentQueries(queryClient, plan.id)
-      toast({ tone: "success", title: "Payment processed", message: `Installment ${processTarget.installmentNumber} on ${plan.planNumber} moved to payment pending.` })
-      setProcessTarget(null)
-    } catch (error) {
-      setProcessError(toStructuredError(error, "The installment payment could not be processed."))
-    } finally {
-      setProcessBusy(false)
+  const handleProcessSubmit = async (details: MIProcessPaymentDetails) => {
+    if (!processItems || processItems.length === 0) return
+    await Promise.all(processItems.map((item) => processMIPayment(item.id, details)))
+    invalidateMaturityInstallmentQueries(queryClient, plan.id)
+    if (processItems.length === 1) {
+      toast({ tone: "success", title: "Payment Requisition Created", message: `Installment ${processItems[0].installmentNumber} on ${plan.planNumber} is now payment pending.` })
+    } else {
+      toast({ tone: "success", title: "Payment Requisition Created", message: `${processItems.length} installments on ${plan.planNumber} are now payment pending.` })
+      setSelected(new Set())
     }
   }
 
@@ -195,22 +328,6 @@ function ScheduleTab({ plan, canProcess, canReverse }: { plan: MIPlanDetail; can
     }
   }
 
-  const confirmBulk = async () => {
-    const targets = [...selected].filter((id) => items.some((item) => item.id === id && rowIsProcessable(item.status)))
-    if (targets.length === 0) return
-    setBulkBusy(true); setBulkError(null)
-    try {
-      await Promise.all(targets.map((id) => processMIPayment(id)))
-      invalidateMaturityInstallmentQueries(queryClient, plan.id)
-      toast({ tone: "success", title: "Payments processed", message: `${targets.length} installment${targets.length === 1 ? "" : "s"} on ${plan.planNumber} moved to payment pending.` })
-      setSelected(new Set())
-    } catch (error) {
-      setBulkError(toStructuredError(error, "One or more installment payments could not be processed."))
-    } finally {
-      setBulkBusy(false)
-    }
-  }
-
   if (itemsQuery.error) {
     const structured = toStructuredError(itemsQuery.error, "The installment schedule could not be loaded.")
     return <section className="surface-card p-4" aria-label="Installment schedule"><ErrorCoach title="Installment schedule unavailable" message={structured.message} resolutionSteps={structured.resolutionSteps} /></section>
@@ -220,11 +337,10 @@ function ScheduleTab({ plan, canProcess, canReverse }: { plan: MIPlanDetail; can
     <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border)] bg-[var(--muted)]/30 px-4 py-4">
       <div><h2 className="text-base font-bold">Installment schedule</h2><p className="mt-1 text-xs text-[var(--muted-foreground)]">Contractual payouts read from the backend schedule, paginated per page so long terms stay responsive.</p></div>
       <div className="flex flex-wrap items-center gap-2">
-        {canProcess && selected.size > 0 && <button type="button" className="button-primary inline-flex items-center gap-2" onClick={() => void confirmBulk()} disabled={bulkBusy}>{bulkBusy ? "Processing…" : `Process Selected (${selected.size})`}</button>}
+        {canProcess && selected.size > 0 && <button type="button" className="button-primary inline-flex items-center gap-2" onClick={() => setProcessItems(items.filter((item) => selected.has(item.id) && rowIsProcessable(item.status)))}>Process Selected ({selected.size})</button>}
         <PlanStatusBadge status={plan.status} statusDisplay={plan.statusDisplay} />
       </div>
     </div>
-    {bulkError && <div className="px-4 pt-4"><ErrorCoach title="Bulk processing needs attention" message={bulkError.message} resolutionSteps={bulkError.resolutionSteps} /></div>}
     <div className="border-b border-[var(--border)] p-4"><ProgressCell paid={plan.paidAmount} maturityValue={plan.totalPayableAmount} currency={plan.currency} /></div>
     <div className="overflow-x-auto">
       <table className="w-full min-w-[1040px] text-left text-sm"><caption className="sr-only">Maturity installment schedule</caption>
@@ -244,7 +360,7 @@ function ScheduleTab({ plan, canProcess, canReverse }: { plan: MIPlanDetail; can
               <td className="px-4 py-3">{item.paidDate ? dateLabel(item.paidDate) : "—"}</td>
               <td className="px-4 py-3 text-[var(--muted-foreground)]">{item.narration || "—"}</td>
               <td className="px-4 py-3"><div className="flex flex-wrap justify-end gap-2">
-                {canProcess && processable && <button type="button" className="button-secondary inline-flex items-center gap-1 px-2.5 py-1.5 text-xs" aria-label={`Process payment for installment ${item.installmentNumber}`} onClick={() => { setProcessError(null); setProcessTarget(item) }}>Process Payment</button>}
+                {canProcess && processable && <button type="button" className="button-secondary inline-flex items-center gap-1 px-2.5 py-1.5 text-xs" aria-label={`Process payment for installment ${item.installmentNumber}`} onClick={() => setProcessItems([item])}>Process Payment</button>}
                 {canReverse && item.status === "PAID" && <button type="button" className="button-secondary inline-flex items-center gap-1 px-2.5 py-1.5 text-xs" aria-label={`Reverse payment for installment ${item.installmentNumber}`} onClick={() => { setReverseError(null); setReverseReason(""); setReverseTarget(item) }}>Reverse</button>}
               </div></td>
             </tr>
@@ -266,7 +382,7 @@ function ScheduleTab({ plan, canProcess, canReverse }: { plan: MIPlanDetail; can
       </div>
     </div>
 
-    <ConfirmModal open={Boolean(processTarget)} title="Process installment payment" description={processTarget ? `Installment ${processTarget.installmentNumber} of ${plan.currency} ${processTarget.amount} (due ${dateLabel(processTarget.dueDate)}) will be moved to payment pending and a Front Office requisition raised.` : ""} confirmLabel={processBusy ? "Processing…" : "Process payment"} onClose={() => { if (!processBusy) setProcessTarget(null) }} onConfirm={() => void confirmProcess()} tone="primary" />
+    <ProcessPaymentModal open={Boolean(processItems)} items={processItems ?? []} currency={plan.currency} planNumber={plan.planNumber} bankAccounts={plan.bankAccounts} onClose={() => setProcessItems(null)} onSubmit={handleProcessSubmit} />
     <Modal open={Boolean(reverseTarget)} title={reverseTarget ? `Reverse installment ${reverseTarget.installmentNumber} payment` : "Reverse installment payment"} onClose={() => { if (!reverseBusy) { setReverseTarget(null); setReverseError(null) } }} size="md">
       <div className="space-y-4">
         <div className="rounded-lg border border-[var(--border)] bg-[var(--muted)]/35 p-4">
@@ -341,8 +457,6 @@ export default function MIPlanDetail() {
   const { access, hasPermission, isSuperAdmin } = useAccess()
   const [copied, setCopied] = useState(false)
   const [processItem, setProcessItem] = useState<MIPlanItem | null>(null)
-  const [processBusy, setProcessBusy] = useState(false)
-  const [processError, setProcessError] = useState<StructuredError | null>(null)
   const [cancelOpen, setCancelOpen] = useState(false)
   const [cancelBusy, setCancelBusy] = useState(false)
   const [cancelError, setCancelError] = useState<StructuredError | null>(null)
@@ -385,7 +499,6 @@ export default function MIPlanDetail() {
   }
 
   const openProcess = () => {
-    setProcessError(null)
     const target = nextDueItem(plan)
     if (!target) {
       toast({ tone: "info", title: "No due installments", message: `${plan.planNumber} has no scheduled or missed installments due for payment yet.` })
@@ -394,19 +507,11 @@ export default function MIPlanDetail() {
     setProcessItem(target)
   }
 
-  const confirmProcess = async () => {
+  const handleHeaderProcessSubmit = async (details: MIProcessPaymentDetails) => {
     if (!processItem) return
-    setProcessBusy(true); setProcessError(null)
-    try {
-      await processMIPayment(processItem.id)
-      invalidateMaturityInstallmentQueries(queryClient, plan.id)
-      toast({ tone: "success", title: "Payment processed", message: `Installment ${processItem.installmentNumber} on ${plan.planNumber} moved to payment pending.` })
-      setProcessItem(null)
-    } catch (error) {
-      setProcessError(toStructuredError(error, "The installment payment could not be processed."))
-    } finally {
-      setProcessBusy(false)
-    }
+    await processMIPayment(processItem.id, details)
+    invalidateMaturityInstallmentQueries(queryClient, plan.id)
+    toast({ tone: "success", title: "Payment Requisition Created", message: `Installment ${processItem.installmentNumber} on ${plan.planNumber} is now payment pending.` })
   }
 
   const confirmCancel = async () => {
@@ -464,7 +569,7 @@ export default function MIPlanDetail() {
 
     {activeTab === "overview" ? <OverviewTab plan={plan} /> : activeTab === "schedule" ? <ScheduleTab plan={plan} canProcess={canAction("process_payment")} canReverse={can("ol_maturity_installments.reverse")} /> : activeTab === "payments" ? <PaymentsTab plan={plan} /> : activeTab === "audit" ? <AuditTab plan={plan} /> : <MIPlanDocumentsPanel plan={plan} canPrint={can("ol_maturity_installments.print")} />}
 
-    <ConfirmModal open={Boolean(processItem)} title="Process installment payment" description={processItem ? `Installment ${processItem.installmentNumber} of ${plan.currency} ${processItem.amount} (due ${dateLabel(processItem.dueDate)}) will be moved to payment pending and a Front Office requisition raised.` : ""} confirmLabel={processBusy ? "Processing…" : "Process payment"} onClose={() => { if (!processBusy) setProcessItem(null) }} onConfirm={() => void confirmProcess()} tone="primary" />
+    <ProcessPaymentModal open={Boolean(processItem)} items={processItem ? [processItem] : []} currency={plan.currency} planNumber={plan.planNumber} bankAccounts={plan.bankAccounts} onClose={() => setProcessItem(null)} onSubmit={handleHeaderProcessSubmit} />
     <Modal open={cancelOpen} title="Cancel plan" onClose={() => { if (!cancelBusy) { setCancelOpen(false); setCancelError(null) } }} size="md">
       <div className="space-y-4">
         <div className="rounded-lg border border-[var(--border)] bg-[var(--muted)]/35 p-4">
