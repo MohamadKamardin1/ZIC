@@ -181,6 +181,33 @@ def _audit_transition(policy, *, event_type, before, reason, actor=None, request
         )
 
 
+def _block_active_installment_plan(policy, *, error_code):
+    """Block a policy action while a running maturity installment plan exists.
+
+    The deferred import keeps OL Policies free of a hard dependency on the
+    maturity module; the guard consults a System Parameter so an intentional
+    action can still be allowed.
+    """
+    from apps.ol_maturity_installments.services.integration_service import installment_plan_policy_action_guard
+
+    guard = installment_plan_policy_action_guard(policy.pk)
+    if guard["allowed"]:
+        return
+    raise registry_error(
+        error_code,
+        message=f"The action is blocked while an active maturity installment plan exists on policy {policy.policy_number}.",
+        details={
+            "blocking_plans": guard["blocking_plans"],
+            "parameter": guard["parameter"],
+            "parameter_allows": guard["parameter_allows"],
+        },
+        resolution_steps=[
+            "Complete, terminate, or cancel the linked maturity installment plan first.",
+            "Configure the allowance parameter if this policy action is intentional.",
+        ],
+    )
+
+
 @transaction.atomic
 def request_policy_surrender(policy_id, *, as_of=None, actor=None, request=None, source_channel="API"):
     as_of = _date(as_of)
@@ -209,6 +236,7 @@ def request_policy_surrender(policy_id, *, as_of=None, actor=None, request=None,
                 "Retry surrender after the loan balance is zero.",
             ],
         )
+    _block_active_installment_plan(policy, error_code="POLICY_SURRENDER_BLOCKED")
     setup = _surrender_setup(policy, as_of)
     if setup is None:
         raise registry_error(
@@ -387,6 +415,7 @@ def cancel_policy(policy_id, *, reason="", as_of=None, actor=None, request=None,
         raise not_found(policy_id)
     if policy.status in TERMINAL_STATUSES:
         raise registry_error("POLICY_INVALID_STATUS", message=f"A {policy.get_status_display()} policy is already terminal.")
+    _block_active_installment_plan(policy, error_code="POLICY_CANCELLATION_BLOCKED")
     snapshot = dict(policy.contract_snapshot or {})
     try:
         free_look_days = int(snapshot.get("free_look_days", 30))

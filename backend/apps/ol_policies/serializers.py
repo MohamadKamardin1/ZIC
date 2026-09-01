@@ -471,6 +471,7 @@ class PolicyDetailSerializer(PolicyListSerializer):
     linked_commitments = serializers.SerializerMethodField()
     installments = serializers.SerializerMethodField()
     ol_loan_summary = serializers.SerializerMethodField()
+    maturity_installment_plan_summary = serializers.SerializerMethodField()
 
     class Meta(PolicyListSerializer.Meta):
         fields = PolicyListSerializer.Meta.fields + (
@@ -489,6 +490,7 @@ class PolicyDetailSerializer(PolicyListSerializer):
             "linked_commitments",
             "installments",
             "ol_loan_summary",
+            "maturity_installment_plan_summary",
         )
 
     def get_linked_proposal(self, obj):
@@ -530,3 +532,8 @@ class PolicyDetailSerializer(PolicyListSerializer):
         from apps.ol_loans.services.integration_service import policy_loan_summary
 
         return policy_loan_summary(obj.pk)
+
+    def get_maturity_installment_plan_summary(self, obj):
+        from apps.ol_maturity_installments.services.integration_service import policy_installment_plan_summary
+
+        return policy_installment_plan_summary(obj.pk)

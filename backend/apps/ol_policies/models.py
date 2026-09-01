@@ -428,6 +428,7 @@ class MaturityClaimStatus(models.TextChoices):
     PENDING_APPROVAL = "PENDING_APPROVAL", "Pending approval"
     APPROVED = "APPROVED", "Approved"
     PAID = "PAID", "Paid"
+    PAID_VIA_INSTALLMENTS = "PAID_VIA_INSTALLMENTS", "Paid via Installments"
     DECLINED = "DECLINED", "Declined"
 
 

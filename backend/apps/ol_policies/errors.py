@@ -37,6 +37,14 @@ POLICY_ERROR_REGISTRY = {
             "Settle any active loan or other blocking financial obligation.",
         ],
     },
+    "POLICY_CANCELLATION_BLOCKED": {
+        "message": "The policy cannot be cancelled while an active maturity installment plan exists.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Complete, terminate, or cancel the linked maturity installment plan first.",
+            "Configure the parameter that permits policy actions despite an active plan if this is intentional.",
+        ],
+    },
     "POLICY_LOAN_BLOCKED": {
         "message": "A loan action is not allowed for this policy.",
         "status_code": 422,

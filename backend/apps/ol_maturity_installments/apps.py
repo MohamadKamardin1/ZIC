@@ -8,6 +8,7 @@ class OLMaturityInstallmentsConfig(AppConfig):
     verbose_name = "Ordinary Life Maturity Installments"
 
     def ready(self):
-        # Receiver wiring for audit/notifications is introduced in later prompts
-        # of the series once financial actions are implemented.
-        return None
+        from apps.ol_maturity_installments.integration_receivers import route_installment_notifications
+
+        # Importing the receiver registers its idempotent DomainEvent hook.
+        route_installment_notifications  # noqa: B018

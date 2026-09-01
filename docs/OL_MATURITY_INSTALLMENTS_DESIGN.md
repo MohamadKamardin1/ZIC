@@ -335,6 +335,73 @@ before/after state, reason, and source channel through the shared engine.
   advice-specific notes. Both carry signature blocks and never render a UUID —
   plan, policy, and policyholder reference numbers are human-readable labels.
 
+## Policy, claims, portal and notification integrations (Prompt 9)
+
+### Integration map
+
+- **Policies → Maturity Installments (guard):** a policy carrying a
+  non-terminal installment plan (`CREATED` or `ACTIVE`) cannot be surrendered
+  or cancelled, unless the System Parameter
+  `INSTALLMENT_ALLOW_POLICY_ACTION_WITH_ACTIVE_PLAN` (default `false`)
+  explicitly permits it. The guard lives in
+  `apps/ol_maturity_installments/services/integration_service.py`
+  (`installment_plan_policy_action_guard`) and is invoked from the OL Policies
+  termination service through a deferred import, so neither context carries a
+  hard import-time dependency on the other. Surrender raises
+  `POLICY_SURRENDER_BLOCKED`; cancellation raises `POLICY_CANCELLATION_BLOCKED`;
+  both return the blocking plan numbers and the parameter state in `details`.
+- **Policies → Maturity Installments (payload):** the policy detail payload
+  exposes `maturity_installment_plan_summary` (count by status, active
+  outstanding amount, and one row per plan with number, status, totals, paid,
+  balance, dates, next due date, and linked claim number), mirroring the
+  existing `ol_loan_summary` block.
+- **Maturity Claims → Maturity Installments:** a plan created against a settled
+  maturity claim links the claim (`maturity_claim_ref`). When the plan starts —
+  the first installment is confirmed as paid and the plan moves
+  `CREATED -> ACTIVE` — the linked claim is advanced to
+  `PAID_VIA_INSTALLMENTS` ("Paid via Installments") and both transitions are
+  audited (`INSTALLMENT_PLAN_ACTIVATED`, `MATURITY_CLAIM_PAID_VIA_INSTALLMENTS`).
+- **Partner Portal → Maturity Installments:** read-only portal endpoints scoped
+  to the caller's `visible_partners()`:
+  - `GET /api/v1/ol/maturity-installments/portal/` — the partner's own plans.
+  - `GET /api/v1/ol/maturity-installments/portal/{id}/` — one plan by number or
+    UUID, including the installment schedule.
+  Cross-partner lookups return a sanitized `PORTAL_RESOURCE_NOT_FOUND` with no
+  internal detail; no internal actions are exposed.
+- **Notifications:** the durable domain-event outbox drives policyholder
+  alerts. A `post_save` receiver on `DomainEvent`
+  (`apps/ol_maturity_installments/integration_receivers.py`) dispatches
+  `InstallmentPaymentDue`, `InstallmentPaymentMissed`, and
+  `InstallmentPlanCompleted` into the notification center: a
+  `PolicyNotificationLog` row per SMS/email channel and a
+  `DashboardNotification` per linked user. The shared external key
+  (`installment:<plan>:<event>`) collapses duplicate dispatches, so an event is
+  surfaced exactly once.
+
+### Plan activation ("plan starts")
+
+The plan lifecycle `CREATED -> ACTIVE -> COMPLETED | TERMINATED` is made real by
+activating a plan when its first installment is confirmed as paid (the moment
+the annuity begins disbursing). The first confirmation moves the plan to
+`ACTIVE`, sets `activated_at`/`activated_by`, and — for a claim-backed plan —
+marks the linked maturity claim `PAID_VIA_INSTALLMENTS`. A plan that reaches
+`COMPLETED` on the same confirmation passes through `ACTIVE` first.
+
+### Integration assumptions (senior decisions)
+
+- "Active maturity plan" for the policy guard means any non-terminal plan
+  (`CREATED` or `ACTIVE`): even a not-yet-started schedule is an arrangement to
+  pay the maturity value over time, so a policy action that would orphan it is
+  blocked unless an operator explicitly allows it via the parameter.
+- The allowance parameter is boolean and defaults to `false`; when enabled the
+  policy action proceeds and the plan is left to be resolved independently.
+- A claim is only advanced to `PAID_VIA_INSTALLMENTS` from `APPROVED`/`PAID`;
+  a claim already marked paid-via-installments is never re-touched, and a plan
+  without a linked claim changes no claim state.
+- Notifications are delivered through the existing OL notification center
+  (`PolicyNotificationLog` + `DashboardNotification`) and deduplicated by
+  external key, so retries and idempotent replays never double-notify.
+
 ## Options endpoints
 
 - `GET /api/v1/ol/maturity-installments/options/frequencies/` — the five

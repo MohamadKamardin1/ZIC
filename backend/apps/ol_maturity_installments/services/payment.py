@@ -22,6 +22,7 @@ from ..models import (
     OLInstallmentItem,
     OLMaturityInstallmentPlan,
 )
+from .integration_service import activate_installment_plan
 
 PROCESSABLE_ITEM_STATUSES = (
     InstallmentItemStatus.SCHEDULED,
@@ -264,6 +265,11 @@ def confirm_item_payment(
         requisition.status = "COMPLETED"
         requisition.save(update_fields=["status", "updated_at"])
         after["requisition_status"] = requisition.status
+
+    if plan.status == InstallmentPlanStatus.CREATED:
+        plan, _activated = activate_installment_plan(
+            plan, item=item, actor=actor, request=request, source_channel=source_channel
+        )
 
     plan_completed = _all_items_paid(plan)
     if plan_completed and plan.status != InstallmentPlanStatus.COMPLETED:

@@ -162,9 +162,10 @@ class InstallmentPaymentTestCase(APITestCase):
         self.assertEqual(first.data["data"]["item"]["status"], "PAID")
         self.assertTrue(first.data["data"]["paid_date"])
         self.assertFalse(first.data["data"]["plan_completed"])
+        # The plan starts (CREATED -> ACTIVE) once its first installment is paid.
         self.assertEqual(
             OLMaturityInstallmentPlan.objects.get(pk=self.plan.pk).status,
-            InstallmentPlanStatus.CREATED,
+            InstallmentPlanStatus.ACTIVE,
         )
 
         second = self._confirm(self.item_two)

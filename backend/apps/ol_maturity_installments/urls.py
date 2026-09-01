@@ -5,6 +5,10 @@ from .document_views import OLMaturityPaymentAdvicePrintView, OLMaturitySchedule
 from .lifecycle_views import InstallmentItemReversePaymentView, InstallmentPlanCancelView
 from .options import InstallmentFrequencyOptionsView, InstallmentTermOptionsView
 from .payment_views import InstallmentItemConfirmPaymentView, InstallmentItemProcessPaymentView
+from .portal_views import (
+    OLMaturityInstallmentPortalDetailView,
+    OLMaturityInstallmentPortalListView,
+)
 from .reconciliation_views import InstallmentPlanReconciliationView
 from .views import (
     InstallmentPlanDetailView,
@@ -68,6 +72,21 @@ urlpatterns = [
         "maturity-installments/<uuid:plan_id>/reconciliation/",
         InstallmentPlanReconciliationView.as_view(),
         name="installment-plan-reconciliation",
+    ),
+    path(
+        "maturity-installments/portal/",
+        OLMaturityInstallmentPortalListView.as_view(),
+        name="installment-plan-portal-list",
+    ),
+    path(
+        "maturity-installments/portal/<uuid:plan_id>/",
+        OLMaturityInstallmentPortalDetailView.as_view(),
+        name="installment-plan-portal-detail",
+    ),
+    path(
+        "maturity-installments/portal/<str:plan_id>/",
+        OLMaturityInstallmentPortalDetailView.as_view(),
+        name="installment-plan-portal-detail-by-number",
     ),
     path(
         "maturity-installments/<uuid:plan_id>/print-schedule/",
