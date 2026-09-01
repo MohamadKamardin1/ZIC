@@ -7,6 +7,7 @@
 - [x] Prompt 5 — Implement Missed Detection and Reversal Lifecycle
 - [x] Prompt 6 — Implement Reconciliation and Financial Audit
 - [x] Prompt 7 — Implement List, Detail, KPI and Export APIs
+- [ ] Prompt 8 — Implement Documents and Print Engine
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–12 will be appended `EXACTLY as provided` when the user
@@ -333,4 +334,40 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: endpoint contract, KPI rules, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 8/12 — Implement Documents and Print Engine
+
+```text
+You are a senior Django document engineer. Continue the ZIC OL Maturity Installments backend. Execute ONLY Prompt 8.
+
+MANDATORY RULES:
+- Use unified print engine; retain source/template version.
+- Commit and push; tick checkbox.
+
+OBJECTIVE:
+Implement maturity installment document generation and statements.
+
+SCOPE:
+1. Maturity Schedule Template: Variables: plan_number, policyholder, total_amount, frequency, table of installments (dates, amounts, status), signatures.
+2. Payment Advice Template: For individual installment payments.
+3. POST /api/v1/ol/maturity-installments/{id}/print-schedule/, /print-advice/ - Uses authenticated print pipeline + signed ticket.
+   - Stores document instance with template version.
+   - Watermark for CANCELLED/MISSED plans.
+4. Audit document generation and download.
+
+TESTS:
+- PDF generates with required blocks
+- pypdf extraction verifies fields
+- watermark logic correct
+- permission denial works
+- audit log created
+
+GIT:
+- commit: "feat(ol-maturity-installments): implement documents and print engine"
+- push; tick checkbox
+
+FINAL OUTPUT: templates, print endpoints, tests, commit hash, pushed branch.
 ```
