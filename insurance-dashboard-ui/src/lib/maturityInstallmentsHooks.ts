@@ -12,7 +12,7 @@ import {
   listMIPlanItems,
   listMIPlans,
   listMIPortalPlans,
-  printMIAdvice,
+  printMIStatement,
   printMISchedule,
   processMIPayment,
   reverseMIPayment,
@@ -181,9 +181,9 @@ export function usePrintMIScheduleMutation(): UseMutationResult<MIPrintResult, E
   })
 }
 
-export function usePrintMIAdviceMutation(): UseMutationResult<MIPrintResult, Error, MIPlanPrintVariables> {
+export function usePrintMIStatementMutation(): UseMutationResult<MIPrintResult, Error, MIPlanPrintVariables> {
   return useMutation({
-    mutationFn: ({ planId }: MIPlanPrintVariables) => printMIAdvice(planId),
+    mutationFn: ({ planId }: MIPlanPrintVariables) => printMIStatement(planId),
   })
 }
 

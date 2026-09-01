@@ -1,11 +1,6 @@
-import { useQueryClient } from "@tanstack/react-query"
-import { FileText, LoaderCircle, Printer } from "lucide-react"
-import { useState } from "react"
-import { printMIAdvice, printMISchedule, type MIPlanDetail, type MIPlanDocument } from "../../lib/maturityInstallments"
-import { invalidateMaturityInstallmentQueries } from "../../lib/maturityInstallmentsHooks"
-import { toStructuredError } from "../../lib/structuredError"
-import { ErrorCoach } from "../ErrorCoach"
-import { useToast } from "../ui/Toast"
+import { Download, FileText, Printer } from "lucide-react"
+import type { MIPlanDetail, MIPlanDocument } from "../../lib/maturityInstallments"
+import type { MIPrintKind } from "./MIPrintPreviewModal"
 
 function formatDate(value: string): string {
   if (!value) return "—"
@@ -14,8 +9,8 @@ function formatDate(value: string): string {
 }
 
 function documentLabel(documentType: string): string {
-  if (documentType === "OL_MATURITY_PAYMENT_ADVICE") return "Payment Advice"
   if (documentType === "OL_MATURITY_SCHEDULE") return "Maturity Schedule"
+  if (documentType === "OL_MATURITY_STATEMENT") return "Payment Statement"
   return documentType.toLowerCase().replace(/_/g, " ")
 }
 
@@ -23,59 +18,32 @@ function documentUrl(document: MIPlanDocument): string | null {
   return document.signedDownloadUrl ?? document.previewUrl ?? document.downloadUrl ?? null
 }
 
-export function MIPlanDocumentsPanel({ plan, canPrint }: { plan: MIPlanDetail; canPrint: boolean }) {
-  const queryClient = useQueryClient()
-  const { toast } = useToast()
-  const [rendering, setRendering] = useState<"schedule" | "advice" | null>(null)
-  const [error, setError] = useState<unknown>(null)
+export function MIPlanDocumentsPanel({ plan, canPrint, onPrint, onPreview }: { plan: MIPlanDetail; canPrint: boolean; onPrint: (kind: MIPrintKind) => void; onPreview: (document: MIPlanDocument) => void }) {
   const allowedToPrint = canPrint && (plan.allowedActions ?? []).map((value) => value.toLowerCase()).includes("print")
 
-  const generate = async (kind: "schedule" | "advice") => {
-    setRendering(kind)
-    setError(null)
-    try {
-      const result = kind === "schedule" ? await printMISchedule(plan.id) : await printMIAdvice(plan.id)
-      const url = result.signedDownloadUrl ?? result.previewUrl
-      invalidateMaturityInstallmentQueries(queryClient, plan.id)
-      if (url) window.open(url, "_blank", "noopener,noreferrer")
-      else toast({ tone: "info", title: "Document generated", message: `The ${kind === "schedule" ? "maturity schedule" : "payment advice"} has been generated for this plan.` })
-    } catch (caught) {
-      setError(caught)
-    } finally {
-      setRendering(null)
-    }
-  }
-
-  const open = (document: MIPlanDocument) => {
+  const download = (document: MIPlanDocument) => {
     const url = documentUrl(document)
-    if (!url) {
-      setError(new Error("This plan document has no secure PDF URL. Generate it again or contact ZIC Finance."))
-      return
-    }
-    window.open(url, "_blank", "noopener,noreferrer")
+    if (url) window.open(url, "_blank", "noopener,noreferrer")
   }
 
-  const normalizedError = error ? toStructuredError(error, "The maturity installment document could not be generated.") : null
   return <section className="surface-card overflow-hidden" aria-labelledby="mi-documents-heading" data-testid="mi-documents-panel">
     <header className="flex flex-wrap items-start justify-between gap-3 border-b px-5 py-4">
       <div>
         <h2 id="mi-documents-heading" className="flex items-center gap-2 text-base font-bold"><FileText size={18} aria-hidden="true" />Documents</h2>
-        <p className="mt-1 text-sm text-[var(--muted-foreground)]">Maturity schedules and payment advices generated through the document engine, retained against this plan.</p>
+        <p className="mt-1 text-sm text-[var(--muted-foreground)]">Maturity schedules and payment statements generated through the document engine, retained against this plan.</p>
       </div>
       {allowedToPrint && <div className="flex flex-wrap gap-2">
-        <button type="button" className="button-secondary inline-flex items-center gap-2" onClick={() => void generate("schedule")} disabled={Boolean(rendering)}><Printer size={15} aria-hidden="true" />{rendering === "schedule" ? "Generating…" : "Print Schedule"}</button>
-        <button type="button" className="button-secondary inline-flex items-center gap-2" onClick={() => void generate("advice")} disabled={Boolean(rendering)}><Printer size={15} aria-hidden="true" />{rendering === "advice" ? "Generating…" : "Print Advice"}</button>
+        <button type="button" className="button-secondary inline-flex items-center gap-2" onClick={() => onPrint("schedule")}><Printer size={15} aria-hidden="true" />Print Schedule</button>
+        <button type="button" className="button-secondary inline-flex items-center gap-2" onClick={() => onPrint("statement")}><Printer size={15} aria-hidden="true" />Print Statement</button>
       </div>}
     </header>
     <div className="p-5">
-      {normalizedError && <div className="mb-4"><ErrorCoach title="Document action needs attention" message={normalizedError.message} resolutionSteps={normalizedError.resolutionSteps} /></div>}
-      {plan.documents.length === 0 ? <p className="py-8 text-sm text-[var(--muted-foreground)]">No generated documents yet. Use Print Schedule or Print Advice to create one.</p> : <div className="overflow-x-auto">
+      {plan.documents.length === 0 ? <p className="py-8 text-sm text-[var(--muted-foreground)]">No generated documents yet. Use Print Schedule or Print Statement to create one.</p> : <div className="overflow-x-auto">
         <table className="w-full min-w-[820px] text-left text-sm"><caption className="sr-only">Generated maturity installment documents</caption>
           <thead><tr className="border-b text-xs uppercase tracking-wide text-[var(--muted-foreground)]"><th className="px-3 py-3">Document</th><th className="px-3 py-3">Template</th><th className="px-3 py-3">Version</th><th className="px-3 py-3">Generated by</th><th className="px-3 py-3">Generated at</th><th className="px-3 py-3">Pages</th><th className="px-3 py-3 text-right">Actions</th></tr></thead>
-          <tbody>{plan.documents.map((document) => <tr key={document.id} className="border-b last:border-0 hover:bg-[var(--muted)]/35"><td className="px-3 py-3 font-semibold">{documentLabel(document.documentType)}</td><td className="px-3 py-3">{document.templateName}</td><td className="px-3 py-3">v{document.templateVersion}</td><td className="px-3 py-3">{document.generatedByDisplay}</td><td className="px-3 py-3">{formatDate(document.generatedAt)}</td><td className="px-3 py-3">{document.pageCount}</td><td className="px-3 py-3"><div className="flex flex-wrap justify-end gap-2"><button type="button" className="button-secondary inline-flex items-center gap-1" onClick={() => open(document)}>Preview</button><button type="button" className="button-secondary inline-flex items-center gap-1" onClick={() => open(document)}>Open</button></div></td></tr>)}</tbody>
+          <tbody>{plan.documents.map((document) => <tr key={document.id} className="border-b last:border-0 hover:bg-[var(--muted)]/35"><td className="px-3 py-3 font-semibold">{documentLabel(document.documentType)}</td><td className="px-3 py-3">{document.templateName}</td><td className="px-3 py-3">v{document.templateVersion}</td><td className="px-3 py-3">{document.generatedByDisplay}</td><td className="px-3 py-3">{formatDate(document.generatedAt)}</td><td className="px-3 py-3">{document.pageCount}</td><td className="px-3 py-3"><div className="flex flex-wrap justify-end gap-2"><button type="button" className="button-secondary inline-flex items-center gap-1" onClick={() => onPreview(document)}>Preview</button><button type="button" className="button-secondary inline-flex items-center gap-1" onClick={() => download(document)}><Download size={13} aria-hidden="true" />Download</button></div></td></tr>)}</tbody>
         </table>
       </div>}
-      {rendering && <div className="mt-4 flex items-center gap-2 text-sm text-[var(--muted-foreground)]" role="status"><LoaderCircle size={16} className="animate-spin" aria-hidden="true" />Rendering {rendering === "schedule" ? "the maturity schedule" : "the payment advice"}…</div>}
     </div>
   </section>
 }

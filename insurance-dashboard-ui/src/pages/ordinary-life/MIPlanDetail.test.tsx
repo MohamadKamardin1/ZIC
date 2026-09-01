@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes, useParams } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { MIBankAccount, MIPlanDetail as MIPlanDetailType, MIPlanItem, MIPlanItemPage } from "../../lib/maturityInstallments"
 
-const { useMIPlanDetailMock, useMIPlanItemsMock, invalidateMaturityInstallmentQueriesMock, processMIPaymentMock, reverseMIPaymentMock, cancelMIPlanMock, printMIScheduleMock, printMIAdviceMock, toastMock } = vi.hoisted(() => ({
+const { useMIPlanDetailMock, useMIPlanItemsMock, invalidateMaturityInstallmentQueriesMock, processMIPaymentMock, reverseMIPaymentMock, cancelMIPlanMock, printMIScheduleMock, printMIStatementMock, toastMock } = vi.hoisted(() => ({
   useMIPlanDetailMock: vi.fn(),
   useMIPlanItemsMock: vi.fn(),
   invalidateMaturityInstallmentQueriesMock: vi.fn(),
@@ -13,7 +13,7 @@ const { useMIPlanDetailMock, useMIPlanItemsMock, invalidateMaturityInstallmentQu
   reverseMIPaymentMock: vi.fn(),
   cancelMIPlanMock: vi.fn(),
   printMIScheduleMock: vi.fn(),
-  printMIAdviceMock: vi.fn(),
+  printMIStatementMock: vi.fn(),
   toastMock: vi.fn(),
 }))
 
@@ -24,7 +24,7 @@ vi.mock("../../lib/maturityInstallmentsHooks", async () => {
 
 vi.mock("../../lib/maturityInstallments", async () => {
   const actual = await vi.importActual<typeof import("../../lib/maturityInstallments")>("../../lib/maturityInstallments")
-  return { ...actual, processMIPayment: processMIPaymentMock, reverseMIPayment: reverseMIPaymentMock, cancelMIPlan: cancelMIPlanMock, printMISchedule: printMIScheduleMock, printMIAdvice: printMIAdviceMock }
+  return { ...actual, processMIPayment: processMIPaymentMock, reverseMIPayment: reverseMIPaymentMock, cancelMIPlan: cancelMIPlanMock, printMISchedule: printMIScheduleMock, printMIStatement: printMIStatementMock }
 })
 
 vi.mock("../../components/ui/Toast", () => ({ useToast: () => ({ toast: toastMock }) }))
@@ -102,6 +102,7 @@ const baseDetail = (overrides: Partial<MIPlanDetailType> = {}): MIPlanDetailType
   ],
   documents: [
     { id: "doc-plan-active-1-schedule", documentType: "OL_MATURITY_SCHEDULE", templateName: "OL Maturity Schedule", templateVersion: 1, pageCount: 2, generatedByDisplay: "Sultan Admin", generatedAt: "2026-09-01T08:00:00Z", previewUrl: "/api/v1/documents/instances/doc-plan-active-1-schedule/preview/", signedDownloadUrl: "/api/v1/documents/instances/doc-plan-active-1-schedule/download/?ticket=mock-schedule-plan-active-1" },
+    { id: "doc-plan-active-1-statement", documentType: "OL_MATURITY_STATEMENT", templateName: "OL Maturity Payment Statement", templateVersion: 1, pageCount: 1, generatedByDisplay: "Sultan Admin", generatedAt: "2026-09-01T09:00:00Z", previewUrl: "/api/v1/documents/instances/doc-plan-active-1-statement/preview/", signedDownloadUrl: "/api/v1/documents/instances/doc-plan-active-1-statement/download/?ticket=mock-statement-plan-active-1" },
   ],
   bankAccounts: [
     { id: "ba-plan-active-1-1", accountName: "Amani Salum — Maturity", accountNumber: "0151234567891", bankName: "NMB Bank", branch: "Dar es Salaam", isDefault: true, availableBalance: "75000000.00" },
@@ -190,7 +191,7 @@ describe("OL Maturity Installments detail (Prompt 3 master-detail)", () => {
     reverseMIPaymentMock.mockReset()
     cancelMIPlanMock.mockReset()
     printMIScheduleMock.mockReset()
-    printMIAdviceMock.mockReset()
+    printMIStatementMock.mockReset()
     toastMock.mockReset()
     vi.spyOn(window, "open").mockImplementation(() => null)
   })
@@ -213,7 +214,7 @@ describe("OL Maturity Installments detail (Prompt 3 master-detail)", () => {
     expect(screen.getByText(/Start 1 Mar 2026/)).toBeInTheDocument()
     expect(screen.getByText(/End 1 Mar 2029/)).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Process Payment" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Print schedule" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Print Schedule" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Terminate plan" })).toBeInTheDocument()
     expect(screen.queryByText("plan-active-1")).not.toBeInTheDocument()
     expect(screen.queryByText("plan-active-1-item-1")).not.toBeInTheDocument()
@@ -226,7 +227,7 @@ describe("OL Maturity Installments detail (Prompt 3 master-detail)", () => {
     await screen.findByText("MIP-20260815-9E1168C4EF")
     expect(screen.queryByRole("button", { name: "Process Payment" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Terminate plan" })).not.toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Print schedule" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Print Schedule" })).toBeInTheDocument()
   })
 
   it("shows a red terminated banner with the recorded reason and a green completed banner", async () => {
@@ -283,9 +284,10 @@ describe("OL Maturity Installments detail (Prompt 3 master-detail)", () => {
     expect(screen.getByText("Plan created")).toBeInTheDocument()
 
     await user.click(screen.getByRole("button", { name: "Documents" }))
-    expect(await screen.findByText("Maturity Schedule")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Print Schedule" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Print Advice" })).toBeInTheDocument()
+    const panel = within(await screen.findByTestId("mi-documents-panel"))
+    expect(panel.getByText("Maturity Schedule")).toBeInTheDocument()
+    expect(panel.getByRole("button", { name: "Print Schedule" })).toBeInTheDocument()
+    expect(panel.getByRole("button", { name: "Print Statement" })).toBeInTheDocument()
   })
 
   it("processes the next due installment through the payment modal", async () => {
@@ -311,11 +313,13 @@ describe("OL Maturity Installments detail (Prompt 3 master-detail)", () => {
     await screen.findByText("MIP-20260901-9DD41C66AF")
     expect(screen.queryByRole("button", { name: "Process Payment" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Terminate plan" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Print schedule" })).not.toBeInTheDocument()
-    await user.click(screen.getByRole("button", { name: "Documents" }))
-    expect(screen.getByText("Maturity Schedule")).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Print Schedule" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Print Advice" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Print Statement" })).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Documents" }))
+    const panel = within(await screen.findByTestId("mi-documents-panel"))
+    expect(panel.getByText("Maturity Schedule")).toBeInTheDocument()
+    expect(panel.queryByRole("button", { name: "Print Schedule" })).not.toBeInTheDocument()
+    expect(panel.queryByRole("button", { name: "Print Statement" })).not.toBeInTheDocument()
   })
 
   it("renders the schedule table with server-side pagination across pages", async () => {
@@ -545,5 +549,95 @@ describe("OL Maturity Installments detail (Prompt 3 master-detail)", () => {
     await completeCashFlow(dialog, "Process payment")
     expect(await screen.findByText("Insufficient funds in partner bank for this disbursement.")).toBeInTheDocument()
     expect(within(dialog).getByText("Payment requisition not created")).toBeInTheDocument()
+  })
+})
+
+describe("OL Maturity Installments documents and print integration (Prompt 8)", () => {
+  it("lists generated documents with preview and download actions", async () => {
+    useMIPlanDetailMock.mockReturnValue({ data: baseDetail(), isLoading: false, error: null })
+    const user = userEvent.setup()
+    renderDetail()
+    await screen.findByText("MIP-20260901-9DD41C66AF")
+    await user.click(screen.getByRole("button", { name: "Documents" }))
+    const panel = within(await screen.findByTestId("mi-documents-panel"))
+    expect(panel.getByText("Maturity Schedule")).toBeInTheDocument()
+    expect(panel.getByText("Payment Statement")).toBeInTheDocument()
+    expect(panel.getAllByText("Sultan Admin").length).toBeGreaterThan(0)
+    expect(panel.getAllByRole("button", { name: "Preview" }).length).toBe(2)
+    expect(panel.getAllByRole("button", { name: /Download/ }).length).toBe(2)
+  })
+
+  it("generates a schedule PDF into the authenticated print preview modal", async () => {
+    printMIScheduleMock.mockResolvedValue({ signedDownloadUrl: "https://documents.example.test/mi-schedule.pdf", previewUrl: "https://documents.example.test/mi-schedule-preview.pdf" })
+    useMIPlanDetailMock.mockReturnValue({ data: baseDetail(), isLoading: false, error: null })
+    const user = userEvent.setup()
+    renderDetail()
+    await screen.findByText("MIP-20260901-9DD41C66AF")
+    await user.click(screen.getByRole("button", { name: "Print Schedule" }))
+    const dialog = within(await screen.findByRole("dialog"))
+    await waitFor(() => expect(printMIScheduleMock).toHaveBeenCalledWith("plan-active-1"))
+    expect(dialog.getByText("Plan number")).toBeInTheDocument()
+    expect(dialog.getByText("MIP-20260901-9DD41C66AF")).toBeInTheDocument()
+    expect(dialog.getByText("Policyholder")).toBeInTheDocument()
+    expect(dialog.getByText("Table of installments")).toBeInTheDocument()
+    expect(dialog.getByText(/Signatures/)).toBeInTheDocument()
+    const frame = await dialog.findByTitle("Maturity Schedule PDF preview")
+    expect(frame.getAttribute("src")).toBe("https://documents.example.test/mi-schedule.pdf")
+  })
+
+  it("stamps documents with TERMINATED or MISSED watermarks by plan status", async () => {
+    const terminated = baseDetail({ id: "plan-terminated-1", planNumber: "MIP-20260710-77C0F1A4B2", status: "TERMINATED", statusDisplay: "Terminated", allowedActions: ["view", "print"], terminationReason: "Surrendered.", terminatedAt: "2026-07-10T11:00:00Z" })
+    printMIScheduleMock.mockResolvedValue({ signedDownloadUrl: "https://documents.example.test/terminated.pdf" })
+    useMIPlanDetailMock.mockReturnValue({ data: terminated, isLoading: false, error: null })
+    const user = userEvent.setup()
+    const first = renderDetail(terminated)
+    await screen.findByText("MIP-20260710-77C0F1A4B2")
+    await user.click(screen.getByRole("button", { name: "Print Schedule" }))
+    let dialog = within(await screen.findByRole("dialog"))
+    expect(dialog.getByText("TERMINATED")).toBeInTheDocument()
+    expect(dialog.queryByText("MISSED")).not.toBeInTheDocument()
+    first.unmount()
+
+    printMIScheduleMock.mockResolvedValue({ signedDownloadUrl: "https://documents.example.test/missed.pdf" })
+    useMIPlanDetailMock.mockReturnValue({ data: baseDetail(), isLoading: false, error: null })
+    renderDetail()
+    await screen.findByText("MIP-20260901-9DD41C66AF")
+    await user.click(screen.getByRole("button", { name: "Print Schedule" }))
+    dialog = within(await screen.findByRole("dialog"))
+    expect(dialog.getByText("MISSED")).toBeInTheDocument()
+    expect(dialog.queryByText("TERMINATED")).not.toBeInTheDocument()
+  })
+
+  it("hides the watermark for a clean active plan with no missed installments", async () => {
+    const cleanItems = baseDetail().items.map((item) => item.status === "MISSED" ? { ...item, status: "SCHEDULED", statusDisplay: "Scheduled" } : item)
+    printMIScheduleMock.mockResolvedValue({ signedDownloadUrl: "https://documents.example.test/clean.pdf" })
+    useMIPlanDetailMock.mockReturnValue({ data: baseDetail({ items: cleanItems }), isLoading: false, error: null })
+    const user = userEvent.setup()
+    renderDetail()
+    await screen.findByText("MIP-20260901-9DD41C66AF")
+    await user.click(screen.getByRole("button", { name: "Print Schedule" }))
+    const dialog = within(await screen.findByRole("dialog"))
+    await dialog.findByTitle("Maturity Schedule PDF preview")
+    expect(dialog.queryByText("TERMINATED")).not.toBeInTheDocument()
+    expect(dialog.queryByText("MISSED")).not.toBeInTheDocument()
+  })
+
+  it("surfaces a TEMPLATE_PENDING error through the ErrorCoach in the print preview", async () => {
+    printMIScheduleMock.mockRejectedValue({
+      success: false,
+      errorCode: "TEMPLATE_PENDING",
+      message: "The print template for this plan is still rendering and is not ready yet.",
+      resolutionSteps: ["Wait a few moments for the template renderer to finish.", "Retry printing once the template is ready."],
+      error: { code: "TEMPLATE_PENDING", message: "The print template for this plan is still rendering and is not ready yet." },
+    })
+    useMIPlanDetailMock.mockReturnValue({ data: baseDetail(), isLoading: false, error: null })
+    const user = userEvent.setup()
+    renderDetail()
+    await screen.findByText("MIP-20260901-9DD41C66AF")
+    await user.click(screen.getByRole("button", { name: "Print Schedule" }))
+    const dialog = within(await screen.findByRole("dialog"))
+    expect(await dialog.findByRole("alert")).toBeInTheDocument()
+    expect(dialog.getByText("Print template is still rendering")).toBeInTheDocument()
+    expect(dialog.getByText(/still rendering and is not ready yet/)).toBeInTheDocument()
   })
 })

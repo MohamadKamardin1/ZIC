@@ -737,8 +737,8 @@ export function printMISchedule(planId: string): Promise<MIPrintResult> {
   return request<MIPrintResult>(`${MATURITY_INSTALLMENTS_API_PREFIX}/${encodeURIComponent(planId)}/print-schedule/`, { method: "POST" })
 }
 
-export function printMIAdvice(planId: string): Promise<MIPrintResult> {
-  return request<MIPrintResult>(`${MATURITY_INSTALLMENTS_API_PREFIX}/${encodeURIComponent(planId)}/print-advice/`, { method: "POST" })
+export function printMIStatement(planId: string): Promise<MIPrintResult> {
+  return request<MIPrintResult>(`${MATURITY_INSTALLMENTS_API_PREFIX}/${encodeURIComponent(planId)}/print-statement/`, { method: "POST" })
 }
 
 export function listMIPortalPlans(): Promise<MIPortalPlan[]> {

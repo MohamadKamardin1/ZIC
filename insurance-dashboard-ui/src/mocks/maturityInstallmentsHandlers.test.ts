@@ -35,8 +35,8 @@ describe("OL Maturity Installments MSW contract", () => {
     expect(all.status).toBe(200)
     const allBody = await all.json()
     expect(allBody.data).toMatchObject({
-      total_plans_active: 5,
-      total_active_plans_value: "222750000.00",
+      total_plans_active: 6,
+      total_active_plans_value: "252750000.00",
       missed_payments_count: 6,
       completed_plans_count: 1,
     })
@@ -45,7 +45,7 @@ describe("OL Maturity Installments MSW contract", () => {
 
     const filtered = await fetch(`${BASE}/kpis/?status=ACTIVE`)
     const filteredBody = await filtered.json()
-    expect(filteredBody.data).toMatchObject({ total_plans_active: 5, total_active_plans_value: "222750000.00", completed_plans_count: 0 })
+    expect(filteredBody.data).toMatchObject({ total_plans_active: 6, total_active_plans_value: "252750000.00", completed_plans_count: 0 })
 
     const dateFiltered = await fetch(`${BASE}/kpis/?date_from=2026-03-01&date_to=2026-03-31`)
     const dateFilteredBody = await dateFiltered.json()
@@ -284,24 +284,33 @@ describe("OL Maturity Installments MSW contract", () => {
     expect(body.data).toMatchObject({ status: "PASS", missing_amount: "0.00", paid_items: 10, total_items: 10 })
   })
 
-  it("prints a schedule and a payment advice through the documents engine", async () => {
+  it("prints a schedule and a payment statement through the documents engine", async () => {
     const scheduleResponse = await fetch(`${BASE}/plan-active-1/print-schedule/`, { method: "POST" })
     expect(scheduleResponse.status).toBe(201)
     const scheduleBody = await scheduleResponse.json()
     expect(scheduleBody.data.instance.document_type).toBe("OL_MATURITY_SCHEDULE")
     expect(scheduleBody.data.signed_download_url).toContain("/download/")
 
-    const adviceResponse = await fetch(`${BASE}/plan-active-1/print-advice/`, { method: "POST" })
-    expect(adviceResponse.status).toBe(201)
-    const adviceBody = await adviceResponse.json()
-    expect(adviceBody.data.instance.document_type).toBe("OL_MATURITY_PAYMENT_ADVICE")
+    const statementResponse = await fetch(`${BASE}/plan-active-1/print-statement/`, { method: "POST" })
+    expect(statementResponse.status).toBe(201)
+    const statementBody = await statementResponse.json()
+    expect(statementBody.data.instance.document_type).toBe("OL_MATURITY_STATEMENT")
+    expect(statementBody.data.signed_download_url).toContain("ticket=mock-statement-plan-active-1")
+  })
+
+  it("holds print generation when the document template is still rendering", async () => {
+    const response = await fetch(`${BASE}/plan-template-pending-1/print-schedule/`, { method: "POST" })
+    expect(response.status).toBe(409)
+    const body = await response.json()
+    expect(body).toMatchObject({ errorCode: "TEMPLATE_PENDING", error: { code: "TEMPLATE_PENDING" } })
+    expect(Array.isArray(body.resolutionSteps)).toBe(true)
   })
 
   it("exposes a read-only partner portal scoped to available plans", async () => {
     const listResponse = await fetch(`${BASE}/portal/`)
     expect(listResponse.status).toBe(200)
     const listBody = await listResponse.json()
-    expect(listBody.data.results).toHaveLength(9)
+    expect(listBody.data.results).toHaveLength(10)
     expect(listBody.data.results[0]).toMatchObject({ plan_number: "MIP-20260901-9DD41C66AF", status_display: "Active" })
 
     const detailResponse = await fetch(`${BASE}/portal/plan-active-1/`)

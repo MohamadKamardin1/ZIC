@@ -296,6 +296,11 @@ const initialPlans: MIPlanMockRow[] = [
       return item("plan-long-term-1", number, due, "5000000.00")
     }),
   ),
+  plan(
+    { id: "plan-template-pending-1", plan_number: "MIP-20260901-4F0AB12CD3", policy_id: "policy-zwena-1", policy_number: "ZIC-OL-2026-000014", policyholder_name: "Zwena Kapinga", policyholder_display: "P-000014 — Zwena Kapinga", currency: "TZS", frequency: "ANNUAL", status: "ACTIVE", maturity_value: "30000000.00" },
+    Array.from({ length: 4 }, (_, index) => item("plan-template-pending-1", index + 1, `20${27 + index}-05-20`, "7500000.00")),
+    { documents: [] },
+  ),
 ]
 
 const frequencyOptions: Array<{ value: string; label: string; meta: { months_between: number; payout_per_year: number } }> = [
@@ -331,6 +336,10 @@ function data<T>(payload: T, status = 200) {
 
 function error(status: number, code: string, message: string, resolutionSteps: string[], details: Record<string, unknown> = {}, fieldErrors: Record<string, string[]> = {}) {
   return HttpResponse.json({ success: false, errorCode: code, message, resolutionSteps, details, fieldErrors, error: { code, message, details, resolutionSteps } }, { status })
+}
+
+function templatePendingError(row: MIPlanMockRow) {
+  return error(409, "TEMPLATE_PENDING", "The print template for this plan is still rendering and is not ready yet.", ["Wait a few moments for the template renderer to finish.", "Retry printing once the template is ready."], { planId: row.id })
 }
 
 function page<T>(rows: T[], url: URL) {
@@ -775,16 +784,18 @@ export const maturityInstallmentsHandlers = [
   http.post(`*${BASE}/:planId/print-schedule/`, ({ params }) => {
     const row = findPlan(String(params.planId))
     if (!row) return error(404, "INSTALLMENT_PLAN_NOT_FOUND", "The requested installment plan could not be found.", ["Return to the plan register and choose an available plan."])
+    if (row.id === "plan-template-pending-1") return templatePendingError(row)
     const instance = { id: `doc-${row.id}-schedule`, document_type: "OL_MATURITY_SCHEDULE", template_name: "OL Maturity Schedule", template_version: 1, page_count: 2, generated_by_display: "Sultan Admin", generated_at: new Date().toISOString() }
     const document: MIPlanMockDocument = { ...instance, preview_url: `/api/v1/documents/instances/doc-${row.id}-schedule/preview/`, signed_download_url: `/api/v1/documents/instances/doc-${row.id}-schedule/download/?ticket=mock-schedule-${row.id}` }
     if (!row.documents.some((existing) => existing.id === document.id)) row.documents.push(document)
     return data({ instance, signed_download_url: document.signed_download_url, preview_url: document.preview_url }, 201)
   }),
-  http.post(`*${BASE}/:planId/print-advice/`, ({ params }) => {
+  http.post(`*${BASE}/:planId/print-statement/`, ({ params }) => {
     const row = findPlan(String(params.planId))
     if (!row) return error(404, "INSTALLMENT_PLAN_NOT_FOUND", "The requested installment plan could not be found.", ["Return to the plan register and choose an available plan."])
-    const instance = { id: `doc-${row.id}-advice`, document_type: "OL_MATURITY_PAYMENT_ADVICE", template_name: "OL Maturity Payment Advice", template_version: 1, page_count: 1, generated_by_display: "Sultan Admin", generated_at: new Date().toISOString() }
-    const document: MIPlanMockDocument = { ...instance, preview_url: `/api/v1/documents/instances/doc-${row.id}-advice/preview/`, signed_download_url: `/api/v1/documents/instances/doc-${row.id}-advice/download/?ticket=mock-advice-${row.id}` }
+    if (row.id === "plan-template-pending-1") return templatePendingError(row)
+    const instance = { id: `doc-${row.id}-statement`, document_type: "OL_MATURITY_STATEMENT", template_name: "OL Maturity Payment Statement", template_version: 1, page_count: 1, generated_by_display: "Sultan Admin", generated_at: new Date().toISOString() }
+    const document: MIPlanMockDocument = { ...instance, preview_url: `/api/v1/documents/instances/doc-${row.id}-statement/preview/`, signed_download_url: `/api/v1/documents/instances/doc-${row.id}-statement/download/?ticket=mock-statement-${row.id}` }
     if (!row.documents.some((existing) => existing.id === document.id)) row.documents.push(document)
     return data({ instance, signed_download_url: document.signed_download_url, preview_url: document.preview_url }, 201)
   }),

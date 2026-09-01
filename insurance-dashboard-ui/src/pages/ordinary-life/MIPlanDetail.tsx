@@ -5,12 +5,13 @@ import { ArrowLeft, Check, CheckCircle2, Clipboard, ExternalLink, FileText, Load
 import { ErrorCoach } from "../../components/ErrorCoach"
 import { ItemStatusBadge, MoneyCell, PlanStatusBadge, planStatusLabel, ProgressCell } from "../../components/maturityInstallments/MIPrimitives"
 import { MIPlanDocumentsPanel } from "../../components/maturityInstallments/MIPlanDocumentsPanel"
+import { MIPrintPreviewModal, type MIPrintKind, type MIPrintPreviewState } from "../../components/maturityInstallments/MIPrintPreviewModal"
 import { StatusBadge, type StatusTone } from "../../components/ui/StatusBadge"
 import { Modal } from "../../components/ui/Overlays"
 import { SmartSelect } from "../../components/ui/SmartSelect"
 import { useToast } from "../../components/ui/Toast"
 import { useAccess } from "../../lib/access"
-import { cancelMIPlan, printMISchedule, processMIPayment, reverseMIPayment, type MIBankAccount, type MIPlanDetail, type MIPlanItem, type MIProcessPaymentDetails } from "../../lib/maturityInstallments"
+import { cancelMIPlan, printMISchedule, printMIStatement, processMIPayment, reverseMIPayment, type MIBankAccount, type MIPlanDetail, type MIPlanDocument, type MIPlanItem, type MIProcessPaymentDetails } from "../../lib/maturityInstallments"
 import { invalidateMaturityInstallmentQueries, useMIPlanDetail, useMIPlanItems } from "../../lib/maturityInstallmentsHooks"
 import { toStructuredError, type StructuredError } from "../../lib/structuredError"
 
@@ -465,6 +466,7 @@ export default function MIPlanDetail() {
   const [cancelBusy, setCancelBusy] = useState(false)
   const [cancelError, setCancelError] = useState<StructuredError | null>(null)
   const [cancelReason, setCancelReason] = useState("")
+  const [printPreview, setPrintPreview] = useState<MIPrintPreviewState | null>(null)
 
   const detailQuery = useMIPlanDetail(planId)
   const plan = detailQuery.data
@@ -491,15 +493,26 @@ export default function MIPlanDetail() {
     void copyText(plan.planNumber).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1800) })
   }
 
-  const handlePrint = async () => {
+  const openPrint = async (kind: MIPrintKind) => {
+    setPrintPreview({ kind, url: null, busy: true, error: null })
     try {
-      const result = await printMISchedule(plan.id)
+      const result = kind === "schedule" ? await printMISchedule(plan.id) : await printMIStatement(plan.id)
       const url = result.signedDownloadUrl ?? result.previewUrl
-      if (url) window.open(url, "_blank", "noopener,noreferrer")
-      else toast({ tone: "info", title: "Schedule generated", message: "The schedule document has been generated for this plan." })
+      invalidateMaturityInstallmentQueries(queryClient, plan.id)
+      setPrintPreview((current) => (current ? { ...current, url: url ?? null, busy: false } : current))
+      if (!url) toast({ tone: "info", title: "Document generated", message: `The ${kind === "schedule" ? "maturity schedule" : "payment statement"} has been generated for this plan.` })
     } catch (error) {
-      toast({ tone: "danger", title: "Schedule could not be printed", message: toStructuredError(error, "The schedule could not be generated.").message })
+      setPrintPreview((current) => (current ? { ...current, busy: false, error: toStructuredError(error, "The print document could not be generated.") } : current))
     }
+  }
+
+  const openDocument = (document: MIPlanDocument) => {
+    const url = document.signedDownloadUrl ?? document.previewUrl ?? document.downloadUrl ?? null
+    if (!url) {
+      toast({ tone: "danger", title: "Preview unavailable", message: "This plan document has no secure PDF URL. Generate it again or contact ZIC Finance." })
+      return
+    }
+    setPrintPreview({ kind: document.documentType === "OL_MATURITY_STATEMENT" ? "statement" : "schedule", document, url, busy: false, error: null })
   }
 
   const openProcess = () => {
@@ -566,14 +579,15 @@ export default function MIPlanDetail() {
       <div><p className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--muted-foreground)]">Available servicing actions</p><p className="mt-1 text-xs text-[var(--muted-foreground)]">Actions are shown only when allowed by both the backend state matrix and your permission.</p></div>
       <div className="flex flex-wrap items-center justify-end gap-2">
         {canAction("process_payment") && <button type="button" className="button-primary inline-flex items-center gap-2" onClick={openProcess}>Process Payment</button>}
-        {canAction("print") && <button type="button" className="button-secondary" onClick={() => void handlePrint()}>Print schedule</button>}
+        {canAction("print") && <button type="button" className="button-secondary" onClick={() => void openPrint("schedule")}>Print Schedule</button>}
+        {canAction("print") && <button type="button" className="button-secondary" onClick={() => void openPrint("statement")}>Print Statement</button>}
         {canTerminate && <button type="button" className="inline-flex min-h-10 items-center justify-center rounded-[10px] bg-[var(--destructive)] px-4 text-sm font-bold text-white" onClick={() => { setCancelError(null); setCancelReason(""); setCancelOpen(true) }}>Terminate plan</button>}
       </div>
     </div>
 
     <nav className="surface-card flex gap-1 overflow-x-auto p-1" aria-label="Maturity installment detail tabs">{TABS.map((tab) => <button key={tab.id} type="button" onClick={() => setSearchParams({ tab: tab.id })} className={`whitespace-nowrap rounded-[9px] px-4 py-2.5 text-sm font-bold transition ${activeTab === tab.id ? "bg-[var(--primary)] text-[var(--primary-foreground)]" : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"}`} aria-current={activeTab === tab.id ? "page" : undefined}>{tab.label}</button>)}</nav>
 
-    {activeTab === "overview" ? <OverviewTab plan={plan} /> : activeTab === "schedule" ? <ScheduleTab plan={plan} canProcess={canAction("process_payment")} canReverse={can("ol_maturity_installments.reverse")} /> : activeTab === "payments" ? <PaymentsTab plan={plan} /> : activeTab === "audit" ? <AuditTab plan={plan} /> : <MIPlanDocumentsPanel plan={plan} canPrint={can("ol_maturity_installments.print")} />}
+    {activeTab === "overview" ? <OverviewTab plan={plan} /> : activeTab === "schedule" ? <ScheduleTab plan={plan} canProcess={canAction("process_payment")} canReverse={can("ol_maturity_installments.reverse")} /> : activeTab === "payments" ? <PaymentsTab plan={plan} /> : activeTab === "audit" ? <AuditTab plan={plan} /> : <MIPlanDocumentsPanel plan={plan} canPrint={can("ol_maturity_installments.print")} onPrint={(kind) => void openPrint(kind)} onPreview={openDocument} />}
 
     <ProcessPaymentModal open={Boolean(processItem)} items={processItem ? [processItem] : []} currency={plan.currency} planNumber={plan.planNumber} bankAccounts={plan.bankAccounts} onClose={() => setProcessItem(null)} onSubmit={handleHeaderProcessSubmit} />
     <Modal open={cancelOpen} title="Terminate plan" onClose={() => { if (!cancelBusy) { setCancelOpen(false); setCancelError(null) } }} size="md">
@@ -593,5 +607,6 @@ export default function MIPlanDetail() {
         </div>
       </div>
     </Modal>
+    <MIPrintPreviewModal state={printPreview} plan={plan} onClose={() => setPrintPreview(null)} onRetry={() => { if (printPreview) void openPrint(printPreview.kind) }} />
   </div>
 }
