@@ -6,7 +6,7 @@
 - [x] Prompt 4 — Maturity Installments Schedule Tab
 - [x] Prompt 5 — Maturity Installments Payment Processing Modal
 - [x] Prompt 6 — Maturity Installments Reversal and Lifecycle Management
-- [ ] Prompt 7 — Maturity Installments Plan Generation Wizard
+- [x] Prompt 7 — Maturity Installments Plan Generation Wizard
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–10 will be appended `EXACTLY as provided` when the user
