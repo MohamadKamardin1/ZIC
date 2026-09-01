@@ -402,6 +402,36 @@ marks the linked maturity claim `PAID_VIA_INSTALLMENTS`. A plan that reaches
   (`PolicyNotificationLog` + `DashboardNotification`) and deduplicated by
   external key, so retries and idempotent replays never double-notify.
 
+## QA test matrix and security hardening (Prompt 10)
+
+- Full lifecycle paths covered in `tests/test_qa_matrix.py`:
+  - Happy path: matured policy → create plan (endpoint, real rate table) →
+    all installments processed and confirmed → plan `COMPLETED` with a passing
+    reconciliation (`paid == total`, zero missing). A freshly created schedule
+    starts at today, so later installments are backdated to simulate elapsed
+    time before processing (the real due-date guard otherwise blocks them).
+  - Missed path: plan activated → detection command flags the overdue item →
+    `InstallmentPaymentMissed` event + notification row.
+  - Reversal path: paid item → reversed → status restored to `SCHEDULED` (when
+    not past due), requisition `REVERSED`, audit `INSTALLMENT_PAYMENT_REVERSED`.
+  - Cancellation path: created plan → cancelled with every item `WAIVED` and
+    `INSTALLMENT_PLAN_CANCELLED` + per-item `INSTALLMENT_ITEM_WAIVED` audit rows.
+- Permission matrix: every register action is exercised against the seeded roles
+  (plain / viewer / handler / administrator / superuser) and the internal views
+  deny 403 without the matching `ol_maturity_installments.*` entitlement; the
+  partner portal is a separate `IsAuthenticated` + partner-scope surface covered
+  in the Prompt 9 tests.
+- Audit matrix: `validate_audit_consistency` passes over a plan walked through
+  every transition, and `validate_plan_reconciliation` reports `FAIL`
+  (`MISSING_PAYMENTS`) on a partial payment and `PASS` (paid == total, zero
+  balance) once fully paid.
+- Idempotency: plan creation replays return the same plan; payment processing
+  replays return the same requisition; the missed-detection batch is a safe
+  re-run (no duplicate events or notifications).
+- Security hardening: the CSV export now neutralizes spreadsheet
+  formula-injection prefixes (`=`, `+`, `-`, `@`) on the policyholder-name cell
+  via `_csv_safe` and sends `X-Content-Type-Options: nosniff`.
+
 ## Options endpoints
 
 - `GET /api/v1/ol/maturity-installments/options/frequencies/` — the five

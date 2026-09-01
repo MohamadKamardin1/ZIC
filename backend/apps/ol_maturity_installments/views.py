@@ -26,6 +26,16 @@ SORT_FIELDS = {
     "created_at": "created_at",
 }
 
+FORMULA_PREFIXES = ("=", "+", "-", "@")
+
+
+def _csv_safe(value):
+    """Neutralize spreadsheet formula-injection prefixes in an exported cell."""
+    text = str(value or "")
+    if text.lstrip().startswith(FORMULA_PREFIXES):
+        text = "'" + text
+    return text.replace("\r", " ").replace("\n", " ").replace("\t", " ")
+
 
 def _parse_date(value, field_name):
     if not value:
@@ -262,6 +272,7 @@ class InstallmentPlanExportView(APIView):
         paid_map = _paid_amount_by_plan([plan.pk for plan in queryset])
         response = HttpResponse(content_type="text/csv; charset=utf-8")
         response["Content-Disposition"] = 'attachment; filename="ol-maturity-installments-export.csv"'
+        response["X-Content-Type-Options"] = "nosniff"
         writer = csv.writer(response)
         writer.writerow(
             [
@@ -282,7 +293,7 @@ class InstallmentPlanExportView(APIView):
                 [
                     plan.plan_number,
                     plan.policy_ref.policy_number,
-                    _partner_name(plan.partner),
+                    _csv_safe(_partner_name(plan.partner)),
                     _money(plan.total_payable_amount),
                     _money(paid),
                     _money(Decimal(plan.total_payable_amount) - Decimal(paid)),
