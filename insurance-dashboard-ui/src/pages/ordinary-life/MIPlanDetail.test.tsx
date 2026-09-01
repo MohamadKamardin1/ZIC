@@ -1,13 +1,15 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { render, screen, waitFor, within } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter, Route, Routes, useParams } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import type { MIPlanDetail as MIPlanDetailType } from "../../lib/maturityInstallments"
+import type { MIPlanDetail as MIPlanDetailType, MIPlanItem, MIPlanItemPage } from "../../lib/maturityInstallments"
 
-const { useMIPlanDetailMock, processMIPaymentMock, cancelMIPlanMock, printMIScheduleMock, printMIAdviceMock, toastMock } = vi.hoisted(() => ({
+const { useMIPlanDetailMock, useMIPlanItemsMock, processMIPaymentMock, reverseMIPaymentMock, cancelMIPlanMock, printMIScheduleMock, printMIAdviceMock, toastMock } = vi.hoisted(() => ({
   useMIPlanDetailMock: vi.fn(),
+  useMIPlanItemsMock: vi.fn(),
   processMIPaymentMock: vi.fn(),
+  reverseMIPaymentMock: vi.fn(),
   cancelMIPlanMock: vi.fn(),
   printMIScheduleMock: vi.fn(),
   printMIAdviceMock: vi.fn(),
@@ -16,12 +18,12 @@ const { useMIPlanDetailMock, processMIPaymentMock, cancelMIPlanMock, printMISche
 
 vi.mock("../../lib/maturityInstallmentsHooks", async () => {
   const actual = await vi.importActual<typeof import("../../lib/maturityInstallmentsHooks")>("../../lib/maturityInstallmentsHooks")
-  return { ...actual, useMIPlanDetail: useMIPlanDetailMock }
+  return { ...actual, useMIPlanDetail: useMIPlanDetailMock, useMIPlanItems: useMIPlanItemsMock }
 })
 
 vi.mock("../../lib/maturityInstallments", async () => {
   const actual = await vi.importActual<typeof import("../../lib/maturityInstallments")>("../../lib/maturityInstallments")
-  return { ...actual, processMIPayment: processMIPaymentMock, cancelMIPlan: cancelMIPlanMock, printMISchedule: printMIScheduleMock, printMIAdvice: printMIAdviceMock }
+  return { ...actual, processMIPayment: processMIPaymentMock, reverseMIPayment: reverseMIPaymentMock, cancelMIPlan: cancelMIPlanMock, printMISchedule: printMIScheduleMock, printMIAdvice: printMIAdviceMock }
 })
 
 vi.mock("../../components/ui/Toast", () => ({ useToast: () => ({ toast: toastMock }) }))
@@ -102,6 +104,47 @@ const baseDetail = (overrides: Partial<MIPlanDetailType> = {}): MIPlanDetailType
   ...overrides,
 })
 
+const scheduleRow = (overrides: Partial<MIPlanItem> = {}): MIPlanItem => ({
+  id: `plan-long-term-1-item-${overrides.installmentNumber ?? 1}`,
+  planId: "plan-long-term-1",
+  installmentNumber: 1,
+  dueDate: "2026-03-15",
+  amount: "5000000.00",
+  status: "SCHEDULED",
+  statusDisplay: "Scheduled",
+  requisitionNumber: null,
+  paidDate: null,
+  paidByDisplay: null,
+  payerDisplay: null,
+  paymentReference: null,
+  narration: "",
+  ...overrides,
+})
+
+const schedulePageOneRows: MIPlanItem[] = [
+  scheduleRow({ installmentNumber: 1, dueDate: "2026-03-15", status: "PAID", statusDisplay: "Paid", requisitionNumber: "FO-MIP-2026-000501", paidDate: "2026-03-15", paymentReference: "FO-PAY-2026-000501" }),
+  scheduleRow({ installmentNumber: 2, dueDate: "2027-03-15", status: "PAID", statusDisplay: "Paid", requisitionNumber: "FO-MIP-2026-000502", paidDate: "2027-03-15", paymentReference: "FO-PAY-2026-000502" }),
+  scheduleRow({ installmentNumber: 3, dueDate: "2028-03-15", status: "MISSED", statusDisplay: "Missed", narration: "Payment was not received by the due date." }),
+  ...Array.from({ length: 7 }, (_, index) => scheduleRow({ installmentNumber: index + 4, dueDate: `20${29 + index}-03-15`, status: "SCHEDULED", statusDisplay: "Scheduled" })),
+]
+
+const schedulePageTwoRows: MIPlanItem[] = Array.from({ length: 10 }, (_, index) => scheduleRow({ installmentNumber: index + 11, dueDate: `20${36 + index}-03-15`, status: "SCHEDULED", statusDisplay: "Scheduled" }))
+
+const schedulePageData = (overrides: Partial<MIPlanItemPage> = {}): MIPlanItemPage => ({
+  results: schedulePageOneRows,
+  count: 20,
+  page: 1,
+  pageSize: 10,
+  next: true,
+  previous: false,
+  totalAmount: "100000000.00",
+  totalPaid: "10000000.00",
+  totalRemaining: "90000000.00",
+  ...overrides,
+})
+
+const longTermDetail = baseDetail({ id: "plan-long-term-1", planNumber: "MIP-20260101-5A1B2C3D4E" })
+
 function renderDetail(detail = baseDetail(), withPolicyRoute = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const PolicyMarker = () => { const params = useParams<{ policyId: string }>(); return <div data-testid="policy-marker">{params.policyId}</div> }
@@ -119,9 +162,12 @@ function renderDetail(detail = baseDetail(), withPolicyRoute = false) {
 
 describe("OL Maturity Installments detail (Prompt 3 master-detail)", () => {
   beforeEach(() => {
-    mockPermissions = ["ol_maturity_installments.view", "ol_maturity_installments.process_payment", "ol_maturity_installments.print", "ol_maturity_installments.cancel"]
+    mockPermissions = ["ol_maturity_installments.view", "ol_maturity_installments.process_payment", "ol_maturity_installments.reverse", "ol_maturity_installments.print", "ol_maturity_installments.cancel"]
     useMIPlanDetailMock.mockReset()
+    useMIPlanItemsMock.mockReset()
+    useMIPlanItemsMock.mockImplementation(() => ({ data: schedulePageData(), isLoading: false, error: null }))
     processMIPaymentMock.mockReset()
+    reverseMIPaymentMock.mockReset()
     cancelMIPlanMock.mockReset()
     printMIScheduleMock.mockReset()
     printMIAdviceMock.mockReset()
@@ -248,5 +294,107 @@ describe("OL Maturity Installments detail (Prompt 3 master-detail)", () => {
     expect(screen.getByText("Maturity Schedule")).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Print Schedule" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Print Advice" })).not.toBeInTheDocument()
+  })
+
+  it("renders the schedule table with server-side pagination across pages", async () => {
+    const pageTwo = schedulePageData({ results: schedulePageTwoRows, page: 2, next: false, previous: true })
+    useMIPlanItemsMock.mockImplementation((_planId, page) => (page === 2 ? { data: pageTwo, isLoading: false, error: null } : { data: schedulePageData(), isLoading: false, error: null }))
+    useMIPlanDetailMock.mockReturnValue({ data: longTermDetail, isLoading: false, error: null })
+    const user = userEvent.setup()
+    renderDetail()
+    await user.click(screen.getByRole("button", { name: "Schedule" }))
+    expect(await screen.findByText("Installment schedule")).toBeInTheDocument()
+    expect(screen.getAllByRole("row")).toHaveLength(11)
+    expect(screen.getByText("Page 1 of 2")).toBeInTheDocument()
+    expect(screen.getByText("20 installments · 10 per page")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Next" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled()
+    expect(screen.getAllByRole("row")[1]).toHaveTextContent("1")
+    expect(screen.getAllByRole("row")[10]).toHaveTextContent("10")
+
+    await user.click(screen.getByRole("button", { name: "Next" }))
+    expect(await screen.findByText("Page 2 of 2")).toBeInTheDocument()
+    expect(screen.getAllByRole("row")[1]).toHaveTextContent("11")
+    expect(screen.getAllByRole("row")[10]).toHaveTextContent("20")
+    expect(screen.getByRole("button", { name: "Previous" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled()
+  })
+
+  it("highlights missed rows in red, paid rows in green, and keeps scheduled rows neutral", async () => {
+    useMIPlanDetailMock.mockReturnValue({ data: longTermDetail, isLoading: false, error: null })
+    const user = userEvent.setup()
+    renderDetail()
+    await user.click(screen.getByRole("button", { name: "Schedule" }))
+    await screen.findByText("Installment schedule")
+    const dataRows = screen.getAllByRole("row").slice(1)
+    const missed = dataRows.find((row) => row.getAttribute("data-status") === "MISSED")
+    const paid = dataRows.find((row) => row.getAttribute("data-status") === "PAID")
+    const scheduled = dataRows.find((row) => row.getAttribute("data-status") === "SCHEDULED")
+    expect(missed).toBeTruthy()
+    expect(missed!.className).toContain("bg-[var(--destructive)]")
+    expect(paid).toBeTruthy()
+    expect(paid!.className).toContain("bg-[var(--success)]")
+    expect(scheduled).toBeTruthy()
+    expect(scheduled!.className).not.toContain("bg-[var(--destructive)]")
+    expect(scheduled!.className).not.toContain("bg-[var(--success)]")
+  })
+
+  it("summarises the whole-schedule totals in the schedule footer", async () => {
+    useMIPlanDetailMock.mockReturnValue({ data: longTermDetail, isLoading: false, error: null })
+    const user = userEvent.setup()
+    renderDetail()
+    await user.click(screen.getByRole("button", { name: "Schedule" }))
+    await screen.findByText("Installment schedule")
+    expect(screen.getByText("Total amount")).toBeInTheDocument()
+    expect(screen.getByText("Total paid")).toBeInTheDocument()
+    expect(screen.getByText("Total remaining")).toBeInTheDocument()
+    expect(screen.getAllByText(/100,000,000\.00/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/10,000,000\.00/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/90,000,000\.00/).length).toBeGreaterThan(0)
+  })
+
+  it("processes a scheduled installment from its row action", async () => {
+    processMIPaymentMock.mockResolvedValue({ item: { id: "plan-long-term-1-item-4" }, created: true })
+    useMIPlanDetailMock.mockReturnValue({ data: longTermDetail, isLoading: false, error: null })
+    const user = userEvent.setup()
+    renderDetail()
+    await user.click(screen.getByRole("button", { name: "Schedule" }))
+    await screen.findByText("Installment schedule")
+    await user.click(screen.getByRole("button", { name: "Process payment for installment 4" }))
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText(/Installment 4 of/)).toBeInTheDocument()
+    await user.click(within(dialog).getByRole("button", { name: "Process payment" }))
+    await waitFor(() => expect(processMIPaymentMock).toHaveBeenCalledWith("plan-long-term-1-item-4"))
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ tone: "success", title: "Payment processed" }))
+  })
+
+  it("reverses a paid installment from its row action after capturing a reason", async () => {
+    reverseMIPaymentMock.mockResolvedValue({ item: { id: "plan-long-term-1-item-1" }, plan: longTermDetail })
+    useMIPlanDetailMock.mockReturnValue({ data: longTermDetail, isLoading: false, error: null })
+    const user = userEvent.setup()
+    renderDetail()
+    await user.click(screen.getByRole("button", { name: "Schedule" }))
+    await screen.findByText("Installment schedule")
+    await user.click(screen.getByRole("button", { name: "Reverse payment for installment 1" }))
+    const dialog = await screen.findByRole("dialog")
+    fireEvent.change(within(dialog).getByPlaceholderText(/why this payment is being reversed/), { target: { value: "Duplicate disbursement" } })
+    await user.click(within(dialog).getByRole("button", { name: "Reverse payment" }))
+    await waitFor(() => expect(reverseMIPaymentMock).toHaveBeenCalledWith("plan-long-term-1-item-1", { reason: "Duplicate disbursement" }))
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ tone: "success", title: "Payment reversed" }))
+  })
+
+  it("processes selected installments in bulk from the schedule toolbar", async () => {
+    processMIPaymentMock.mockResolvedValue({ item: { id: "plan-long-term-1-item-4" }, created: true })
+    useMIPlanDetailMock.mockReturnValue({ data: longTermDetail, isLoading: false, error: null })
+    const user = userEvent.setup()
+    renderDetail()
+    await user.click(screen.getByRole("button", { name: "Schedule" }))
+    await screen.findByText("Installment schedule")
+    await user.click(screen.getByRole("checkbox", { name: "Select installment 4" }))
+    await user.click(screen.getByRole("checkbox", { name: "Select installment 5" }))
+    await user.click(screen.getByRole("button", { name: /Process Selected/ }))
+    await waitFor(() => expect(processMIPaymentMock).toHaveBeenCalledWith("plan-long-term-1-item-4"))
+    await waitFor(() => expect(processMIPaymentMock).toHaveBeenCalledWith("plan-long-term-1-item-5"))
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ tone: "success", title: "Payments processed" }))
   })
 })

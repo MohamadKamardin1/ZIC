@@ -35,9 +35,9 @@ describe("OL Maturity Installments MSW contract", () => {
     expect(all.status).toBe(200)
     const allBody = await all.json()
     expect(allBody.data).toMatchObject({
-      total_plans_active: 4,
-      total_active_plans_value: "122750000.00",
-      missed_payments_count: 5,
+      total_plans_active: 5,
+      total_active_plans_value: "222750000.00",
+      missed_payments_count: 6,
       completed_plans_count: 1,
     })
     expect(typeof allBody.data.total_upcoming_payouts).toBe("number")
@@ -45,11 +45,11 @@ describe("OL Maturity Installments MSW contract", () => {
 
     const filtered = await fetch(`${BASE}/kpis/?status=ACTIVE`)
     const filteredBody = await filtered.json()
-    expect(filteredBody.data).toMatchObject({ total_plans_active: 4, total_active_plans_value: "122750000.00", completed_plans_count: 0 })
+    expect(filteredBody.data).toMatchObject({ total_plans_active: 5, total_active_plans_value: "222750000.00", completed_plans_count: 0 })
 
     const dateFiltered = await fetch(`${BASE}/kpis/?date_from=2026-03-01&date_to=2026-03-31`)
     const dateFilteredBody = await dateFiltered.json()
-    expect(dateFilteredBody.data).toMatchObject({ total_plans_active: 2, total_active_plans_value: "62750000.00", completed_plans_count: 0 })
+    expect(dateFilteredBody.data).toMatchObject({ total_plans_active: 3, total_active_plans_value: "162750000.00", completed_plans_count: 0 })
   })
 
   it("returns searchable frequency and term option catalogs", async () => {
@@ -84,6 +84,35 @@ describe("OL Maturity Installments MSW contract", () => {
     expect(body.data.items[1]).toMatchObject({ installment_number: 2, status: "MISSED" })
     expect(body.data.payment_history).toHaveLength(1)
     expect(body.data.reconciliation).toMatchObject({ status: "FAIL", missing_amount: "46875000.00" })
+  })
+
+  it("serves installment items with server-side pagination and whole-schedule totals", async () => {
+    const pageOne = await fetch(`${BASE}/plan-long-term-1/items/?page=1&page_size=10`)
+    expect(pageOne.status).toBe(200)
+    const bodyOne = await pageOne.json()
+    expect(bodyOne.data.results).toHaveLength(10)
+    expect(bodyOne.data.count).toBe(20)
+    expect(bodyOne.data.page).toBe(1)
+    expect(bodyOne.data.next).toBe(true)
+    expect(bodyOne.data.previous).toBe(false)
+    expect(bodyOne.data.total_amount).toBe("100000000.00")
+    expect(bodyOne.data.total_paid).toBe("10000000.00")
+    expect(bodyOne.data.total_remaining).toBe("90000000.00")
+    expect(bodyOne.data.results[0]).toMatchObject({ installment_number: 1, status: "PAID", paid_date: "2026-03-15" })
+    expect(bodyOne.data.results[2]).toMatchObject({ installment_number: 3, status: "MISSED" })
+    expect(bodyOne.data.results[9]).toMatchObject({ installment_number: 10, status: "SCHEDULED" })
+
+    const pageTwo = await fetch(`${BASE}/plan-long-term-1/items/?page=2&page_size=10`)
+    const bodyTwo = await pageTwo.json()
+    expect(bodyTwo.data.results).toHaveLength(10)
+    expect(bodyTwo.data.page).toBe(2)
+    expect(bodyTwo.data.next).toBe(false)
+    expect(bodyTwo.data.previous).toBe(true)
+    expect(bodyTwo.data.total_paid).toBe("10000000.00")
+    expect(bodyTwo.data.results[0]).toMatchObject({ installment_number: 11 })
+
+    const missing = await fetch(`${BASE}/plan-unknown-1/items/`)
+    expect(missing.status).toBe(404)
   })
 
   it("exports the register as a CSV without spreadsheet formula injection", async () => {
@@ -239,7 +268,7 @@ describe("OL Maturity Installments MSW contract", () => {
     const listResponse = await fetch(`${BASE}/portal/`)
     expect(listResponse.status).toBe(200)
     const listBody = await listResponse.json()
-    expect(listBody.data.results).toHaveLength(8)
+    expect(listBody.data.results).toHaveLength(9)
     expect(listBody.data.results[0]).toMatchObject({ plan_number: "MIP-20260901-9DD41C66AF", status_display: "Active" })
 
     const detailResponse = await fetch(`${BASE}/portal/plan-active-1/`)

@@ -262,6 +262,16 @@ const initialPlans: MIPlanMockRow[] = [
       item("plan-reversed-1", 2, "2026-08-01", "10000000.00"),
     ],
   ),
+  plan(
+    { id: "plan-long-term-1", plan_number: "MIP-20260101-5A1B2C3D4E", policy_id: "policy-linet-1", policy_number: "ZIC-OL-2020-000002", policyholder_name: "Linet Paul", policyholder_display: "P-000002 — Linet Paul", currency: "TZS", frequency: "ANNUAL", status: "ACTIVE", maturity_value: "100000000.00" },
+    Array.from({ length: 20 }, (_, index) => {
+      const number = index + 1
+      const due = `20${26 + index}-03-15`
+      if (number <= 2) return { ...item("plan-long-term-1", number, due, "5000000.00", "PAID"), requisition_number: `FO-MIP-2026-0005${String(number).padStart(2, "0")}`, paid_date: due, paid_by_display: "Finance Officer — Rehema S.", payer_display: "Linet Paul", payment_reference: `FO-PAY-2026-0005${String(number).padStart(2, "0")}` }
+      if (number === 3) return item("plan-long-term-1", number, due, "5000000.00", "MISSED")
+      return item("plan-long-term-1", number, due, "5000000.00")
+    }),
+  ),
 ]
 
 const frequencyOptions: Array<{ value: string; label: string; meta: { months_between: number; payout_per_year: number } }> = [
@@ -734,6 +744,14 @@ export const maturityInstallmentsHandlers = [
     const document: MIPlanMockDocument = { ...instance, preview_url: `/api/v1/documents/instances/doc-${row.id}-advice/preview/`, signed_download_url: `/api/v1/documents/instances/doc-${row.id}-advice/download/?ticket=mock-advice-${row.id}` }
     if (!row.documents.some((existing) => existing.id === document.id)) row.documents.push(document)
     return data({ instance, signed_download_url: document.signed_download_url, preview_url: document.preview_url }, 201)
+  }),
+  http.get(`*${BASE}/:planId/items/`, ({ request, params }) => {
+    const row = findPlan(String(params.planId))
+    if (!row) return error(404, "INSTALLMENT_PLAN_NOT_FOUND", "The requested installment plan could not be found.", ["Return to the plan register and choose an available plan."])
+    const url = new URL(request.url)
+    const totalAmount = row.items.reduce((sum, it) => sum + Number(it.amount), 0).toFixed(2)
+    const totalPaid = row.items.filter((it) => it.status === "PAID").reduce((sum, it) => sum + Number(it.amount), 0).toFixed(2)
+    return data({ ...page(row.items, url), total_amount: totalAmount, total_paid: totalPaid, total_remaining: (Number(totalAmount) - Number(totalPaid)).toFixed(2) })
   }),
   http.get(`*${BASE}/:planId/`, ({ params }) => {
     const row = findPlan(String(params.planId))

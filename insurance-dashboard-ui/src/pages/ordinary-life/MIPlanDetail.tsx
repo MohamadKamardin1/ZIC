@@ -9,8 +9,8 @@ import { StatusBadge, type StatusTone } from "../../components/ui/StatusBadge"
 import { ConfirmModal, Modal } from "../../components/ui/Overlays"
 import { useToast } from "../../components/ui/Toast"
 import { useAccess } from "../../lib/access"
-import { cancelMIPlan, printMISchedule, processMIPayment, type MIPlanDetail, type MIPlanItem } from "../../lib/maturityInstallments"
-import { invalidateMaturityInstallmentQueries, useMIPlanDetail } from "../../lib/maturityInstallmentsHooks"
+import { cancelMIPlan, printMISchedule, processMIPayment, reverseMIPayment, type MIPlanDetail, type MIPlanItem } from "../../lib/maturityInstallments"
+import { invalidateMaturityInstallmentQueries, useMIPlanDetail, useMIPlanItems } from "../../lib/maturityInstallmentsHooks"
 import { toStructuredError, type StructuredError } from "../../lib/structuredError"
 
 const TABS = [
@@ -110,21 +110,178 @@ function OverviewTab({ plan }: { plan: MIPlanDetail }) {
   </div>
 }
 
-function ScheduleTab({ plan }: { plan: MIPlanDetail }) {
+const SCHEDULE_PAGE_SIZE = 10
+
+const SCHEDULE_ROW_TINT: Record<string, string> = {
+  MISSED: "bg-[var(--destructive)]/8",
+  PAID: "bg-[var(--success)]/6",
+  WAIVED: "bg-[var(--muted)]/40",
+}
+
+function rowIsProcessable(status: string): boolean {
+  return status === "SCHEDULED" || status === "MISSED" || status === "PAYMENT_PENDING"
+}
+
+function ScheduleTab({ plan, canProcess, canReverse }: { plan: MIPlanDetail; canProcess: boolean; canReverse: boolean }) {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const [page, setPage] = useState(1)
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
+  const [processTarget, setProcessTarget] = useState<MIPlanItem | null>(null)
+  const [processBusy, setProcessBusy] = useState(false)
+  const [processError, setProcessError] = useState<StructuredError | null>(null)
+  const [reverseTarget, setReverseTarget] = useState<MIPlanItem | null>(null)
+  const [reverseBusy, setReverseBusy] = useState(false)
+  const [reverseError, setReverseError] = useState<StructuredError | null>(null)
+  const [reverseReason, setReverseReason] = useState("")
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [bulkError, setBulkError] = useState<StructuredError | null>(null)
+
+  const itemsQuery = useMIPlanItems(plan.id, page, SCHEDULE_PAGE_SIZE)
+  const pageData = itemsQuery.data
+  const items = pageData?.results ?? []
+  const totalPages = pageData ? Math.max(1, Math.ceil(pageData.count / SCHEDULE_PAGE_SIZE)) : 1
+  const pageProcessable = items.filter((item) => rowIsProcessable(item.status))
+  const allPageSelected = pageProcessable.length > 0 && pageProcessable.every((item) => selected.has(item.id))
+
+  const toggleSelected = (id: string) => {
+    const next = new Set(selected)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    setSelected(next)
+  }
+
+  const toggleSelectAll = () => {
+    if (allPageSelected) {
+      const next = new Set(selected)
+      pageProcessable.forEach((item) => next.delete(item.id))
+      setSelected(next)
+    } else {
+      setSelected(new Set([...selected, ...pageProcessable.map((item) => item.id)]))
+    }
+  }
+
+  const confirmProcess = async () => {
+    if (!processTarget) return
+    setProcessBusy(true); setProcessError(null)
+    try {
+      await processMIPayment(processTarget.id)
+      invalidateMaturityInstallmentQueries(queryClient, plan.id)
+      toast({ tone: "success", title: "Payment processed", message: `Installment ${processTarget.installmentNumber} on ${plan.planNumber} moved to payment pending.` })
+      setProcessTarget(null)
+    } catch (error) {
+      setProcessError(toStructuredError(error, "The installment payment could not be processed."))
+    } finally {
+      setProcessBusy(false)
+    }
+  }
+
+  const confirmReverse = async () => {
+    if (!reverseTarget) return
+    if (!reverseReason.trim()) {
+      setReverseError({ code: "REASON_REQUIRED", message: "A reason is required to reverse an installment payment.", resolutionSteps: ["Describe why the payment is being reversed.", "Do not include sensitive credentials in the reason."], fieldErrors: {}, retryable: false, status: 400, raw: null })
+      return
+    }
+    setReverseBusy(true); setReverseError(null)
+    try {
+      await reverseMIPayment(reverseTarget.id, { reason: reverseReason.trim() })
+      invalidateMaturityInstallmentQueries(queryClient, plan.id)
+      toast({ tone: "success", title: "Payment reversed", message: `Installment ${reverseTarget.installmentNumber} on ${plan.planNumber} has been returned to scheduled.` })
+      setReverseTarget(null); setReverseReason("")
+    } catch (error) {
+      setReverseError(toStructuredError(error, "The installment payment could not be reversed."))
+    } finally {
+      setReverseBusy(false)
+    }
+  }
+
+  const confirmBulk = async () => {
+    const targets = [...selected].filter((id) => items.some((item) => item.id === id && rowIsProcessable(item.status)))
+    if (targets.length === 0) return
+    setBulkBusy(true); setBulkError(null)
+    try {
+      await Promise.all(targets.map((id) => processMIPayment(id)))
+      invalidateMaturityInstallmentQueries(queryClient, plan.id)
+      toast({ tone: "success", title: "Payments processed", message: `${targets.length} installment${targets.length === 1 ? "" : "s"} on ${plan.planNumber} moved to payment pending.` })
+      setSelected(new Set())
+    } catch (error) {
+      setBulkError(toStructuredError(error, "One or more installment payments could not be processed."))
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
+  if (itemsQuery.error) {
+    const structured = toStructuredError(itemsQuery.error, "The installment schedule could not be loaded.")
+    return <section className="surface-card p-4" aria-label="Installment schedule"><ErrorCoach title="Installment schedule unavailable" message={structured.message} resolutionSteps={structured.resolutionSteps} /></section>
+  }
+
   return <section className="surface-card overflow-hidden" aria-label="Installment schedule">
     <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border)] bg-[var(--muted)]/30 px-4 py-4">
-      <div><h2 className="text-base font-bold">Installment schedule</h2><p className="mt-1 text-xs text-[var(--muted-foreground)]">Contractual payouts read from the backend schedule and retained for display here.</p></div>
-      <PlanStatusBadge status={plan.status} statusDisplay={plan.statusDisplay} />
+      <div><h2 className="text-base font-bold">Installment schedule</h2><p className="mt-1 text-xs text-[var(--muted-foreground)]">Contractual payouts read from the backend schedule, paginated per page so long terms stay responsive.</p></div>
+      <div className="flex flex-wrap items-center gap-2">
+        {canProcess && selected.size > 0 && <button type="button" className="button-primary inline-flex items-center gap-2" onClick={() => void confirmBulk()} disabled={bulkBusy}>{bulkBusy ? "Processing…" : `Process Selected (${selected.size})`}</button>}
+        <PlanStatusBadge status={plan.status} statusDisplay={plan.statusDisplay} />
+      </div>
     </div>
+    {bulkError && <div className="px-4 pt-4"><ErrorCoach title="Bulk processing needs attention" message={bulkError.message} resolutionSteps={bulkError.resolutionSteps} /></div>}
     <div className="border-b border-[var(--border)] p-4"><ProgressCell paid={plan.paidAmount} maturityValue={plan.totalPayableAmount} currency={plan.currency} /></div>
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[820px] text-left text-sm"><caption className="sr-only">Maturity installment schedule</caption>
-        <thead className="bg-[var(--muted)]/45 text-xs uppercase tracking-[0.08em] text-[var(--muted-foreground)]"><tr><th scope="col" className="px-4 py-3">Installment #</th><th scope="col" className="px-4 py-3">Due date</th><th scope="col" className="px-4 py-3 text-right">Amount</th><th scope="col" className="px-4 py-3">Status</th><th scope="col" className="px-4 py-3">Requisition</th></tr></thead>
+      <table className="w-full min-w-[1040px] text-left text-sm"><caption className="sr-only">Maturity installment schedule</caption>
+        <thead className="bg-[var(--muted)]/45 text-xs uppercase tracking-[0.08em] text-[var(--muted-foreground)]"><tr>
+          {canProcess && <th scope="col" className="w-10 px-4 py-3"><input type="checkbox" aria-label="Select all processable installments" checked={allPageSelected} onChange={toggleSelectAll} className="size-4 accent-[var(--primary)]" /></th>}
+          <th scope="col" className="px-4 py-3">Installment #</th><th scope="col" className="px-4 py-3">Due date</th><th scope="col" className="px-4 py-3 text-right">Amount</th><th scope="col" className="px-4 py-3">Status</th><th scope="col" className="px-4 py-3">Paid date</th><th scope="col" className="px-4 py-3">Narration</th><th scope="col" className="px-4 py-3 text-right">Actions</th>
+        </tr></thead>
         <tbody className="divide-y divide-[var(--border)]">
-          {plan.items.map((item) => <tr key={item.id} className="transition hover:bg-[var(--muted)]/25"><td className="px-4 py-3 font-semibold">{item.installmentNumber}</td><td className="px-4 py-3">{dateLabel(item.dueDate)}</td><td className="px-4 py-3 text-right"><MoneyCell value={item.amount} currency={plan.currency} /></td><td className="px-4 py-3"><ItemStatusBadge status={item.status} statusDisplay={item.statusDisplay} /></td><td className="px-4 py-3">{item.requisitionNumber || "—"}</td></tr>)}
+          {items.map((item) => {
+            const processable = rowIsProcessable(item.status)
+            return <tr key={item.id} data-status={item.status} className={`transition hover:bg-[var(--muted)]/25 ${SCHEDULE_ROW_TINT[item.status] ?? ""}`}>
+              {canProcess && <td className="px-4 py-3"><input type="checkbox" aria-label={`Select installment ${item.installmentNumber}`} checked={selected.has(item.id)} disabled={!processable} onChange={() => toggleSelected(item.id)} className="size-4 accent-[var(--primary)]" /></td>}
+              <td className="px-4 py-3 font-semibold">{item.installmentNumber}</td>
+              <td className="px-4 py-3">{dateLabel(item.dueDate)}</td>
+              <td className="px-4 py-3 text-right"><MoneyCell value={item.amount} currency={plan.currency} /></td>
+              <td className="px-4 py-3"><ItemStatusBadge status={item.status} statusDisplay={item.statusDisplay} /></td>
+              <td className="px-4 py-3">{item.paidDate ? dateLabel(item.paidDate) : "—"}</td>
+              <td className="px-4 py-3 text-[var(--muted-foreground)]">{item.narration || "—"}</td>
+              <td className="px-4 py-3"><div className="flex flex-wrap justify-end gap-2">
+                {canProcess && processable && <button type="button" className="button-secondary inline-flex items-center gap-1 px-2.5 py-1.5 text-xs" aria-label={`Process payment for installment ${item.installmentNumber}`} onClick={() => { setProcessError(null); setProcessTarget(item) }}>Process Payment</button>}
+                {canReverse && item.status === "PAID" && <button type="button" className="button-secondary inline-flex items-center gap-1 px-2.5 py-1.5 text-xs" aria-label={`Reverse payment for installment ${item.installmentNumber}`} onClick={() => { setReverseError(null); setReverseReason(""); setReverseTarget(item) }}>Reverse</button>}
+              </div></td>
+            </tr>
+          })}
         </tbody>
       </table>
     </div>
+    {pageData && <div className="flex flex-wrap items-center justify-end gap-x-6 gap-y-2 border-t border-[var(--border)] bg-[var(--muted)]/30 px-4 py-3 text-sm">
+      <span className="text-xs font-bold uppercase tracking-[0.08em] text-[var(--muted-foreground)]">Total amount</span><MoneyCell value={pageData.totalAmount} currency={plan.currency} />
+      <span className="text-xs font-bold uppercase tracking-[0.08em] text-[var(--muted-foreground)]">Total paid</span><MoneyCell value={pageData.totalPaid} currency={plan.currency} variant="paid" />
+      <span className="text-xs font-bold uppercase tracking-[0.08em] text-[var(--muted-foreground)]">Total remaining</span><MoneyCell value={pageData.totalRemaining} currency={plan.currency} variant="balance" />
+    </div>}
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] px-4 py-3 text-sm">
+      <p className="text-xs text-[var(--muted-foreground)]">{pageData ? `${pageData.count} installments · ${SCHEDULE_PAGE_SIZE} per page` : "Loading schedule…"}</p>
+      <div className="flex items-center gap-2">
+        <button type="button" className="button-secondary px-3 py-1.5 text-xs" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={!pageData?.previous || itemsQuery.isFetching}>Previous</button>
+        <span className="text-xs font-semibold">Page {pageData?.page ?? page} of {totalPages}</span>
+        <button type="button" className="button-secondary px-3 py-1.5 text-xs" onClick={() => setPage((value) => value + 1)} disabled={!pageData?.next || itemsQuery.isFetching}>Next</button>
+      </div>
+    </div>
+
+    <ConfirmModal open={Boolean(processTarget)} title="Process installment payment" description={processTarget ? `Installment ${processTarget.installmentNumber} of ${plan.currency} ${processTarget.amount} (due ${dateLabel(processTarget.dueDate)}) will be moved to payment pending and a Front Office requisition raised.` : ""} confirmLabel={processBusy ? "Processing…" : "Process payment"} onClose={() => { if (!processBusy) setProcessTarget(null) }} onConfirm={() => void confirmProcess()} tone="primary" />
+    <Modal open={Boolean(reverseTarget)} title={reverseTarget ? `Reverse installment ${reverseTarget.installmentNumber} payment` : "Reverse installment payment"} onClose={() => { if (!reverseBusy) { setReverseTarget(null); setReverseError(null) } }} size="md">
+      <div className="space-y-4">
+        <div className="rounded-lg border border-[var(--border)] bg-[var(--muted)]/35 p-4">
+          <p className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--muted-foreground)]">Installment to reverse</p>
+          {reverseTarget && <p className="mt-1 text-sm font-bold">Installment {reverseTarget.installmentNumber} — due {dateLabel(reverseTarget.dueDate)}</p>}
+          {reverseTarget && <p className="mt-1 text-xs text-[var(--muted-foreground)]">{reverseTarget.paymentReference || "No payment reference"} · paid on {reverseTarget.paidDate ? dateLabel(reverseTarget.paidDate) : "—"}</p>}
+        </div>
+        <label className="block space-y-1.5"><span className="text-xs font-bold">Reason <span className="text-[var(--destructive)]">*</span></span><textarea value={reverseReason} onChange={(event) => { setReverseReason(event.target.value); setReverseError(null) }} rows={3} className="w-full rounded-[10px] border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm outline-none focus:border-[var(--ring)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--ring)_18%,transparent)]" placeholder="Explain why this payment is being reversed. The installment returns to scheduled." /></label>
+        {reverseError && <ErrorCoach title="Payment could not be reversed" message={reverseError.message} resolutionSteps={reverseError.resolutionSteps} />}
+        <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--border)] pt-4">
+          <button type="button" className="button-secondary" onClick={() => { setReverseTarget(null); setReverseError(null) }} disabled={reverseBusy}>Close</button>
+          <button type="button" className="inline-flex min-h-10 items-center justify-center rounded-[10px] bg-[var(--destructive)] px-4 text-sm font-bold text-white" onClick={() => void confirmReverse()} disabled={reverseBusy}>{reverseBusy ? "Reversing…" : "Reverse payment"}</button>
+        </div>
+      </div>
+    </Modal>
   </section>
 }
 
@@ -305,7 +462,7 @@ export default function MIPlanDetail() {
 
     <nav className="surface-card flex gap-1 overflow-x-auto p-1" aria-label="Maturity installment detail tabs">{TABS.map((tab) => <button key={tab.id} type="button" onClick={() => setSearchParams({ tab: tab.id })} className={`whitespace-nowrap rounded-[9px] px-4 py-2.5 text-sm font-bold transition ${activeTab === tab.id ? "bg-[var(--primary)] text-[var(--primary-foreground)]" : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"}`} aria-current={activeTab === tab.id ? "page" : undefined}>{tab.label}</button>)}</nav>
 
-    {activeTab === "overview" ? <OverviewTab plan={plan} /> : activeTab === "schedule" ? <ScheduleTab plan={plan} /> : activeTab === "payments" ? <PaymentsTab plan={plan} /> : activeTab === "audit" ? <AuditTab plan={plan} /> : <MIPlanDocumentsPanel plan={plan} canPrint={can("ol_maturity_installments.print")} />}
+    {activeTab === "overview" ? <OverviewTab plan={plan} /> : activeTab === "schedule" ? <ScheduleTab plan={plan} canProcess={canAction("process_payment")} canReverse={can("ol_maturity_installments.reverse")} /> : activeTab === "payments" ? <PaymentsTab plan={plan} /> : activeTab === "audit" ? <AuditTab plan={plan} /> : <MIPlanDocumentsPanel plan={plan} canPrint={can("ol_maturity_installments.print")} />}
 
     <ConfirmModal open={Boolean(processItem)} title="Process installment payment" description={processItem ? `Installment ${processItem.installmentNumber} of ${plan.currency} ${processItem.amount} (due ${dateLabel(processItem.dueDate)}) will be moved to payment pending and a Front Office requisition raised.` : ""} confirmLabel={processBusy ? "Processing…" : "Process payment"} onClose={() => { if (!processBusy) setProcessItem(null) }} onConfirm={() => void confirmProcess()} tone="primary" />
     <Modal open={cancelOpen} title="Cancel plan" onClose={() => { if (!cancelBusy) { setCancelOpen(false); setCancelError(null) } }} size="md">

@@ -34,6 +34,18 @@ export interface MIPaginated<T> {
   pageSize?: number
 }
 
+export interface MIPlanItemPage {
+  results: MIPlanItem[]
+  count: number
+  page: number
+  pageSize: number
+  next: boolean
+  previous: boolean
+  totalAmount: string
+  totalPaid: string
+  totalRemaining: string
+}
+
 export interface MIOption {
   value: string
   label: string
@@ -325,6 +337,25 @@ export function normalizeMIPlanItem(row: Record<string, unknown>): MIPlanItem {
   }
 }
 
+export function normalizeMIPlanItemPage(payload: unknown): MIPlanItemPage {
+  const page = isRecord(payload) ? payload : {}
+  const results = arrayValue(page, "results").filter(isRecord).map(normalizeMIPlanItem)
+  const count = numberValue(page, "count")
+  const pageSize = numberValue(page, "pageSize", "page_size")
+  const pageNumber = numberValue(page, "page", "current_page")
+  return {
+    results,
+    count,
+    page: pageNumber || 1,
+    pageSize: pageSize || 20,
+    next: Boolean(pick(page, "next")),
+    previous: Boolean(pick(page, "previous")),
+    totalAmount: amountValue(page, "totalAmount", "total_amount"),
+    totalPaid: amountValue(page, "totalPaid", "total_paid"),
+    totalRemaining: amountValue(page, "totalRemaining", "total_remaining"),
+  }
+}
+
 function normalizePaymentHistoryEntry(row: Record<string, unknown>): MIPaymentHistoryEntry {
   return {
     installmentNumber: numberValue(row, "installmentNumber", "installment_number"),
@@ -588,6 +619,14 @@ export function getMIPlanKpis(filters: MIPlanListFilters = {}): Promise<MIPlanKp
 
 export function getMIPlanDetail(id: string): Promise<MIPlanDetail> {
   return request<unknown>(`${MATURITY_INSTALLMENTS_API_PREFIX}/${encodeURIComponent(id)}/`).then(normalizeMIPlanDetail)
+}
+
+export function listMIPlanItems(planId: string, params: { page?: number; pageSize?: number } = {}): Promise<MIPlanItemPage> {
+  const query = new URLSearchParams()
+  if (params.page) query.set("page", String(params.page))
+  if (params.pageSize) query.set("page_size", String(params.pageSize))
+  const suffix = query.toString() ? `?${query.toString()}` : ""
+  return request<unknown>(`${MATURITY_INSTALLMENTS_API_PREFIX}/${encodeURIComponent(planId)}/items/${suffix}`).then(normalizeMIPlanItemPage)
 }
 
 export function getMIFrequencyOptions(params: { q?: string; page?: number; pageSize?: number } = {}): Promise<MIPaginated<MIFrequencyOption>> {

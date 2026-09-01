@@ -9,6 +9,7 @@ import {
   getMIPlanKpis,
   getMIPortalPlan,
   getMITermOptions,
+  listMIPlanItems,
   listMIPlans,
   listMIPortalPlans,
   printMIAdvice,
@@ -19,6 +20,7 @@ import {
   type MICancelPayload,
   type MIPaginated,
   type MIPaymentResult,
+  type MIPlanItemPage,
   type MIPlanCreatePayload,
   type MIPlanCreateResult,
   type MIPlanDetail,
@@ -37,6 +39,7 @@ export const miPlanKpisKey = (filters: MIPlanListFilters = {}) => ["ol-maturity-
 export const miFrequencyOptionsKey = (params: { q?: string; page?: number; pageSize?: number } = {}) => ["ol-maturity-installments", "options", "frequencies", params] as const
 export const miTermOptionsKey = (params: { q?: string; product?: string; page?: number; pageSize?: number } = {}) => ["ol-maturity-installments", "options", "terms", params] as const
 export const miPlanDetailKey = (id?: string | null) => ["ol-maturity-installments", "detail", id ?? "none"] as const
+export const miPlanItemsKey = (id?: string | null, page = 1, pageSize = 10) => ["ol-maturity-installments", "items", id ?? "none", page, pageSize] as const
 export const miReconciliationKey = (id?: string | null) => ["ol-maturity-installments", "reconciliation", id ?? "none"] as const
 export const miPortalListKey = () => ["ol-maturity-installments", "portal", "list"] as const
 export const miPortalDetailKey = (id?: string | null) => ["ol-maturity-installments", "portal", id ?? "none"] as const
@@ -47,6 +50,7 @@ export function invalidateMaturityInstallmentQueries(queryClient: ReturnType<typ
   void queryClient.invalidateQueries({ queryKey: ["ol-maturity-installments", "options"] })
   if (id) {
     void queryClient.invalidateQueries({ queryKey: miPlanDetailKey(id) })
+    void queryClient.invalidateQueries({ queryKey: ["ol-maturity-installments", "items", id] })
     void queryClient.invalidateQueries({ queryKey: miReconciliationKey(id) })
   }
 }
@@ -94,6 +98,15 @@ export function useMIPlanDetail(id?: string | null, enabled = true) {
     queryKey: miPlanDetailKey(id),
     queryFn: () => getMIPlanDetail(id as string),
     enabled: Boolean(id) && enabled,
+  })
+}
+
+export function useMIPlanItems(id?: string | null, page = 1, pageSize = 10, enabled = true) {
+  return useQuery<MIPlanItemPage>({
+    queryKey: miPlanItemsKey(id, page, pageSize),
+    queryFn: () => listMIPlanItems(id as string, { page, pageSize }),
+    enabled: Boolean(id) && enabled,
+    placeholderData: keepPreviousData,
   })
 }
 
