@@ -5,6 +5,7 @@
 - [x] Prompt 3 — Implement Plan Generation and Creation
 - [x] Prompt 4 — Implement Payment Processing and Integration
 - [x] Prompt 5 — Implement Missed Detection and Reversal Lifecycle
+- [ ] Prompt 6 — Implement Reconciliation and Financial Audit
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–12 will be appended `EXACTLY as provided` when the user
@@ -245,4 +246,47 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: missed command, reversal endpoint, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 6/12 — Implement Reconciliation and Financial Audit
+
+```text
+You are a senior Django finance audit engineer. Continue the ZIC OL Maturity Installments backend. Execute ONLY Prompt 6.
+
+MANDATORY RULES:
+- Financial reconciliation must ensure plan totals match policy maturity value.
+- Audit must be verifiable end-to-end.
+- Commit and push; tick checkbox.
+
+OBJECTIVE:
+Implement reconciliation checks and financial audit utilities.
+
+SCOPE:
+1. Reconciliation Service:
+   - validate_plan_reconciliation(plan_id):
+     - Sums all PAID item amounts.
+     - Compares with Maturity Value.
+     - Flags discrepancies > tolerance (e.g., 0.01 currency unit).
+     - Returns pass/fail report.
+2. Audit Consistency Utility:
+   - Verifies every status change has audit row.
+   - Flags orphan items (items without plan).
+   - Returns pass/fail report.
+3. API Endpoint:
+   - GET /api/v1/ol/maturity-installments/{id}/reconciliation/
+   - Returns status of reconciliation and any discrepancies.
+
+TESTS:
+- reconciliation detects missing payments
+- audit utility passes on seeded data
+- discrepancy reporting is accurate
+- endpoint returns correct status
+
+GIT:
+- commit: "feat(ol-maturity-installments): implement reconciliation and financial audit"
+- push; tick checkbox
+
+FINAL OUTPUT: reconciliation service, audit utility, tests, commit hash, pushed branch.
 ```
