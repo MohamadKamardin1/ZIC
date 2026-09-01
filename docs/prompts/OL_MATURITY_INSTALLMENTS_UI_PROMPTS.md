@@ -3,6 +3,7 @@
 - [x] Prompt 1 — Save Prompt Series + Maturity Installments UI Foundation and Contract-First API Layer
 - [x] Prompt 2 — Maturity Installments List Page and Dashboard KPIs
 - [x] Prompt 3 — Maturity Installments Detail Header and Overview
+- [ ] Prompt 4 — Maturity Installments Schedule Tab
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–10 will be appended `EXACTLY as provided` when the user
@@ -127,4 +128,44 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: page structure, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 4/10 — Maturity Installments Schedule Tab
+
+```text
+You are a senior frontend engineer. Continue the Z maturity Installments UI. Execute ONLY Prompt 4.
+
+MANDATORY RULES:
+- The schedule is the core of this module; it must handle pagination for long terms (e.g., 20 years).
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. Schedule Tab:
+   - Table of Installment Items.
+   - Columns: Installment #, Due Date, Amount, Status Badge, Paid Date, Narration, Actions.
+   - Pagination: Server-side pagination (items per page).
+   - Summary Footer: Total Amount, Total Paid, Total Remaining.
+2. Visuals:
+   - "MISSED" rows highlighted in red/amber.
+   - "PAID" rows highlighted in green (subtle).
+   - "SCHEDULED" rows neutral.
+3. Actions:
+   - Per row: "Process Payment", "Reverse" (if paid).
+   - Bulk: "Process Selected" (optional).
+4. Integration:
+   - Data fetched from `/api/v1/ol/maturity-installments/{id}/items/`.
+
+TESTS:
+- schedule table renders correctly with pagination
+- status highlighting works
+- summary footer math is correct
+- action buttons per row work
+
+GIT:
+- commit: "feat(web): maturity-installments schedule tab"
+- push; tick checkbox
+
+FINAL OUTPUT: table behavior, tests, commit hash, pushed branch.
 ```
