@@ -1,9 +1,20 @@
 from django.contrib import admin
 
 from .models import (
+    GCClaimReason,
+    GCClaimStatus,
+    GCClaimType,
+    GCCorrespondentType,
+    GCDischargeType,
     GCHealthQuestion,
     GCHealthQuestionnaire,
     GCLookupValue,
+    GCMedicalCode,
+    GCMedicalFacility,
+    GCMedicalHistory,
+    GCMedicalLimit,
+    GCMedicalPractitioner,
+    GCPersonalHabit,
     GCProduct,
     GCRider,
     GCRiderRate,
@@ -13,6 +24,7 @@ from .models import (
     GCSchemeStatus,
     GCSchemeType,
     GCSubProduct,
+    GCUnderwritingDecision,
 )
 
 
@@ -202,5 +214,193 @@ class GCRiderRateAdmin(admin.ModelAdmin):
         ("Dimensions", {"fields": ("age_band_start", "age_band_end", "gender")}),
         ("Effective dating", {"fields": ("effective_from", "effective_to", "is_active")}),
         ("Legacy values", {"fields": ("rate_per_mille", "flat_amount", "effective_date", "expiry_date")}),
+        ("Audit", {"fields": ("created_by", "updated_by", "created_at", "updated_at")}),
+    )
+
+
+@admin.register(GCMedicalCode)
+class GCMedicalCodeAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "category", "is_active", "updated_at", "updated_by")
+    list_filter = ("category", "is_active")
+    search_fields = ("code", "name", "description", "icd10_code")
+    ordering = ("code",)
+    readonly_fields = ("created_at", "updated_at", "created_by", "updated_by")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description")}),
+        ("Classification", {"fields": ("category", "icd10_code", "is_active")}),
+        ("Audit", {"fields": ("created_by", "updated_by", "created_at", "updated_at")}),
+    )
+
+
+@admin.register(GCMedicalLimit)
+class GCMedicalLimitAdmin(admin.ModelAdmin):
+    list_display = ("scheme_type_ref", "medical_code_ref", "limit_amount", "age_min", "age_max", "is_active", "updated_at")
+    list_filter = ("is_active", "scheme_type_ref")
+    search_fields = ("scheme_type_ref__code", "scheme_type_ref__name", "medical_code_ref__code", "medical_code_ref__name", "description")
+    ordering = ("scheme_type_ref", "age_min")
+    list_select_related = ("scheme_type_ref", "medical_code_ref", "product")
+    readonly_fields = ("created_at", "updated_at", "created_by", "updated_by")
+    fieldsets = (
+        ("Scope", {"fields": ("scheme_type_ref", "medical_code_ref")}),
+        ("Limit", {"fields": ("limit_amount", "age_min", "age_max")}),
+        ("Legacy product scope", {"fields": ("product",)}),
+        ("Legacy values", {"fields": ("age_from", "age_to", "sum_assured_from", "sum_assured_to", "required_tests")}),
+        ("Description & status", {"fields": ("description", "is_active")}),
+        ("Audit", {"fields": ("created_by", "updated_by", "created_at", "updated_at")}),
+    )
+
+
+@admin.register(GCUnderwritingDecision)
+class GCUnderwritingDecisionAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "requires_review", "display_order", "is_active", "updated_at")
+    list_filter = ("requires_review", "is_active")
+    search_fields = ("code", "name", "description")
+    ordering = ("display_order", "name")
+    readonly_fields = ("created_at", "updated_at", "created_by", "updated_by")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description")}),
+        ("Behaviour", {"fields": ("requires_review", "display_order", "sort_order", "is_active")}),
+        ("Audit", {"fields": ("created_by", "updated_by", "created_at", "updated_at")}),
+    )
+
+
+@admin.register(GCPersonalHabit)
+class GCPersonalHabitAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "habit_category", "underwriting_impact", "is_active", "updated_at")
+    list_filter = ("habit_category", "underwriting_impact", "is_active")
+    search_fields = ("code", "name", "habit_category")
+    ordering = ("habit_category", "name")
+    readonly_fields = ("created_at", "updated_at", "created_by", "updated_by")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name")}),
+        ("Underwriting", {"fields": ("habit_category", "underwriting_impact")}),
+        ("Legacy values", {"fields": ("category", "risk_level")}),
+        ("Status", {"fields": ("is_active",)}),
+        ("Audit", {"fields": ("created_by", "updated_by", "created_at", "updated_at")}),
+    )
+
+
+@admin.register(GCMedicalHistory)
+class GCMedicalHistoryAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "condition_category", "severity", "waiting_period_days", "exclusion_flag", "is_active", "updated_at")
+    list_filter = ("condition_category", "severity", "exclusion_flag", "is_active")
+    search_fields = ("code", "name", "condition_category")
+    ordering = ("condition_category", "name")
+    readonly_fields = ("created_at", "updated_at", "created_by", "updated_by")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name")}),
+        ("Condition", {"fields": ("condition_category", "severity", "waiting_period_days", "exclusion_flag")}),
+        ("Legacy values", {"fields": ("category", "risk_impact")}),
+        ("Status", {"fields": ("is_active",)}),
+        ("Audit", {"fields": ("created_by", "updated_by", "created_at", "updated_at")}),
+    )
+
+
+@admin.register(GCMedicalFacility)
+class GCMedicalFacilityAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "facility_type", "approval_status", "city", "is_active", "updated_at")
+    list_filter = ("facility_type", "approval_status", "is_active")
+    search_fields = ("code", "name", "city", "region", "contact_person")
+    ordering = ("name",)
+    readonly_fields = ("created_at", "updated_at", "created_by", "updated_by")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "facility_type")}),
+        ("Partner", {"fields": ("partner_ref",)}),
+        ("Approval", {"fields": ("approval_status", "is_approved", "approved_date", "is_active")}),
+        ("Contact", {"fields": ("address", "city", "region", "phone", "email", "contact_person")}),
+        ("Audit", {"fields": ("created_by", "updated_by", "created_at", "updated_at")}),
+    )
+
+
+@admin.register(GCMedicalPractitioner)
+class GCMedicalPractitionerAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "specialization", "approval_status", "facility", "is_active", "updated_at")
+    list_filter = ("approval_status", "is_active", "specialization")
+    search_fields = ("code", "name", "first_name", "last_name", "license_number", "specialization")
+    ordering = ("name",)
+    list_select_related = ("facility",)
+    readonly_fields = ("created_at", "updated_at", "created_by", "updated_by")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "first_name", "last_name")}),
+        ("Specialty", {"fields": ("specialization", "license_number")}),
+        ("Partner & facility", {"fields": ("partner_ref", "facility")}),
+        ("Approval", {"fields": ("approval_status", "is_approved", "is_active")}),
+        ("Contact", {"fields": ("phone", "email")}),
+        ("Audit", {"fields": ("created_by", "updated_by", "created_at", "updated_at")}),
+    )
+
+
+@admin.register(GCClaimType)
+class GCClaimTypeAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "category", "calculation_basis", "requires_document_check", "is_active", "updated_at")
+    list_filter = ("category", "calculation_basis", "requires_document_check", "is_active")
+    search_fields = ("code", "name", "description")
+    ordering = ("name",)
+    readonly_fields = ("created_at", "updated_at", "created_by", "updated_by")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description")}),
+        ("Claim handling", {"fields": ("category", "calculation_basis", "requires_document_check")}),
+        ("Legacy flag", {"fields": ("requires_medical_report",)}),
+        ("Status", {"fields": ("is_active",)}),
+        ("Audit", {"fields": ("created_by", "updated_by", "created_at", "updated_at")}),
+    )
+
+
+@admin.register(GCClaimReason)
+class GCClaimReasonAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "claim_type", "category", "is_active", "updated_at")
+    list_filter = ("category", "is_active", "claim_type")
+    search_fields = ("code", "name", "claim_type__code", "claim_type__name", "description")
+    ordering = ("claim_type", "name")
+    list_select_related = ("claim_type",)
+    readonly_fields = ("created_at", "updated_at", "created_by", "updated_by")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description")}),
+        ("Claim type", {"fields": ("claim_type", "category")}),
+        ("Status", {"fields": ("is_active",)}),
+        ("Audit", {"fields": ("created_by", "updated_by", "created_at", "updated_at")}),
+    )
+
+
+@admin.register(GCClaimStatus)
+class GCClaimStatusAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "display_order", "is_terminal", "is_active", "updated_at")
+    list_filter = ("is_active", "is_terminal")
+    search_fields = ("code", "name", "description")
+    ordering = ("display_order", "name")
+    readonly_fields = ("created_at", "updated_at", "created_by", "updated_by")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description")}),
+        ("Behaviour", {"fields": ("display_order", "sort_order", "is_terminal", "is_active")}),
+        ("Audit", {"fields": ("created_by", "updated_by", "created_at", "updated_at")}),
+    )
+
+
+@admin.register(GCDischargeType)
+class GCDischargeTypeAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "template_code", "is_active", "updated_at")
+    list_filter = ("is_active",)
+    search_fields = ("code", "name", "description", "template_code")
+    ordering = ("name",)
+    readonly_fields = ("created_at", "updated_at", "created_by", "updated_by")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description")}),
+        ("Template", {"fields": ("template_code", "variables")}),
+        ("Status", {"fields": ("is_active",)}),
+        ("Audit", {"fields": ("created_by", "updated_by", "created_at", "updated_at")}),
+    )
+
+
+@admin.register(GCCorrespondentType)
+class GCCorrespondentTypeAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "category", "communication_channel", "purpose", "is_active", "updated_at")
+    list_filter = ("category", "communication_channel", "purpose", "is_active")
+    search_fields = ("code", "name", "description")
+    ordering = ("name",)
+    readonly_fields = ("created_at", "updated_at", "created_by", "updated_by")
+    fieldsets = (
+        ("Identity", {"fields": ("code", "name", "description")}),
+        ("Correspondence", {"fields": ("category", "communication_channel", "purpose")}),
+        ("Status", {"fields": ("is_active",)}),
         ("Audit", {"fields": ("created_by", "updated_by", "created_at", "updated_at")}),
     )

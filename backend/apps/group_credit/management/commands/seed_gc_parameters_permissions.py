@@ -44,6 +44,18 @@ ENTITY_CODES = [
     "products",
     "riders",
     "rider_rates",
+    "medical_codes",
+    "medical_limits",
+    "underwriting_decisions",
+    "personal_habits",
+    "medical_histories",
+    "medical_facilities",
+    "medical_practitioners",
+    "claim_types",
+    "claim_reasons",
+    "claim_statuses",
+    "discharge_types",
+    "correspondent_types",
 ]
 
 ENTITY_ACTIONS = ["view", "create", "update", "deactivate"]
@@ -60,6 +72,18 @@ ENTITY_LABELS = {
     "products": "Products",
     "riders": "Riders",
     "rider_rates": "Rider Rates",
+    "medical_codes": "Medical Codes",
+    "medical_limits": "Medical Limits",
+    "underwriting_decisions": "Underwriting Decisions",
+    "personal_habits": "Personal Habits",
+    "medical_histories": "Medical Histories",
+    "medical_facilities": "Medical Facilities",
+    "medical_practitioners": "Medical Practitioners",
+    "claim_types": "Claim Types",
+    "claim_reasons": "Claim Reasons",
+    "claim_statuses": "Claim Statuses",
+    "discharge_types": "Discharge Types",
+    "correspondent_types": "Correspondent Types",
 }
 
 ENTITY_ACTION_LABELS = {

@@ -6,9 +6,20 @@ from django.db.models.signals import post_save, pre_save
 from apps.governance.services.audit_service import AuditService
 
 from .models import (
+    GCClaimReason,
+    GCClaimStatus,
+    GCClaimType,
+    GCCorrespondentType,
+    GCDischargeType,
     GCHealthQuestion,
     GCHealthQuestionnaire,
     GCLookupValue,
+    GCMedicalCode,
+    GCMedicalFacility,
+    GCMedicalHistory,
+    GCMedicalLimit,
+    GCMedicalPractitioner,
+    GCPersonalHabit,
     GCProduct,
     GCRider,
     GCRiderRate,
@@ -18,6 +29,7 @@ from .models import (
     GCSchemeStatus,
     GCSchemeType,
     GCSubProduct,
+    GCUnderwritingDecision,
 )
 
 AUDITED_MODELS = (
@@ -33,6 +45,18 @@ AUDITED_MODELS = (
     GCProduct,
     GCRider,
     GCRiderRate,
+    GCMedicalCode,
+    GCMedicalLimit,
+    GCUnderwritingDecision,
+    GCPersonalHabit,
+    GCMedicalHistory,
+    GCMedicalFacility,
+    GCMedicalPractitioner,
+    GCClaimType,
+    GCClaimReason,
+    GCClaimStatus,
+    GCDischargeType,
+    GCCorrespondentType,
 )
 
 

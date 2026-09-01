@@ -900,13 +900,21 @@ class GCSchemeMemberDependent(models.Model):
 # LAYER 5 — MEDICAL UNDERWRITING
 # =============================================================================
 
-class GCMedicalCode(models.Model):
+class GCMedicalCode(GCParameterAuditMixin, models.Model):
+    CATEGORY_CHOICES = [
+        ("ICD_10", "ICD-10"),
+        ("INTERNAL", "Internal code"),
+        ("OTHER", "Other"),
+    ]
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
-    icd10_code = models.CharField(max_length=50, blank=True)
-    category = models.CharField(max_length=100, blank=True)
+    icd10_code = models.CharField(max_length=50, blank=True,
+                                  help_text="Legacy ICD-10 field retained for compatibility.")
+    category = models.CharField(
+        max_length=30, choices=CATEGORY_CHOICES, default="ICD_10"
+    )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -918,15 +926,50 @@ class GCMedicalCode(models.Model):
     def __str__(self):
         return f"{self.code} - {self.name}"
 
+    def clean(self):
+        super().clean()
+        self.code = (self.code or "").strip()
+        self.name = (self.name or "").strip()
+        if not self.code:
+            raise ValidationError({"code": "A medical code is required."})
+        if not self.name:
+            raise ValidationError({"name": "A medical code name is required."})
 
-class GCMedicalLimit(models.Model):
+
+class GCMedicalLimit(GCParameterAuditMixin, models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    product = models.ForeignKey(GCProduct, on_delete=models.CASCADE, related_name="medical_limits")
-    age_from = models.IntegerField(default=0)
-    age_to = models.IntegerField(default=120)
-    sum_assured_from = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0.00'))
-    sum_assured_to = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0.00'))
-    required_tests = models.JSONField(help_text="List of required medical test codes")
+    scheme_type_ref = models.ForeignKey(
+        GCSchemeType,
+        on_delete=models.PROTECT,
+        related_name="medical_limits",
+        blank=True,
+        null=True,
+        help_text="Scheme context for this medical limit.",
+    )
+    medical_code_ref = models.ForeignKey(
+        GCMedicalCode,
+        on_delete=models.PROTECT,
+        related_name="medical_limits",
+        blank=True,
+        null=True,
+        help_text="Medical condition code this limit applies to.",
+    )
+    limit_amount = models.DecimalField(
+        max_digits=18, decimal_places=2, default=Decimal('0.00'),
+        help_text="Maximum limit amount for the condition/benefit.",
+    )
+    age_min = models.IntegerField(default=0)
+    age_max = models.IntegerField(default=120)
+    product = models.ForeignKey(GCProduct, on_delete=models.CASCADE, related_name="medical_limits",
+                                null=True, blank=True,
+                                help_text="Legacy product scope retained for compatibility.")
+    age_from = models.IntegerField(default=0, help_text="Legacy age-from retained for compatibility.")
+    age_to = models.IntegerField(default=120, help_text="Legacy age-to retained for compatibility.")
+    sum_assured_from = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0.00'),
+                                           help_text="Legacy sum-assured bound retained for compatibility.")
+    sum_assured_to = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0.00'),
+                                         help_text="Legacy sum-assured bound retained for compatibility.")
+    required_tests = models.JSONField(default=list, blank=True, help_text="List of required medical test codes")
     description = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -934,58 +977,111 @@ class GCMedicalLimit(models.Model):
 
     class Meta:
         db_table = "gc_medical_limit"
-        ordering = ["product", "age_from", "sum_assured_from"]
+        ordering = ["scheme_type_ref", "age_min", "age_max"]
 
     def __str__(self):
-        return f"Limits for {self.product.name} (Age {self.age_from}-{self.age_to})"
+        scope = self.scheme_type_ref or self.product
+        return f"Limits for {scope} (Age {self.age_min}-{self.age_max})"
+
+    def clean(self):
+        super().clean()
+        if not self.scheme_type_ref_id:
+            raise ValidationError(
+                {"scheme_type_ref": "SCHEME_NOT_FOUND: a medical limit must reference a scheme type."}
+            )
+        if self.age_min is not None and self.age_max is not None and self.age_min > self.age_max:
+            raise ValidationError(
+                {"age_min": "The minimum age cannot exceed the maximum age."}
+            )
+        if self.limit_amount is not None and self.limit_amount < 0:
+            raise ValidationError(
+                {"limit_amount": "RATE_MISMATCH: a medical limit cannot be negative."}
+            )
 
 
-class GCUnderwritingDecision(models.Model):
+class GCUnderwritingDecision(GCParameterAuditMixin, models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
-    sort_order = models.IntegerField(default=0)
+    requires_review = models.BooleanField(
+        default=False, help_text="Whether the decision must be reviewed by senior underwriting."
+    )
+    display_order = models.IntegerField(default=0)
+    sort_order = models.IntegerField(default=0, help_text="Legacy ordering field retained for compatibility.")
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "gc_underwriting_decision"
-        ordering = ["sort_order", "name"]
+        ordering = ["display_order", "name"]
 
     def __str__(self):
         return self.name
 
+    def clean(self):
+        super().clean()
+        self.code = (self.code or "").strip()
+        self.name = (self.name or "").strip()
+        if not self.code:
+            raise ValidationError({"code": "An underwriting decision code is required."})
+        if not self.name:
+            raise ValidationError({"name": "An underwriting decision name is required."})
 
-class GCPersonalHabit(models.Model):
+
+class GCPersonalHabit(GCParameterAuditMixin, models.Model):
     CATEGORY_CHOICES = [
         ("SMOKING", "Smoking"),
         ("ALCOHOL", "Alcohol Consumption"),
         ("DRUGS", "Drug Use"),
         ("SPORTS", "Hazardous Sports"),
+        ("OCCUPATION", "Occupation"),
         ("OTHER", "Other"),
     ]
     RISK_LEVEL_CHOICES = [("LOW", "Low"), ("MEDIUM", "Medium"), ("HIGH", "High")]
+    UNDERWRITING_IMPACT_CHOICES = [("LOW", "Low"), ("MEDIUM", "Medium"), ("HIGH", "High")]
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=100)
-    category = models.CharField(max_length=50)
-    risk_level = models.CharField(max_length=20, default="LOW")
+    habit_category = models.CharField(
+        max_length=30, choices=CATEGORY_CHOICES, default="OTHER"
+    )
+    underwriting_impact = models.CharField(
+        max_length=20, choices=UNDERWRITING_IMPACT_CHOICES, default="LOW"
+    )
+    category = models.CharField(max_length=50, blank=True,
+                                help_text="Legacy category field retained for compatibility.")
+    risk_level = models.CharField(max_length=20, default="LOW",
+                                  help_text="Legacy risk-level field retained for compatibility.")
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "gc_personal_habit"
-        ordering = ["category", "name"]
+        ordering = ["habit_category", "name"]
 
     def __str__(self):
-        return f"{self.name} ({self.get_category_display()})"
+        return f"{self.name} ({self.get_habit_category_display()})"
+
+    def clean(self):
+        super().clean()
+        self.code = (self.code or "").strip()
+        self.name = (self.name or "").strip()
+        if not self.code:
+            raise ValidationError({"code": "A personal habit code is required."})
+        if not self.name:
+            raise ValidationError({"name": "A personal habit name is required."})
+        allowed = {choice[0] for choice in self.CATEGORY_CHOICES}
+        if self.habit_category and self.habit_category not in allowed:
+            raise ValidationError(
+                {"habit_category": f"{self.habit_category} is not a valid habit category."}
+            )
 
 
-class GCMedicalHistory(models.Model):
-    CATEGORY_CHOICES = [
+class GCMedicalHistory(GCParameterAuditMixin, models.Model):
+    CONDITION_CATEGORY_CHOICES = [
         ("CARDIOVASCULAR", "Cardiovascular"),
         ("RESPIRATORY", "Respiratory"),
         ("NEUROLOGICAL", "Neurological"),
@@ -993,43 +1089,83 @@ class GCMedicalHistory(models.Model):
         ("METABOLIC", "Metabolic"),
         ("OTHER", "Other"),
     ]
+    SEVERITY_CHOICES = [("LOW", "Low"), ("MEDIUM", "Medium"), ("HIGH", "High"), ("CRITICAL", "Critical")]
     RISK_IMPACT_CHOICES = [("LOW", "Low"), ("MEDIUM", "Medium"), ("HIGH", "High"), ("DECLINE", "Decline")]
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=200)
-    category = models.CharField(max_length=50)
-    risk_impact = models.CharField(max_length=20, default="LOW")
+    condition_category = models.CharField(
+        max_length=30, choices=CONDITION_CATEGORY_CHOICES, default="OTHER"
+    )
+    severity = models.CharField(
+        max_length=20, choices=SEVERITY_CHOICES, default="LOW"
+    )
+    waiting_period_days = models.IntegerField(default=0)
+    exclusion_flag = models.BooleanField(default=False)
+    category = models.CharField(max_length=50, blank=True,
+                                help_text="Legacy category field retained for compatibility.")
+    risk_impact = models.CharField(max_length=20, default="LOW",
+                                   help_text="Legacy risk-impact field retained for compatibility.")
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "gc_medical_history"
-        ordering = ["category", "name"]
+        ordering = ["condition_category", "name"]
         verbose_name_plural = "GC Medical Histories"
 
     def __str__(self):
-        return f"{self.name} ({self.get_risk_impact_display()})"
+        return f"{self.name} ({self.get_condition_category_display()})"
+
+    def clean(self):
+        super().clean()
+        self.code = (self.code or "").strip()
+        self.name = (self.name or "").strip()
+        if not self.code:
+            raise ValidationError({"code": "A medical history code is required."})
+        if not self.name:
+            raise ValidationError({"name": "A medical history name is required."})
+        if self.waiting_period_days is not None and self.waiting_period_days < 0:
+            raise ValidationError(
+                {"waiting_period_days": "The waiting period cannot be negative."}
+            )
 
 
-class GCMedicalFacility(models.Model):
+class GCMedicalFacility(GCParameterAuditMixin, models.Model):
     FACILITY_TYPE_CHOICES = [
         ("HOSPITAL", "Hospital"),
         ("CLINIC", "Clinic"),
         ("LABORATORY", "Laboratory"),
         ("SPECIALIST", "Specialist Center"),
     ]
+    APPROVAL_STATUS_CHOICES = [
+        ("PENDING", "Pending"),
+        ("APPROVED", "Approved"),
+        ("REJECTED", "Rejected"),
+    ]
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    code = models.CharField(max_length=50, unique=True)
+    partner_ref = models.ForeignKey(
+        "partners.Partner",
+        on_delete=models.SET_NULL,
+        related_name="gc_medical_facilities",
+        null=True,
+        blank=True,
+        help_text="Partner (bank/corporate) this facility belongs to.",
+    )
+    code = models.CharField(max_length=50, unique=True, help_text="Facility code.")
     name = models.CharField(max_length=200)
-    facility_type = models.CharField(max_length=50)
-    address = models.TextField()
-    city = models.CharField(max_length=100)
+    facility_type = models.CharField(max_length=50, choices=FACILITY_TYPE_CHOICES)
+    approval_status = models.CharField(
+        max_length=20, choices=APPROVAL_STATUS_CHOICES, default="APPROVED"
+    )
+    address = models.TextField(blank=True)
+    city = models.CharField(max_length=100, blank=True)
     region = models.CharField(max_length=100, blank=True)
     phone = models.CharField(max_length=50, blank=True)
     email = models.EmailField(blank=True)
     contact_person = models.CharField(max_length=100, blank=True)
-    is_approved = models.BooleanField(default=True)
+    is_approved = models.BooleanField(default=True, help_text="Legacy approval flag retained for compatibility.")
     approved_date = models.DateField(blank=True, null=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -1043,17 +1179,46 @@ class GCMedicalFacility(models.Model):
     def __str__(self):
         return self.name
 
+    def clean(self):
+        super().clean()
+        self.name = (self.name or "").strip()
+        if not self.name:
+            raise ValidationError({"name": "A facility name is required."})
+        allowed = {choice[0] for choice in self.FACILITY_TYPE_CHOICES}
+        if self.facility_type and self.facility_type not in allowed:
+            raise ValidationError(
+                {"facility_type": f"{self.facility_type} is not a valid facility type."}
+            )
 
-class GCMedicalPractitioner(models.Model):
+
+class GCMedicalPractitioner(GCParameterAuditMixin, models.Model):
+    APPROVAL_STATUS_CHOICES = [
+        ("PENDING", "Pending"),
+        ("APPROVED", "Approved"),
+        ("REJECTED", "Rejected"),
+    ]
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    code = models.CharField(max_length=50, unique=True)
-    name = models.CharField(max_length=200)
-    specialization = models.CharField(max_length=100)
-    license_number = models.CharField(max_length=100)
+    partner_ref = models.ForeignKey(
+        "partners.Partner",
+        on_delete=models.SET_NULL,
+        related_name="gc_medical_practitioners",
+        null=True,
+        blank=True,
+        help_text="Partner (bank/corporate) this practitioner is linked to.",
+    )
+    code = models.CharField(max_length=50, unique=True, help_text="Practitioner code.")
+    first_name = models.CharField(max_length=100, blank=True)
+    last_name = models.CharField(max_length=100, blank=True)
+    name = models.CharField(max_length=200, blank=True, help_text="Full name retained for compatibility.")
+    specialization = models.CharField(max_length=100, blank=True, help_text="Medical specialty.")
+    license_number = models.CharField(max_length=100, blank=True)
     facility = models.ForeignKey(GCMedicalFacility, on_delete=models.CASCADE, related_name="practitioners")
+    approval_status = models.CharField(
+        max_length=20, choices=APPROVAL_STATUS_CHOICES, default="APPROVED"
+    )
     phone = models.CharField(max_length=50, blank=True)
     email = models.EmailField(blank=True)
-    is_approved = models.BooleanField(default=True)
+    is_approved = models.BooleanField(default=True, help_text="Legacy approval flag retained for compatibility.")
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1064,6 +1229,16 @@ class GCMedicalPractitioner(models.Model):
 
     def __str__(self):
         return f"Dr. {self.name} - {self.specialization}"
+
+    def clean(self):
+        super().clean()
+        self.name = (self.name or "").strip()
+        if not self.name and not (self.first_name or self.last_name):
+            raise ValidationError(
+                {"name": "A practitioner name (or first/last name) is required."}
+            )
+        if not self.code:
+            raise ValidationError({"code": "A practitioner code is required."})
 
 
 class GCMedicalCase(models.Model):
@@ -1114,12 +1289,31 @@ class GCMedicalCase(models.Model):
 # LAYER 6 — CLAIMS
 # =============================================================================
 
-class GCClaimType(models.Model):
+class GCClaimType(GCParameterAuditMixin, models.Model):
+    CATEGORY_CHOICES = [
+        ("DEATH", "Death"),
+        ("CRITICAL_ILLNESS", "Critical Illness"),
+        ("PERMANENT_DISABILITY", "Permanent Disability"),
+        ("TEMPORARY_DISABILITY", "Temporary Disability"),
+        ("OTHER", "Other"),
+    ]
+    CALCULATION_BASIS_CHOICES = [
+        ("SUM_ASSURED", "Sum Assured"),
+        ("PERCENTAGE_OF_SUM_ASSURED", "Percentage of Sum Assured"),
+        ("FIXED", "Fixed Amount"),
+        ("OTHER", "Other"),
+    ]
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
-    requires_medical_report = models.BooleanField(default=False)
+    category = models.CharField(max_length=30, choices=CATEGORY_CHOICES, default="DEATH")
+    calculation_basis = models.CharField(
+        max_length=40, choices=CALCULATION_BASIS_CHOICES, default="SUM_ASSURED"
+    )
+    requires_document_check = models.BooleanField(default=True)
+    requires_medical_report = models.BooleanField(default=False,
+                                                  help_text="Legacy flag retained for compatibility.")
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1131,12 +1325,27 @@ class GCClaimType(models.Model):
     def __str__(self):
         return self.name
 
+    def clean(self):
+        super().clean()
+        self.code = (self.code or "").strip()
+        self.name = (self.name or "").strip()
+        if not self.code:
+            raise ValidationError({"code": "A claim type code is required."})
+        if not self.name:
+            raise ValidationError({"name": "A claim type name is required."})
 
-class GCClaimReason(models.Model):
+
+class GCClaimReason(GCParameterAuditMixin, models.Model):
+    CATEGORY_CHOICES = [
+        ("ACCIDENT", "Accident"),
+        ("ILLNESS", "Illness"),
+        ("OTHER", "Other"),
+    ]
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=100)
     claim_type = models.ForeignKey(GCClaimType, on_delete=models.CASCADE, related_name="reasons")
+    category = models.CharField(max_length=30, choices=CATEGORY_CHOICES, default="OTHER")
     description = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -1149,13 +1358,23 @@ class GCClaimReason(models.Model):
     def __str__(self):
         return f"{self.claim_type.name} - {self.name}"
 
+    def clean(self):
+        super().clean()
+        self.code = (self.code or "").strip()
+        self.name = (self.name or "").strip()
+        if not self.code:
+            raise ValidationError({"code": "A claim reason code is required."})
+        if not self.name:
+            raise ValidationError({"name": "A claim reason name is required."})
 
-class GCClaimStatus(models.Model):
+
+class GCClaimStatus(GCParameterAuditMixin, models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
-    sort_order = models.IntegerField(default=0)
+    display_order = models.IntegerField(default=0)
+    sort_order = models.IntegerField(default=0, help_text="Legacy ordering field retained for compatibility.")
     is_terminal = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -1163,18 +1382,33 @@ class GCClaimStatus(models.Model):
 
     class Meta:
         db_table = "gc_claim_status"
-        ordering = ["sort_order", "name"]
+        ordering = ["display_order", "name"]
         verbose_name_plural = "GC Claim Statuses"
 
     def __str__(self):
         return self.name
 
+    def clean(self):
+        super().clean()
+        self.code = (self.code or "").strip()
+        self.name = (self.name or "").strip()
+        if not self.code:
+            raise ValidationError({"code": "A claim status code is required."})
+        if not self.name:
+            raise ValidationError({"name": "A claim status name is required."})
 
-class GCDischargeType(models.Model):
+
+class GCDischargeType(GCParameterAuditMixin, models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
+    template_code = models.CharField(
+        max_length=100, default="DISCHARGE_DEFAULT",
+        help_text="Document template code used to render this discharge letter.",
+    )
+    variables = models.JSONField(default=dict, blank=True,
+                                 help_text="Template variables available for rendering.")
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1186,12 +1420,51 @@ class GCDischargeType(models.Model):
     def __str__(self):
         return self.name
 
+    def clean(self):
+        super().clean()
+        self.code = (self.code or "").strip()
+        self.name = (self.name or "").strip()
+        if not self.code:
+            raise ValidationError({"code": "A discharge type code is required."})
+        if not self.name:
+            raise ValidationError({"name": "A discharge type name is required."})
+        if not self.template_code:
+            raise ValidationError({"template_code": "A template code is required."})
 
-class GCCorrespondentType(models.Model):
+
+class GCCorrespondentType(GCParameterAuditMixin, models.Model):
+    CATEGORY_CHOICES = [
+        ("PARTNER", "Partner"),
+        ("MEMBER", "Member"),
+        ("FAMILY", "Family"),
+        ("LEGAL", "Legal Representative"),
+        ("MEDICAL", "Medical"),
+        ("OTHER", "Other"),
+    ]
+    CHANNEL_CHOICES = [
+        ("EMAIL", "Email"),
+        ("SMS", "SMS"),
+        ("MAIL", "Postal Mail"),
+        ("PHONE", "Phone"),
+        ("OTHER", "Other"),
+    ]
+    PURPOSE_CHOICES = [
+        ("CLAIM_NOTIFICATION", "Claim Notification"),
+        ("DOCUMENT_REQUEST", "Document Request"),
+        ("PAYMENT_NOTICE", "Payment Notice"),
+        ("OTHER", "Other"),
+    ]
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
+    category = models.CharField(max_length=30, choices=CATEGORY_CHOICES, default="OTHER")
+    communication_channel = models.CharField(
+        max_length=20, choices=CHANNEL_CHOICES, default="EMAIL"
+    )
+    purpose = models.CharField(
+        max_length=30, choices=PURPOSE_CHOICES, default="OTHER"
+    )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1202,6 +1475,15 @@ class GCCorrespondentType(models.Model):
 
     def __str__(self):
         return self.name
+
+    def clean(self):
+        super().clean()
+        self.code = (self.code or "").strip()
+        self.name = (self.name or "").strip()
+        if not self.code:
+            raise ValidationError({"code": "A correspondent type code is required."})
+        if not self.name:
+            raise ValidationError({"name": "A correspondent type name is required."})
 
 
 class GCClaim(models.Model):

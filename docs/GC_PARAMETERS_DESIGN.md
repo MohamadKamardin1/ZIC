@@ -79,7 +79,42 @@ the effective window must be valid. The structured error registry in
 `RIDER_NOT_FOUND`, and `PRODUCT_CODE_CONFLICT`, with `GCParameterError` and
 `registry_error()` helpers for the API/service layer (used from Prompt 4).
 
-## 5. Permissions
+## 5. Medical U/W & Claim Setup models (Prompt 3)
+
+Extends Layer 4 (Medical U/W) and Layer 5 (Claim Setup) in place. All twelve
+models inherit `GCParameterAuditMixin` and are registered with the audit
+receivers. Legacy fields on pre-existing models are retained for compatibility
+but made optional, so spec-canonical records (scheme-scoped medical limits,
+partner-linked facilities/practitioners) save without legacy baggage.
+
+**Medical U/W** (Layer 4):
+
+| Model | Key fields | Notes |
+|-------|-----------|-------|
+| `GCMedicalCode` | `code`, `name`, `description`, `category` (ICD_10/INTERNAL/OTHER), `is_active` | Legacy `icd10_code` retained for compatibility. |
+| `GCMedicalLimit` | `scheme_type_ref`, `medical_code_ref`, `limit_amount`, `age_min`/`age_max`, `is_active` | `scheme_type_ref` required at validation (`SCHEME_NOT_FOUND`); `limit_amount` non-negative (`RATE_MISMATCH`); age window validated. Legacy `product`, `age_from`/`age_to`, `sum_assured_from`/`sum_assured_to`, `required_tests` retained and optional. |
+| `GCUnderwritingDecision` | `code`, `name`, `description`, `requires_review`, `display_order`, `is_active` | e.g. STANDARD, LOADING, DECLINE. Legacy `sort_order` retained. |
+| `GCPersonalHabit` | `code`, `name`, `habit_category` (SMOKING/ALCOHOL/DRUGS/SPORTS/OCCUPATION/OTHER), `underwriting_impact` (LOW/MEDIUM/HIGH), `is_active` | Legacy `category`/`risk_level` retained. |
+| `GCMedicalHistory` | `code`, `name`, `condition_category` (CARDIOVASCULAR/RESPIRATORY/NEUROLOGICAL/ONCOLOGY/METABOLIC/OTHER), `severity` (LOW/MEDIUM/HIGH/CRITICAL), `waiting_period_days`, `exclusion_flag`, `is_active` | Waiting period must be non-negative. Legacy `category`/`risk_impact` retained. |
+| `GCMedicalFacility` | `partner_ref` (FK → `Partner`), `code`, `name`, `facility_type` (HOSPITAL/CLINIC/LABORATORY/SPECIALIST), `approval_status` (PENDING/APPROVED/REJECTED), `is_active` | `partner_ref` lets a bank's preferred hospital network be parameterized. Legacy `is_approved`/`approved_date` and contact fields retained and optional. |
+| `GCMedicalPractitioner` | `partner_ref` (FK → `Partner`), `code`, `first_name`/`last_name`, `name`, `specialization`, `license_number`, `facility` (FK → `GCMedicalFacility`), `approval_status`, `is_active` | Requires a name (or first/last). `name` is the legacy full-name field, optional. |
+
+**Claim Setup** (Layer 5):
+
+| Model | Key fields | Notes |
+|-------|-----------|-------|
+| `GCClaimType` | `code`, `name`, `category` (DEATH/CRITICAL_ILLNESS/PERMANENT_DISABILITY/TEMPORARY_DISABILITY/OTHER), `calculation_basis` (SUM_ASSURED/PERCENTAGE_OF_SUM_ASSURED/FIXED/OTHER), `requires_document_check`, `is_active` | Legacy `requires_medical_report` retained. |
+| `GCClaimReason` | `code`, `name`, `claim_type` (FK → `GCClaimType`), `category` (ACCIDENT/ILLNESS/OTHER), `description`, `is_active` | A reason always belongs to a claim type. |
+| `GCClaimStatus` | `code`, `name`, `display_order`, `is_terminal`, `is_active` | Legacy `sort_order` retained. |
+| `GCDischargeType` | `code`, `name`, `template_code` (default DISCHARGE_DEFAULT), `variables` (JSON), `is_active` | Template code guarded against an explicit empty value. |
+| `GCCorrespondentType` | `code`, `name`, `category` (PARTNER/MEMBER/FAMILY/LEGAL/MEDICAL/OTHER), `communication_channel` (EMAIL/SMS/MAIL/PHONE/OTHER), `purpose` (CLAIM_NOTIFICATION/DOCUMENT_REQUEST/PAYMENT_NOTICE/OTHER), `is_active` | |
+
+**Validation** — medical limits must reference a scheme type (`SCHEME_NOT_FOUND`),
+limits and waiting periods must be non-negative, and age windows must not be
+inverted. Covered by `tests/test_medical_claims.py` (47 group_credit tests
+across the three prompt files).
+
+## 6. Permissions
 
 Registered idempotently by `manage.py seed_gc_parameters_permissions`:
 
@@ -88,9 +123,13 @@ Registered idempotently by `manage.py seed_gc_parameters_permissions`:
 - Entity codes per parameter entity (`scheme_types`, `scheme_rates`,
   `member_statuses`, `scheme_statuses`, `renewal_statuses`,
   `health_questions`, `health_questionnaires`, `sub_products`, `products`,
-  `riders`, `rider_rates`): `view`, `create`, `update`,
-  `deactivate` (e.g. `gc_parameters.scheme_types.create`). 47 permission
-  codes in total.
+  `riders`, `rider_rates`, `medical_codes`, `medical_limits`,
+  `underwriting_decisions`, `personal_habits`, `medical_histories`,
+  `medical_facilities`, `medical_practitioners`, `claim_types`,
+  `claim_reasons`, `claim_statuses`, `discharge_types`,
+  `correspondent_types`): `view`, `create`, `update`,
+  `deactivate` (e.g. `gc_parameters.claim_types.create`). 95 permission
+  codes in total (3 module + 23 entities × 4).
 - `PermissionGroup` `GC_PARAMETERS` plus three roles:
   `GC_PARAMETER_VIEWER`, `GC_PARAMETER_MANAGER`, `GC_PARAMETER_ADMINISTRATOR`.
 - Enforcement helper: `apps/group_credit/permissions.py`
@@ -98,20 +137,21 @@ Registered idempotently by `manage.py seed_gc_parameters_permissions`:
   `permissions.IsAuthenticated`; fine-grained parameter gating is layered in
   the API prompt.
 
-## 6. Audit logging
+## 7. Audit logging
 
 `apps/group_credit/audit_receivers.py` connects `pre_save`/`post_save` for all
-Layer-1 parameter models, writing `AuditLog` records with actor, before/after
+24 Layer-1 parameter models, writing `AuditLog` records with actor, before/after
 state, changed fields, reason, and source channel via `AuditService`. Seeds run
 under the `SYSTEM` source channel (no request actor).
 
-## 7. Integration map
+## 8. Integration map
 
 ```
 GCSchemeType ──┬── GCSchemePremiumRate (rates per scheme type / product)
                ├── GCProduct (scheme_type_ref) ── GCSubProduct
                ├── GCHealthQuestionnaire (scheme_type_ref) ── GCHealthQuestion
-               └── GCMedicalLimit (scheme_type_ref) ── GCMedicalCode
+               ├── GCMedicalLimit (scheme_type_ref) ── GCMedicalCode
+               └── GCClaimReason (claim_type)
 
 GCQuotation ── GCProduct / GCSchemeType / GCSchemePremiumRate  (rating)
 GCScheme    ── GCProduct / GCSchemeType / GCSchemeStatus / Partner
@@ -119,6 +159,7 @@ GCSchemeMember ── GCSchemeMemberStatus / GCHealthQuestionnaire
 GCClaim     ── GCClaimType / GCClaimReason / GCClaimStatus / GCDischargeType
 GCMedicalCase ── GCMedicalCode / GCMedicalFacility / GCMedicalPractitioner
 GCSchemeRenewal ── GCSchemeRenewalStatus
+GCMedicalFacility / GCMedicalPractitioner ── Partner (partner_ref)
 ```
 
 The parameter layer constrains and rates the runtime layer; the runtime layer

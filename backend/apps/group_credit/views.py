@@ -557,12 +557,13 @@ class GCMedicalCodeViewSet(viewsets.ModelViewSet):
 
 
 class GCMedicalLimitViewSet(viewsets.ModelViewSet):
-    queryset = GCMedicalLimit.objects.select_related("product").all()
+    queryset = GCMedicalLimit.objects.select_related("scheme_type_ref", "medical_code_ref", "product").all()
     serializer_class = GCMedicalLimitSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardPagination
-    filterset_fields = ["product", "is_active"]
-    ordering = ["age_from", "sum_assured_from"]
+    search_fields = ["scheme_type_ref__code", "scheme_type_ref__name", "medical_code_ref__code", "description"]
+    filterset_fields = ["scheme_type_ref", "medical_code_ref", "product", "is_active"]
+    ordering = ["age_min", "age_max"]
 
 
 class GCUnderwritingDecisionViewSet(viewsets.ModelViewSet):
@@ -571,7 +572,8 @@ class GCUnderwritingDecisionViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardPagination
     search_fields = ["code", "name"]
-    ordering = ["sort_order"]
+    filterset_fields = ["requires_review", "is_active"]
+    ordering = ["display_order"]
 
 
 class GCPersonalHabitViewSet(viewsets.ModelViewSet):
@@ -580,8 +582,8 @@ class GCPersonalHabitViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardPagination
     search_fields = ["code", "name"]
-    filterset_fields = ["category", "risk_level", "is_active"]
-    ordering = ["category", "name"]
+    filterset_fields = ["habit_category", "underwriting_impact", "is_active"]
+    ordering = ["habit_category", "name"]
 
 
 class GCMedicalHistoryViewSet(viewsets.ModelViewSet):
@@ -590,27 +592,27 @@ class GCMedicalHistoryViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardPagination
     search_fields = ["code", "name"]
-    filterset_fields = ["category", "risk_impact", "is_active"]
-    ordering = ["category", "name"]
+    filterset_fields = ["condition_category", "severity", "exclusion_flag", "is_active"]
+    ordering = ["condition_category", "name"]
 
 
 class GCMedicalFacilityViewSet(viewsets.ModelViewSet):
-    queryset = GCMedicalFacility.objects.all()
+    queryset = GCMedicalFacility.objects.select_related("partner_ref").all()
     serializer_class = GCMedicalFacilitySerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardPagination
     search_fields = ["code", "name", "city"]
-    filterset_fields = ["facility_type", "is_approved", "is_active", "region"]
+    filterset_fields = ["facility_type", "approval_status", "partner_ref", "is_active", "region"]
     ordering = ["name"]
 
 
 class GCMedicalPractitionerViewSet(viewsets.ModelViewSet):
-    queryset = GCMedicalPractitioner.objects.select_related("facility").all()
+    queryset = GCMedicalPractitioner.objects.select_related("facility", "partner_ref").all()
     serializer_class = GCMedicalPractitionerSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardPagination
-    search_fields = ["code", "name", "specialization"]
-    filterset_fields = ["is_approved", "is_active"]
+    search_fields = ["code", "name", "first_name", "last_name", "specialization"]
+    filterset_fields = ["approval_status", "facility", "partner_ref", "is_active"]
     ordering = ["name"]
 
 
@@ -695,6 +697,7 @@ class GCClaimTypeViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardPagination
     search_fields = ["code", "name"]
+    filterset_fields = ["category", "calculation_basis", "requires_document_check", "is_active"]
     ordering = ["name"]
 
 
@@ -704,7 +707,7 @@ class GCClaimReasonViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardPagination
     search_fields = ["code", "name"]
-    filterset_fields = ["claim_type", "is_active"]
+    filterset_fields = ["claim_type", "category", "is_active"]
     ordering = ["claim_type", "name"]
 
 
@@ -714,7 +717,8 @@ class GCClaimStatusViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardPagination
     search_fields = ["code", "name"]
-    ordering = ["sort_order"]
+    filterset_fields = ["is_terminal", "is_active"]
+    ordering = ["display_order"]
 
 
 class GCDischargeTypeViewSet(viewsets.ModelViewSet):
@@ -722,7 +726,8 @@ class GCDischargeTypeViewSet(viewsets.ModelViewSet):
     serializer_class = GCDischargeTypeSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardPagination
-    search_fields = ["code", "name"]
+    search_fields = ["code", "name", "template_code"]
+    filterset_fields = ["is_active"]
     ordering = ["name"]
 
 
@@ -732,6 +737,7 @@ class GCCorrespondentTypeViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardPagination
     search_fields = ["code", "name"]
+    filterset_fields = ["category", "communication_channel", "purpose", "is_active"]
     ordering = ["name"]
 
 
