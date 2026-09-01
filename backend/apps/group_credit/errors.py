@@ -52,6 +52,30 @@ GC_PARAMETERS_ERROR_REGISTRY = {
             "Open the existing product if a correction or follow-up is required.",
         ],
     },
+    "SCHEME_RATE_OVERLAP": {
+        "message": "The premium rate effective window overlaps an existing rate for the same scheme type.",
+        "status_code": 409,
+        "resolution_steps": [
+            "Choose an effective-from/effective-to window that does not overlap an existing active rate.",
+            "Amend the effective dates of the conflicting rate before saving the new one.",
+        ],
+    },
+    "PRODUCT_INVALID_LIMITS": {
+        "message": "The product's entry-age band or free-cover limit is inconsistent with its cover limits.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Ensure min_entry_age does not exceed max_entry_age.",
+            "Ensure the free cover limit does not exceed the maximum loan amount.",
+        ],
+    },
+    "CLAIM_TYPE_DUPLICATE": {
+        "message": "An active claim type with the same name already exists.",
+        "status_code": 409,
+        "resolution_steps": [
+            "Use a distinct claim type name.",
+            "Open the existing claim type if a correction or follow-up is required.",
+        ],
+    },
 }
 
 
@@ -105,3 +129,15 @@ def product_invalid_scheme():
 
 def rate_mismatch():
     return registry_error("RATE_MISMATCH")
+
+
+def scheme_rate_overlap(*, details=None):
+    return registry_error("SCHEME_RATE_OVERLAP", details=details)
+
+
+def product_invalid_limits(*, details=None):
+    return registry_error("PRODUCT_INVALID_LIMITS", details=details)
+
+
+def claim_type_duplicate(*, details=None):
+    return registry_error("CLAIM_TYPE_DUPLICATE", details=details)

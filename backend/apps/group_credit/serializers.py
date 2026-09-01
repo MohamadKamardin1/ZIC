@@ -43,23 +43,88 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
+# DISPLAY HELPERS — "names never UUIDs"
+# =============================================================================
+
+
+def gc_display_value(value):
+    """Human-readable identity for any GC object: `CODE — Name`, else first known field."""
+
+    if value is None:
+        return None
+    code = getattr(value, "code", None)
+    name = getattr(value, "name", None) or getattr(value, "legal_name", None)
+    if name and code and str(name) != str(code):
+        return f"{code} — {name}"
+    if name:
+        return str(name)
+    if code:
+        return str(code)
+    for field in ("first_name", "surname", "last_name"):
+        part = getattr(value, field, None)
+        if part:
+            return str(part)
+    label = getattr(value, "label", None) or getattr(value, "question_text", None)
+    if label:
+        return str(label)
+    return str(value)
+
+
+class GCRelationDisplayField(serializers.Field):
+    """Renders a foreign-key relation as its display name instead of a UUID."""
+
+    def __init__(self, relation_name, **kwargs):
+        self.relation_name = relation_name
+        super().__init__(read_only=True, **kwargs)
+
+    def get_attribute(self, instance):
+        return getattr(instance, self.relation_name, None)
+
+    def to_representation(self, value):
+        return gc_display_value(value)
+
+
+class GCParameterDisplayMixin:
+    """Adds `display_name` plus a `<fk>_display` name for every concrete FK."""
+
+    display_name = serializers.SerializerMethodField()
+
+    def get_display_name(self, obj):
+        return gc_display_value(obj)
+
+    def get_fields(self):
+        fields = super().get_fields()
+        if "display_name" not in fields:
+            fields["display_name"] = serializers.SerializerMethodField()
+        model = getattr(getattr(self, "Meta", None), "model", None)
+        if model is not None:
+            for model_field in model._meta.get_fields():
+                if not getattr(model_field, "many_to_one", False) or not getattr(model_field, "concrete", False):
+                    continue
+                display_field = f"{model_field.name}_display"
+                if display_field not in fields:
+                    fields[display_field] = GCRelationDisplayField(model_field.name)
+        return fields
+
+
+# =============================================================================
 # LAYER 1 — PARAMETER / SETUP SERIALIZERS
 # =============================================================================
 
 
-class GCLookupValueSerializer(serializers.ModelSerializer):
+class GCLookupValueSerializer(GCParameterDisplayMixin, serializers.ModelSerializer):
     class Meta:
         model = GCLookupValue
         fields = "__all__"
 
-class GCSchemeTypeSerializer(serializers.ModelSerializer):
+class GCSchemeTypeSerializer(GCParameterDisplayMixin, serializers.ModelSerializer):
     class Meta:
         model = GCSchemeType
         fields = ["id", "code", "name", "description", "is_active", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class GCSchemeStatusSerializer(serializers.ModelSerializer):
+class GCSchemeStatusSerializer(GCParameterDisplayMixin, serializers.ModelSerializer):
     class Meta:
         model = GCSchemeStatus
         fields = [
@@ -70,21 +135,21 @@ class GCSchemeStatusSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class GCSchemeMemberStatusSerializer(serializers.ModelSerializer):
+class GCSchemeMemberStatusSerializer(GCParameterDisplayMixin, serializers.ModelSerializer):
     class Meta:
         model = GCSchemeMemberStatus
         fields = ["id", "code", "name", "description", "is_active", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class GCSchemeRenewalStatusSerializer(serializers.ModelSerializer):
+class GCSchemeRenewalStatusSerializer(GCParameterDisplayMixin, serializers.ModelSerializer):
     class Meta:
         model = GCSchemeRenewalStatus
         fields = ["id", "code", "name", "description", "is_active", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class GCSchemePremiumRateSerializer(serializers.ModelSerializer):
+class GCSchemePremiumRateSerializer(GCParameterDisplayMixin, serializers.ModelSerializer):
     rate_type_display = serializers.CharField(source="get_rate_type_display", read_only=True)
     gender_display = serializers.CharField(source="get_gender_display", read_only=True)
 
@@ -101,7 +166,7 @@ class GCSchemePremiumRateSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class GCHealthQuestionSerializer(serializers.ModelSerializer):
+class GCHealthQuestionSerializer(GCParameterDisplayMixin, serializers.ModelSerializer):
     question_type_display = serializers.CharField(source="get_question_type_display", read_only=True)
     category_display = serializers.CharField(source="get_category_display", read_only=True)
 
@@ -116,7 +181,7 @@ class GCHealthQuestionSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class GCHealthQuestionnaireSerializer(serializers.ModelSerializer):
+class GCHealthQuestionnaireSerializer(GCParameterDisplayMixin, serializers.ModelSerializer):
     questions = GCHealthQuestionSerializer(many=True, read_only=True)
     question_ids = serializers.PrimaryKeyRelatedField(
         queryset=GCHealthQuestion.objects.all(),
@@ -139,14 +204,14 @@ class GCHealthQuestionnaireSerializer(serializers.ModelSerializer):
 # =============================================================================
 
 
-class GCSubProductSerializer(serializers.ModelSerializer):
+class GCSubProductSerializer(GCParameterDisplayMixin, serializers.ModelSerializer):
     class Meta:
         model = GCSubProduct
         fields = ["id", "code", "name", "description", "is_active", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class GCRiderRateSerializer(serializers.ModelSerializer):
+class GCRiderRateSerializer(GCParameterDisplayMixin, serializers.ModelSerializer):
     gender_display = serializers.CharField(source="get_gender_display", read_only=True)
     rate_type_display = serializers.CharField(source="get_rate_type_display", read_only=True)
     product_name = serializers.ReadOnlyField(source="product_ref.name", default=None)
@@ -166,7 +231,7 @@ class GCRiderRateSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class GCRiderSerializer(serializers.ModelSerializer):
+class GCRiderSerializer(GCParameterDisplayMixin, serializers.ModelSerializer):
     rider_type_display = serializers.CharField(source="get_rider_type_display", read_only=True)
     rider_category_display = serializers.CharField(source="get_rider_category_display", read_only=True)
     benefit_type_display = serializers.CharField(source="get_benefit_type_display", read_only=True)
@@ -186,7 +251,7 @@ class GCRiderSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class GCProductListSerializer(serializers.ModelSerializer):
+class GCProductListSerializer(GCParameterDisplayMixin, serializers.ModelSerializer):
     sub_product_name = serializers.ReadOnlyField(source="sub_product.name")
     scheme_type_name = serializers.ReadOnlyField(source="scheme_type_ref.name")
     premium_basis_display = serializers.CharField(source="get_premium_basis_display", read_only=True)
@@ -208,7 +273,7 @@ class GCProductListSerializer(serializers.ModelSerializer):
         ]
 
 
-class GCProductDetailSerializer(serializers.ModelSerializer):
+class GCProductDetailSerializer(GCParameterDisplayMixin, serializers.ModelSerializer):
     sub_product = GCSubProductSerializer(read_only=True)
     sub_product_id = serializers.PrimaryKeyRelatedField(
         queryset=GCSubProduct.objects.all(), write_only=True, source="sub_product",
@@ -621,7 +686,7 @@ class GCSchemeMemberCreateSerializer(serializers.ModelSerializer):
 # =============================================================================
 
 
-class GCMedicalCodeSerializer(serializers.ModelSerializer):
+class GCMedicalCodeSerializer(GCParameterDisplayMixin, serializers.ModelSerializer):
     category_display = serializers.CharField(source="get_category_display", read_only=True)
 
     class Meta:
@@ -633,7 +698,7 @@ class GCMedicalCodeSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class GCMedicalLimitSerializer(serializers.ModelSerializer):
+class GCMedicalLimitSerializer(GCParameterDisplayMixin, serializers.ModelSerializer):
     scheme_type_name = serializers.ReadOnlyField(source="scheme_type_ref.name")
     medical_code_name = serializers.ReadOnlyField(source="medical_code_ref.name")
     product_name = serializers.ReadOnlyField(source="product.name")
@@ -653,7 +718,7 @@ class GCMedicalLimitSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class GCUnderwritingDecisionSerializer(serializers.ModelSerializer):
+class GCUnderwritingDecisionSerializer(GCParameterDisplayMixin, serializers.ModelSerializer):
     class Meta:
         model = GCUnderwritingDecision
         fields = [
@@ -664,7 +729,7 @@ class GCUnderwritingDecisionSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class GCPersonalHabitSerializer(serializers.ModelSerializer):
+class GCPersonalHabitSerializer(GCParameterDisplayMixin, serializers.ModelSerializer):
     habit_category_display = serializers.CharField(source="get_habit_category_display", read_only=True)
     underwriting_impact_display = serializers.CharField(source="get_underwriting_impact_display", read_only=True)
 
@@ -680,7 +745,7 @@ class GCPersonalHabitSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class GCMedicalHistorySerializer(serializers.ModelSerializer):
+class GCMedicalHistorySerializer(GCParameterDisplayMixin, serializers.ModelSerializer):
     condition_category_display = serializers.CharField(source="get_condition_category_display", read_only=True)
     severity_display = serializers.CharField(source="get_severity_display", read_only=True)
 
@@ -697,7 +762,7 @@ class GCMedicalHistorySerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class GCMedicalFacilitySerializer(serializers.ModelSerializer):
+class GCMedicalFacilitySerializer(GCParameterDisplayMixin, serializers.ModelSerializer):
     facility_type_display = serializers.CharField(source="get_facility_type_display", read_only=True)
     approval_status_display = serializers.CharField(source="get_approval_status_display", read_only=True)
     partner_name = serializers.ReadOnlyField(source="partner_ref.legal_name")
@@ -714,7 +779,7 @@ class GCMedicalFacilitySerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class GCMedicalPractitionerSerializer(serializers.ModelSerializer):
+class GCMedicalPractitionerSerializer(GCParameterDisplayMixin, serializers.ModelSerializer):
     facility_name = serializers.ReadOnlyField(source="facility.name")
     approval_status_display = serializers.CharField(source="get_approval_status_display", read_only=True)
     partner_name = serializers.ReadOnlyField(source="partner_ref.legal_name")
@@ -810,7 +875,7 @@ class GCMedicalCaseCreateSerializer(serializers.ModelSerializer):
 # =============================================================================
 
 
-class GCClaimTypeSerializer(serializers.ModelSerializer):
+class GCClaimTypeSerializer(GCParameterDisplayMixin, serializers.ModelSerializer):
     category_display = serializers.CharField(source="get_category_display", read_only=True)
     calculation_basis_display = serializers.CharField(source="get_calculation_basis_display", read_only=True)
 
@@ -826,7 +891,7 @@ class GCClaimTypeSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class GCClaimReasonSerializer(serializers.ModelSerializer):
+class GCClaimReasonSerializer(GCParameterDisplayMixin, serializers.ModelSerializer):
     claim_type_name = serializers.ReadOnlyField(source="claim_type.name")
     category_display = serializers.CharField(source="get_category_display", read_only=True)
 
@@ -841,7 +906,7 @@ class GCClaimReasonSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class GCClaimStatusSerializer(serializers.ModelSerializer):
+class GCClaimStatusSerializer(GCParameterDisplayMixin, serializers.ModelSerializer):
     class Meta:
         model = GCClaimStatus
         fields = [
@@ -852,14 +917,14 @@ class GCClaimStatusSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class GCDischargeTypeSerializer(serializers.ModelSerializer):
+class GCDischargeTypeSerializer(GCParameterDisplayMixin, serializers.ModelSerializer):
     class Meta:
         model = GCDischargeType
         fields = ["id", "code", "name", "description", "template_code", "variables", "is_active", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class GCCorrespondentTypeSerializer(serializers.ModelSerializer):
+class GCCorrespondentTypeSerializer(GCParameterDisplayMixin, serializers.ModelSerializer):
     category_display = serializers.CharField(source="get_category_display", read_only=True)
     communication_channel_display = serializers.CharField(source="get_communication_channel_display", read_only=True)
     purpose_display = serializers.CharField(source="get_purpose_display", read_only=True)

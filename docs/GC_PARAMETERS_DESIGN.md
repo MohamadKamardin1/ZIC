@@ -165,3 +165,69 @@ GCMedicalFacility / GCMedicalPractitioner ── Partner (partner_ref)
 The parameter layer constrains and rates the runtime layer; the runtime layer
 never hardcodes a rate, status, or limit — every branch resolves through a
 parameter row, so the module is fully parameterizable and auditable.
+
+## 9. APIs, Options Endpoints & Validation Services (Prompt 4)
+
+Prompt 4 exposes every parameter entity as a List/Detail API under
+`/api/v1/gc/parameters/`, adds SmartSelects Options endpoints under
+`/api/v1/gc/options/`, introduces standalone validation services, and makes
+every parameter serializer emit human-readable display names.
+
+### 9.1 List/Detail APIs
+
+Registered in `apps/group_credit/parameter_urls.py` (mounted at
+`/api/v1/gc/`). All list endpoints return the standard envelope
+`{success, status_code, message, data, pagination, meta}` with
+`StandardPagination` (`per_page`, default 100, max 1000), `?search=` and
+`filterset_fields` where listed.
+
+| Prefix | Resources |
+|--------|-----------|
+| `parameters/scheme-*` | `scheme-types`, `scheme-rates`, `scheme-statuses`, `member-statuses`, `renewal-statuses` |
+| `parameters/health-*` | `health-questions`, `health-questionnaires` |
+| `parameters/lookup-values` | lookup values |
+| `parameters/products` | `products`, `sub-products`, `riders`, `rider-rates` |
+| `parameters/medical/*` | `codes`, `limits`, `decisions`, `habits`, `histories`, `facilities`, `practitioners` |
+| `parameters/claims/*` | `types`, `reasons`, `statuses`, `discharge-types`, `correspondent-types` |
+
+### 9.2 Options Endpoints (SmartSelects)
+
+Each returns a JSON array of `{value, label, meta}` — `value` is the record's
+UUID, `label` is a human-readable name (never a UUID), and `meta` carries
+catalog fields. Only `is_active=True` rows are returned, `?search=` filters by
+code/name.
+
+| Endpoint | `meta` extras |
+|----------|---------------|
+| `/api/v1/gc/options/scheme-types/` | `partner_type_restriction` |
+| `/api/v1/gc/options/products/?scheme_type=` | `scheme_type_code`, `currency`; `scheme_type` accepts a UUID or a scheme-type code |
+| `/api/v1/gc/options/questionnaires/` | `version` |
+| `/api/v1/gc/options/claim-types/` | `category` |
+
+### 9.3 Display names ("names never UUIDs")
+
+`GCParameterDisplayMixin` (in `serializers.py`) adds `display_name` plus a
+`<fk>_display` name field for every concrete many-to-one FK, rendered via
+`gc_display_value` as `CODE — Name` (falling back to name/code/legal name).
+Applied to all 25 parameter serializers; the raw FK UUID id fields are retained
+alongside the name fields for write-back references.
+
+### 9.4 CSV export
+
+Every parameter list endpoint exposes `GET .../export/` via
+`GCParameterCSVExportMixin` — the same filters/search applied to the list are
+honored, and the response is `text/csv` with a `Content-Disposition` attachment
+header.
+
+### 9.5 Validation services
+
+Standalone, callable services in `apps/group_credit/services.py`, raising
+registry errors from `errors.py` (`SCHEME_RATE_OVERLAP` 409,
+`PRODUCT_INVALID_LIMITS` 422, `CLAIM_TYPE_DUPLICATE` 409). Wiring into the
+serializers' `validate()` is the integration prompt that follows.
+
+| Service | Rules |
+|---------|-------|
+| `SchemeRateValidator.validate(scheme_type_id, product_id=None, rate_type=None, effective_from, effective_to, exclude_id)` | Rejects a rate window that overlaps an existing window for the same scheme scope; `None` bounds are open-ended. |
+| `ProductValidator.validate(min_entry_age, max_entry_age, free_cover_limit, max_loan_amount)` | Rejects `min_entry_age > max_entry_age`, a negative free-cover limit, or a free-cover limit above the max loan amount (string decimals are coerced). |
+| `ClaimTypeValidator.validate(name, code=None, category=None, exclude_id)` | Rejects a duplicate active claim type with the same name (case-insensitive), optionally scoped to a category. |

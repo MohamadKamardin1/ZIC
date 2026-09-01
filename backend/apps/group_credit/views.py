@@ -6,11 +6,14 @@ for quotation approval, scheme conversion, claim processing, etc.
 All responses follow the ZIC standard envelope: {success, status_code, message, data, meta}.
 """
 
+import csv
+import json
 import logging
 
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from django.http import HttpResponse
 from django.utils import timezone
 
 from apps.core.pagination import StandardPagination
@@ -96,11 +99,36 @@ def _response(data=None, message="", status_code=200):
     }, status=status_code)
 
 
+class GCParameterCSVExportMixin:
+    """Adds a CSV `export` action to every GC parameter list endpoint."""
+
+    @action(detail=False, methods=["get"], url_path="export")
+    def export(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        payload = self.get_serializer(queryset, many=True).data
+        if payload:
+            fieldnames = list(payload[0].keys())
+        else:
+            model = queryset.model
+            fieldnames = [field.name for field in model._meta.fields]
+        response = HttpResponse(content_type="text/csv; charset=utf-8")
+        filename = getattr(self, "table_slug", None) or queryset.model._meta.model_name
+        response["Content-Disposition"] = f'attachment; filename="{filename}.csv"'
+        writer = csv.DictWriter(response, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        for row in payload:
+            writer.writerow({
+                key: json.dumps(value, default=str) if isinstance(value, (dict, list)) else value
+                for key, value in row.items()
+            })
+        return response
+
+
 # =============================================================================
 # LAYER 1 — SETUP & PARAMETERS
 # =============================================================================
 
-class GCLookupValueViewSet(viewsets.ModelViewSet):
+class GCLookupValueViewSet(GCParameterCSVExportMixin, viewsets.ModelViewSet):
     queryset = GCLookupValue.objects.all()
     serializer_class = GCLookupValueSerializer
     filterset_fields = ["category", "is_active"]
@@ -108,7 +136,7 @@ class GCLookupValueViewSet(viewsets.ModelViewSet):
     ordering_fields = ["category", "sort_order", "label"]
 
 
-class GCSchemeTypeViewSet(viewsets.ModelViewSet):
+class GCSchemeTypeViewSet(GCParameterCSVExportMixin, viewsets.ModelViewSet):
     queryset = GCSchemeType.objects.all()
     serializer_class = GCSchemeTypeSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -118,7 +146,7 @@ class GCSchemeTypeViewSet(viewsets.ModelViewSet):
     ordering = ["name"]
 
 
-class GCSchemeStatusViewSet(viewsets.ModelViewSet):
+class GCSchemeStatusViewSet(GCParameterCSVExportMixin, viewsets.ModelViewSet):
     queryset = GCSchemeStatus.objects.all()
     serializer_class = GCSchemeStatusSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -128,7 +156,7 @@ class GCSchemeStatusViewSet(viewsets.ModelViewSet):
     ordering = ["sort_order"]
 
 
-class GCSchemeMemberStatusViewSet(viewsets.ModelViewSet):
+class GCSchemeMemberStatusViewSet(GCParameterCSVExportMixin, viewsets.ModelViewSet):
     queryset = GCSchemeMemberStatus.objects.all()
     serializer_class = GCSchemeMemberStatusSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -137,7 +165,7 @@ class GCSchemeMemberStatusViewSet(viewsets.ModelViewSet):
     ordering = ["name"]
 
 
-class GCSchemeRenewalStatusViewSet(viewsets.ModelViewSet):
+class GCSchemeRenewalStatusViewSet(GCParameterCSVExportMixin, viewsets.ModelViewSet):
     queryset = GCSchemeRenewalStatus.objects.all()
     serializer_class = GCSchemeRenewalStatusSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -146,7 +174,7 @@ class GCSchemeRenewalStatusViewSet(viewsets.ModelViewSet):
     ordering = ["name"]
 
 
-class GCSchemePremiumRateViewSet(viewsets.ModelViewSet):
+class GCSchemePremiumRateViewSet(GCParameterCSVExportMixin, viewsets.ModelViewSet):
     queryset = GCSchemePremiumRate.objects.all()
     serializer_class = GCSchemePremiumRateSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -156,7 +184,7 @@ class GCSchemePremiumRateViewSet(viewsets.ModelViewSet):
     ordering = ["rate_type", "age_band_start"]
 
 
-class GCHealthQuestionViewSet(viewsets.ModelViewSet):
+class GCHealthQuestionViewSet(GCParameterCSVExportMixin, viewsets.ModelViewSet):
     queryset = GCHealthQuestion.objects.all()
     serializer_class = GCHealthQuestionSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -166,7 +194,7 @@ class GCHealthQuestionViewSet(viewsets.ModelViewSet):
     ordering = ["category", "sort_order"]
 
 
-class GCHealthQuestionnaireViewSet(viewsets.ModelViewSet):
+class GCHealthQuestionnaireViewSet(GCParameterCSVExportMixin, viewsets.ModelViewSet):
     queryset = GCHealthQuestionnaire.objects.prefetch_related("questions").all()
     serializer_class = GCHealthQuestionnaireSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -181,7 +209,7 @@ class GCHealthQuestionnaireViewSet(viewsets.ModelViewSet):
 # =============================================================================
 
 
-class GCSubProductViewSet(viewsets.ModelViewSet):
+class GCSubProductViewSet(GCParameterCSVExportMixin, viewsets.ModelViewSet):
     queryset = GCSubProduct.objects.all()
     serializer_class = GCSubProductSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -190,7 +218,7 @@ class GCSubProductViewSet(viewsets.ModelViewSet):
     ordering = ["name"]
 
 
-class GCProductViewSet(viewsets.ModelViewSet):
+class GCProductViewSet(GCParameterCSVExportMixin, viewsets.ModelViewSet):
     queryset = GCProduct.objects.select_related("sub_product", "scheme_type_ref").all()
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardPagination
@@ -204,7 +232,7 @@ class GCProductViewSet(viewsets.ModelViewSet):
         return GCProductDetailSerializer
 
 
-class GCRiderViewSet(viewsets.ModelViewSet):
+class GCRiderViewSet(GCParameterCSVExportMixin, viewsets.ModelViewSet):
     queryset = GCRider.objects.prefetch_related("rates").all()
     serializer_class = GCRiderSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -214,7 +242,7 @@ class GCRiderViewSet(viewsets.ModelViewSet):
     ordering = ["rider_type", "name"]
 
 
-class GCRiderRateViewSet(viewsets.ModelViewSet):
+class GCRiderRateViewSet(GCParameterCSVExportMixin, viewsets.ModelViewSet):
     queryset = GCRiderRate.objects.select_related("rider", "product_ref").all()
     serializer_class = GCRiderRateSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -546,7 +574,7 @@ class GCSchemeMemberDependentViewSet(viewsets.ModelViewSet):
 # =============================================================================
 
 
-class GCMedicalCodeViewSet(viewsets.ModelViewSet):
+class GCMedicalCodeViewSet(GCParameterCSVExportMixin, viewsets.ModelViewSet):
     queryset = GCMedicalCode.objects.all()
     serializer_class = GCMedicalCodeSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -556,7 +584,7 @@ class GCMedicalCodeViewSet(viewsets.ModelViewSet):
     ordering = ["code"]
 
 
-class GCMedicalLimitViewSet(viewsets.ModelViewSet):
+class GCMedicalLimitViewSet(GCParameterCSVExportMixin, viewsets.ModelViewSet):
     queryset = GCMedicalLimit.objects.select_related("scheme_type_ref", "medical_code_ref", "product").all()
     serializer_class = GCMedicalLimitSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -566,7 +594,7 @@ class GCMedicalLimitViewSet(viewsets.ModelViewSet):
     ordering = ["age_min", "age_max"]
 
 
-class GCUnderwritingDecisionViewSet(viewsets.ModelViewSet):
+class GCUnderwritingDecisionViewSet(GCParameterCSVExportMixin, viewsets.ModelViewSet):
     queryset = GCUnderwritingDecision.objects.all()
     serializer_class = GCUnderwritingDecisionSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -576,7 +604,7 @@ class GCUnderwritingDecisionViewSet(viewsets.ModelViewSet):
     ordering = ["display_order"]
 
 
-class GCPersonalHabitViewSet(viewsets.ModelViewSet):
+class GCPersonalHabitViewSet(GCParameterCSVExportMixin, viewsets.ModelViewSet):
     queryset = GCPersonalHabit.objects.all()
     serializer_class = GCPersonalHabitSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -586,7 +614,7 @@ class GCPersonalHabitViewSet(viewsets.ModelViewSet):
     ordering = ["habit_category", "name"]
 
 
-class GCMedicalHistoryViewSet(viewsets.ModelViewSet):
+class GCMedicalHistoryViewSet(GCParameterCSVExportMixin, viewsets.ModelViewSet):
     queryset = GCMedicalHistory.objects.all()
     serializer_class = GCMedicalHistorySerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -596,7 +624,7 @@ class GCMedicalHistoryViewSet(viewsets.ModelViewSet):
     ordering = ["condition_category", "name"]
 
 
-class GCMedicalFacilityViewSet(viewsets.ModelViewSet):
+class GCMedicalFacilityViewSet(GCParameterCSVExportMixin, viewsets.ModelViewSet):
     queryset = GCMedicalFacility.objects.select_related("partner_ref").all()
     serializer_class = GCMedicalFacilitySerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -606,7 +634,7 @@ class GCMedicalFacilityViewSet(viewsets.ModelViewSet):
     ordering = ["name"]
 
 
-class GCMedicalPractitionerViewSet(viewsets.ModelViewSet):
+class GCMedicalPractitionerViewSet(GCParameterCSVExportMixin, viewsets.ModelViewSet):
     queryset = GCMedicalPractitioner.objects.select_related("facility", "partner_ref").all()
     serializer_class = GCMedicalPractitionerSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -691,7 +719,7 @@ class GCMedicalCaseViewSet(viewsets.ModelViewSet):
 # =============================================================================
 
 
-class GCClaimTypeViewSet(viewsets.ModelViewSet):
+class GCClaimTypeViewSet(GCParameterCSVExportMixin, viewsets.ModelViewSet):
     queryset = GCClaimType.objects.all()
     serializer_class = GCClaimTypeSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -701,7 +729,7 @@ class GCClaimTypeViewSet(viewsets.ModelViewSet):
     ordering = ["name"]
 
 
-class GCClaimReasonViewSet(viewsets.ModelViewSet):
+class GCClaimReasonViewSet(GCParameterCSVExportMixin, viewsets.ModelViewSet):
     queryset = GCClaimReason.objects.select_related("claim_type").all()
     serializer_class = GCClaimReasonSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -711,7 +739,7 @@ class GCClaimReasonViewSet(viewsets.ModelViewSet):
     ordering = ["claim_type", "name"]
 
 
-class GCClaimStatusViewSet(viewsets.ModelViewSet):
+class GCClaimStatusViewSet(GCParameterCSVExportMixin, viewsets.ModelViewSet):
     queryset = GCClaimStatus.objects.all()
     serializer_class = GCClaimStatusSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -721,7 +749,7 @@ class GCClaimStatusViewSet(viewsets.ModelViewSet):
     ordering = ["display_order"]
 
 
-class GCDischargeTypeViewSet(viewsets.ModelViewSet):
+class GCDischargeTypeViewSet(GCParameterCSVExportMixin, viewsets.ModelViewSet):
     queryset = GCDischargeType.objects.all()
     serializer_class = GCDischargeTypeSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -731,7 +759,7 @@ class GCDischargeTypeViewSet(viewsets.ModelViewSet):
     ordering = ["name"]
 
 
-class GCCorrespondentTypeViewSet(viewsets.ModelViewSet):
+class GCCorrespondentTypeViewSet(GCParameterCSVExportMixin, viewsets.ModelViewSet):
     queryset = GCCorrespondentType.objects.all()
     serializer_class = GCCorrespondentTypeSerializer
     permission_classes = [permissions.IsAuthenticated]
