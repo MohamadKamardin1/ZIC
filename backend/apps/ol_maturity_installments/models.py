@@ -31,6 +31,7 @@ class InstallmentPlanStatus(models.TextChoices):
     ACTIVE = "ACTIVE", "Active"
     COMPLETED = "COMPLETED", "Completed"
     TERMINATED = "TERMINATED", "Terminated"
+    CANCELLED = "CANCELLED", "Cancelled"
 
 
 class InstallmentItemStatus(models.TextChoices):
@@ -87,6 +88,7 @@ class OLMaturityInstallmentPlan(UUIDModel, AuditedModel):
     activated_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     terminated_at = models.DateTimeField(null=True, blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
     activated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -107,6 +109,13 @@ class OLMaturityInstallmentPlan(UUIDModel, AuditedModel):
         null=True,
         blank=True,
         related_name="ol_maturity_installment_plans_terminated",
+    )
+    cancelled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ol_maturity_installment_plans_cancelled",
     )
     parameter_snapshot = models.JSONField(encoder=DjangoJSONEncoder, default=dict, blank=True)
     idempotency_key = models.CharField(max_length=64, unique=True, null=True, blank=True, db_index=True)

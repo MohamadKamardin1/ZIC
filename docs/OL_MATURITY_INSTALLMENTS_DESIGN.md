@@ -13,9 +13,10 @@ disbursement.
 
 ## Lifecycles
 
-Installment Plan: `CREATED -> ACTIVE -> COMPLETED | TERMINATED`
+Installment Plan: `CREATED -> ACTIVE -> COMPLETED | TERMINATED | CANCELLED`
 
-Installment Item: `SCHEDULED -> PAYMENT_PENDING -> PAID | MISSED | WAIVED`
+Installment Item: `SCHEDULED -> PAYMENT_PENDING -> PAID | MISSED | WAIVED`, with
+`PAID` reversible back to `SCHEDULED | MISSED` within the configured window.
 
 ## Integration map
 
@@ -166,6 +167,57 @@ Confirmation:
 3. **Audit** — confirmation is audited with actor, requisition ref, paid date,
    and before/after state.
 
+## Missed detection, reversal, and cancellation (Prompt 5)
+
+### Missed detection
+
+`detect_missed_installments` is a daily management command
+(`python manage.py detect_missed_installments [--as-of YYYY-MM-DD] [--plan-id]
+[--correlation-id]`) that walks every `SCHEDULED`/`PAYMENT_PENDING` item whose
+`due_date` is before the as-of date, moves it to `MISSED` (`missed_date` set),
+emits `InstallmentPaymentMissed`, and audits the transition. It is idempotent —
+only the two pre-missed statuses are candidates, so re-runs touch nothing — and
+writes a batch-level audit row plus one per-item audit. A `MISSED` item remains
+recoverable through `process-payment`.
+
+### Reversal
+
+`POST /api/v1/ol/maturity-installments/items/{id}/reverse-payment/` undoes a
+paid installment (requires the `process_payment` entitlement and a `reason`).
+
+1. **Validation** — the item must be `PAID` (`INSTALLMENT_REVERSAL_NOT_ALLOWED`
+   otherwise, which also blocks reversing an already-reversed item because a
+   reversed item is no longer paid), and the paid date must fall inside the
+   configured window (`INSTALLMENT_REVERSAL_WINDOW_DAYS`, default 7; outside it
+   raises `INSTALLMENT_REVERSAL_WINDOW_EXPIRED`).
+2. **Front Office seam** — the linked requisition is marked `REVERSED`, and the
+   item's requisition reference, paid date, payer, and payment reference are
+   cleared so the installment can be disbursed again (a fresh requisition is
+   raised on the next `process-payment`).
+3. **Status** — the item returns to `SCHEDULED`, or `MISSED` when its due date
+   has already passed.
+4. **Audit** — the reversal is audited with actor, reason, requisition ref, and
+   before/after state.
+
+### Cancellation
+
+`POST /api/v1/ol/maturity-installments/plans/{id}/cancel/` cancels an entire
+plan. It requires the `cancel` entitlement — the module's admin-level
+permission (superusers short-circuit) — and a `reason`.
+
+1. **Eligibility** — only `CREATED`/`ACTIVE` plans can be cancelled
+   (`INSTALLMENT_PLAN_CANNOT_CANCEL` for completed, terminated, or cancelled
+   plans and for fully paid plans).
+2. **Irrevocability** — a plan with paid installments is blocked when the
+   `INSTALLMENT_PAYMENT_IRREVOCABLE` parameter (default false) is on
+   (`INSTALLMENT_PLAN_IRREVOCABLE`).
+3. **Effect** — the plan moves to `CANCELLED` (`cancelled_at`/`cancelled_by`
+   set), every remaining payable item is waived (`WAIVED` + `waived_date`), and
+   any still-pending disbursement requisitions are cancelled so nothing
+   disburses after cancellation. Paid installments are left untouched.
+4. **Audit** — the cancellation is audited with actor, reason, the waived
+   installment numbers, and before/after state.
+
 ## Options endpoints
 
 - `GET /api/v1/ol/maturity-installments/options/frequencies/` — the five
@@ -176,6 +228,24 @@ Confirmation:
   pagination via `page`/`page_size`.
 
 ## Assumptions (senior finance decisions, documented)
+
+- A missed installment is recoverable: a `MISSED` item is still processable, so
+  the daily detection batch flags the lapse without foreclosing collection.
+- The reversal window is a System Parameter (`INSTALLMENT_REVERSAL_WINDOW_DAYS`,
+  default 7); once the window closes a reversal must go through Finance
+  Operations rather than the API.
+- Reversal clears the item's requisition reference and payment markers so a
+  corrected disbursement raises a fresh Front Office requisition; the history
+  of the reversed requisition is preserved in the audit trail and on the
+  requisition itself.
+- "Admin permission" for cancellation maps to the module's `cancel` entitlement
+  (superusers short-circuit), matching the OL Policies cancellation gate.
+- Cancellation waives the remaining payable installments and cancels still
+  pending requisitions, so no part of a cancelled plan can still disburse;
+  already-paid installments are never reversed by cancellation.
+- Irrevocability is an operator-controlled System Parameter
+  (`INSTALLMENT_PAYMENT_IRREVOCABLE`, default false): when enabled, a plan with
+  any paid installment cannot be cancelled through the API.
 
 - A matured policyholder may choose any maturity payout frequency; the premium
   payment frequency is advisory, and the schedule reports
@@ -212,6 +282,9 @@ Confirmation:
 `INSTALLMENT_POLICY_NOT_FOUND`, `INSTALLMENT_CLAIM_NOT_FOUND`,
 `INSTALLMENT_CLAIM_MISMATCH`, `INSTALLMENT_CLAIM_NOT_SETTLED`,
 `INSTALLMENT_INVALID_CREATION`, plus Prompt 4 codes
-`INSTALLMENT_PAYMENT_NOT_DUE`, `INSTALLMENT_BANK_DETAILS_MISSING`. All render through
-the global structured Error Coach handler with resolution steps and `doc_ref`
-pointing here.
+`INSTALLMENT_PAYMENT_NOT_DUE`, `INSTALLMENT_BANK_DETAILS_MISSING`, plus Prompt 5
+codes `INSTALLMENT_REVERSAL_REASON_REQUIRED`,
+`INSTALLMENT_REVERSAL_NOT_ALLOWED`, `INSTALLMENT_REVERSAL_WINDOW_EXPIRED`,
+`INSTALLMENT_CANCELLATION_REASON_REQUIRED`, `INSTALLMENT_PLAN_CANNOT_CANCEL`,
+`INSTALLMENT_PLAN_IRREVOCABLE`. All render through the global structured Error
+Coach handler with resolution steps and `doc_ref` pointing here.

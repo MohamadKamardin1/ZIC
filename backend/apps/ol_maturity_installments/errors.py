@@ -180,6 +180,55 @@ INSTALLMENT_ERROR_REGISTRY = {
             "Ask the policyholder to provide correct bank details, then retry the disbursement.",
         ],
     },
+    "INSTALLMENT_REVERSAL_REASON_REQUIRED": {
+        "message": "A reason is required to reverse an installment payment.",
+        "status_code": 400,
+        "resolution_steps": [
+            "Explain why the paid installment is being reversed.",
+            "Reference the correction, dispute, or processing error that triggered the reversal.",
+        ],
+    },
+    "INSTALLMENT_REVERSAL_NOT_ALLOWED": {
+        "message": "Only a paid installment within the configured window can be reversed.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Confirm the installment status is Paid before reversing it.",
+            "An installment that was already reversed is no longer paid and cannot be reversed again.",
+            "Re-process the installment after the reversal if the disbursement must go ahead.",
+        ],
+    },
+    "INSTALLMENT_REVERSAL_WINDOW_EXPIRED": {
+        "message": "This installment payment is outside the configured reversal window.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Review the reversal window configured for maturity installments in System Parameters.",
+            "Raise a correction request through Finance Operations when the window has closed.",
+        ],
+    },
+    "INSTALLMENT_CANCELLATION_REASON_REQUIRED": {
+        "message": "A reason is required to cancel a maturity installment plan.",
+        "status_code": 400,
+        "resolution_steps": [
+            "Explain why the entire installment plan is being cancelled.",
+            "Reference the underlying policy event or the operator decision that triggered the cancellation.",
+        ],
+    },
+    "INSTALLMENT_PLAN_CANNOT_CANCEL": {
+        "message": "This maturity installment plan cannot be cancelled in its current state.",
+        "status_code": 422,
+        "resolution_steps": [
+            "Refresh the plan and review its current lifecycle status.",
+            "A completed, terminated, or already-cancelled plan is terminal and cannot be cancelled.",
+        ],
+    },
+    "INSTALLMENT_PLAN_IRREVOCABLE": {
+        "message": "This plan has paid installments that are irrevocable under the configured parameters.",
+        "status_code": 409,
+        "resolution_steps": [
+            "Review the irrevocable-payment parameter configured for maturity installments in System Parameters.",
+            "Ask an authorised administrator to adjust the parameter or to handle the correction manually.",
+        ],
+    },
 }
 
 

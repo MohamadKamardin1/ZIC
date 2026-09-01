@@ -23,7 +23,11 @@ from ..models import (
     OLMaturityInstallmentPlan,
 )
 
-PROCESSABLE_ITEM_STATUSES = (InstallmentItemStatus.SCHEDULED, InstallmentItemStatus.PAYMENT_PENDING)
+PROCESSABLE_ITEM_STATUSES = (
+    InstallmentItemStatus.SCHEDULED,
+    InstallmentItemStatus.PAYMENT_PENDING,
+    InstallmentItemStatus.MISSED,
+)
 REQUISITION_DEPARTMENT = "MATURITY_INSTALLMENTS"
 REQUISITION_STATUS = "PENDING"
 

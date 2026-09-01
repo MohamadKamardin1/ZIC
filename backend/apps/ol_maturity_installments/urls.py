@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .creation_views import InstallmentPlanCreateView
+from .lifecycle_views import InstallmentItemReversePaymentView, InstallmentPlanCancelView
 from .options import InstallmentFrequencyOptionsView, InstallmentTermOptionsView
 from .payment_views import InstallmentItemConfirmPaymentView, InstallmentItemProcessPaymentView
 from .views import InstallmentPlanDetailView, InstallmentPlanListView
@@ -30,6 +31,16 @@ urlpatterns = [
         "maturity-installments/items/<uuid:item_id>/confirm-payment/",
         InstallmentItemConfirmPaymentView.as_view(),
         name="installment-item-confirm-payment",
+    ),
+    path(
+        "maturity-installments/items/<uuid:item_id>/reverse-payment/",
+        InstallmentItemReversePaymentView.as_view(),
+        name="installment-item-reverse-payment",
+    ),
+    path(
+        "maturity-installments/plans/<uuid:plan_id>/cancel/",
+        InstallmentPlanCancelView.as_view(),
+        name="installment-plan-cancel",
     ),
     path("installment-plans/", InstallmentPlanListView.as_view(), name="installment-plan-list"),
     path("installment-plans/<uuid:plan_id>/", InstallmentPlanDetailView.as_view(), name="installment-plan-detail"),

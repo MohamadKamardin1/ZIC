@@ -182,6 +182,7 @@ class OLMaturityInstallmentPlanDetailSerializer(OLMaturityInstallmentPlanListSer
     activated_by_display = serializers.SerializerMethodField()
     completed_by_display = serializers.SerializerMethodField()
     terminated_by_display = serializers.SerializerMethodField()
+    cancelled_by_display = serializers.SerializerMethodField()
     policy_context = serializers.SerializerMethodField()
     maturity_claim_context = serializers.SerializerMethodField()
     audit_timeline = serializers.SerializerMethodField()
@@ -198,6 +199,8 @@ class OLMaturityInstallmentPlanDetailSerializer(OLMaturityInstallmentPlanListSer
             "completed_by_display",
             "terminated_at",
             "terminated_by_display",
+            "cancelled_at",
+            "cancelled_by_display",
             "items",
             "config",
             "policy_context",
@@ -221,6 +224,10 @@ class OLMaturityInstallmentPlanDetailSerializer(OLMaturityInstallmentPlanListSer
 
     def get_terminated_by_display(self, obj):
         user = obj.terminated_by
+        return user.get_full_name() or user.email if user else "System"
+
+    def get_cancelled_by_display(self, obj):
+        user = obj.cancelled_by
         return user.get_full_name() or user.email if user else "System"
 
     def get_policy_context(self, obj):
@@ -276,6 +283,7 @@ def _plan_allowed_actions(status):
         InstallmentPlanStatus.ACTIVE: ["view", "print", "cancel"],
         InstallmentPlanStatus.COMPLETED: ["view", "print"],
         InstallmentPlanStatus.TERMINATED: ["view", "print"],
+        InstallmentPlanStatus.CANCELLED: ["view", "print"],
     }.get((status or "").upper(), ["view"])
 
 
@@ -283,7 +291,7 @@ def _item_allowed_actions(status):
     return {
         InstallmentItemStatus.SCHEDULED: ["view", "process_payment"],
         InstallmentItemStatus.PAYMENT_PENDING: ["view", "process_payment"],
-        InstallmentItemStatus.PAID: ["view"],
+        InstallmentItemStatus.PAID: ["view", "reverse"],
         InstallmentItemStatus.MISSED: ["view", "process_payment"],
         InstallmentItemStatus.WAIVED: ["view"],
     }.get((status or "").upper(), ["view"])
