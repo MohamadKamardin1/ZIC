@@ -5,6 +5,7 @@
 - [x] Prompt 3 — Maturity Installments Detail Header and Overview
 - [x] Prompt 4 — Maturity Installments Schedule Tab
 - [x] Prompt 5 — Maturity Installments Payment Processing Modal
+- [ ] Prompt 6 — Maturity Installments Reversal and Lifecycle Management
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–10 will be appended `EXACTLY as provided` when the user
@@ -209,4 +210,41 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: modal behavior, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 6/10 — Maturity Installments Reversal and Lifecycle Management
+
+```text
+You are a senior frontend engineer. Continue the Z maturity Installments UI. Execute ONLY Prompt 6.
+
+MANDATORY RULES:
+- Managing failures (missed payments) requires clear UI feedback.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. "Reverse Payment" Modal:
+   - For PAID items only.
+   - Input: Reason for Reversal (Mandatory).
+   - Warning: "This will reverse the payment and restore the balance."
+   - Confirm -> Calls `reverse_payment` API.
+2. Missed Payment Banner:
+   - If plan has MISSED items, show a summary banner at top of Schedule tab: "X installments are missed. Contact policyholder."
+3. Cancellation:
+   - "Terminate Plan" modal (Admin only).
+   - Reason input.
+   - Confirmation.
+
+TESTS:
+- reversal modal validation
+- missed payment banner display
+- termination flow
+- success data refresh
+
+GIT:
+- commit: "feat(web): maturity-installments reversal and lifecycle management"
+- push; tick checkbox
+
+FINAL OUTPUT: modal behaviors, tests, commit hash, pushed branch.
 ```
