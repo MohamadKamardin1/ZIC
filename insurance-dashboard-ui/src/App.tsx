@@ -231,7 +231,7 @@ export default function App() {
         <Route path="ordinary-life/withdrawals/new" element={<RequirePermission permission="ol_withdrawals.request"><OLWithdrawalRequest /></RequirePermission>} />
         <Route path="ordinary-life/withdrawals/:id" element={<RequirePermission permission="ol_withdrawals.view"><OLWithdrawalDetail /></RequirePermission>} />
         <Route path="ordinary-life/claims" element={<RequirePermission permission="ol_claims.view"><OLClaims /></RequirePermission>} />
-        <Route path="ordinary-life/maturity-installments" element={<OLMaturityInstallments />} />
+        <Route path="ordinary-life/maturity-installments" element={<RequirePermission permission="ol_maturity_installments.view"><OLMaturityInstallments /></RequirePermission>} />
         <Route path="ordinary-life/documents" element={<OLDocuments />} />
         <Route path="ordinary-life/notes" element={<OLNotes />} />
         <Route path="ordinary-life/approvals" element={<OLApprovals />} />
