@@ -9,6 +9,7 @@
 - [x] Prompt 7 — Implement List, Detail, KPI and Export APIs
 - [x] Prompt 8 — Implement Documents and Print Engine
 - [x] Prompt 9 — Implement Policy, Claims, Portal and Notification Integrations
+- [ ] Prompt 10 — Full Lifecycle Test Matrix and Audit Verification
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–12 will be appended `EXACTLY as provided` when the user
@@ -414,4 +415,42 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: integration map, events, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 10/12 — Full Lifecycle Test Matrix and Audit Verification
+
+```text
+You are a senior Django QA engineer. Continue the ZIC OL Maturity Installments backend. Execute ONLY Prompt 10.
+
+MANDATORY RULES:
+- Every lifecycle path must be tested.
+- Audit consistency is mandatory.
+- Commit and push; tick checkbox.
+
+OBJECTIVE:
+Add full backend test matrix and harden security.
+
+SCOPE:
+1. Integration Test Matrix:
+   - Happy Path: Policy Mature -> Create Plan -> Process All Payments -> Plan Completed.
+   - Missed Path: Plan Active -> Payment Missed -> Detection Command -> Notification.
+   - Reversal Path: Payment Made -> Reversed -> Status Restored.
+   - Cancellation Path: Plan Created -> Cancelled -> Audit Trail.
+2. Permission Matrix:
+   - Verify actions gated by ol_maturity_installments permissions.
+3. Audit Matrix:
+   - Verify every state change has audit row.
+   - Verify financial consistency (paid amount vs total).
+4. Idempotency Tests:
+   - Plan creation retry.
+   - Payment processing retry.
+   - Missed detection rerun.
+
+GIT:
+- commit: "test(ol-maturity-installments): full lifecycle test matrix and audit verification"
+- push; tick checkbox
+
+FINAL OUTPUT: coverage summary, security findings fixed, audit evidence, commit hash, pushed branch.
 ```
