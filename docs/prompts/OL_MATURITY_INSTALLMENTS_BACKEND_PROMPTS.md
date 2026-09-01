@@ -10,7 +10,7 @@
 - [x] Prompt 8 — Implement Documents and Print Engine
 - [x] Prompt 9 — Implement Policy, Claims, Portal and Notification Integrations
 - [x] Prompt 10 — Full Lifecycle Test Matrix and Audit Verification
-- [ ] Prompt 11 — Seed Scenarios, Documentation and Release
+- [x] Prompt 11 — Seed Scenarios, Documentation and Release
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–12 will be appended `EXACTLY as provided` when the user
