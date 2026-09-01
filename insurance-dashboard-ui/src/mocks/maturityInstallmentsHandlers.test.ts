@@ -325,5 +325,16 @@ describe("OL Maturity Installments MSW contract", () => {
     const missingResponse = await fetch(`${BASE}/portal/unknown-plan-1/`)
     expect(missingResponse.status).toBe(404)
     expect(await missingResponse.json()).toMatchObject({ errorCode: "PORTAL_RESOURCE_NOT_FOUND" })
+
+    const internalKeys = ["bank_accounts", "audit_history", "status_history", "parameter_snapshot", "documents"] as const
+    for (const result of listBody.data.results) {
+      for (const key of internalKeys) expect(result).not.toHaveProperty(key)
+    }
+    for (const key of internalKeys) expect(detailBody.data).not.toHaveProperty(key)
+
+    const portalItemKeys = ["amount", "due_date", "id", "installment_number", "status", "status_display"]
+    for (const item of detailBody.data.items) {
+      expect(Object.keys(item).sort()).toEqual(portalItemKeys)
+    }
   })
 })
