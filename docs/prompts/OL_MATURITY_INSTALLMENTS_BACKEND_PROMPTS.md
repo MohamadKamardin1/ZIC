@@ -8,6 +8,7 @@
 - [x] Prompt 6 — Implement Reconciliation and Financial Audit
 - [x] Prompt 7 — Implement List, Detail, KPI and Export APIs
 - [x] Prompt 8 — Implement Documents and Print Engine
+- [ ] Prompt 9 — Implement Policy, Claims, Portal and Notification Integrations
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–12 will be appended `EXACTLY as provided` when the user
@@ -370,4 +371,47 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: templates, print endpoints, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 9/12 — Implement Policy, Claims, Portal and Notification Integrations
+
+```text
+You are a senior Django integration engineer. Continue the ZIC OL Maturity Installments backend. Execute ONLY Prompt 9.
+
+MANDATORY RULES:
+- Clean seams; no tight coupling.
+- Portal strictly read-only and scoped.
+- Commit and push; tick checkbox.
+
+OBJECTIVE:
+Complete integrations around maturity installments.
+
+SCOPE:
+1. Policy Integration:
+   - Block policy cancellation/surrender if active maturity plan exists (unless parameter allows).
+   - Expose active plan summary in policy detail payload.
+2. Claims Integration:
+   - If Maturity Claim is paid via installments, link claim to plan.
+   - Update claim status to "Paid via Installments" when plan starts.
+3. Partner Portal:
+   - Read-only endpoints scoped to linked partner.
+   - Own plans list/detail only.
+   - No internal actions; sanitized errors.
+4. Notifications:
+   - InstallmentPaymentDue, InstallmentPaymentMissed, InstallmentPlanCompleted events.
+   - Hook into notification center for SMS/Email alerts to policyholder.
+
+TESTS:
+- policy integration blocks actions correctly
+- claim linkage updates status
+- portal scoping denies other partners
+- notification events emitted once
+
+GIT:
+- commit: "feat(ol-maturity-installments): integrate policy claims portal and notifications"
+- push; tick checkbox
+
+FINAL OUTPUT: integration map, events, tests, commit hash, pushed branch.
 ```
