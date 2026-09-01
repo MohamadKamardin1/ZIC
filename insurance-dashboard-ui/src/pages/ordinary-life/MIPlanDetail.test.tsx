@@ -5,9 +5,10 @@ import { MemoryRouter, Route, Routes, useParams } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { MIBankAccount, MIPlanDetail as MIPlanDetailType, MIPlanItem, MIPlanItemPage } from "../../lib/maturityInstallments"
 
-const { useMIPlanDetailMock, useMIPlanItemsMock, processMIPaymentMock, reverseMIPaymentMock, cancelMIPlanMock, printMIScheduleMock, printMIAdviceMock, toastMock } = vi.hoisted(() => ({
+const { useMIPlanDetailMock, useMIPlanItemsMock, invalidateMaturityInstallmentQueriesMock, processMIPaymentMock, reverseMIPaymentMock, cancelMIPlanMock, printMIScheduleMock, printMIAdviceMock, toastMock } = vi.hoisted(() => ({
   useMIPlanDetailMock: vi.fn(),
   useMIPlanItemsMock: vi.fn(),
+  invalidateMaturityInstallmentQueriesMock: vi.fn(),
   processMIPaymentMock: vi.fn(),
   reverseMIPaymentMock: vi.fn(),
   cancelMIPlanMock: vi.fn(),
@@ -18,7 +19,7 @@ const { useMIPlanDetailMock, useMIPlanItemsMock, processMIPaymentMock, reverseMI
 
 vi.mock("../../lib/maturityInstallmentsHooks", async () => {
   const actual = await vi.importActual<typeof import("../../lib/maturityInstallmentsHooks")>("../../lib/maturityInstallmentsHooks")
-  return { ...actual, useMIPlanDetail: useMIPlanDetailMock, useMIPlanItems: useMIPlanItemsMock }
+  return { ...actual, useMIPlanDetail: useMIPlanDetailMock, useMIPlanItems: useMIPlanItemsMock, invalidateMaturityInstallmentQueries: invalidateMaturityInstallmentQueriesMock }
 })
 
 vi.mock("../../lib/maturityInstallments", async () => {
@@ -29,6 +30,7 @@ vi.mock("../../lib/maturityInstallments", async () => {
 vi.mock("../../components/ui/Toast", () => ({ useToast: () => ({ toast: toastMock }) }))
 
 let mockPermissions: string[]
+let mockIsSuperAdmin = false
 
 vi.mock("../../lib/access", () => ({
   useAccess: () => ({
@@ -38,7 +40,7 @@ vi.mock("../../lib/access", () => ({
       groups: [],
     },
     hasPermission: (permission: string) => mockPermissions.includes(permission),
-    isSuperAdmin: false,
+    isSuperAdmin: mockIsSuperAdmin,
     canAccess: () => true,
     isLoading: false,
     isError: false,
@@ -179,9 +181,11 @@ async function completeCashFlow(dialog: HTMLElement, submitName: string) {
 describe("OL Maturity Installments detail (Prompt 3 master-detail)", () => {
   beforeEach(() => {
     mockPermissions = ["ol_maturity_installments.view", "ol_maturity_installments.process_payment", "ol_maturity_installments.reverse", "ol_maturity_installments.print", "ol_maturity_installments.cancel"]
+    mockIsSuperAdmin = false
     useMIPlanDetailMock.mockReset()
     useMIPlanItemsMock.mockReset()
     useMIPlanItemsMock.mockImplementation(() => ({ data: schedulePageData(), isLoading: false, error: null }))
+    invalidateMaturityInstallmentQueriesMock.mockReset()
     processMIPaymentMock.mockReset()
     reverseMIPaymentMock.mockReset()
     cancelMIPlanMock.mockReset()
@@ -192,6 +196,7 @@ describe("OL Maturity Installments detail (Prompt 3 master-detail)", () => {
   })
 
   it("renders the header financial fields, product policy link, and dates without leaking record ids", async () => {
+    mockIsSuperAdmin = true
     useMIPlanDetailMock.mockReturnValue({ data: baseDetail(), isLoading: false, error: null })
     renderDetail()
     expect(await screen.findByText("MIP-20260901-9DD41C66AF")).toBeInTheDocument()
@@ -209,7 +214,7 @@ describe("OL Maturity Installments detail (Prompt 3 master-detail)", () => {
     expect(screen.getByText(/End 1 Mar 2029/)).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Process Payment" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Print schedule" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Cancel plan" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Terminate plan" })).toBeInTheDocument()
     expect(screen.queryByText("plan-active-1")).not.toBeInTheDocument()
     expect(screen.queryByText("plan-active-1-item-1")).not.toBeInTheDocument()
   })
@@ -220,7 +225,7 @@ describe("OL Maturity Installments detail (Prompt 3 master-detail)", () => {
     renderDetail(completed)
     await screen.findByText("MIP-20260815-9E1168C4EF")
     expect(screen.queryByRole("button", { name: "Process Payment" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Cancel plan" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Terminate plan" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Print schedule" })).toBeInTheDocument()
   })
 
@@ -232,7 +237,7 @@ describe("OL Maturity Installments detail (Prompt 3 master-detail)", () => {
     expect(screen.getByText("Plan terminated")).toBeInTheDocument()
     expect(screen.getByText(/Policy terminated by the policyholder/)).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Process Payment" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Cancel plan" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Terminate plan" })).not.toBeInTheDocument()
     unmount()
 
     const completed = baseDetail({ id: "plan-completed-1", planNumber: "MIP-20260815-9E1168C4EF", status: "COMPLETED", statusDisplay: "Completed", allowedActions: ["view", "print"], completedAt: "2026-08-15T09:30:00Z", installmentCount: 10 })
@@ -305,7 +310,7 @@ describe("OL Maturity Installments detail (Prompt 3 master-detail)", () => {
     renderDetail()
     await screen.findByText("MIP-20260901-9DD41C66AF")
     expect(screen.queryByRole("button", { name: "Process Payment" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Cancel plan" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Terminate plan" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Print schedule" })).not.toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "Documents" }))
     expect(screen.getByText("Maturity Schedule")).toBeInTheDocument()
@@ -409,6 +414,70 @@ describe("OL Maturity Installments detail (Prompt 3 master-detail)", () => {
     await user.click(within(dialog).getByRole("button", { name: "Reverse payment" }))
     await waitFor(() => expect(reverseMIPaymentMock).toHaveBeenCalledWith("plan-long-term-1-item-1", { reason: "Duplicate disbursement" }))
     expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ tone: "success", title: "Payment reversed" }))
+    expect(invalidateMaturityInstallmentQueriesMock).toHaveBeenCalledWith(expect.anything(), "plan-long-term-1")
+  })
+
+  it("validates a mandatory reason before reversing a paid installment", async () => {
+    useMIPlanDetailMock.mockReturnValue({ data: longTermDetail, isLoading: false, error: null })
+    const user = userEvent.setup()
+    renderDetail()
+    await user.click(screen.getByRole("button", { name: "Schedule" }))
+    await screen.findByText("Installment schedule")
+    await user.click(screen.getByRole("button", { name: "Reverse payment for installment 1" }))
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText("This will reverse the payment and restore the balance.")).toBeInTheDocument()
+    await user.click(within(dialog).getByRole("button", { name: "Reverse payment" }))
+    expect(await within(dialog).findByText("A reason is required to reverse an installment payment.")).toBeInTheDocument()
+    expect(reverseMIPaymentMock).not.toHaveBeenCalled()
+  })
+
+  it("shows a missed payments banner on the schedule tab when installments are missed", async () => {
+    const missedItems = [
+      { ...scheduleRow({ installmentNumber: 1, dueDate: "2026-03-15", status: "PAID", statusDisplay: "Paid" }), id: "plan-missed-1-item-1" },
+      { ...scheduleRow({ installmentNumber: 2, dueDate: "2027-03-15", status: "MISSED", statusDisplay: "Missed" }), id: "plan-missed-1-item-2" },
+      { ...scheduleRow({ installmentNumber: 3, dueDate: "2028-03-15", status: "MISSED", statusDisplay: "Missed" }), id: "plan-missed-1-item-3" },
+    ]
+    const missedPlan = baseDetail({ id: "plan-missed-1", planNumber: "MIP-20260201-77B3E9A1C8", items: missedItems })
+    useMIPlanDetailMock.mockReturnValue({ data: missedPlan, isLoading: false, error: null })
+    const user = userEvent.setup()
+    const { unmount } = renderDetail(missedPlan)
+    await user.click(screen.getByRole("button", { name: "Schedule" }))
+    await screen.findByText("Installment schedule")
+    expect(screen.getByText(/2 installments are missed\. Contact policyholder/)).toBeInTheDocument()
+    unmount()
+
+    const healthyPlan = baseDetail({ id: "plan-active-1", items: [baseDetail().items[0], baseDetail().items[2]] })
+    useMIPlanDetailMock.mockReturnValue({ data: healthyPlan, isLoading: false, error: null })
+    renderDetail(healthyPlan)
+    await user.click(screen.getByRole("button", { name: "Schedule" }))
+    await screen.findByText("Installment schedule")
+    expect(screen.queryByText(/missed\. Contact policyholder/)).not.toBeInTheDocument()
+  })
+
+  it("terminates a plan through the admin-only terminate modal and refreshes the plan data", async () => {
+    cancelMIPlanMock.mockResolvedValue(baseDetail({ status: "TERMINATED", statusDisplay: "Terminated" }))
+    useMIPlanDetailMock.mockReturnValue({ data: baseDetail(), isLoading: false, error: null })
+    const user = userEvent.setup()
+    const first = renderDetail()
+    await screen.findByText("MIP-20260901-9DD41C66AF")
+    expect(screen.queryByRole("button", { name: "Terminate plan" })).not.toBeInTheDocument()
+    first.unmount()
+
+    mockIsSuperAdmin = true
+    renderDetail()
+    expect(await screen.findByRole("button", { name: "Terminate plan" })).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Terminate plan" }))
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText("This will terminate the plan and waive the remaining installments.")).toBeInTheDocument()
+    await user.click(within(dialog).getByRole("button", { name: "Terminate plan" }))
+    expect(await within(dialog).findByText("A reason is required to terminate an installment plan.")).toBeInTheDocument()
+    expect(cancelMIPlanMock).not.toHaveBeenCalled()
+
+    fireEvent.change(within(dialog).getByPlaceholderText(/why the plan is being terminated/), { target: { value: "Policyholder surrendered the contract." } })
+    await user.click(within(dialog).getByRole("button", { name: "Terminate plan" }))
+    await waitFor(() => expect(cancelMIPlanMock).toHaveBeenCalledWith("plan-active-1", { reason: "Policyholder surrendered the contract." }))
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ tone: "success", title: "Plan terminated" }))
+    expect(invalidateMaturityInstallmentQueriesMock).toHaveBeenCalledWith(expect.anything(), "plan-active-1")
   })
 
   it("processes selected installments in bulk through the payment modal", async () => {

@@ -273,6 +273,8 @@ function ScheduleTab({ plan, canProcess, canReverse }: { plan: MIPlanDetail; can
   const [reverseError, setReverseError] = useState<StructuredError | null>(null)
   const [reverseReason, setReverseReason] = useState("")
 
+  const missedCount = plan.items.filter((item) => item.status === "MISSED").length
+
   const itemsQuery = useMIPlanItems(plan.id, page, SCHEDULE_PAGE_SIZE)
   const pageData = itemsQuery.data
   const items = pageData?.results ?? []
@@ -334,6 +336,7 @@ function ScheduleTab({ plan, canProcess, canReverse }: { plan: MIPlanDetail; can
   }
 
   return <section className="surface-card overflow-hidden" aria-label="Installment schedule">
+    {missedCount > 0 && <div className="flex gap-3 border-b border-[var(--warning)]/40 bg-[var(--warning)]/10 px-4 py-3 text-sm"><TriangleAlert size={18} className="mt-0.5 shrink-0 text-[var(--warning)]" aria-hidden="true" /><p className="leading-6"><span className="font-bold">{missedCount === 1 ? "1 installment is missed." : `${missedCount} installments are missed.`} Contact policyholder.</span></p></div>}
     <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border)] bg-[var(--muted)]/30 px-4 py-4">
       <div><h2 className="text-base font-bold">Installment schedule</h2><p className="mt-1 text-xs text-[var(--muted-foreground)]">Contractual payouts read from the backend schedule, paginated per page so long terms stay responsive.</p></div>
       <div className="flex flex-wrap items-center gap-2">
@@ -390,7 +393,8 @@ function ScheduleTab({ plan, canProcess, canReverse }: { plan: MIPlanDetail; can
           {reverseTarget && <p className="mt-1 text-sm font-bold">Installment {reverseTarget.installmentNumber} — due {dateLabel(reverseTarget.dueDate)}</p>}
           {reverseTarget && <p className="mt-1 text-xs text-[var(--muted-foreground)]">{reverseTarget.paymentReference || "No payment reference"} · paid on {reverseTarget.paidDate ? dateLabel(reverseTarget.paidDate) : "—"}</p>}
         </div>
-        <label className="block space-y-1.5"><span className="text-xs font-bold">Reason <span className="text-[var(--destructive)]">*</span></span><textarea value={reverseReason} onChange={(event) => { setReverseReason(event.target.value); setReverseError(null) }} rows={3} className="w-full rounded-[10px] border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm outline-none focus:border-[var(--ring)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--ring)_18%,transparent)]" placeholder="Explain why this payment is being reversed. The installment returns to scheduled." /></label>
+        <label className="block space-y-1.5"><span className="text-xs font-bold">Reason for reversal <span className="text-[var(--destructive)]">*</span></span><textarea value={reverseReason} onChange={(event) => { setReverseReason(event.target.value); setReverseError(null) }} rows={3} className="w-full rounded-[10px] border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm outline-none focus:border-[var(--ring)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--ring)_18%,transparent)]" placeholder="Explain why this payment is being reversed. The installment returns to scheduled." /></label>
+        <div className="flex gap-3 rounded-[10px] border border-[var(--warning)]/40 bg-[var(--warning)]/10 px-4 py-3 text-sm" role="note"><TriangleAlert size={18} className="mt-0.5 shrink-0 text-[var(--warning)]" aria-hidden="true" /><p className="leading-6"><span className="font-bold">This will reverse the payment and restore the balance.</span> The installment returns to scheduled and the paid amount is deducted from the plan.</p></div>
         {reverseError && <ErrorCoach title="Payment could not be reversed" message={reverseError.message} resolutionSteps={reverseError.resolutionSteps} />}
         <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--border)] pt-4">
           <button type="button" className="button-secondary" onClick={() => { setReverseTarget(null); setReverseError(null) }} disabled={reverseBusy}>Close</button>
@@ -514,23 +518,25 @@ export default function MIPlanDetail() {
     toast({ tone: "success", title: "Payment Requisition Created", message: `Installment ${processItem.installmentNumber} on ${plan.planNumber} is now payment pending.` })
   }
 
-  const confirmCancel = async () => {
+  const confirmTerminate = async () => {
     if (!cancelReason.trim()) {
-      setCancelError({ code: "REASON_REQUIRED", message: "A reason is required to cancel an installment plan.", resolutionSteps: ["Describe why the plan is being cancelled.", "Do not include sensitive credentials in the reason."], fieldErrors: {}, retryable: false, status: 400, raw: null })
+      setCancelError({ code: "REASON_REQUIRED", message: "A reason is required to terminate an installment plan.", resolutionSteps: ["Describe why the plan is being terminated.", "Do not include sensitive credentials in the reason."], fieldErrors: {}, retryable: false, status: 400, raw: null })
       return
     }
     setCancelBusy(true); setCancelError(null)
     try {
       await cancelMIPlan(plan.id, { reason: cancelReason.trim() })
       invalidateMaturityInstallmentQueries(queryClient, plan.id)
-      toast({ tone: "success", title: "Plan cancelled", message: `${plan.planNumber} has been cancelled and the remaining installments waived.` })
+      toast({ tone: "success", title: "Plan terminated", message: `${plan.planNumber} has been terminated and the remaining installments waived.` })
       setCancelOpen(false); setCancelReason("")
     } catch (error) {
-      setCancelError(toStructuredError(error, "The plan could not be cancelled."))
+      setCancelError(toStructuredError(error, "The plan could not be terminated."))
     } finally {
       setCancelBusy(false)
     }
   }
+
+  const canTerminate = canAction("cancel") && isSuperAdmin
 
   const product = plan.productDisplay || plan.productCode
   return <div className="space-y-5 p-1 md:p-2">
@@ -561,7 +567,7 @@ export default function MIPlanDetail() {
       <div className="flex flex-wrap items-center justify-end gap-2">
         {canAction("process_payment") && <button type="button" className="button-primary inline-flex items-center gap-2" onClick={openProcess}>Process Payment</button>}
         {canAction("print") && <button type="button" className="button-secondary" onClick={() => void handlePrint()}>Print schedule</button>}
-        {canAction("cancel") && <button type="button" className="inline-flex min-h-10 items-center justify-center rounded-[10px] bg-[var(--destructive)] px-4 text-sm font-bold text-white" onClick={() => { setCancelError(null); setCancelReason(""); setCancelOpen(true) }}>Cancel plan</button>}
+        {canTerminate && <button type="button" className="inline-flex min-h-10 items-center justify-center rounded-[10px] bg-[var(--destructive)] px-4 text-sm font-bold text-white" onClick={() => { setCancelError(null); setCancelReason(""); setCancelOpen(true) }}>Terminate plan</button>}
       </div>
     </div>
 
@@ -570,7 +576,7 @@ export default function MIPlanDetail() {
     {activeTab === "overview" ? <OverviewTab plan={plan} /> : activeTab === "schedule" ? <ScheduleTab plan={plan} canProcess={canAction("process_payment")} canReverse={can("ol_maturity_installments.reverse")} /> : activeTab === "payments" ? <PaymentsTab plan={plan} /> : activeTab === "audit" ? <AuditTab plan={plan} /> : <MIPlanDocumentsPanel plan={plan} canPrint={can("ol_maturity_installments.print")} />}
 
     <ProcessPaymentModal open={Boolean(processItem)} items={processItem ? [processItem] : []} currency={plan.currency} planNumber={plan.planNumber} bankAccounts={plan.bankAccounts} onClose={() => setProcessItem(null)} onSubmit={handleHeaderProcessSubmit} />
-    <Modal open={cancelOpen} title="Cancel plan" onClose={() => { if (!cancelBusy) { setCancelOpen(false); setCancelError(null) } }} size="md">
+    <Modal open={cancelOpen} title="Terminate plan" onClose={() => { if (!cancelBusy) { setCancelOpen(false); setCancelError(null) } }} size="md">
       <div className="space-y-4">
         <div className="rounded-lg border border-[var(--border)] bg-[var(--muted)]/35 p-4">
           <p className="text-xs font-bold uppercase tracking-[0.1em] text-[var(--muted-foreground)]">Selected plan</p>
@@ -578,11 +584,12 @@ export default function MIPlanDetail() {
           <p className="mt-1 text-xs text-[var(--muted-foreground)]">{plan.policyholderDisplay || plan.policyholderName} · {plan.policyNumber}</p>
           <div className="mt-3 flex flex-wrap items-center gap-3 text-sm"><PlanStatusBadge status={plan.status} statusDisplay={plan.statusDisplay} /><MoneyCell value={plan.balance} currency={plan.currency} label="Remaining balance" /></div>
         </div>
-        <label className="block space-y-1.5"><span className="text-xs font-bold">Reason <span className="text-[var(--destructive)]">*</span></span><textarea value={cancelReason} onChange={(event) => { setCancelReason(event.target.value); setCancelError(null) }} rows={3} className="w-full rounded-[10px] border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm outline-none focus:border-[var(--ring)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--ring)_18%,transparent)]" placeholder="Explain why the plan is being cancelled. Remaining installments will be waived." /></label>
-        {cancelError && <ErrorCoach title="Plan could not be cancelled" message={cancelError.message} resolutionSteps={cancelError.resolutionSteps} />}
+        <div className="flex gap-3 rounded-[10px] border border-[var(--warning)]/40 bg-[var(--warning)]/10 px-4 py-3 text-sm" role="note"><TriangleAlert size={18} className="mt-0.5 shrink-0 text-[var(--warning)]" aria-hidden="true" /><p className="leading-6"><span className="font-bold">This will terminate the plan and waive the remaining installments.</span> The plan moves to terminated and the outstanding balance is written off. This action cannot be undone.</p></div>
+        <label className="block space-y-1.5"><span className="text-xs font-bold">Reason <span className="text-[var(--destructive)]">*</span></span><textarea value={cancelReason} onChange={(event) => { setCancelReason(event.target.value); setCancelError(null) }} rows={3} className="w-full rounded-[10px] border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm outline-none focus:border-[var(--ring)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--ring)_18%,transparent)]" placeholder="Explain why the plan is being terminated. Remaining installments will be waived." /></label>
+        {cancelError && <ErrorCoach title="Plan could not be terminated" message={cancelError.message} resolutionSteps={cancelError.resolutionSteps} />}
         <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--border)] pt-4">
           <button type="button" className="button-secondary" onClick={() => { setCancelOpen(false); setCancelError(null) }} disabled={cancelBusy}>Cancel</button>
-          <button type="button" className="inline-flex min-h-10 items-center justify-center rounded-[10px] bg-[var(--destructive)] px-4 text-sm font-bold text-white" onClick={() => void confirmCancel()} disabled={cancelBusy}>{cancelBusy ? "Cancelling…" : "Cancel plan"}</button>
+          <button type="button" className="inline-flex min-h-10 items-center justify-center rounded-[10px] bg-[var(--destructive)] px-4 text-sm font-bold text-white" onClick={() => void confirmTerminate()} disabled={cancelBusy}>{cancelBusy ? "Terminating…" : "Terminate plan"}</button>
         </div>
       </div>
     </Modal>
