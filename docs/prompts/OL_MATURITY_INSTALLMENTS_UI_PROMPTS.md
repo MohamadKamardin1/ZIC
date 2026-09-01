@@ -7,6 +7,7 @@
 - [x] Prompt 5 — Maturity Installments Payment Processing Modal
 - [x] Prompt 6 — Maturity Installments Reversal and Lifecycle Management
 - [x] Prompt 7 — Maturity Installments Plan Generation Wizard
+- [ ] Prompt 8 — Maturity Installments Documents and Print Integration
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–10 will be appended `EXACTLY as provided` when the user
@@ -289,4 +290,41 @@ GIT:
 - push; tick checkbox
 
 FINAL OUTPUT: wizard behavior, tests, commit hash, pushed branch.
+```
+
+---
+
+## Prompt 8/10 — Maturity Installments Documents and Print Integration
+
+```text
+You are a senior frontend engineer. Continue the Z maturity Installments UI. Execute ONLY Prompt 8.
+
+MANDATORY RULES:
+- Use the authenticated print pipeline.
+- Commit and push; tick checkbox.
+
+SCOPE:
+1. Documents Tab:
+   - List generated documents: Maturity Schedule, Payment Receipts.
+   - Actions: Preview, Download.
+2. Print Actions:
+   - Header buttons: "Print Schedule", "Print Statement".
+   - Preview Modal with PDF viewer.
+   - Variables: Plan Number, Policyholder, Table of Installments, Signatures.
+   - Watermark logic: "TERMINATED" or "MISSED" stamps on documents.
+3. Integration:
+   - Connect to `POST /api/v1/ol/maturity-installments/{id}/print-schedule/`.
+   - Handle `TEMPLATE_PENDING` errors via ErrorCoach.
+
+TESTS:
+- document list loads
+- print schedule generates PDF
+- watermark visibility by status
+- error handling for missing templates
+
+GIT:
+- commit: "feat(web): maturity-installments documents and print integration"
+- push; tick checkbox
+
+FINAL OUTPUT: documents UI, print integration, tests, commit hash, pushed branch.
 ```
