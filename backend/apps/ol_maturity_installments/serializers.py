@@ -120,7 +120,9 @@ class OLMaturityInstallmentPlanListSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     paid_count = serializers.SerializerMethodField()
     paid_amount = serializers.SerializerMethodField()
+    total_amount = serializers.SerializerMethodField()
     remaining_amount = serializers.SerializerMethodField()
+    balance = serializers.SerializerMethodField()
     allowed_actions = serializers.SerializerMethodField()
 
     class Meta:
@@ -135,6 +137,7 @@ class OLMaturityInstallmentPlanListSerializer(serializers.ModelSerializer):
             "currency",
             "total_maturity_value",
             "total_payable_amount",
+            "total_amount",
             "installment_count",
             "frequency",
             "frequency_display",
@@ -145,6 +148,7 @@ class OLMaturityInstallmentPlanListSerializer(serializers.ModelSerializer):
             "paid_count",
             "paid_amount",
             "remaining_amount",
+            "balance",
             "allowed_actions",
         )
         read_only_fields = fields
@@ -161,9 +165,15 @@ class OLMaturityInstallmentPlanListSerializer(serializers.ModelSerializer):
     def get_paid_amount(self, obj):
         return _money(obj.items.filter(status=InstallmentItemStatus.PAID).aggregate(total=Sum("amount"))["total"])
 
+    def get_total_amount(self, obj):
+        return _money(obj.total_payable_amount)
+
     def get_remaining_amount(self, obj):
         paid = self.get_paid_amount(obj)
         return _money(Decimal(obj.total_payable_amount) - Decimal(paid))
+
+    def get_balance(self, obj):
+        return self.get_remaining_amount(obj)
 
     def get_allowed_actions(self, obj):
         actions = _plan_allowed_actions(obj.status)
@@ -185,6 +195,7 @@ class OLMaturityInstallmentPlanDetailSerializer(OLMaturityInstallmentPlanListSer
     cancelled_by_display = serializers.SerializerMethodField()
     policy_context = serializers.SerializerMethodField()
     maturity_claim_context = serializers.SerializerMethodField()
+    payment_history = serializers.SerializerMethodField()
     audit_timeline = serializers.SerializerMethodField()
 
     class Meta(OLMaturityInstallmentPlanListSerializer.Meta):
@@ -205,6 +216,7 @@ class OLMaturityInstallmentPlanDetailSerializer(OLMaturityInstallmentPlanListSer
             "config",
             "policy_context",
             "maturity_claim_context",
+            "payment_history",
             "audit_timeline",
             "created_at",
             "updated_at",
@@ -252,6 +264,27 @@ class OLMaturityInstallmentPlanDetailSerializer(OLMaturityInstallmentPlanListSer
             "net_payout": _money(claim.net_payout),
             "claim_status": claim.status,
         }
+
+    def get_payment_history(self, obj):
+        history = []
+        for item in obj.items.select_related("payment_requisition_ref", "paid_by").order_by("installment_number"):
+            if item.status != InstallmentItemStatus.PAID:
+                continue
+            user = item.paid_by
+            history.append(
+                {
+                    "installment_number": item.installment_number,
+                    "due_date": item.due_date,
+                    "amount": _money(item.amount),
+                    "paid_date": item.paid_date,
+                    "payment_reference": item.payment_reference,
+                    "requisition_number": item.payment_requisition_ref.requisition_number
+                    if item.payment_requisition_ref
+                    else "",
+                    "paid_by_display": (user.get_full_name() or user.email) if user else "System",
+                }
+            )
+        return history
 
     def get_audit_timeline(self, obj):
         logs = (

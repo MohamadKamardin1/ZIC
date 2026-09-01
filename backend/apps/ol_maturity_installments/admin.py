@@ -1,6 +1,8 @@
 from django.contrib import admin
+from django.db.models import Sum
 
 from .models import (
+    InstallmentItemStatus,
     OLInstallmentItem,
     OLMaturityInstallmentConfig,
     OLMaturityInstallmentPlan,
@@ -38,6 +40,8 @@ class OLMaturityInstallmentPlanAdmin(admin.ModelAdmin):
         "policyholder",
         "currency",
         "total_payable_amount",
+        "paid_amount",
+        "balance",
         "installment_count",
         "frequency",
         "start_date",
@@ -107,6 +111,16 @@ class OLMaturityInstallmentPlanAdmin(admin.ModelAdmin):
     @admin.display(description="Policyholder")
     def policyholder(self, obj):
         return obj.partner.legal_name or str(obj.partner)
+
+    @admin.display(description="Paid amount")
+    def paid_amount(self, obj):
+        total = obj.items.filter(status=InstallmentItemStatus.PAID).aggregate(total=Sum("amount"))["total"]
+        return f"{total or 0:.2f}"
+
+    @admin.display(description="Balance")
+    def balance(self, obj):
+        total = obj.items.filter(status=InstallmentItemStatus.PAID).aggregate(total=Sum("amount"))["total"]
+        return f"{(obj.total_payable_amount - (total or 0)):.2f}"
 
     def has_module_permission(self, request):
         return has_ol_maturity_installment_permission(request.user, "view")

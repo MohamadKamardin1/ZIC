@@ -5,11 +5,31 @@ from .lifecycle_views import InstallmentItemReversePaymentView, InstallmentPlanC
 from .options import InstallmentFrequencyOptionsView, InstallmentTermOptionsView
 from .payment_views import InstallmentItemConfirmPaymentView, InstallmentItemProcessPaymentView
 from .reconciliation_views import InstallmentPlanReconciliationView
-from .views import InstallmentPlanDetailView, InstallmentPlanListView
+from .views import (
+    InstallmentPlanDetailView,
+    InstallmentPlanExportView,
+    InstallmentPlanKpisView,
+    InstallmentPlanListView,
+)
 
 app_name = "ol_maturity_installments"
 
 urlpatterns = [
+    path(
+        "maturity-installments/",
+        InstallmentPlanListView.as_view(),
+        name="installment-plan-list",
+    ),
+    path(
+        "maturity-installments/kpis/",
+        InstallmentPlanKpisView.as_view(),
+        name="installment-plan-kpis",
+    ),
+    path(
+        "maturity-installments/export/",
+        InstallmentPlanExportView.as_view(),
+        name="installment-plan-export",
+    ),
     path(
         "maturity-installments/create/",
         InstallmentPlanCreateView.as_view(),
@@ -48,6 +68,15 @@ urlpatterns = [
         InstallmentPlanReconciliationView.as_view(),
         name="installment-plan-reconciliation",
     ),
-    path("installment-plans/", InstallmentPlanListView.as_view(), name="installment-plan-list"),
-    path("installment-plans/<uuid:plan_id>/", InstallmentPlanDetailView.as_view(), name="installment-plan-detail"),
+    path(
+        "maturity-installments/<uuid:plan_id>/",
+        InstallmentPlanDetailView.as_view(),
+        name="installment-plan-detail",
+    ),
+    path("installment-plans/", InstallmentPlanListView.as_view(), name="installment-plan-list-legacy"),
+    path(
+        "installment-plans/<uuid:plan_id>/",
+        InstallmentPlanDetailView.as_view(),
+        name="installment-plan-detail-legacy",
+    ),
 ]

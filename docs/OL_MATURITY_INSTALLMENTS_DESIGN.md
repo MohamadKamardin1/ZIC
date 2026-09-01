@@ -258,6 +258,40 @@ To keep this check honest, plan cancellation now audits each waived installment
 individually (`INSTALLMENT_ITEM_WAIVED`); previously only the plan-level
 cancellation was audited, so a `WAIVED` item had no matching audit row.
 
+## List, detail, KPI and export APIs (Prompt 7)
+
+The register, dashboard, and export are served at the canonical prefix:
+
+- `GET /api/v1/ol/maturity-installments/` — paginated list. Table columns:
+  `plan_number`, `policy_number`, `policyholder_name`, `total_amount`,
+  `paid_amount`, `balance`, `status`, `start_date`, `allowed_actions` (plus the
+  richer legacy fields). Filters: `status`, `product`
+  (`policy_ref__product_plan_ref`), `branch` (the policy quotation's
+  location/location-master/branch chain), `date_from`/`date_to` (on
+  `start_date`), and `missed_only` (plans carrying at least one `MISSED`
+  installment). Search (`q`/`search`) matches `plan_number`, `policy_number`,
+  and `policyholder_name`. Sorting via `sort` over the whitelisted columns;
+  pagination via `page`/`page_size` (max 100).
+- `GET /api/v1/ol/maturity-installments/{id}/` — detail: header fields, nested
+  `items`, `payment_history` (paid installments with requisition number,
+  payment reference, paid date, payer), `audit_timeline`, and
+  `allowed_actions` derived from status and the caller's entitlement.
+- `GET /api/v1/ol/maturity-installments/kpis/` — real-time dashboard computed
+  live from the filtered register (never stale/cached): `total_plans_active`
+  (plans in `ACTIVE`), `total_upcoming_payouts` (payable installments —
+  `SCHEDULED`/`PAYMENT_PENDING` — due today or later), `missed_payments_count`
+  (`MISSED` installments), `completed_plans_count` (plans in `COMPLETED`).
+  Returns `filters_applied` and a `timestamp` for auditability.
+- `GET /api/v1/ol/maturity-installments/export/` — CSV download applying the
+  same filters as the list (`Content-Disposition` attachment). Columns mirror
+  the register: plan number, policy number, policyholder name, total amount,
+  paid amount, balance, status, start/end date.
+- Admin tables mirror the register columns: the plan admin now also shows
+  `paid_amount` and `balance` alongside the existing plan, policy, policyholder,
+  total, schedule, and status columns.
+
+The legacy `installment-plans/` routes remain wired for backward compatibility.
+
 ## Options endpoints
 
 - `GET /api/v1/ol/maturity-installments/options/frequencies/` — the five
