@@ -1,6 +1,6 @@
 # OL MATURITY INSTALLMENTS UI — PROMPT SERIES (10 prompts)
 
-- [ ] Prompt 1 — Save Prompt Series + Maturity Installments UI Foundation and Contract-First API Layer
+- [x] Prompt 1 — Save Prompt Series + Maturity Installments UI Foundation and Contract-First API Layer
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–10 will be appended `EXACTLY as provided` when the user
