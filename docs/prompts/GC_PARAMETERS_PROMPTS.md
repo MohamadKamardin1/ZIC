@@ -1,7 +1,7 @@
 # GC PARAMETERS — PROMPT SERIES (6 prompts, backend)
 
 - [x] Prompt 1 — Save Series File + GC Parameters Foundation & Scheme Models
-- [ ] Prompt 2 — GC Product Setup & Rider Setup Models
+- [x] Prompt 2 — GC Product Setup & Rider Setup Models
 - [ ] Prompt 3 — GC Medical U/W & Claim Setup Models
 - [ ] Prompt 4 — APIs, Options Endpoints & Validation Services
 - [ ] Prompt 5 — Full Seed Data & Documentation
