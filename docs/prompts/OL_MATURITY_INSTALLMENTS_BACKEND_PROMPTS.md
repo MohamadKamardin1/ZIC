@@ -4,7 +4,7 @@
 - [x] Prompt 2 — Implement Parameter Validation & Calculation Engine
 - [x] Prompt 3 — Implement Plan Generation and Creation
 - [x] Prompt 4 — Implement Payment Processing and Integration
-- [ ] Prompt 5 — Implement Missed Detection and Reversal Lifecycle
+- [x] Prompt 5 — Implement Missed Detection and Reversal Lifecycle
 
 > **Note on fidelity:** only Prompt 1 was included in the pasted series message for
 > this session. Prompts 2–12 will be appended `EXACTLY as provided` when the user
