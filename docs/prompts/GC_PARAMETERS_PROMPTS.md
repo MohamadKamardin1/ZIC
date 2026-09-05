@@ -4,7 +4,7 @@
 - [x] Prompt 2 — GC Product Setup & Rider Setup Models
 - [x] Prompt 3 — GC Medical U/W & Claim Setup Models
 - [x] Prompt 4 — APIs, Options Endpoints & Validation Services
-- [ ] Prompt 5 — Full Seed Data & Documentation
+- [x] Prompt 5 — Full Seed Data & Documentation
 - [ ] Prompt 6 — Backend Integration & Release Verification
 
 > **Note on fidelity:** the full 6-prompt series was pasted at once. Each prompt is
