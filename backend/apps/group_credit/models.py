@@ -192,7 +192,7 @@ class GCSchemeRenewalStatus(GCParameterAuditMixin, models.Model):
             raise ValidationError({"name": "A renewal status name is required."})
 
 
-class GCLookupValue(models.Model):
+class GCLookupValue(GCParameterAuditMixin, models.Model):
     """Generic configurable dropdown values for GC module.
 
     Groups values by `category` (e.g. RATE_TYPE, GENDER, RIDER_TYPE).
