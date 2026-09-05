@@ -5,7 +5,7 @@
 - [x] Prompt 3 — GC Medical U/W & Claim Setup Models
 - [x] Prompt 4 — APIs, Options Endpoints & Validation Services
 - [x] Prompt 5 — Full Seed Data & Documentation
-- [ ] Prompt 6 — Backend Integration & Release Verification
+- [x] Prompt 6 — Backend Integration & Release Verification
 
 > **Note on fidelity:** the full 6-prompt series was pasted at once. Each prompt is
 > saved `EXACTLY as provided` below, then executed strictly one at a time, ticking
